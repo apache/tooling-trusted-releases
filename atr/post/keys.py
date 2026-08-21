@@ -67,7 +67,7 @@ async def add(
 
         async with storage.write() as write:
             wafc = write.as_foundation_committer()
-            ocr, publications = await wafc.keys.ensure_stored_one(key_text)
+            ocr, publications = await wafc.keys.ensure_stored_one(key_text, f"web:{log.get_request_id()}")
             key = ocr.result_or_raise()
 
             for selected_committee_key in selected_committee_keys:
@@ -89,7 +89,7 @@ async def add(
                 await quart.flash(str(p), "warning")
             elif key.status == datatypes.KeyStatus.REFRESHED:
                 await quart.flash(
-                    f"OpenPGP key {fingerprint_upper} was updated to the version you uploaded.", "success"
+                    f"OpenPGP key {fingerprint_upper} was updated with the version you uploaded.", "success"
                 )
             else:
                 await quart.flash(f"OpenPGP key {fingerprint_upper} added successfully.", "success")
@@ -191,7 +191,11 @@ async def import_selected_revision(
         )
         try:
             outcomes, publications = await wacm.keys.import_keys_file(
-                project_key, version_key, keys_text, release.safe_latest_revision_number
+                project_key,
+                version_key,
+                f"web:{log.get_request_id()}",
+                keys_text,
+                release.safe_latest_revision_number,
             )
         except datatypes.RevisionMismatchError:
             await quart.flash("The draft changed during the import, so its KEYS file was left in place", "error")
@@ -336,7 +340,9 @@ async def _delete_openpgp_key(
 
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
-        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint)
+        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(
+            fingerprint, f"web:{log.get_request_id()}"
+        )
 
     match oc:
         case outcome.Result(deletion):
@@ -429,7 +435,7 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
 
     async with storage.write() as write:
         wacp = write.as_committee_participant(selected_committee)
-        outcomes, publications = await wacp.keys.ensure_associated(keys_text)
+        outcomes, publications = await wacp.keys.ensure_associated(keys_text, f"web:{log.get_request_id()}")
 
     success_count = outcomes.result_count
     error_count = outcomes.error_count

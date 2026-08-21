@@ -36,6 +36,7 @@ import sqlmodel
 
 import atr.cache as cache
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.basic as basic
@@ -85,6 +86,15 @@ _ALGORITHM_NAMES: Final[dict[int, str]] = {
 }
 _APPROVED_KEY_ALGORITHMS: Final = frozenset({1, 3, 19, 22, 27})
 _EC_MINIMUM_BITS: Final = 255
+_KEY_AUDIT_ACTIONS: Final = (
+    (datatypes.KeyStatus.RESTORED, "key_undelete"),
+    (datatypes.KeyStatus.INSERTED, "key_insert"),
+    (datatypes.KeyStatus.REFRESHED, "key_refresh"),
+    (datatypes.KeyStatus.LINKED, "key_associate_committee"),
+)
+_MAX_CERTIFICATE_BYTES: Final = 1024 * 1024
+_MAX_CERTIFICATE_PLACEMENTS: Final = 16384
+_POINTER_SOURCE_SCHEMES: Final = frozenset({"archive", "svn"})
 _RSA_ALGORITHMS: Final = frozenset({1, 3})
 _RSA_MINIMUM_BITS: Final = 4096
 
@@ -143,24 +153,21 @@ def _deduplicate_keys(roes: list[datatypes.Key | Exception]) -> list[datatypes.K
             continue
         seen.add(fingerprint)
         keys = groups[fingerprint]
-        deduplicated.append(keys[0] if (len(keys) == 1) else _preferred_key(fingerprint, keys))
+        deduplicated.append(keys[0] if (len(keys) == 1) else _merged_key(keys))
     return deduplicated
 
 
-def _preferred_key(fingerprint: str, keys: list[datatypes.Key]) -> datatypes.Key | Exception:
-    candidates: dict[bytes, datatypes.Key] = {}
-    for key in keys:
-        parsed = pgp.certificate_for_fingerprint(key.key_model.ascii_armored_key, fingerprint)
-        if parsed is None:
-            return ValueError(f"Key {fingerprint} could not be read back from its block")
-        candidates.setdefault(parsed.to_bytes(), key)
-    if len(candidates) == 1:
-        return next(iter(candidates.values()))
-    for candidate in candidates.values():
-        others = [other for other in candidates.values() if other is not candidate]
-        if all(_supersedes(fingerprint, candidate, other) for other in others):
-            return candidate
-    return ValueError(f"Key {fingerprint} appears {len(candidates)} times with differing content")
+def _merged_key(keys: list[datatypes.Key]) -> datatypes.Key | Exception:
+    try:
+        block = pgp.merge_certificate_blocks([key.key_model.ascii_armored_key for key in keys])
+    except ValueError as e:
+        return e
+    merged = keys[0]
+    merged.key_model.ascii_armored_key = block
+    merged.key_model.apache_uid = next((key.key_model.apache_uid for key in keys if key.key_model.apache_uid), None)
+    merged.member_ids = sorted({member_id for key in keys for member_id in key.member_ids})
+    merged.input = b"".join(key.input for key in keys if key.input is not None) or None
+    return merged
 
 
 def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[dict] | None:
@@ -185,14 +192,6 @@ def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[
         }
         for facts in pgp.signing_key_facts(key)
     ]
-
-
-def _supersedes(fingerprint: str, candidate: datatypes.Key, other: datatypes.Key) -> bool:
-    candidate_block = candidate.key_model.ascii_armored_key
-    other_block = other.key_model.ascii_armored_key
-    if _block_downgrade_reason(fingerprint, other_block, candidate_block) is not None:
-        return False
-    return _block_downgrade_reason(fingerprint, candidate_block, other_block) is not None
 
 
 async def _sync_signing_keys(data: db.Session, certificates: list[sql.SigningCertificate]) -> None:
@@ -260,26 +259,16 @@ class FoundationCommitter(GeneralPublic):
         # Specific to this module
         self.__key_block_models_cache = {}
 
-    async def delete_key(self, fingerprint: str) -> outcome.Outcome[datatypes.KeyDeletion]:
+    async def delete_key(self, fingerprint: str, source: str) -> outcome.Outcome[datatypes.KeyDeletion]:
         try:
-            via = sql.validate_instrumented_attribute
+            await self.__data.begin_immediate()
             key = await self.__data.signing_certificate(
                 fingerprint=fingerprint,
                 apache_uid=self.__asf_uid,
                 _committees=True,
             ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
             affected_committee_keys = {committee.key for committee in key.committees}
-            update_result = await self.__data.execute(
-                sqlmodel.update(sql.SigningCertificate)
-                .where(
-                    via(sql.SigningCertificate.fingerprint) == key.fingerprint,
-                    via(sql.SigningCertificate.apache_uid) == self.__asf_uid,
-                    via(sql.SigningCertificate.deleted).is_(None),
-                )
-                .values(deleted=datetime.datetime.now(datetime.UTC))
-            )
-            if getattr(update_result, "rowcount", 0) != 1:
-                raise storage.AccessError(f"Key not found: {fingerprint}", status=404)
+            await self._delete_certificate(key, source)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 action="key_delete",
@@ -297,9 +286,9 @@ class FoundationCommitter(GeneralPublic):
             return outcome.Error(e)
 
     async def ensure_stored_one(
-        self, key_file_text: str
+        self, key_file_text: str, source: str
     ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        return await self.__ensure_one(key_file_text, associate=False)
+        return await self.__ensure_one(key_file_text, source, associate=False)
 
     def public_key_model(
         self,
@@ -328,6 +317,13 @@ class FoundationCommitter(GeneralPublic):
             storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
         return await self._keys_file_text(committee)
+
+    async def _delete_certificate(self, certificate: sql.SigningCertificate, source: str) -> None:
+        seq, state = await self.__certificate_chain(certificate.fingerprint, certificate)
+        self.__append_certificate_row(
+            certificate.fingerprint, seq + 1, sql.KeyOperation.DELETE, source, None, state, state
+        )
+        certificate.deleted = datetime.datetime.now(datetime.UTC)
 
     async def _keys_file_text(self, committee: sql.Committee) -> str:
         if not committee.signing_certificates:
@@ -391,6 +387,44 @@ class FoundationCommitter(GeneralPublic):
                 draft.safe_latest_revision_number,
                 suffix_filter=[".asc"],
             )
+
+    async def _revise_certificate(self, key: datatypes.Key, source: str) -> datatypes.KeyStatus:
+        fingerprint = key.key_model.fingerprint
+        existing = await self.__data.signing_certificate(fingerprint=fingerprint, deleted=db.NOT_SET).get()
+        seq, previous = await self.__certificate_chain(fingerprint, existing)
+        blocks = [pgp.certificate_block(previous)] if previous else []
+        block = pgp.merge_certificate_blocks([*blocks, key.key_model.ascii_armored_key])
+        result = pgp.certificate_placements(block)
+        if (len(block) > _MAX_CERTIFICATE_BYTES) or (len(result) > _MAX_CERTIFICATE_PLACEMENTS):
+            raise ValueError(f"Key {fingerprint} would exceed the size admitted for a certificate")
+        changed = result != previous
+        apache_uid = key.key_model.apache_uid or (existing.apache_uid if (existing is not None) else None)
+        head = self.__head_model(fingerprint, block, apache_uid)
+        if changed:
+            raw = None if (source.partition(":")[0] in _POINTER_SOURCE_SCHEMES) else key.input
+            seq = self.__append_certificate_row(
+                fingerprint, seq + 1, sql.KeyOperation.REVISE, source, raw, previous, result
+            )
+        status = datatypes.KeyStatus.REFRESHED if changed else datatypes.KeyStatus.PARSED
+        if existing is None:
+            existing = head
+            self.__data.add(existing)
+            status = datatypes.KeyStatus.INSERTED
+        elif changed:
+            existing.ascii_armored_key = head.ascii_armored_key
+            existing.latest_self_signature = head.latest_self_signature
+            existing.primary_declared_uid = head.primary_declared_uid
+            existing.secondary_declared_uids = head.secondary_declared_uids
+            existing.apache_uid = head.apache_uid
+        # An artifact points at the SigningKey which signed it, so these rows must exist before an
+        # artifact can be attributed
+        if changed or (status == datatypes.KeyStatus.INSERTED):
+            await _sync_signing_keys(self.__data, [existing])
+        if existing.deleted is not None:
+            self.__append_certificate_row(fingerprint, seq + 1, sql.KeyOperation.RESTORE, source, None, result, result)
+            existing.deleted = None
+            status = datatypes.KeyStatus.INSERTED | datatypes.KeyStatus.RESTORED
+        return status
 
     async def _publish_keys_to_svn(
         self, committee: sql.Committee, content: str | None
@@ -536,6 +570,38 @@ class FoundationCommitter(GeneralPublic):
 
         return datatypes.KeyAssociationUpdate(added=to_add, removed=to_remove, publications=publications)
 
+    def __append_certificate_row(
+        self,
+        fingerprint: str,
+        seq: int,
+        operation: sql.KeyOperation,
+        source: str,
+        raw: bytes | None,
+        previous: frozenset[pgp.Placement],
+        result: frozenset[pgp.Placement],
+        actor: str | None = None,
+        role: sql.KeyRole | None = None,
+        updated: datetime.datetime | None = None,
+    ) -> int:
+        deletions, additions = pgp.delta_fragments(previous, result)
+        if pgp.apply_delta(previous, deletions, additions) != result:
+            raise RuntimeError(f"The delta for {fingerprint} does not reproduce its result")
+        self.__data.add(
+            sql.KeyAttestable(
+                fingerprint=fingerprint,
+                seq=seq,
+                operation=operation,
+                source=source,
+                input=raw,
+                deletions=deletions,
+                additions=additions,
+                updated=updated or datetime.datetime.now(datetime.UTC),
+                actor=actor or self.__asf_uid,
+                role=role or self.__role(),
+            )
+        )
+        return seq
+
     def __block_model(self, key_block: str, ldap_data: cache.EmailUidLookup) -> datatypes.Key:
         # This cache is only held for the session
         if key_block in self.__key_block_models_cache:
@@ -563,87 +629,50 @@ class FoundationCommitter(GeneralPublic):
             status=datatypes.KeyStatus.PARSED,
             key_model=key_model,
             member_ids=sorted(util.openpgp_member_ids(public_key)),
+            input=pgp.certificate_spans(key_block)[0],
         )
+
+    async def __certificate_chain(
+        self, fingerprint: str, certificate: sql.SigningCertificate | None
+    ) -> tuple[int, frozenset[pgp.Placement]]:
+        rows = await self.__data.key_attestable(fingerprint=fingerprint).order_by(sql.KeyAttestable.seq).all()
+        if [row.seq for row in rows] != list(range(1, len(rows) + 1)):
+            raise RuntimeError(f"The log for {fingerprint} is not contiguous")
+        state = pgp.fold_deltas((row.deletions, row.additions) for row in rows)
+        if certificate is None:
+            return len(rows), state
+        if not rows:
+            raise RuntimeError(f"The cached head for {fingerprint} has no log")
+        if state != pgp.certificate_placements(certificate.ascii_armored_key):
+            raise RuntimeError(f"The cached head for {fingerprint} does not match its log")
+        return len(rows), state
 
     async def __database_add_model(
-        self,
-        key: datatypes.Key,
+        self, key: datatypes.Key, source: str
     ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        via = sql.validate_instrumented_attribute
-
         await self.__data.begin_immediate()
-
-        key_values = [key.key_model.model_dump(exclude={"committees"})]
-        key_insert_result = await self.__data.execute(
-            sqlite.insert(sql.SigningCertificate)
-            .values(key_values)
-            .on_conflict_do_nothing(index_elements=["fingerprint"])
-            .returning(via(sql.SigningCertificate.fingerprint))
-        )
-        inserted = key_insert_result.one_or_none() is not None
-        undeleted = []
-        refreshed = False
-        if inserted:
+        status = await self._revise_certificate(key, source)
+        if status == datatypes.KeyStatus.INSERTED:
             await self.__signature_hints_consume([key])
-        else:
-            # The fingerprint only covers the primary packet, so an existing row can hold a stale
-            # block - a since-revoked, re-signed, or re-subkeyed export of the same key. Bring it up
-            # to date, which also carries the apache_uid the undelete below would otherwise set
-            refreshed = await self.__refresh_stored_key(key.key_model)
-            undeleted = await self.__undelete_keys([key.key_model.fingerprint])
-            if undeleted and not refreshed:
-                await self.__data.execute(
-                    sqlmodel.update(sql.SigningCertificate)
-                    .where(via(sql.SigningCertificate.fingerprint) == key.key_model.fingerprint)
-                    .values(apache_uid=key.key_model.apache_uid)
-                )
-        # A refused downgrade kept the stored block, so its rows must not be rebuilt from the block we
-        # declined; only sync when the block actually changed
-        if inserted or refreshed:
-            await _sync_signing_keys(self.__data, [key.key_model])
         await self.__data.commit()
-
-        if undeleted:
-            self.__write_as.append_to_audit_log(
-                action="key_undelete",
-                asf_uid=self.__asf_uid,
-                fingerprints=[f for f in undeleted],
-            )
-            publications = await self.__sync_committees_for_keys(undeleted)
-            log.info(f"Undeleted key {key.key_model.fingerprint}")
-            undeleted_key = datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model)
-            return outcome.Result(undeleted_key), publications
-
-        if refreshed:
-            self.__write_as.append_to_audit_log(
-                action="key_refresh",
-                asf_uid=self.__asf_uid,
-                fingerprint=key.key_model.fingerprint,
-                key_apache_uid=key.key_model.apache_uid,
-            )
-            # A changed block can flip an existing signature check, so let its committees catch up
-            publications = await self.__sync_committees_for_keys([key.key_model.fingerprint])
-            log.info(f"Refreshed stored key {key.key_model.fingerprint}")
-            refreshed_key = datatypes.Key(status=datatypes.KeyStatus.REFRESHED, key_model=key.key_model)
-            return outcome.Result(refreshed_key), publications
-
-        if not inserted:
-            log.info(f"Key {key.key_model.fingerprint} already exists in database")
-            return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.PARSED, key_model=key.key_model)), {}
-
-        log.info(f"Inserted key {key.key_model.fingerprint}")
+        fingerprint = key.key_model.fingerprint
+        if status == datatypes.KeyStatus.PARSED:
+            log.info(f"Key {fingerprint} already exists in database")
+            return outcome.Result(datatypes.Key(status=status, key_model=key.key_model)), {}
+        action = next(action for flag, action in _KEY_AUDIT_ACTIONS if status & flag)
         self.__write_as.append_to_audit_log(
-            action="key_insert",
+            action=action,
             asf_uid=self.__asf_uid,
-            fingerprint=key.key_model.fingerprint,
+            fingerprint=fingerprint,
             key_apache_uid=key.key_model.apache_uid,
         )
-
-        # TODO: PARSED now acts as "ALREADY_ADDED"
-        return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model)), {}
+        # A changed block can flip an existing signature check, so let its committees catch up
+        publications = await self.__sync_committees_for_keys([fingerprint])
+        log.info(f"Stored key {fingerprint}")
+        return outcome.Result(datatypes.Key(status=status, key_model=key.key_model)), publications
 
     async def __ensure_one(
-        self, key_file_text: str, associate: bool = True
+        self, key_file_text: str, source: str, associate: bool = True
     ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         try:
             key_blocks = util.parse_key_blocks(key_file_text)
@@ -667,7 +696,22 @@ class FoundationCommitter(GeneralPublic):
                     "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
                 )
             ), {}
-        return await self.__database_add_model(key)
+        try:
+            return await self.__database_add_model(key, source)
+        except ValueError as e:
+            return outcome.Error(e), {}
+
+    def __head_model(self, fingerprint: str, block: str, apache_uid: str | None) -> sql.SigningCertificate:
+        key, _ = openpgp.composed.SignedPublicKey.from_armor(block)
+        uids = list(key.user_ids)
+        return sql.SigningCertificate(
+            fingerprint=fingerprint,
+            latest_self_signature=pgp.latest_self_signature_created_at(key),
+            primary_declared_uid=uids[0] if uids else None,
+            secondary_declared_uids=uids[1:],
+            apache_uid=apache_uid,
+            ascii_armored_key=block,
+        )
 
     async def __keys_file_format(
         self,
@@ -716,21 +760,12 @@ and was published by the committee.\
         full_keys_file_content = header_content + key_blocks_str
         return full_keys_file_content
 
-    async def __refresh_stored_key(self, model: sql.SigningCertificate) -> bool:
-        existing = await self.__data.signing_certificate(fingerprint=model.fingerprint, deleted=db.NOT_SET).get()
-        if (existing is None) or (existing.ascii_armored_key == model.ascii_armored_key):
-            return False
-        downgrade = _block_downgrade_reason(model.fingerprint, existing.ascii_armored_key, model.ascii_armored_key)
-        if downgrade is not None:
-            log.warning(f"Not refreshing {model.fingerprint}: the uploaded block {downgrade}")
-            return False
-        existing.ascii_armored_key = model.ascii_armored_key
-        existing.latest_self_signature = model.latest_self_signature
-        existing.primary_declared_uid = model.primary_declared_uid
-        existing.secondary_declared_uids = model.secondary_declared_uids
-        existing.apache_uid = model.apache_uid
-        self.__data.add(existing)
-        return True
+    def __role(self) -> sql.KeyRole:
+        if self.__asf_uid == constants.SYSTEM_SERVICE_UID:
+            return sql.KeyRole.SERVICE
+        if isinstance(self.__write_as, storage.WriteAsFoundationAdmin | storage.WriteAsCommitteeAdmin):
+            return sql.KeyRole.ADMIN
+        return sql.KeyRole.USER
 
     async def __signature_hints_consume(self, keys: list[datatypes.Key]) -> list[str]:
         via = sql.validate_instrumented_attribute
@@ -804,21 +839,6 @@ and was published by the committee.\
             if email in ldap_data:
                 return ldap_data[email]
         return None
-
-    async def __undelete_keys(self, fingerprints: list[str]) -> list[str]:
-        if not fingerprints:
-            return []
-        via = sql.validate_instrumented_attribute
-        result = await self.__data.execute(
-            sqlmodel.update(sql.SigningCertificate)
-            .where(
-                via(sql.SigningCertificate.fingerprint).in_(sorted(fingerprints)),
-                via(sql.SigningCertificate.deleted).is_not(None),
-            )
-            .values(deleted=None)
-            .returning(via(sql.SigningCertificate.fingerprint))
-        )
-        return sorted(result.scalars().all())
 
 
 class CommitteeParticipant(FoundationCommitter):
@@ -907,9 +927,9 @@ class CommitteeParticipant(FoundationCommitter):
         return self.__committee_key
 
     async def ensure_associated(
-        self, keys_file_text: str
+        self, keys_file_text: str, source: str
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        outcomes, publications = await self.__ensure(keys_file_text, associate=True)
+        outcomes, publications = await self.__ensure(keys_file_text, source, associate=True)
         if not outcomes.any_result:
             return outcomes, publications
         _, publication = await self.autogenerate_keys_file()
@@ -917,9 +937,9 @@ class CommitteeParticipant(FoundationCommitter):
         return outcomes, publications
 
     async def ensure_stored(
-        self, keys_file_text: str
+        self, keys_file_text: str, source: str
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        outcomes, publications = await self.__ensure(keys_file_text, associate=False)
+        outcomes, publications = await self.__ensure(keys_file_text, source, associate=False)
         if not outcomes.any_result:
             return outcomes, publications
         _, publication = await self.autogenerate_keys_file()
@@ -930,6 +950,7 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
+        source: str,
         keys_file_text: str | None = None,
         expected_revision: safe.RevisionNumber | None = None,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
@@ -950,7 +971,7 @@ class CommitteeParticipant(FoundationCommitter):
                 status=403,
             )
 
-        outcomes, publications = await self.ensure_associated(keys_file_text)
+        outcomes, publications = await self.ensure_associated(keys_file_text, source)
         release_keys_removed = False
         # Remove the KEYS file if 100% imported
         if (outcomes.result_count > 0) and (outcomes.error_count == 0):
@@ -982,23 +1003,40 @@ class CommitteeParticipant(FoundationCommitter):
         )
         return outcomes, publications
 
+    def __audit_certificate(self, key: datatypes.Key, status: datatypes.KeyStatus) -> None:
+        action = next((action for flag, action in _KEY_AUDIT_ACTIONS if status & flag), None)
+        if action is None:
+            return
+        self.__write_as.append_to_audit_log(
+            action=action,
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            fingerprint=key.key_model.fingerprint,
+            key_apache_uid=key.key_model.apache_uid,
+            linked=bool(status & datatypes.KeyStatus.LINKED),
+        )
+
     def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
         try:
-            public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(key_block)
+            blocks = pgp.certificate_blocks(key_block)
+            spans = pgp.certificate_spans(key_block)
         except Exception as e:
             raise ValueError(f"Error loading OpenPGP key block: {e}") from e
-        if not public_keys:
+        if not blocks:
             raise ValueError("Error loading OpenPGP key block: no keys found")
-        original_key_block = key_block if (len(public_keys) == 1) else None
-        key_list = []
-        for public_key in public_keys:
+        key_list: list[datatypes.Key | Exception] = []
+        for block, span in zip(blocks, spans, strict=True):
             try:
-                key_model = self.public_key_model(public_key, ldap_data, original_key_block=original_key_block)
-                _validate_key_strength(public_key)
+                public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(block)
+                if len(public_keys) != 1:
+                    raise ValueError(f"Expected one certificate in the block, got {len(public_keys)}")
+                key_model = self.public_key_model(public_keys[0], ldap_data, original_key_block=block)
+                _validate_key_strength(public_keys[0])
                 key = datatypes.Key(
                     status=datatypes.KeyStatus.PARSED,
                     key_model=key_model,
-                    member_ids=sorted(util.openpgp_member_ids(public_key)),
+                    member_ids=sorted(util.openpgp_member_ids(public_keys[0])),
+                    input=span,
                 )
                 key_list.append(key)
             except Exception as e:
@@ -1006,12 +1044,12 @@ class CommitteeParticipant(FoundationCommitter):
         return key_list
 
     async def __database_add_models(
-        self, outcomes: outcome.List[datatypes.Key], associate: bool = True
+        self, outcomes: outcome.List[datatypes.Key], source: str, associate: bool = True
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         # Try to upsert all models and link to the committee in one transaction
         publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         try:
-            outcomes, publications = await self.__database_add_models_core(outcomes, associate=associate)
+            outcomes, publications = await self.__database_add_models_core(outcomes, source, associate=associate)
         except Exception as e:
             # This logging is just so that ruff does not erase e
             log.info(f"Post-parse error: {e}")
@@ -1025,141 +1063,64 @@ class CommitteeParticipant(FoundationCommitter):
             outcomes.update_roes(Exception, raise_post_parse_error)
         return outcomes, publications
 
-    async def __database_add_models_core(  # noqa: C901
+    async def __database_add_models_core(
         self,
         outcomes: outcome.List[datatypes.Key],
+        source: str,
         associate: bool = True,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        via = sql.validate_instrumented_attribute
         key_list = outcomes.results()
 
-        await self.__data.begin_immediate()
-        committee = await self.committee()
+        await self.__data.committee(key=self.__committee_key).demand(
+            storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+        )
 
-        key_values = [key.key_model.model_dump(exclude={"committees"}) for key in key_list]
-        incoming_blocks = {v["fingerprint"]: v["ascii_armored_key"] for v in key_values}
-        stored_blocks: dict[str, str] = {}
-        if incoming_blocks:
-            stored_result = await self.__data.execute(
-                sqlmodel.select(
-                    via(sql.SigningCertificate.fingerprint),
-                    via(sql.SigningCertificate.ascii_armored_key),
-                ).where(via(sql.SigningCertificate.fingerprint).in_(sorted(incoming_blocks)))
-            )
-            stored_blocks = {fingerprint: block for fingerprint, block in stored_result.all()}
-        # A key we already hold whose incoming block differs has been re-imported with a newer state,
-        # which can flip an existing signature check even when nothing about the association changed
-        refreshed_fingerprints = {
-            fingerprint
-            for fingerprint, block in incoming_blocks.items()
-            if (fingerprint in stored_blocks) and (stored_blocks[fingerprint] != block)
-        }
-        # A re-import must not roll a held key's effective state back, so leave any block which would do
-        # so untouched rather than overwrite the stored one
-        downgraded = {
-            fingerprint
-            for fingerprint in refreshed_fingerprints
-            if _block_downgrade_reason(fingerprint, stored_blocks[fingerprint], incoming_blocks[fingerprint])
-            is not None
-        }
-        if downgraded:
-            kept = ", ".join(sorted(downgraded))
-            log.warning(f"Keeping the stored block for {util.plural(len(downgraded), 'key')}: {kept}")
-            key_list = [key for key in key_list if key.key_model.fingerprint not in downgraded]
-            key_values = [values for values in key_values if values["fingerprint"] not in downgraded]
-        if key_values:
-            stmt = sqlite.insert(sql.SigningCertificate).values(key_values)
-            # The fingerprint only covers the primary packet, so a re-import can carry a newer block
-            # for a key we already hold - a revocation, an extended expiry, a fresh subkey. Refresh
-            # the whole derived row, not just the apache_uid
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["fingerprint"],
-                set_={
-                    "apache_uid": stmt.excluded.apache_uid,
-                    "ascii_armored_key": stmt.excluded.ascii_armored_key,
-                    "latest_self_signature": stmt.excluded.latest_self_signature,
-                    "primary_declared_uid": stmt.excluded.primary_declared_uid,
-                    "secondary_declared_uids": stmt.excluded.secondary_declared_uids,
-                },
-            )
-            key_insert_result = await self.__data.execute(
-                stmt.returning(via(sql.SigningCertificate.fingerprint)),
-            )
-            key_inserts = {row.fingerprint for row in key_insert_result}
-            log.info(f"Inserted or updated {util.plural(len(key_inserts), 'key')}")
-        else:
-            # TODO: Warn the user about any keys that were already inserted
-            key_inserts = set()
-            log.info("Inserted 0 keys (no keys to insert)")
+        statuses: dict[str, datatypes.KeyStatus] = {}
+        failures: dict[str, Exception] = {}
+        for key in key_list:
+            fingerprint = key.key_model.fingerprint
+            try:
+                await self.__data.begin_immediate()
+                status = await self._revise_certificate(key, source)
+                await self.__signature_hints_consume([key])
+                linked = associate and (await self.__link_certificate(fingerprint))
+                await self.__data.commit()
+            except Exception as e:
+                await self.__data.rollback()
+                failures[fingerprint] = e
+                continue
+            if linked:
+                status |= datatypes.KeyStatus.LINKED
+            statuses[fingerprint] = status
+            self.__audit_certificate(key, status)
+        log.info(f"Stored {util.plural(len(statuses), 'key')}")
 
-        def replace_with_inserted(key: datatypes.Key) -> datatypes.Key:
-            if key.key_model.fingerprint in key_inserts:
-                key.status = datatypes.KeyStatus.INSERTED
+        def replace_with_status(key: datatypes.Key) -> datatypes.Key:
+            fingerprint = key.key_model.fingerprint
+            if fingerprint in failures:
+                raise datatypes.PublicKeyError(key, failures[fingerprint])
+            key.status = statuses[fingerprint]
             return key
 
-        outcomes.update_roes(Exception, replace_with_inserted)
+        outcomes.update_roes(Exception, replace_with_status)
 
-        persisted_fingerprints = {v["fingerprint"] for v in key_values} | downgraded
-        # An artifact points at the SigningKey which signed it, so these rows must exist before an
-        # artifact can be attributed
-        await _sync_signing_keys(self.__data, [key.key_model for key in key_list])
-        undeleted = await self.__undelete_keys(sorted(persisted_fingerprints))
-        await self.__signature_hints_consume(key_list)
-        await self.__data.flush()
-
-        existing_fingerprints = {k.fingerprint for k in committee.signing_certificates}
-        new_fingerprints = persisted_fingerprints - existing_fingerprints
-        link_inserts = set()
-        if new_fingerprints and associate:
-            link_values = [{"committee_key": self.__committee_key, "key_fingerprint": fp} for fp in new_fingerprints]
-            link_insert_result = await self.__data.execute(
-                sqlite.insert(sql.KeyLink)
-                .values(link_values)
-                .on_conflict_do_nothing(index_elements=["committee_key", "key_fingerprint"])
-                .returning(via(sql.KeyLink.key_fingerprint))
-            )
-            link_inserts = {row.key_fingerprint for row in link_insert_result}
-            log.info(f"Inserted {util.plural(len(link_inserts), 'key link')}")
-
-            def replace_with_linked(key: datatypes.Key) -> datatypes.Key:
-                # nonlocal link_inserts
-                match key:
-                    case datatypes.Key(status=datatypes.KeyStatus.INSERTED):
-                        if key.key_model.fingerprint in link_inserts:
-                            key.status = datatypes.KeyStatus.INSERTED_AND_LINKED
-                    case datatypes.Key(status=datatypes.KeyStatus.PARSED):
-                        if key.key_model.fingerprint in link_inserts:
-                            key.status = datatypes.KeyStatus.LINKED
-                return key
-
-            outcomes.update_roes(Exception, replace_with_linked)
-        else:
-            log.info("Inserted 0 key links (none to insert)")
-
-        await self.__data.commit()
-        if key_inserts or link_inserts:
-            self.__write_as.append_to_audit_log(
-                action="key_insert_or_associate_bulk",
-                asf_uid=self.__asf_uid,
-                committee_key=self.__committee_key,
-                inserted_fingerprints=sorted(key_inserts),
-                linked_fingerprints=sorted(link_inserts),
-            )
+        changed = sorted(
+            fingerprint for fingerprint, status in statuses.items() if status != datatypes.KeyStatus.PARSED
+        )
+        restored = sorted(
+            fingerprint for fingerprint, status in statuses.items() if status & datatypes.KeyStatus.RESTORED
+        )
         publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
-        if undeleted:
-            self.__write_as.append_to_audit_log(
-                action="key_undelete",
-                asf_uid=self.__asf_uid,
-                fingerprints=[f for f in undeleted],
-            )
-            publications = await self.__sync_committees_for_keys(undeleted)
-        if link_inserts or (refreshed_fingerprints - downgraded):
+        if restored:
+            publications = await self.__sync_committees_for_keys(restored)
+        if changed:
             await self._recheck_committee_drafts(self.__committee_key)
         return outcomes, publications
 
     async def __ensure(
         self,
         keys_file_text: str,
+        source: str,
         associate: bool = True,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         outcomes = outcome.List[datatypes.Key]()
@@ -1186,7 +1147,17 @@ class CommitteeParticipant(FoundationCommitter):
         outcomes.extend_roes(Exception, await asyncio.to_thread(_deduplicate_keys, roes))
         # Try adding the keys to the database
         # If not, all keys will be replaced with a PostParseError
-        return await self.__database_add_models(outcomes, associate=associate)
+        return await self.__database_add_models(outcomes, source, associate=associate)
+
+    async def __link_certificate(self, fingerprint: str) -> bool:
+        via = sql.validate_instrumented_attribute
+        link_insert_result = await self.__data.execute(
+            sqlite.insert(sql.KeyLink)
+            .values([{"committee_key": self.__committee_key, "key_fingerprint": fingerprint}])
+            .on_conflict_do_nothing(index_elements=["committee_key", "key_fingerprint"])
+            .returning(via(sql.KeyLink.key_fingerprint))
+        )
+        return link_insert_result.one_or_none() is not None
 
     async def __signature_hints_consume(self, keys: list[datatypes.Key]) -> list[str]:
         via = sql.validate_instrumented_attribute
@@ -1229,21 +1200,6 @@ class CommitteeParticipant(FoundationCommitter):
             publications[committee_key] = publication
         await self._recheck_committee_drafts(*committee_keys)
         return publications
-
-    async def __undelete_keys(self, fingerprints: list[str]) -> list[str]:
-        if not fingerprints:
-            return []
-        via = sql.validate_instrumented_attribute
-        result = await self.__data.execute(
-            sqlmodel.update(sql.SigningCertificate)
-            .where(
-                via(sql.SigningCertificate.fingerprint).in_(sorted(fingerprints)),
-                via(sql.SigningCertificate.deleted).is_not(None),
-            )
-            .values(deleted=None)
-            .returning(via(sql.SigningCertificate.fingerprint))
-        )
-        return sorted(result.scalars().all())
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -1302,7 +1258,9 @@ class FoundationAdmin(CommitteeMember):
     def committee_key(self) -> str:
         return self.__committee_key
 
-    async def delete_committee_keys(self) -> tuple[int, int, outcome.Outcome[datatypes.KeysPublish] | None]:
+    async def delete_committee_keys(
+        self, source: str
+    ) -> tuple[int, int, outcome.Outcome[datatypes.KeysPublish] | None]:
         via = sql.validate_instrumented_attribute
         await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
@@ -1330,17 +1288,16 @@ class FoundationAdmin(CommitteeMember):
         still_linked = set(still_linked_rows.scalars().all())
         orphaned = [fingerprint for fingerprint in unlinked if fingerprint not in still_linked]
 
-        num_deleted = 0
-        if orphaned:
-            update_result = await self.__data.execute(
-                sqlmodel.update(sql.SigningCertificate)
-                .where(
-                    via(sql.SigningCertificate.fingerprint).in_(orphaned),
-                    via(sql.SigningCertificate.deleted).is_(None),
-                )
-                .values(deleted=datetime.datetime.now(datetime.UTC))
+        orphaned_rows = await self.__data.execute(
+            sqlmodel.select(sql.SigningCertificate).where(
+                via(sql.SigningCertificate.fingerprint).in_(orphaned),
+                via(sql.SigningCertificate.deleted).is_(None),
             )
-            num_deleted = getattr(update_result, "rowcount", 0)
+        )
+        num_deleted = 0
+        for certificate in orphaned_rows.scalars().all():
+            await self._delete_certificate(certificate, source)
+            num_deleted += 1
 
         await self.__data.commit()
         self.__write_as.append_to_audit_log(

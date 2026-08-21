@@ -289,7 +289,7 @@ async def _apply_committee(asf_uid: str, committee_key: str, selections: list[Se
     async with storage.write(asf_uid) as write:
         waca = write.as_committee_admin(committee_key)
         selected_text = "\n\n".join(selection.armored for selection in selections)
-        outcomes, publications = await waca.keys.ensure_associated(selected_text)
+        outcomes, publications = await waca.keys.ensure_associated(selected_text, f"downloads:{committee_key}/KEYS")
         log_outcome_errors(outcomes, committee_key)
         disabled = datatypes.KeysPublish.AUTOMATION_DISABLED
         for name, publication in sorted(publications.items()):

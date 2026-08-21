@@ -128,6 +128,81 @@ def test_latest_self_signature_survives_a_revoked_primary_uid() -> None:
     assert latest.typ() == "cert-positive"
 
 
+def test_apply_delta_removes_a_whole_component_for_a_bare_head() -> None:
+    state = pgp.certificate_placements(pgp.merge_certificate_blocks([pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC]))
+    user_id = sorted({head for head, _ in state if head[0] == 13})[0]
+    primary = next(head for head, frame in state if (frame is None) and (head[0] == 6))
+    without_user_id = frozenset(placement for placement in state if placement[0] != user_id)
+
+    deletions, additions = pgp.delta_fragments(state, without_user_id)
+    bare = pgp.fragment_placements(deletions, primary)
+
+    assert (additions is None) and (deletions is not None)
+    assert bare == {(user_id, None)}
+    assert pgp.apply_delta(state, deletions, additions) == without_user_id
+    with pytest.raises(ValueError, match="may not carry"):
+        pgp.apply_delta(without_user_id, pgp.fragment_bytes(frozenset({(primary, None)})), None)
+    assert pgp.fold_deltas([pgp.delta_fragments(frozenset(), state), (deletions, additions)]) == without_user_id
+    assert pgp.apply_delta(without_user_id, *pgp.delta_fragments(without_user_id, state)) == state
+
+
+def test_certificate_spans_are_the_raw_bytes_of_the_upload() -> None:
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    spans = pgp.certificate_spans(block)
+
+    assert len(spans) == 2
+    assert b"".join(spans) == pgp._dearmored(block)
+    assert [pgp.certificate_block_fingerprint(pgp._armored(span)) for span in spans] == [
+        pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT,
+        pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT,
+    ]
+
+
+def test_delta_fragments_are_minimal_and_fold_back_to_the_result() -> None:
+    state = pgp.certificate_placements(pgp.merge_certificate_blocks([pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC]))
+    primary = next(head for head, frame in state if (frame is None) and (head[0] == 6))
+    attachment = sorted(placement for placement in state if (placement[1] is not None) and (placement[0][0] == 13))[0]
+    without_attachment = state - {attachment}
+
+    genesis = pgp.delta_fragments(frozenset(), state)
+    deletions, additions = pgp.delta_fragments(state, without_attachment)
+    readded = pgp.delta_fragments(without_attachment, state)
+
+    assert genesis[0] is None
+    assert pgp.fragment_placements(genesis[1]) == state
+    assert additions is None
+    assert all(tag != 6 for tag, _ in pgp._frames(deletions))
+    assert pgp.fragment_placements(deletions, primary) == {(attachment[0], None), attachment}
+    assert pgp.fold_deltas([genesis, (deletions, additions), readded]) == state
+    assert pgp.delta_fragments(state, state) == (None, None)
+
+
+def test_fragment_bytes_round_trip_keeps_every_placement() -> None:
+    placements = pgp.certificate_placements(pgp_fixtures.LOCAL_CERTIFICATION_PUBLIC_KEY_ASC)
+    canonical = pgp.merge_certificate_blocks([pgp_fixtures.LOCAL_CERTIFICATION_PUBLIC_KEY_ASC])
+    merged = pgp.certificate_placements(canonical)
+
+    primary = next(head for head, frame in placements if (frame is None) and (head[0] == 6))
+    later = frozenset(placements - {(primary, None)})
+
+    assert pgp.fragment_placements(pgp.fragment_bytes(placements)) == placements
+    assert pgp.fragment_placements(pgp.fragment_bytes(later, primary), primary) == later
+    assert len(placements) == len(merged) + 1
+    assert pgp.fragment_bytes(merged) == pgp._dearmored(canonical)
+
+
+def test_fragment_placements_refuses_skippable_packets() -> None:
+    frames = pgp._frames(pgp._dearmored(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC))
+    spliced = b"".join(pgp._framed(tag, body) for tag, body in [*frames[:1], (10, b"PGP"), *frames[1:]])
+
+    with pytest.raises(ValueError, match="never carry"):
+        pgp.fragment_placements(spliced)
+    assert (10, b"PGP") not in pgp._frames(pgp._dearmored(pgp.merge_certificate_blocks([pgp._armored(spliced)])))
+
+
 def test_merge_certificate_blocks_drops_local_certifications() -> None:
     merged = pgp.merge_certificate_blocks([pgp_fixtures.LOCAL_CERTIFICATION_PUBLIC_KEY_ASC])
 

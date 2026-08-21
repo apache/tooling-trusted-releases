@@ -34,6 +34,8 @@ import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
 import tests.unit.pgp_fixtures as pgp_fixtures
 
+_ALPHA_BLOCK = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+_ALPHA_FINGERPRINT = pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT
 _EMBEDDED_V4_EXPIRING_KEY_ASC = """-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v1.4.10 (GNU/Linux)
 
@@ -136,16 +138,15 @@ def test_block_models_splits_a_two_certificate_block() -> None:
         assert key.key_model.ascii_armored_key != block
 
 
-def test_block_models_keeps_the_uploaded_text_of_a_single_certificate_block() -> None:
+def test_block_models_keeps_the_raw_bytes_of_a_single_certificate_block() -> None:
     writer, _write_as = _make_committee_member(MockData(None, committees_after_commit={}), "test")
 
-    keys = writer._CommitteeParticipant__block_models(
-        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, keys_writer.cache.EmailUidLookup({})
-    )
+    keys = writer._CommitteeParticipant__block_models(_ALPHA_BLOCK, keys_writer.cache.EmailUidLookup({}))
 
     assert len(keys) == 1
     assert isinstance(keys[0], keys_writer.datatypes.Key)
-    assert keys[0].key_model.ascii_armored_key == pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+    assert keys[0].input == pgp._dearmored(_ALPHA_BLOCK)
+    assert pgp.certificate_block_fingerprint(keys[0].key_model.ascii_armored_key) == _ALPHA_FINGERPRINT
 
 
 def test_block_models_reports_a_failing_certificate_without_losing_its_siblings() -> None:
@@ -168,34 +169,26 @@ def test_block_models_reports_a_failing_certificate_without_losing_its_siblings(
 
 
 @pytest.mark.asyncio
-async def test_database_add_model_audits_inserted_key():
-    data = MockData(None, committees_after_commit={})
-    writer, _write, write_as = _make_foundation_committer_with_audit(data)
-    insert_result = mock.MagicMock()
-    insert_result.one_or_none.return_value = object()
-    data.execute.return_value = insert_result
-    key_model = keys_writer.sql.SigningCertificate(
-        fingerprint="fp1",
-        latest_self_signature=None,
-        primary_declared_uid="Alice <alice@example.org>",
-        secondary_declared_uids=[],
-        apache_uid="alice",
-        ascii_armored_key="-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
-    )
-    key = SimpleNamespace(key_model=key_model, member_ids=[])
+async def test_database_add_model_writes_a_genesis_row_and_audits_the_insert(sqlite_data):
+    writer, _write, write_as = _make_foundation_committer_with_audit(sqlite_data)
+    key = _parsed_key(_ALPHA_BLOCK)
+    key.key_model.apache_uid = "alice"
 
-    result, publications = await writer._FoundationCommitter__database_add_model(key)
+    result, publications = await writer._FoundationCommitter__database_add_model(key, "web:req-1")
 
-    assert isinstance(result, outcome.Result)
+    assert result.result_or_raise().status == datatypes.KeyStatus.INSERTED
     assert publications == {}
-    data.begin_immediate.assert_awaited_once()
-    data.commit.assert_awaited_once()
-    write_as.append_to_audit_log.assert_called_once()
+    rows = await sqlite_data.key_attestable(fingerprint=_ALPHA_FINGERPRINT).all()
+    assert [(row.seq, row.operation, row.source, row.actor, row.role) for row in rows] == [
+        (1, sql.KeyOperation.REVISE, "web:req-1", "alice", sql.KeyRole.USER)
+    ]
+    assert (rows[0].deletions, rows[0].input) == (None, pgp._dearmored(_ALPHA_BLOCK))
+    stored = await sqlite_data.signing_certificate(fingerprint=_ALPHA_FINGERPRINT).get()
+    assert stored is not None
+    assert pgp.fold_deltas([(None, rows[0].additions)]) == pgp.certificate_placements(stored.ascii_armored_key)
     audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
-    assert audit_kwargs["action"] == "key_insert"
-    assert audit_kwargs["asf_uid"] == "alice"
-    assert audit_kwargs["fingerprint"] == "fp1"
-    assert audit_kwargs["key_apache_uid"] == "alice"
+    assert (audit_kwargs["action"], audit_kwargs["asf_uid"]) == ("key_insert", "alice")
+    assert audit_kwargs["fingerprint"] == _ALPHA_FINGERPRINT
 
 
 def test_deduplicate_keys_keeps_identical_copies_once() -> None:
@@ -208,56 +201,82 @@ def test_deduplicate_keys_keeps_identical_copies_once() -> None:
     assert isinstance(deduplicated[0], keys_writer.datatypes.Key)
 
 
-def test_deduplicate_keys_prefers_the_copy_which_supersedes_the_other() -> None:
+def test_deduplicate_keys_merges_the_copies_of_one_certificate() -> None:
     full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
     stripped = pgp_fixtures.block_without_signature_type(full, 0x28)
+    other = _parsed_key(_ALPHA_BLOCK)
 
-    deduplicated = keys_writer._deduplicate_keys([_parsed_key(stripped), _parsed_key(full)])
-
-    assert len(deduplicated) == 1
-    assert isinstance(deduplicated[0], keys_writer.datatypes.Key)
-    assert deduplicated[0].key_model.ascii_armored_key == full
-
-
-def test_deduplicate_keys_reports_incomparable_copies_for_that_key_only() -> None:
-    full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
-    unbound = pgp_fixtures.block_without_signature_type(full, 0x18)
-    other = _parsed_key(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
-
-    deduplicated = keys_writer._deduplicate_keys([_parsed_key(full), other, _parsed_key(unbound)])
+    deduplicated = keys_writer._deduplicate_keys([_parsed_key(stripped), other, _parsed_key(full)])
 
     assert len(deduplicated) == 2
-    assert isinstance(deduplicated[0], ValueError)
-    assert "differing content" in str(deduplicated[0])
+    assert isinstance(deduplicated[0], keys_writer.datatypes.Key)
+    assert deduplicated[0].key_model.ascii_armored_key == pgp.merge_certificate_blocks([full])
+    assert deduplicated[0].input == pgp._dearmored(stripped) + pgp._dearmored(full)
     assert deduplicated[1] is other
 
 
 @pytest.mark.asyncio
-async def test_database_add_models_links_a_stored_key_whose_reimport_is_a_downgrade(sqlite_data):
+async def test_database_add_models_links_a_stored_key_whose_reimport_is_a_subset(sqlite_data):
     full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
     fingerprint = pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
     sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
-    stored = _signing_certificate(fingerprint, apache_uid="alice")
-    stored.ascii_armored_key = full
-    sqlite_data.add(stored)
+    sqlite_data.add(_signing_certificate(fingerprint, apache_uid="alice", armored=full))
+    sqlite_data.add(_genesis_row(fingerprint, full, "alice"))
     await sqlite_data.commit()
     writer, _write_as = _make_committee_member(sqlite_data, "alpha")
     outcomes = outcome.List[keys_writer.datatypes.Key]()
     outcomes.append_result(_parsed_key(pgp_fixtures.block_without_signature_type(full, 0x28)))
 
     with mock.patch.object(writer, "_recheck_committee_drafts", new_callable=mock.AsyncMock):
-        outcomes, _publications = await writer._CommitteeParticipant__database_add_models(outcomes)
+        outcomes, _publications = await writer._CommitteeParticipant__database_add_models(outcomes, "web:req-1")
 
     assert outcomes.error_count == 0
+    assert outcomes.results()[0].status == datatypes.KeyStatus.LINKED
     kept = await sqlite_data.signing_certificate(fingerprint=fingerprint).get()
     assert (kept is not None) and (kept.ascii_armored_key == full)
+    rows = await sqlite_data.key_attestable(fingerprint=fingerprint).all()
+    assert [(row.seq, row.source, row.role) for row in rows] == [(1, "web:seed", sql.KeyRole.USER)]
     links = (await sqlite_data.execute(sqlmodel.select(keys_writer.sql.KeyLink))).all()
     assert [(link[0].committee_key, link[0].key_fingerprint) for link in links] == [("alpha", fingerprint)]
 
 
 @pytest.mark.asyncio
+async def test_database_add_models_stores_the_other_keys_when_one_fails(sqlite_data):
+    sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
+    sqlite_data.add(_signing_certificate(_ALPHA_FINGERPRINT, apache_uid="alice", armored=_ALPHA_BLOCK))
+    await sqlite_data.commit()
+    writer, write_as = _make_committee_member(sqlite_data, "alpha")
+    outcomes = outcome.List[keys_writer.datatypes.Key]()
+    outcomes.append_result(_parsed_key(_ALPHA_BLOCK))
+    outcomes.append_result(_parsed_key(pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC))
+
+    with mock.patch.object(writer, "_recheck_committee_drafts", new_callable=mock.AsyncMock):
+        outcomes, _publications = await writer._CommitteeParticipant__database_add_models(outcomes, "web:req-1")
+
+    errors = [str(error) for error in outcomes.errors()]
+    assert (outcomes.result_count, outcomes.error_count) == (1, 1)
+    assert "has no log" in errors[0]
+    assert outcomes.results()[0].status == datatypes.KeyStatus.INSERTED | datatypes.KeyStatus.LINKED
+    assert await sqlite_data.key_attestable(fingerprint=_ALPHA_FINGERPRINT).all() == []
+    rows = await sqlite_data.key_attestable(fingerprint=pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT).all()
+    assert [(row.seq, row.source) for row in rows] == [(1, "web:req-1")]
+    links = (await sqlite_data.execute(sqlmodel.select(keys_writer.sql.KeyLink))).all()
+    assert [(link[0].committee_key, link[0].key_fingerprint) for link in links] == [
+        ("alpha", pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT)
+    ]
+    write_as.append_to_audit_log.assert_called_once()
+    audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
+    assert (audit_kwargs["action"], audit_kwargs["committee_key"], audit_kwargs["linked"]) == (
+        "key_insert",
+        "alpha",
+        True,
+    )
+    assert audit_kwargs["fingerprint"] == pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
+
+
+@pytest.mark.asyncio
 async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sqlite_data):
-    await _seed_committee_key(sqlite_data, "alpha", "fp1")
+    await _seed_committee_key(sqlite_data, "alpha", _ALPHA_FINGERPRINT, _ALPHA_BLOCK)
     writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
     error_message = "Failed to remove KEYS file for committee alpha: permission denied"
 
@@ -267,7 +286,7 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sql
         new=mock.AsyncMock(side_effect=storage.AccessError(error_message)),
     ):
         with pytest.raises(storage.AccessError, match="permission denied"):
-            await writer.delete_committee_keys()
+            await writer.delete_committee_keys("web:req-1")
 
     assert write_as.append_to_audit_log.call_count == 2
 
@@ -277,19 +296,19 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sql
     assert delete_audit["committee_key"] == "alpha"
     assert delete_audit["keys_unlinked"] == 1
     assert delete_audit["keys_deleted"] == 1
-    assert delete_audit["fingerprints"] == ["fp1"]
+    assert delete_audit["fingerprints"] == [_ALPHA_FINGERPRINT]
 
     assert sync_failure_audit["action"] == "delete_committee_keys_sync_failed"
     assert sync_failure_audit["committee_key"] == "alpha"
     assert sync_failure_audit["error"] == error_message
 
-    key = await sqlite_data.signing_certificate(fingerprint="fp1", deleted=True).get()
+    key = await sqlite_data.signing_certificate(fingerprint=_ALPHA_FINGERPRINT, deleted=True).get()
     assert key is not None
 
 
 @pytest.mark.asyncio
 async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data):
-    await _seed_committee_key(sqlite_data, "alpha", "fp1")
+    await _seed_committee_key(sqlite_data, "alpha", _ALPHA_FINGERPRINT, _ALPHA_BLOCK)
     sqlite_data.add(keys_writer.sql.Committee(key="beta"))
     sqlite_data.add(_signing_certificate("fp2", apache_uid="bob"))
     await sqlite_data.commit()
@@ -300,12 +319,18 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data
 
     with mock.patch.object(writer, "_sync_committee_keys_file", new_callable=mock.AsyncMock) as mock_sync:
         mock_sync.return_value = (0, outcome.Result(keys_writer.datatypes.KeysPublish.SVN_NOT_CONFIGURED))
-        num_unlinked, num_deleted, _ = await writer.delete_committee_keys()
+        num_unlinked, num_deleted, _ = await writer.delete_committee_keys("web:req-1")
 
     assert num_unlinked == 2
     assert num_deleted == 1
-    orphaned = await sqlite_data.signing_certificate(fingerprint="fp1", deleted=True).get()
+    orphaned = await sqlite_data.signing_certificate(fingerprint=_ALPHA_FINGERPRINT, deleted=True).get()
     assert orphaned is not None
+    rows = await sqlite_data.key_attestable(fingerprint=_ALPHA_FINGERPRINT).all()
+    assert [(row.seq, row.operation, row.source, row.role) for row in rows] == [
+        (1, sql.KeyOperation.REVISE, "web:seed", sql.KeyRole.USER),
+        (2, sql.KeyOperation.DELETE, "web:req-1", sql.KeyRole.USER),
+    ]
+    assert (rows[1].deletions, rows[1].additions) == (None, None)
     shared = await sqlite_data.signing_certificate(fingerprint="fp2").get()
     assert shared is not None
     assert shared.deleted is None
@@ -318,7 +343,7 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data
     assert audit_kwargs["committee_key"] == "alpha"
     assert audit_kwargs["keys_unlinked"] == 2
     assert audit_kwargs["keys_deleted"] == 1
-    assert set(audit_kwargs["fingerprints"]) == {"fp1", "fp2"}
+    assert set(audit_kwargs["fingerprints"]) == {_ALPHA_FINGERPRINT, "fp2"}
 
 
 @pytest.mark.asyncio
@@ -327,7 +352,7 @@ async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
     await sqlite_data.commit()
     writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
-    num_unlinked, num_deleted, _ = await writer.delete_committee_keys()
+    num_unlinked, num_deleted, _ = await writer.delete_committee_keys("web:req-1")
 
     assert num_unlinked == 0
     assert num_deleted == 0
@@ -335,32 +360,24 @@ async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
 
 
 @pytest.mark.asyncio
-async def test_delete_key_removal_publishes_empty_keys_file():
-    owned_key = SimpleNamespace(
-        fingerprint="fp1",
-        committees=[SimpleNamespace(key="alpha")],
-    )
-    data = MockData(
-        owned_key,
-        committees_after_commit={"alpha": _committee("alpha", [])},
-    )
-    data.execute.return_value = SimpleNamespace(rowcount=1)
-    writer, _write, write_as = _make_foundation_committer_with_audit(data)
+async def test_delete_key_removal_publishes_empty_keys_file(sqlite_data):
+    await _seed_committee_key(sqlite_data, "alpha", _ALPHA_FINGERPRINT, _ALPHA_BLOCK)
+    writer, _write, write_as = _make_foundation_committer_with_audit(sqlite_data)
 
     publish = mock.AsyncMock(return_value=outcome.Result(datatypes.KeysPublish.PUBLISHED))
     with mock.patch.object(writer, "_publish_keys_to_svn", publish):
-        result = await writer.delete_key("fp1")
+        result = await writer.delete_key(_ALPHA_FINGERPRINT, "web:req-1")
 
     assert isinstance(result, outcome.Result)
     publish.assert_awaited_once()
     assert publish.await_args.args[1] is None
-    data.delete.assert_not_awaited()
-    data.commit.assert_awaited_once()
     write_as.append_to_audit_log.assert_called_once()
     audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
     assert audit_kwargs["action"] == "key_delete"
-    assert audit_kwargs["fingerprint"] == "fp1"
+    assert audit_kwargs["fingerprint"] == _ALPHA_FINGERPRINT
     assert audit_kwargs["committee_keys"] == ["alpha"]
+    rows = await sqlite_data.key_attestable(fingerprint=_ALPHA_FINGERPRINT).all()
+    assert [(row.seq, row.operation) for row in rows] == [(1, sql.KeyOperation.REVISE), (2, sql.KeyOperation.DELETE)]
 
 
 @pytest.mark.asyncio
@@ -386,7 +403,7 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
             new=mock.AsyncMock(return_value=(database_outcomes, {})),
         ) as database_add_models,
     ):
-        result, publications = await writer._CommitteeParticipant__ensure("keys text")
+        result, publications = await writer._CommitteeParticipant__ensure("keys text", "web:req-1")
 
     assert result is database_outcomes
     assert publications == {}
@@ -418,7 +435,7 @@ async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
             new=mock.AsyncMock(return_value=(database_outcome, {})),
         ) as database_add_model,
     ):
-        result, publications = await writer.ensure_stored_one("keys text")
+        result, publications = await writer.ensure_stored_one("keys text", "web:req-1")
 
     assert result is database_outcome
     assert publications == {}
@@ -427,7 +444,7 @@ async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
     assert block_model_create.call_args.args[0] == "block-one"
     assert isinstance(block_model_create.call_args.args[1], keys_writer.cache.EmailUidLookup)
     block_model.assert_not_called()
-    database_add_model.assert_awaited_once_with(key)
+    database_add_model.assert_awaited_once_with(key, "web:req-1")
 
 
 @pytest.mark.asyncio
@@ -446,10 +463,10 @@ async def test_ensure_stored_one_accepts_test_key_without_email_cache() -> None:
         mock.patch.object(
             writer,
             "_FoundationCommitter__database_add_model",
-            new=mock.AsyncMock(side_effect=lambda key: (outcome.Result(key), {})),
+            new=mock.AsyncMock(side_effect=lambda key, _source: (outcome.Result(key), {})),
         ) as database_add_model,
     ):
-        result, _publications = await writer.ensure_stored_one(key_text)
+        result, _publications = await writer.ensure_stored_one(key_text, "web:req-1")
 
     key = result.result_or_raise()
     assert key.key_model.apache_uid == "test"
@@ -466,7 +483,7 @@ async def test_ensure_stored_one_rejects_a_block_with_two_keys() -> None:
         pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
     )
 
-    result, publications = await writer.ensure_stored_one(block)
+    result, publications = await writer.ensure_stored_one(block, "web:req-1")
 
     assert publications == {}
     assert "contains 2 keys" in str(result.error_or_none())
@@ -496,7 +513,7 @@ async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
             new=mock.AsyncMock(),
         ) as database_add_model,
     ):
-        result, publications = await writer.ensure_stored_one("keys text")
+        result, publications = await writer.ensure_stored_one("keys text", "web:req-1")
 
     assert isinstance(result, outcome.Error)
     assert publications == {}
@@ -537,7 +554,7 @@ async def test_ensure_uses_cached_email_lookup_for_bulk_import() -> None:
             new=mock.AsyncMock(return_value=(database_outcomes, {})),
         ) as database_add_models,
     ):
-        result, _publications = await writer._CommitteeParticipant__ensure("keys text")
+        result, _publications = await writer._CommitteeParticipant__ensure("keys text", "web:req-1")
 
     assert result is database_outcomes
     email_uid_view.assert_awaited_once()
@@ -817,9 +834,10 @@ def _make_foundation_committer_with_audit(data: MockData, asf_uid: str = "alice"
 
 def _parsed_key(armored: str) -> keys_writer.datatypes.Key:
     key, _ = keys_writer.openpgp.composed.SignedPublicKey.from_armor(armored)
-    model = _signing_certificate(key.fingerprint.lower(), apache_uid=None)
-    model.ascii_armored_key = armored
-    return keys_writer.datatypes.Key(status=keys_writer.datatypes.KeyStatus.PARSED, key_model=model)
+    model = _signing_certificate(key.fingerprint.lower(), apache_uid=None, armored=armored)
+    return keys_writer.datatypes.Key(
+        status=keys_writer.datatypes.KeyStatus.PARSED, key_model=model, input=pgp._dearmored(armored)
+    )
 
 
 def _playwright_test_key_text() -> str:
@@ -846,20 +864,37 @@ def _public_key(
     )
 
 
-async def _seed_committee_key(data: db.Session, committee_key: str, fingerprint: str) -> None:
+def _genesis_row(fingerprint: str, armored: str, actor: str) -> sql.KeyAttestable:
+    _, additions = pgp.delta_fragments(frozenset(), pgp.certificate_placements(armored))
+    return sql.KeyAttestable(
+        fingerprint=fingerprint,
+        seq=1,
+        operation=sql.KeyOperation.REVISE,
+        source="web:seed",
+        additions=additions,
+        updated=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        actor=actor,
+        role=sql.KeyRole.USER,
+    )
+
+
+async def _seed_committee_key(data: db.Session, committee_key: str, fingerprint: str, armored: str) -> None:
     data.add(keys_writer.sql.Committee(key=committee_key))
-    data.add(_signing_certificate(fingerprint, apache_uid="alice"))
+    data.add(_signing_certificate(fingerprint, apache_uid="alice", armored=armored))
+    data.add(_genesis_row(fingerprint, armored, "alice"))
     await data.commit()
     data.add(keys_writer.sql.KeyLink(committee_key=committee_key, key_fingerprint=fingerprint))
     await data.commit()
 
 
-def _signing_certificate(fingerprint: str, apache_uid: str | None) -> keys_writer.sql.SigningCertificate:
+def _signing_certificate(
+    fingerprint: str, apache_uid: str | None, armored: str | None = None
+) -> keys_writer.sql.SigningCertificate:
     return keys_writer.sql.SigningCertificate(
         fingerprint=fingerprint,
         latest_self_signature=None,
         primary_declared_uid="Alice <alice@example.org>",
         secondary_declared_uids=[],
         apache_uid=apache_uid,
-        ascii_armored_key="-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
+        ascii_armored_key=armored or "-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
     )

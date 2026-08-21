@@ -48,6 +48,7 @@ class KeyStatus(enum.Flag):
     LINKED = enum.auto()
     # The fingerprint was already stored, but its key block was replaced with a newer one
     REFRESHED = enum.auto()
+    RESTORED = enum.auto()
     INSERTED_AND_LINKED = INSERTED | LINKED
 
 
@@ -55,6 +56,7 @@ class Key(schema.Strict):
     status: KeyStatus
     key_model: sql.SigningCertificate
     member_ids: list[str] = schema.factory(list)
+    input: bytes | None = None
 
 
 class KeysPublish(enum.Enum):
