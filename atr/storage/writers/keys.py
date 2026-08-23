@@ -1367,6 +1367,36 @@ class FoundationAdmin(CommitteeMember):
         await self._recheck_committee_drafts(self.__committee_key)
         return (num_unlinked, num_deleted, publication)
 
+    async def dissociate_fingerprints(
+        self, fingerprints: list[str]
+    ) -> tuple[list[str], outcome.Outcome[datatypes.KeysPublish] | None]:
+        via = sql.validate_instrumented_attribute
+        await self.__data.committee(key=self.__committee_key).demand(
+            storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+        )
+        await self.__data.begin_immediate()
+        removed_rows = await self.__data.execute(
+            sqlmodel.delete(sql.KeyLink)
+            .where(
+                via(sql.KeyLink.committee_key) == self.__committee_key,
+                via(sql.KeyLink.key_fingerprint).in_(fingerprints),
+            )
+            .returning(via(sql.KeyLink.key_fingerprint))
+        )
+        removed = sorted(removed_rows.scalars().all())
+        await self.__data.commit()
+        if not removed:
+            return (removed, None)
+        self.__write_as.append_to_audit_log(
+            action="key_dissociate_committee",
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            fingerprints=[fingerprint for fingerprint in removed],
+        )
+        _, publication = await self._sync_committee_keys_file(self.__committee_key)
+        await self._recheck_committee_drafts(self.__committee_key)
+        return (removed, publication)
+
 
 def _validate_key_strength(key: openpgp.composed.SignedPublicKey) -> None:
     """Raise ValueError if the key is recently-generated and does not meet the minimum cryptographic strength."""

@@ -335,6 +335,38 @@ async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
 
 
 @pytest.mark.asyncio
+async def test_dissociate_fingerprints_removes_links_and_keeps_certificates(sqlite_data):
+    await _seed_committee_key(sqlite_data, "alpha", "fp1")
+    sqlite_data.add(keys_writer.sql.Committee(key="beta"))
+    sqlite_data.add(_signing_certificate("fp2", apache_uid="bob"))
+    await sqlite_data.commit()
+    sqlite_data.add(keys_writer.sql.KeyLink(committee_key="alpha", key_fingerprint="fp2"))
+    sqlite_data.add(keys_writer.sql.KeyLink(committee_key="beta", key_fingerprint="fp2"))
+    await sqlite_data.commit()
+    writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
+
+    with mock.patch.object(writer, "_sync_committee_keys_file", new_callable=mock.AsyncMock) as mock_sync:
+        mock_sync.return_value = (0, outcome.Result(keys_writer.datatypes.KeysPublish.AUTOMATION_DISABLED))
+        removed, publication = await writer.dissociate_fingerprints(["fp1", "fp2", "fp9"])
+
+    assert removed == ["fp1", "fp2"]
+    assert publication is not None
+    assert publication.result_or_none() is keys_writer.datatypes.KeysPublish.AUTOMATION_DISABLED
+    for fingerprint in ("fp1", "fp2"):
+        certificate = await sqlite_data.signing_certificate(fingerprint=fingerprint).get()
+        assert certificate is not None
+        assert certificate.deleted is None
+    links = (await sqlite_data.execute(sqlmodel.select(keys_writer.sql.KeyLink))).all()
+    assert [(link[0].committee_key, link[0].key_fingerprint) for link in links] == [("beta", "fp2")]
+    mock_sync.assert_awaited_once_with("alpha")
+    write_as.append_to_audit_log.assert_called_once()
+    audit_kwargs = write_as.append_to_audit_log.call_args[1]
+    assert audit_kwargs["action"] == "key_dissociate_committee"
+    assert audit_kwargs["committee_key"] == "alpha"
+    assert audit_kwargs["fingerprints"] == ["fp1", "fp2"]
+
+
+@pytest.mark.asyncio
 async def test_delete_key_removal_publishes_empty_keys_file():
     owned_key = SimpleNamespace(
         fingerprint="fp1",
