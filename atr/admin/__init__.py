@@ -1467,7 +1467,9 @@ async def delete_committee_keys_post(
     try:
         async with storage.write(session) as write:
             waca = write.as_committee_admin(committee_key)
-            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys()
+            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(
+                f"web:{log.get_request_id()}"
+            )
     except storage.AccessError as e:
         await quart.flash(str(e), "error")
         return await session.redirect(delete_committee_keys_get)

@@ -68,7 +68,7 @@ async with storage.write(asf_uid) as write:
     wafc = write.as_foundation_committer()
 
     # 2. Use the exposed functionality
-    outcome = await wafc.keys.ensure_stored_one(data.key)
+    outcome = await wafc.keys.ensure_stored_one(data.key, source)
 
     # 3. Handle the outcome
     key = outcome.result_or_raise()
@@ -148,7 +148,7 @@ Here is an example from [`post/keys.py`](/ref/atr/post/keys.py) that processes m
 ```python
 async with storage.write() as write:
     wacm = write.as_committee_member(selected_committee)
-    outcomes = await wacm.keys.ensure_associated(keys_text)
+    outcomes = await wacm.keys.ensure_associated(keys_text, source)
 
 success_count = outcomes.result_count
 error_count = outcomes.error_count
