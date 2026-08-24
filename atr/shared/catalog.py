@@ -18,8 +18,10 @@
 import collections
 import dataclasses
 import datetime
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Final, Literal
+
+import packaging.version as version
 
 import atr.cycles as cycles
 import atr.models as models
@@ -60,7 +62,7 @@ def assemble(
     # `atr_host` is only supplied by the API, which needs absolute CLE links. The
     # page leaves it None and renders its own relative links via as_url instead.
     cycles_by_key = {cycle.cycle_key: cycle for cycle in project_cycles}
-    versions = _versions(artifacts, cycles_by_key, atr_host)
+    versions = _versions(artifacts, cycles_by_key, version_method, atr_host)
     grouped = _grouped_layout(version_method)
     if grouped:
         # Cycle labels are unique within a project, so they group and look up safely.
@@ -143,27 +145,25 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
     )
 
 
-def _cycle_sort_key(cycle: sql.ProjectCycle) -> datetime.datetime:
-    # Most recently active cycle first.
-    return cycle.latest or datetime.datetime.min.replace(tzinfo=datetime.UTC)
-
-
 def _cycles(
     versions: Sequence[models.api.CatalogVersion],
     cycles_by_label: dict[str, sql.ProjectCycle],
     now: datetime.datetime,
 ) -> list[models.api.CatalogCycle]:
     by_label: dict[str, list[models.api.CatalogVersion]] = collections.defaultdict(list)
-    for version in versions:
-        if version.cycle is None:
+    for entry in versions:
+        if entry.cycle is None:
             continue
-        by_label[version.cycle].append(version)
+        by_label[entry.cycle].append(entry)
 
     catalog = [
         models.api.CatalogCycle(cycle=label, lifecycle=_lifecycle_badge(cycles_by_label[label], now), versions=grouped)
         for label, grouped in by_label.items()
     ]
-    catalog.sort(key=lambda c: _cycle_sort_key(cycles_by_label[c.cycle]), reverse=True)
+    # A cycle label is a version prefix (2.26, 3.0), so order the cycles by that, newest first - only
+    # grouped (scheme) projects reach here, and a scheme means the version, not the date, is the order
+    ranks = _version_ranks(by_label.keys())
+    catalog.sort(key=lambda c: ranks[c.cycle], reverse=True)
     return catalog
 
 
@@ -191,15 +191,40 @@ def _status(release: sql.Release | None) -> Literal["released", "archived"]:
     return "archived"
 
 
-def _version_sort_key(version: models.api.CatalogVersion) -> tuple[datetime.datetime, int]:
+def _loose_version_key(text: str) -> tuple[tuple[int, int | str], ...]:
+    # A version split into numeric-then-string parts, for ordering strings PEP 440 rejects. Numbers
+    # sort ahead of strings so 1.0 leads 1.0-rc1, matching the fallback releases_by_project uses
+    parts: list[tuple[int, int | str]] = []
+    for part in text.replace("+", ".").replace("-", ".").split("."):
+        try:
+            parts.append((0, int(part)))
+        except ValueError:
+            parts.append((1, part))
+    return tuple(parts)
+
+
+def _version_ranks(labels: Iterable[str]) -> dict[str, int]:
+    # Rank distinct version strings (or cycle labels, which are version prefixes) low to high, so a
+    # caller sorts newest first by reversing. PEP 440 first; one string it rejects drops the whole set
+    # to the loose split, so an odd tag can't throw the order or raise
+    distinct = list(set(labels))
+    try:
+        ordered = sorted(distinct, key=version.Version)
+    except version.InvalidVersion:
+        ordered = sorted(distinct, key=_loose_version_key)
+    return {label: index for index, label in enumerate(ordered)}
+
+
+def _version_sort_key(entry: models.api.CatalogVersion) -> tuple[datetime.datetime, int]:
     # Newest first: released date leads, svn revision breaks ties for older rows.
-    released = version.released or datetime.datetime.min.replace(tzinfo=datetime.UTC)
-    return (released, version.svn_revision or 0)
+    released = entry.released or datetime.datetime.min.replace(tzinfo=datetime.UTC)
+    return (released, entry.svn_revision or 0)
 
 
 def _versions(
     artifacts: Sequence[sql.Artifact],
     cycles_by_key: dict[str, sql.ProjectCycle],
+    version_method: sql.VersionMethod,
     atr_host: str | None = None,
 ) -> list[models.api.CatalogVersion]:
     by_version: dict[safe.VersionKey, list[sql.Artifact]] = collections.defaultdict(list)
@@ -207,7 +232,7 @@ def _versions(
         by_version[artifact.safe_version_key].append(artifact)
 
     versions: list[models.api.CatalogVersion] = []
-    for version, rows in by_version.items():
+    for version_key, rows in by_version.items():
         release = next((row.release for row in rows if row.release is not None), None)
         status = _status(release)
         # Released files come off the live download route, archived ones off archive.apache.org;
@@ -220,13 +245,13 @@ def _versions(
         cle_eligible = (release is not None) and (release.phase == sql.ReleasePhase.RELEASE)
         versions.append(
             models.api.CatalogVersion(
-                version=version,
+                version=version_key,
                 status=status,
                 released=(release.released or release.created) if (release is not None) else None,
                 svn_revision=max(svn_revisions) if svn_revisions else None,
                 managed=any(row.managed for row in rows),
                 cycle=cycle.cycle if (cycle is not None) else None,
-                cle_url=cle_release_url(atr_host, release.project_key, str(version))
+                cle_url=cle_release_url(atr_host, release.project_key, str(version_key))
                 if (atr_host is not None) and cle_eligible and (release is not None)
                 else None,
                 vote_thread_url=release.vote_thread_url if (release is not None) else None,
@@ -234,5 +259,12 @@ def _versions(
             )
         )
 
-    versions.sort(key=_version_sort_key, reverse=True)
+    # A project with a version scheme (semver/calver) orders by the version itself, so a later patch
+    # of an older line can't jump a newer line the way a date sort lets it. A simple project has no
+    # scheme, so it keeps the by-date order its lone default cycle wants
+    if _grouped_layout(version_method):
+        ranks = _version_ranks(str(entry.version) for entry in versions)
+        versions.sort(key=lambda entry: ranks[str(entry.version)], reverse=True)
+    else:
+        versions.sort(key=_version_sort_key, reverse=True)
     return versions
