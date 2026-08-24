@@ -43,6 +43,9 @@ class DbSnapshot:
     release_keys: frozenset[str] = dataclasses.field(default_factory=frozenset)
     # The workspace committee's artifact primary keys, (project_key, version, artifact_path)
     artifact_pks: frozenset[tuple[str, str, str]] = dataclasses.field(default_factory=frozenset)
+    # Release keys that hold a revision, so ATR is managing their files. Protected one by one from
+    # being repointed or catalogued over, unlike the project they sit under
+    protected_release_keys: frozenset[str] = dataclasses.field(default_factory=frozenset)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -198,9 +201,9 @@ def _classify_artifacts(
             diff.unchanged += 1
             continue
         if matched is not None:
-            if matched[0] in snapshot.managed_project_keys:
+            if f"{matched[0]}-{matched[1]}" in snapshot.protected_release_keys:
                 diff.conflicts.append(
-                    Conflict(table="artifacts", key=path, reason="source project has live workflow data")
+                    Conflict(table="artifacts", key=path, reason="source release has live workflow data")
                 )
                 continue
             if pk in claimed:
@@ -269,6 +272,10 @@ def _classify_releases(
         if current_project == target_project:
             diff.unchanged += 1
             continue
+        if key in snapshot.protected_release_keys:
+            # A repoint rekeys the release, which would strand the files ATR holds for it
+            diff.conflicts.append(Conflict(table="releases", key=key, reason="release has live workflow data"))
+            continue
         version = str(row.version)
         target_release_key = f"{target_project}-{version}"
         if (target_release_key in snapshot.release_keys) or (target_release_key in claimed):
@@ -308,8 +315,8 @@ def _artifact_reference_conflict(
 ) -> Conflict | None:
     path = str(row.artifact_path)
     project_key = str(row.project_key)
-    if project_key in snapshot.managed_project_keys:
-        return Conflict(table="artifacts", key=path, reason="target project has live workflow data")
+    if row.release_key in snapshot.protected_release_keys:
+        return Conflict(table="artifacts", key=path, reason="target release has live workflow data")
     if project_key not in known_projects:
         return Conflict(table="artifacts", key=path, reason=f"project '{project_key}' is not in this committee")
     if row.release_key not in known_releases:
@@ -320,7 +327,8 @@ def _artifact_reference_conflict(
 def _clear(
     rows_by_table: dict[str, list[dict[str, str]]], snapshot: DbSnapshot, diff: CatalogueDiff, committee_key: str
 ) -> DbSnapshot:
-    # Projects with live workflow data stay in the snapshot, and are refused as usual
+    # A project with live workflow data stays whole in the snapshot, so a replace never deletes
+    # anything under it. Its live releases are then protected one by one during classification
     catalogued = {
         key
         for key, committee in snapshot.project_committee.items()
@@ -429,8 +437,6 @@ def _project_reference_conflict(
     row: catalogue_rows.ProjectRow, snapshot: DbSnapshot, committee_key: str
 ) -> Conflict | None:
     key = str(row.key)
-    if key in snapshot.managed_project_keys:
-        return Conflict(table="projects", key=key, reason="project has live workflow data")
     committee = str(row.committee_key) if row.committee_key else ""
     if committee != committee_key:
         return Conflict(table="projects", key=key, reason=f"committee '{committee}' is not this committee")
@@ -465,14 +471,10 @@ def _release_reference_conflict(
     owner = current_project if (current_project is not None) else target_project
     if key != f"{owner}-{row.version}":
         return Conflict(table="releases", key=key, reason=f"key does not match version '{row.version}'")
-    if target_project in snapshot.managed_project_keys:
-        return Conflict(table="releases", key=key, reason="target project has live workflow data")
     if target_project not in known_projects:
         if target_project in snapshot.project_committee:
             return Conflict(table="releases", key=key, reason=f"project '{target_project}' is not in this committee")
         return Conflict(table="releases", key=key, reason=f"target project '{target_project}' does not exist")
-    if (current_project is not None) and (current_project in snapshot.managed_project_keys):
-        return Conflict(table="releases", key=key, reason="source project has live workflow data")
     return None
 
 

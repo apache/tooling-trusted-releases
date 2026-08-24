@@ -50,20 +50,30 @@ def test_diff_counts_an_add() -> None:
     assert d.counts["conflict"] == 0
 
 
-def test_classify_projects_adds_new_conflicts_missing_committee_and_managed() -> None:
-    snap = _snapshot(managed_project_keys=frozenset({"alpha-managed"}))
+def test_classify_projects_adds_new_and_flags_a_foreign_committee() -> None:
+    snap = _snapshot()
     rows = [
         _project("alpha-two"),  # add
         _project("alpha-one"),  # present -> unchanged
         _project("beta-one", committee="beta"),  # missing committee -> conflict
-        _project("alpha-managed"),  # managed -> conflict
     ]
     d = catalogue_diff.classify_additive({"projects": rows}, snap, "alpha")
     assert [str(a.key) for a in d.adds] == ["alpha-two"]
     assert d.unchanged == 1
     reasons = {c.key: c.reason for c in d.conflicts}
     assert "beta-one" in reasons and "committee" in reasons["beta-one"].lower()
-    assert "alpha-managed" in reasons
+
+
+def test_classify_projects_allows_a_project_that_owns_a_release_with_live_workflow_data() -> None:
+    # A project is kept whole rather than refused, so re-listing it is a no-op, not a conflict
+    snap = _snapshot(
+        project_committee={"alpha-live": "alpha"},
+        release_project={"alpha-live-1.0.0": "alpha-live"},
+        protected_release_keys=frozenset({"alpha-live-1.0.0"}),
+    )
+    d = catalogue_diff.classify_additive({"projects": [_project("alpha-live")]}, snap, "alpha")
+    assert not d.conflicts
+    assert d.unchanged == 1
 
 
 def test_classify_releases_repoints_within_the_committee_and_refuses_to_leave_it() -> None:
@@ -155,16 +165,16 @@ def test_classify_artifacts_refuses_an_add_that_would_duplicate_an_existing_arti
     assert [c.reason for c in d.conflicts] == ["artifact already exists at that project and version"]
 
 
-def test_classify_artifacts_refuses_a_repoint_out_of_a_managed_project() -> None:
+def test_classify_artifacts_refuses_a_repoint_out_of_a_release_with_live_workflow_data() -> None:
     snap = _snapshot(
         project_committee={"alpha-one": "alpha", "alpha-live": "alpha"},
         artifact_by_dist={("alpha/1.0.0", "a.tar.gz"): ("alpha-live", "1.0.0", "a.tar.gz")},
-        managed_project_keys=frozenset({"alpha-live"}),
+        protected_release_keys=frozenset({"alpha-live-1.0.0"}),
     )
     rows = [_artifact("alpha-one", "1.0.0", "a.tar.gz", "alpha/1.0.0")]
     d = catalogue_diff.classify_additive({"artifacts": rows}, snap, "alpha")
     assert not d.artifact_repoints
-    assert [c.reason for c in d.conflicts] == ["source project has live workflow data"]
+    assert [c.reason for c in d.conflicts] == ["source release has live workflow data"]
 
 
 def test_classify_artifacts_refuses_a_project_outside_the_committee() -> None:
@@ -441,13 +451,14 @@ def test_classify_artifacts_refuses_an_add_a_repointed_release_already_takes() -
 
 
 def test_replace_refuses_a_dist_path_a_surviving_artifact_still_holds() -> None:
-    # Managed projects are never cleared, so their artifacts are still catalogued afterwards. A row
-    # claiming one of their dist paths would catalogue the same file in svn a second time
+    # A project with live workflow data is never cleared, so its artifacts are still catalogued
+    # afterwards. A row claiming one of their dist paths would catalogue the same file in svn twice
     snap = _snapshot(
         project_committee={"alpha-managed": "alpha", "alpha-two": "alpha"},
         release_project={"alpha-two-1.0.0": "alpha-two"},
         release_keys=frozenset({"alpha-two-1.0.0"}),
         managed_project_keys=frozenset({"alpha-managed"}),
+        protected_release_keys=frozenset({"alpha-managed-1.0.0"}),
         artifact_by_dist={("alpha/dist", "a.tgz"): ("alpha-managed", "1.0.0", "a.tgz")},
         artifact_pks=frozenset({("alpha-managed", "1.0.0", "a.tgz")}),
     )
@@ -455,4 +466,39 @@ def test_replace_refuses_a_dist_path_a_surviving_artifact_still_holds() -> None:
     d = catalogue_diff.classify_replace(rows, snap, "alpha")
     assert not d.adds
     assert d.refused is True
-    assert [c.reason for c in d.conflicts] == ["source project has live workflow data"]
+    assert [c.reason for c in d.conflicts] == ["source release has live workflow data"]
+
+
+def test_classify_releases_adds_alongside_a_release_with_live_workflow_data() -> None:
+    # The headline: a live draft protects only itself, not every release under its project
+    snap = _snapshot(
+        project_committee={"alpha-live": "alpha"},
+        release_project={"alpha-live-1.0.0": "alpha-live"},
+        release_keys=frozenset({"alpha-live-1.0.0"}),
+        protected_release_keys=frozenset({"alpha-live-1.0.0"}),
+    )
+    rows = [
+        _release("alpha-live-1.0.0", "alpha-live", "1.0.0"),  # the live one -> unchanged
+        _release("alpha-live-2.0.0", "alpha-live", "2.0.0"),  # new sibling -> add
+    ]
+    d = catalogue_diff.classify_additive({"releases": rows}, snap, "alpha")
+    assert [str(a.key) for a in d.adds] == ["alpha-live-2.0.0"]
+    assert d.unchanged == 1
+    assert not d.conflicts
+
+
+def test_classify_releases_refuses_repointing_a_release_with_live_workflow_data() -> None:
+    # A repoint rekeys the release, which would strand its files; a non-live sibling still moves
+    snap = _snapshot(
+        project_committee={"alpha-live": "alpha", "alpha-two": "alpha"},
+        release_project={"alpha-live-1.0.0": "alpha-live", "alpha-live-2.0.0": "alpha-live"},
+        release_keys=frozenset({"alpha-live-1.0.0", "alpha-live-2.0.0"}),
+        protected_release_keys=frozenset({"alpha-live-1.0.0"}),
+    )
+    rows = [
+        _release("alpha-live-1.0.0", "alpha-two", "1.0.0"),  # repoint the live one -> refused
+        _release("alpha-live-2.0.0", "alpha-two", "2.0.0"),  # repoint the sibling -> ok
+    ]
+    d = catalogue_diff.classify_additive({"releases": rows}, snap, "alpha")
+    assert [c.reason for c in d.conflicts] == ["release has live workflow data"]
+    assert [m.key for m in d.release_repoints] == ["alpha-live-2.0.0"]

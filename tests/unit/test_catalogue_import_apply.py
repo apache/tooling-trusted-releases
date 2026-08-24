@@ -115,8 +115,9 @@ async def test_an_artifact_repoint_survives_a_repoint_of_the_release_it_came_fro
 
 
 @pytest.mark.asyncio
-async def test_export_leaves_out_projects_with_live_workflow_data(sessionmaker) -> None:
-    # The import refuses those rows, so an export that carried them could not be uploaded again
+async def test_export_leaves_out_releases_with_live_workflow_data(sessionmaker) -> None:
+    # The import refuses those rows, so an export that carried them could not be uploaded again.
+    # The project stays, since a replace keeps it and re-adds the rest
     async with sessionmaker() as data:
         await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "2.0.0"})
         data.add(
@@ -135,7 +136,7 @@ async def test_export_leaves_out_projects_with_live_workflow_data(sessionmaker) 
 
     projects = [row["key"] for row in csv.DictReader(io.StringIO(projects_csv))]
     releases = [row["key"] for row in csv.DictReader(io.StringIO(releases_csv))]
-    assert projects == ["alpha-one"]
+    assert sorted(projects) == ["alpha-one", "alpha-two"]
     assert releases == ["alpha-one-1.0.0"]
 
 

@@ -90,6 +90,7 @@ async def build_snapshot(data: db.Session, committee_key: str) -> catalogue_diff
         release_project=release_project,
         artifact_by_dist=artifact_by_dist,
         managed_project_keys=await _managed_project_keys(data),
+        protected_release_keys=await _protected_release_keys(data),
         release_keys=frozenset(release_keys),
         artifact_pks=artifact_pks,
     )
@@ -102,18 +103,25 @@ def discard(token: str) -> None:
 
 
 async def export_table(data: db.Session, committee_key: str, table: str) -> str:
-    # The import refuses to touch a project with live workflow data, so the export leaves it out.
-    # Otherwise a downloaded file could not be uploaded again without editing those rows back out
-    managed = await _managed_project_keys(data)
-    projects = [project for project in await _committee_projects(data, committee_key) if project.key not in managed]
+    # The import refuses to touch a release with live workflow data, so the export leaves those
+    # releases out. Otherwise a downloaded file could not be uploaded again without editing them
+    # back out. The projects stay, since a replace keeps them and re-adds the rest
+    protected = await _protected_release_keys(data)
+    projects = await _committee_projects(data, committee_key)
     if table == "projects":
         return _to_csv(table, (_project_export(project) for project in projects))
     project_keys = [project.key for project in projects]
     if table == "releases":
-        releases = await _committee_releases(data, project_keys)
+        releases = [
+            release for release in await _committee_releases(data, project_keys) if release.key not in protected
+        ]
         return _to_csv(table, (_release_export(release) for release in releases))
     if table == "artifacts":
-        artifacts = await _committee_artifacts(data, project_keys)
+        artifacts = [
+            artifact
+            for artifact in await _committee_artifacts(data, project_keys)
+            if f"{artifact.project_key}-{artifact.version}" not in protected
+        ]
         return _to_csv(table, (_artifact_export(artifact) for artifact in artifacts))
     raise KeyError(table)
 
@@ -246,6 +254,14 @@ async def _managed_project_keys(data: db.Session) -> frozenset[str]:
             .distinct()
         )
     ).all()
+    return frozenset(row[0] for row in rows)
+
+
+async def _protected_release_keys(data: db.Session) -> frozenset[str]:
+    # A release is protected once it has a revision, which is where ATR keeps the files it holds.
+    # Foundation-wide, since a row can name a release in any committee
+    via = sql.validate_instrumented_attribute
+    rows = (await data.execute(sqlmodel.select(via(sql.Revision.release_key)).distinct())).all()
     return frozenset(row[0] for row in rows)
 
 
