@@ -25,6 +25,7 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
+import atr.cache as cache
 import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
@@ -968,3 +969,51 @@ async def test_unchanged_observation_of_an_over_limit_head_is_not_refused(sqlite
     result, _publications = await writer._FoundationCommitter__database_add_model(again, "web:req-2")
 
     assert result.result_or_raise().status == datatypes.KeyStatus.PARSED
+
+
+def test_resolved_apache_uid_prefers_stability_then_existence_then_map():
+    lookup = cache.EmailUidLookup.from_plain({"person@example.com": "mapped", "alias@apache.org": "aliased"})
+    users = frozenset({"real"})
+    uids = ["A <ghost@apache.org>", "B <real@apache.org>", "C <person@example.com>"]
+    assert keys_writer._resolved_apache_uid(uids, "ghost", users, lookup) == ("ghost", "stable")
+    assert keys_writer._resolved_apache_uid(uids, None, users, lookup) == ("real", "apache-uid")
+    assert keys_writer._resolved_apache_uid(["C <person@example.com>"], None, users, lookup) == ("mapped", "ldap-map")
+    assert keys_writer._resolved_apache_uid(["E <alias@apache.org>"], None, users, lookup) == ("aliased", "ldap-map")
+    assert keys_writer._resolved_apache_uid(["D <other@example.com>"], "gone", users, lookup) == (None, "none")
+
+
+@pytest.mark.asyncio
+async def test_revise_prefers_the_existing_apache_uid_over_the_upload_candidate(sqlite_data):
+    full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    fingerprint = pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
+    stripped = pgp_fixtures.block_without_signature_type(full, 0x28)
+    await _seed_committee_key(sqlite_data, "alpha", fingerprint, stripped)
+    writer, _write, _write_as = _make_foundation_committer_with_audit(sqlite_data)
+    key = _parsed_key(full)
+    key.key_model.apache_uid = "other"
+
+    result, _publications = await writer._FoundationCommitter__database_add_model(key, "web:req-2")
+
+    outcome_key = result.result_or_raise()
+    assert outcome_key.status == datatypes.KeyStatus.REFRESHED
+    assert outcome_key.key_model.apache_uid == "alice"
+    stored = await sqlite_data.signing_certificate(fingerprint=fingerprint).get()
+    assert stored is not None
+    assert stored.apache_uid == "alice"
+
+
+@pytest.mark.asyncio
+async def test_single_add_refuses_an_unvetted_candidate_for_a_new_certificate(sqlite_data):
+    writer, _write, _write_as = _make_foundation_committer_with_audit(sqlite_data)
+    key = _parsed_key(_ALPHA_BLOCK)
+    key.key_model.apache_uid = "ghost"
+
+    with pytest.raises(datatypes.UnknownApacheUidError):
+        await writer._FoundationCommitter__database_add_model(key, "web:req-1")
+
+    assert (await sqlite_data.signing_certificate(fingerprint=_ALPHA_FINGERPRINT).get()) is None
+    assert await sqlite_data.key_attestable(fingerprint=_ALPHA_FINGERPRINT).all() == []
+    retry = _parsed_key(_ALPHA_BLOCK)
+    retry.key_model.apache_uid = "alice"
+    result, _publications = await writer._FoundationCommitter__database_add_model(retry, "web:req-2")
+    assert result.result_or_raise().status == datatypes.KeyStatus.INSERTED

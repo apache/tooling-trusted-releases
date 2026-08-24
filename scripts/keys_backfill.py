@@ -203,6 +203,12 @@ def _armored_blocks(text: str) -> list[str]:
     return found
 
 
+def _automated_uid(uid: str) -> bool:
+    if not any(label in uid for label in util.AUTOMATED_RELEASE_SIGNING_LABELS):
+        return False
+    return ("private@" in uid) and (".apache.org" in uid)
+
+
 def _backfill(
     events: list[Event],
     scope: frozenset[str],
@@ -617,29 +623,6 @@ def _resolve(path: str, committees: frozenset[str], projects: dict[str, str]) ->
     return None, "none"
 
 
-def _resolve_uid(
-    uids: tuple[str, ...], current: str | None, users: frozenset[str], lookup: cache.EmailUidLookup
-) -> tuple[str | None, str]:
-    local_parts = []
-    emails = []
-    for uid in uids:
-        email = util.email_from_uid(uid)
-        if not email:
-            continue
-        if email.endswith("@apache.org"):
-            local_parts.append(email.removesuffix("@apache.org"))
-        emails.append(email)
-    mapped = [value for value in (lookup.get(email) for email in emails) if value]
-    if (current is not None) and ((current in local_parts) or (current in mapped)):
-        return current, "stable"
-    for part in local_parts:
-        if part in users:
-            return part, "apache-uid"
-    for value in mapped:
-        return value, "ldap-map"
-    return None, "none"
-
-
 async def _run(args: argparse.Namespace) -> None:
     await db.init_database_for_worker()
     blocks: Blocks = {}
@@ -695,7 +678,7 @@ async def _run(args: argparse.Namespace) -> None:
     lookup = cache.email_uid_view()
     changes = _sweep(certificates, heads, users, lookup)
     inserted = {
-        fingerprint: _resolve_uid(heads[fingerprint].uids, None, users, lookup)[0]
+        fingerprint: keys_writer._resolved_apache_uid(list(heads[fingerprint].uids), None, users, lookup)[0]
         for fingerprint in sorted(frozenset(listed.coverage) - stored_fingerprints - frozenset(_DELETED_FINGERPRINTS))
         if fingerprint in heads
     }
@@ -703,6 +686,11 @@ async def _run(args: argparse.Namespace) -> None:
         (committee, fingerprint)
         for committee, fingerprint in listed.links
         if (fingerprint in scope) and ((committee, fingerprint) not in existing_links)
+    )
+    automated_links = frozenset(
+        committee
+        for committee, fingerprint in links_added
+        if (fingerprint in heads) and heads[fingerprint].uids and _automated_uid(heads[fingerprint].uids[0])
     )
     problems += [
         f"inserted certificate {fingerprint} matches a signature hint; import it through the writer instead"
@@ -714,6 +702,8 @@ async def _run(args: argparse.Namespace) -> None:
         f" unresolved paths {len(listed.unresolved)}; rejected blocks {len(listed.rejected)}"
     )
     print(f"switchover digest {_switchover_digest(inserted, links_added, listed)}")
+    if automated_links:
+        print(f"automation additions via new links: {sorted(automated_links)}")
     if problems:
         sys.exit(1)
     if not args.apply:
@@ -729,7 +719,7 @@ async def _run(args: argparse.Namespace) -> None:
     args.manifest.write_text('{"incomplete": true}\n')
     listener = _setup_audit_logging()
     try:
-        await _write(backfill, heads, automated_before, inserted, links_added)
+        await _write(backfill, heads, automated_before, automated_links, inserted, links_added)
         await _write_sweep(changes)
     finally:
         listener.stop()
@@ -883,7 +873,7 @@ def _sweep(
         head = heads.get(fingerprint)
         if head is None:
             continue
-        value, branch = _resolve_uid(head.uids, certificate.apache_uid, users, lookup)
+        value, branch = keys_writer._resolved_apache_uid(list(head.uids), certificate.apache_uid, users, lookup)
         if value != certificate.apache_uid:
             changes.append(UidChange(fingerprint, certificate.apache_uid, value, branch))
     return changes
@@ -983,6 +973,7 @@ async def _write(
     backfill: Backfill,
     heads: dict[str, Head],
     automated_before: frozenset[str],
+    automated_links: frozenset[str],
     inserted: dict[str, str | None],
     links_added: list[tuple[str, str]],
 ) -> None:
@@ -1041,9 +1032,13 @@ async def _write(
         await data.ns_text_set("openpgp-log", f"archive:{_ARCHIVE_CAPTURE_DATE}", _ARCHIVE_CAPTURE_SHA256, commit=False)
         await _verify_database(data, frozenset(backfill.final), heads)
         automated_after = await interaction.automated_release_signing_committees(data)
-        if automated_after != automated_before:
-            changed = sorted(automated_before ^ automated_after)
-            raise RuntimeError(f"the automated release signing set changed: {changed}")
+        removed = automated_before - automated_after
+        unexpected = automated_after - automated_before - automated_links
+        if removed or unexpected:
+            raise RuntimeError(
+                f"the automated release signing set changed:"
+                f" removed {sorted(removed)}, unexplained {sorted(unexpected)}"
+            )
         await data.commit()
     for fingerprint in _DELETED_FINGERPRINTS:
         storage.audit(action="key_hard_delete", fingerprint=fingerprint, phase="backfill")

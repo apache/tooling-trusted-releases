@@ -194,6 +194,29 @@ def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[
     ]
 
 
+def _resolved_apache_uid(
+    uids: list[str], current: str | None, users: frozenset[str], lookup: cache.EmailUidLookup
+) -> tuple[str | None, str]:
+    local_parts = []
+    emails = []
+    for uid in uids:
+        email = util.email_from_uid(uid)
+        if not email:
+            continue
+        if email.endswith("@apache.org"):
+            local_parts.append(email.removesuffix("@apache.org"))
+        emails.append(email)
+    mapped = [value for value in (lookup.get(email) for email in emails) if value]
+    if (current is not None) and ((current in local_parts) or (current in mapped)):
+        return current, "stable"
+    for part in local_parts:
+        if part in users:
+            return part, "apache-uid"
+    for value in mapped:
+        return value, "ldap-map"
+    return None, "none"
+
+
 def _source_string(source: datatypes.KeySource, committee_key: str | None = None) -> str:
     match source:
         case datatypes.KeySource.API | datatypes.KeySource.WEB:
@@ -272,7 +295,9 @@ class FoundationCommitter(GeneralPublic):
         self.__asf_uid = asf_uid
 
         # Specific to this module
+        self.__email_lookup_cache: cache.EmailUidLookup | None = None
         self.__key_block_models_cache = {}
+        self.__users_cache: frozenset[str] | None = None
 
     async def delete_key(self, fingerprint: str, source: datatypes.KeySource) -> outcome.Outcome[datatypes.KeyDeletion]:
         source_string = _source_string(source)
@@ -414,7 +439,18 @@ class FoundationCommitter(GeneralPublic):
         changed = result != previous
         if changed and ((len(block) > _MAX_CERTIFICATE_BYTES) or (len(result) > _MAX_CERTIFICATE_PLACEMENTS)):
             raise ValueError(f"Key {fingerprint} would exceed the size admitted for a certificate")
-        apache_uid = key.key_model.apache_uid or (existing.apache_uid if (existing is not None) else None)
+        apache_uid = existing.apache_uid if (existing is not None) else None
+        if changed or (existing is None):
+            users = await self.__user_uids()
+            resolved, _branch = _resolved_apache_uid(pgp.user_id_texts(block), apache_uid, users, self.__email_lookup())
+            candidate = key.key_model.apache_uid
+            if existing is not None:
+                apache_uid = resolved or existing.apache_uid
+            elif candidate and ((candidate in users) or (candidate == self.__asf_uid)):
+                apache_uid = resolved or candidate
+            else:
+                apache_uid = resolved
+        key.key_model.apache_uid = apache_uid
         head = self.__head_model(fingerprint, block, apache_uid)
         if changed:
             raw = None if (source.partition(":")[0] in _POINTER_SOURCE_SCHEMES) else key.input
@@ -668,6 +704,11 @@ class FoundationCommitter(GeneralPublic):
     ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         await self.__data.begin_immediate()
         status = await self._revise_certificate(key, source)
+        if (key.key_model.apache_uid is None) and (status != datatypes.KeyStatus.PARSED):
+            await self.__data.rollback()
+            raise datatypes.UnknownApacheUidError(
+                "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
+            )
         if status == datatypes.KeyStatus.INSERTED:
             await self.__signature_hints_consume([key])
         await self.__data.commit()
@@ -686,6 +727,11 @@ class FoundationCommitter(GeneralPublic):
         publications = await self.__sync_committees_for_keys([fingerprint])
         log.info(f"Stored key {fingerprint}")
         return outcome.Result(datatypes.Key(status=status, key_model=key.key_model)), publications
+
+    def __email_lookup(self) -> cache.EmailUidLookup:
+        if self.__email_lookup_cache is None:
+            self.__email_lookup_cache = cache.email_uid_view()
+        return self.__email_lookup_cache
 
     async def __ensure_one(
         self, key_file_text: str, source: str, associate: bool = True
@@ -855,6 +901,12 @@ and was published by the committee.\
             if email in ldap_data:
                 return ldap_data[email]
         return None
+
+    async def __user_uids(self) -> frozenset[str]:
+        if self.__users_cache is None:
+            rows = await self.__data.execute(sqlmodel.select(sql.validate_instrumented_attribute(sql.User.asfuid)))
+            self.__users_cache = frozenset(rows.scalars().all())
+        return self.__users_cache
 
 
 class CommitteeParticipant(FoundationCommitter):

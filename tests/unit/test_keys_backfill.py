@@ -20,7 +20,6 @@ import importlib.util
 import pathlib
 import sys
 
-import atr.cache as cache
 import atr.models.sql as sql
 import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
@@ -82,17 +81,6 @@ def test_backfill_reports_missing_chains_and_actors() -> None:
     )
     assert any("without an actor" in problem for problem in backfill.problems)
     assert any("no chain" in problem for problem in backfill.problems)
-
-
-def test_resolve_uid_prefers_stability_then_existence_then_map() -> None:
-    lookup = cache.EmailUidLookup.from_plain({"person@example.com": "mapped", "alias@apache.org": "aliased"})
-    users = frozenset({"real"})
-    uids = ("A <ghost@apache.org>", "B <real@apache.org>", "C <person@example.com>")
-    assert keys_backfill._resolve_uid(uids, "ghost", users, lookup) == ("ghost", "stable")
-    assert keys_backfill._resolve_uid(uids, None, users, lookup) == ("real", "apache-uid")
-    assert keys_backfill._resolve_uid(("C <person@example.com>",), None, users, lookup) == ("mapped", "ldap-map")
-    assert keys_backfill._resolve_uid(("E <alias@apache.org>",), None, users, lookup) == ("aliased", "ldap-map")
-    assert keys_backfill._resolve_uid(("D <other@example.com>",), "gone", users, lookup) == (None, "none")
 
 
 def test_resolve_follows_the_rehoming_rule() -> None:
