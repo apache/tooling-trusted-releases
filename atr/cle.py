@@ -153,8 +153,11 @@ def _document(
     cle_events = [
         _to_cle_event(project, event, releases_by_key, releases_by_cycle) for event in events if event.id is not None
     ]
+    single_release = None
+    if len(releases) == 1:
+        single_release = releases[0]
     doc = cle.CleDocument.from_events(
-        identifier=_identifier(project),
+        identifier=_identifier(project, single_release),
         events=cle_events,
         definitions=_definitions_for(cle_events),
         now=now,
@@ -162,14 +165,14 @@ def _document(
     return doc.to_dict()
 
 
-def _identifier(project: sql.Project) -> str:
+def _identifier(project: sql.Project, release: sql.Release | None = None) -> str:
     """Render the project as a Package-URL.
 
     `pkg:apache/<project_key>` is the simplest form. Per-distribution PURLs
     (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact catalog (#911),
     not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
     """
-    return f"pkg:sid/apache.org/{project.committee_key}/{project.key}"
+    return f"pkg:scid/the+asf/{project.key}" + ("" if release is None else f"@{release.version}")
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:

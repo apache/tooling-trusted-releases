@@ -27,7 +27,7 @@ import atr.models.sql as sql
 
 def test_identifier_renders_apache_purl():
     project = SimpleNamespace(key="myproject", committee_key="mycommittee")
-    assert cle._identifier(project) == "pkg:sid/apache.org/mycommittee/myproject"
+    assert cle._identifier(project) == "pkg:scid/the+asf/myproject"
 
 
 def test_project_document_emits_default_support_definition_when_eod_or_eos_present():
@@ -51,7 +51,7 @@ def test_project_document_emits_no_events_when_input_empty():
 def test_project_document_emits_purl_identifier():
     project = SimpleNamespace(key="myproject", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     doc = cle.project_document(project, [], [], now=datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC))
-    assert doc["identifier"] == "pkg:sid/apache.org/mycommittee/myproject"
+    assert doc["identifier"] == "pkg:scid/the+asf/myproject"
 
 
 def test_project_document_emits_schema_url():
