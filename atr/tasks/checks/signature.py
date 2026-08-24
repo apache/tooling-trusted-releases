@@ -515,8 +515,9 @@ def _signer_username(key: openpgp.composed.SignedPublicKey, signature_info: open
     for user in key.details.users:
         if user.is_primary:
             return user.user_id
-    if key.user_ids:
-        return key.user_ids[0]
+    texts = pgp.user_id_texts(key.to_armored())
+    if texts:
+        return texts[0]
     return None
 
 

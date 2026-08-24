@@ -471,3 +471,12 @@ def test_revocations_dropped_detects_a_subkey_revocation_removed_on_re_upload() 
     dropped = pgp.revocations_dropped(stored, incoming)
 
     assert pgp_fixtures.REVOKED_SUBKEY_SIGNING_FINGERPRINT in dropped
+
+
+def test_user_id_texts_decodes_utf8_then_latin_1() -> None:
+    state = pgp.certificate_placements(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
+    latin = "Ren\u00e9 <r@example.com>".encode("latin-1")
+    block = pgp.certificate_block(frozenset(state | {((13, latin), None)}))
+    texts = pgp.user_id_texts(block)
+    assert "Ren\u00e9 <r@example.com>" in texts
+    assert all("\ufffd" not in text for text in texts)

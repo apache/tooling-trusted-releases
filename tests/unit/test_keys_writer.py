@@ -953,3 +953,18 @@ def test_source_string_forms_and_failures():
     log.clear_context()
     with pytest.raises(ValueError, match="request id"):
         keys_writer._source_string(datatypes.KeySource.WEB)
+
+
+@pytest.mark.asyncio
+async def test_unchanged_observation_of_an_over_limit_head_is_not_refused(sqlite_data, monkeypatch):
+    writer, _write, _write_as = _make_foundation_committer_with_audit(sqlite_data)
+    key = _parsed_key(_ALPHA_BLOCK)
+    key.key_model.apache_uid = "alice"
+    await writer._FoundationCommitter__database_add_model(key, "web:req-1")
+    monkeypatch.setattr(keys_writer, "_MAX_CERTIFICATE_BYTES", 16)
+    again = _parsed_key(_ALPHA_BLOCK)
+    again.key_model.apache_uid = "alice"
+
+    result, _publications = await writer._FoundationCommitter__database_add_model(again, "web:req-2")
+
+    assert result.result_or_raise().status == datatypes.KeyStatus.PARSED

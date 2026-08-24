@@ -92,7 +92,7 @@ _KEY_AUDIT_ACTIONS: Final = (
     (datatypes.KeyStatus.REFRESHED, "key_refresh"),
     (datatypes.KeyStatus.LINKED, "key_associate_committee"),
 )
-_MAX_CERTIFICATE_BYTES: Final = 1024 * 1024
+_MAX_CERTIFICATE_BYTES: Final = 4 * 1024 * 1024
 _MAX_CERTIFICATE_PLACEMENTS: Final = 16384
 _POINTER_SOURCE_SCHEMES: Final = frozenset({"archive", "svn"})
 _RSA_ALGORITHMS: Final = frozenset({1, 3})
@@ -312,12 +312,12 @@ class FoundationCommitter(GeneralPublic):
         ldap_data: cache.EmailUidLookup,
         original_key_block: str | None = None,
     ) -> sql.SigningCertificate:
-        uids = list(key.user_ids)
+        # Use the original key block if available
+        ascii_armored = original_key_block if original_key_block else key.to_armored()
+        uids = pgp.user_id_texts(ascii_armored)
         asf_uid = self.__uids_asf_uid(uids, ldap_data)
         if not uids:
             raise ValueError("No UIDs found in key")
-        # Use the original key block if available
-        ascii_armored = original_key_block if original_key_block else key.to_armored()
 
         return sql.SigningCertificate(
             fingerprint=key.fingerprint.lower(),
@@ -336,7 +336,7 @@ class FoundationCommitter(GeneralPublic):
 
     async def _delete_certificate(self, certificate: sql.SigningCertificate, source: str) -> None:
         seq, state = await self.__certificate_chain(certificate.fingerprint, certificate)
-        self.__append_certificate_row(
+        self._append_certificate_row(
             certificate.fingerprint, seq + 1, sql.KeyOperation.DELETE, source, None, state, state
         )
         certificate.deleted = datetime.datetime.now(datetime.UTC)
@@ -411,14 +411,14 @@ class FoundationCommitter(GeneralPublic):
         blocks = [pgp.certificate_block(previous)] if previous else []
         block = pgp.merge_certificate_blocks([*blocks, key.key_model.ascii_armored_key])
         result = pgp.certificate_placements(block)
-        if (len(block) > _MAX_CERTIFICATE_BYTES) or (len(result) > _MAX_CERTIFICATE_PLACEMENTS):
-            raise ValueError(f"Key {fingerprint} would exceed the size admitted for a certificate")
         changed = result != previous
+        if changed and ((len(block) > _MAX_CERTIFICATE_BYTES) or (len(result) > _MAX_CERTIFICATE_PLACEMENTS)):
+            raise ValueError(f"Key {fingerprint} would exceed the size admitted for a certificate")
         apache_uid = key.key_model.apache_uid or (existing.apache_uid if (existing is not None) else None)
         head = self.__head_model(fingerprint, block, apache_uid)
         if changed:
             raw = None if (source.partition(":")[0] in _POINTER_SOURCE_SCHEMES) else key.input
-            seq = self.__append_certificate_row(
+            seq = self._append_certificate_row(
                 fingerprint, seq + 1, sql.KeyOperation.REVISE, source, raw, previous, result
             )
         status = datatypes.KeyStatus.REFRESHED if changed else datatypes.KeyStatus.PARSED
@@ -437,7 +437,7 @@ class FoundationCommitter(GeneralPublic):
         if changed or (status == datatypes.KeyStatus.INSERTED):
             await _sync_signing_keys(self.__data, [existing])
         if existing.deleted is not None:
-            self.__append_certificate_row(fingerprint, seq + 1, sql.KeyOperation.RESTORE, source, None, result, result)
+            self._append_certificate_row(fingerprint, seq + 1, sql.KeyOperation.RESTORE, source, None, result, result)
             existing.deleted = None
             status = datatypes.KeyStatus.INSERTED | datatypes.KeyStatus.RESTORED
         return status
@@ -586,7 +586,7 @@ class FoundationCommitter(GeneralPublic):
 
         return datatypes.KeyAssociationUpdate(added=to_add, removed=to_remove, publications=publications)
 
-    def __append_certificate_row(
+    def _append_certificate_row(
         self,
         fingerprint: str,
         seq: int,
@@ -719,7 +719,7 @@ class FoundationCommitter(GeneralPublic):
 
     def __head_model(self, fingerprint: str, block: str, apache_uid: str | None) -> sql.SigningCertificate:
         key, _ = openpgp.composed.SignedPublicKey.from_armor(block)
-        uids = list(key.user_ids)
+        uids = pgp.user_id_texts(block)
         return sql.SigningCertificate(
             fingerprint=fingerprint,
             latest_self_signature=pgp.latest_self_signature_created_at(key),

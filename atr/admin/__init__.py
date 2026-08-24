@@ -2618,7 +2618,11 @@ def _certificate_metadata_problems(
     certificate: sql.SigningCertificate, key: openpgp.composed.SignedPublicKey, signing_keys: set[str]
 ) -> list[tuple[str, str]]:
     problems = []
-    uids = list(key.user_ids)
+    uids = pgp.user_id_texts(
+        certificate.ascii_armored_key
+        if isinstance(certificate.ascii_armored_key, str)
+        else certificate.ascii_armored_key.decode("utf-8", errors="replace")
+    )
     if (certificate.primary_declared_uid is not None) and (certificate.primary_declared_uid not in uids):
         problems.append(("metadata", f"declared uid {certificate.primary_declared_uid!r} is not in the certificate"))
     latest = pgp.latest_self_signature_created_at(key)

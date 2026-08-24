@@ -431,6 +431,18 @@ def signing_key_status(
     return SigningKeyStatus(identified=False, fingerprint=None, expires=None, can_sign=False, revoked=False)
 
 
+def user_id_texts(block: str) -> list[str]:
+    texts = []
+    for tag, body in _frames(_dearmored(block)):
+        if tag != _USER_ID_TAG:
+            continue
+        try:
+            texts.append(body.decode("utf-8"))
+        except UnicodeDecodeError:
+            texts.append(body.decode("latin-1"))
+    return texts
+
+
 def _armored(data: bytes) -> str:
     encoded = base64.b64encode(data).decode("ascii")
     lines = [encoded[index : index + 64] for index in range(0, len(encoded), 64)]
