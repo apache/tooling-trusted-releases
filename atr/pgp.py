@@ -19,6 +19,7 @@ import base64
 import dataclasses
 import datetime
 import itertools
+from collections.abc import Iterable
 from typing import Final, Literal
 
 import openpgp
@@ -43,6 +44,7 @@ _USER_ATTRIBUTE_TAG: Final[int] = 17
 _USER_ID_TAG: Final[int] = 13
 
 ComponentKind = Literal["primary", "user-id", "user-attribute", "subkey"]
+Placement = tuple[tuple[int, bytes], tuple[int, bytes] | None]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -83,6 +85,26 @@ class SigningKeyStatus:
     can_sign: bool
     # True where the issuing key carries a revocation, or hangs beneath a primary which does
     revoked: bool
+
+
+def apply_delta(state: frozenset[Placement], deletions: bytes | None, additions: bytes | None) -> frozenset[Placement]:
+    primary = next((head for head, frame in state if (frame is None) and (head[0] == _PRIMARY_KEY_TAG)), None)
+    removed = fragment_placements(deletions, primary) if (deletions is not None) else frozenset()
+    added = fragment_placements(additions, primary) if (additions is not None) else frozenset()
+    attached = {head for head, frame in removed if frame is not None}
+    bare = {
+        head for head, frame in removed if (frame is None) and (head not in attached) and (head[0] != _PRIMARY_KEY_TAG)
+    }
+    kept = {
+        (head, frame)
+        for head, frame in state
+        if (head not in bare) and ((frame is None) or ((head, frame) not in removed))
+    }
+    return frozenset(kept | added)
+
+
+def certificate_block(placements: frozenset[Placement]) -> str:
+    return _armored(fragment_bytes(placements))
 
 
 def certificate_block_fingerprint(block: str) -> str:
@@ -154,6 +176,81 @@ def certificate_for_fingerprint(armored: str, fingerprint: str) -> openpgp.compo
     return matches[0] if matches else None
 
 
+def certificate_placements(block: str) -> frozenset[Placement]:
+    return fragment_placements(_dearmored(block))
+
+
+def certificate_spans(text: str) -> list[bytes]:
+    data = _dearmored(text)
+    starts = [start for tag, start, _, _ in _frame_offsets(data) if tag == _PRIMARY_KEY_TAG]
+    bounds = [*starts, len(data)]
+    return [data[begin:end] for begin, end in itertools.pairwise(bounds)]
+
+
+def delta_fragments(previous: frozenset[Placement], result: frozenset[Placement]) -> tuple[bytes | None, bytes | None]:
+    primaries = {head for head, frame in (previous | result) if (frame is None) and (head[0] == _PRIMARY_KEY_TAG)}
+    if len(primaries) != 1:
+        raise ValueError("The states do not share one primary key")
+    primary = next(iter(primaries))
+    removed = previous - result
+    added = result - previous
+    gone = {head for head, frame in removed if frame is None}
+    deletions = {(head, frame) for head, frame in removed if head not in gone}
+    deletions.update((head, None) for head, _ in removed if head != primary)
+    additions = set(added)
+    additions.update((head, None) for head, _ in added if head != primary)
+    return _fragment_or_none(deletions, primary), _fragment_or_none(additions, primary)
+
+
+def fold_deltas(deltas: Iterable[tuple[bytes | None, bytes | None]]) -> frozenset[Placement]:
+    state: frozenset[Placement] = frozenset()
+    for deletions, additions in deltas:
+        state = apply_delta(state, deletions, additions)
+    return state
+
+
+def fragment_bytes(placements: frozenset[Placement], primary: tuple[int, bytes] | None = None) -> bytes:
+    sections: dict[tuple[int, bytes], list[tuple[int, bytes]]] = {}
+    for head, frame in placements:
+        attached = sections.setdefault(head, [])
+        if frame is not None:
+            attached.append(frame)
+    primaries = [head for head in sections if head[0] == _PRIMARY_KEY_TAG]
+    if primary is None:
+        if len(primaries) != 1:
+            raise ValueError("A fragment must hold exactly one primary key packet")
+        primary = primaries[0]
+    if any(head != primary for head in primaries):
+        raise ValueError("The fragment holds another primary key")
+    value = openpgp.packet.Packet.from_bytes(_framed(*primary)).value
+    if not isinstance(value, openpgp.packet.PublicKey):
+        raise ValueError("The primary packet is not a public key")
+    with_primary = (primary, None) in placements
+    return _emitted_sections(sections, primary, value.fingerprint.lower(), value.key_id.lower(), with_primary)
+
+
+def fragment_placements(data: bytes, primary: tuple[int, bytes] | None = None) -> frozenset[Placement]:
+    frames = _frames(data)
+    if any(tag in _SKIPPABLE_PACKET_TAGS for tag, _ in frames):
+        raise ValueError("The fragment holds a packet which fragments never carry")
+    placements: set[Placement] = set()
+    if primary is None:
+        if (not frames) or (frames[0][0] != _PRIMARY_KEY_TAG):
+            raise ValueError("The fragment does not begin with a primary key packet")
+        primary, frames = frames[0], frames[1:]
+        placements.add((primary, None))
+    if any(tag == _PRIMARY_KEY_TAG for tag, _ in frames):
+        raise ValueError("The fragment holds a primary key packet it may not carry")
+    head = primary
+    for tag, body in frames:
+        if tag in (_USER_ID_TAG, _USER_ATTRIBUTE_TAG, _PUBLIC_SUBKEY_TAG):
+            head = (tag, body)
+            placements.add((head, None))
+            continue
+        placements.add((head, (tag, body)))
+    return frozenset(placements)
+
+
 def key_expires_at(
     key: openpgp.composed.SignedPublicKey, *, at: datetime.datetime | None = None
 ) -> datetime.datetime | None:
@@ -202,16 +299,15 @@ def merge_certificate_blocks(blocks: list[str]) -> str:
         for head, attached in groups:
             merged = sections.setdefault(head, {})
             for frame in attached:
-                merged.setdefault(frame)
-    fingerprint = primary.fingerprint.lower()
-    key_id = primary.key_id.lower()
-    heads = list(sections)
-    parts = [_emitted_section(heads[0], list(sections[heads[0]]), fingerprint, key_id)]
-    for tag in (_USER_ID_TAG, _USER_ATTRIBUTE_TAG, _PUBLIC_SUBKEY_TAG):
-        section_heads = [head for head in heads[1:] if head[0] == tag]
-        section_heads.sort(key=lambda head: _section_order(head, list(sections[head]), fingerprint, key_id))
-        parts.extend(_emitted_section(head, list(sections[head]), fingerprint, key_id) for head in section_heads)
-    data = b"".join(parts)
+                if not _local_certification_frame(frame):
+                    merged.setdefault(frame)
+    data = _emitted_sections(
+        {head: list(frames) for head, frames in sections.items()},
+        grouped[0][0][0],
+        primary.fingerprint.lower(),
+        primary.key_id.lower(),
+        True,
+    )
     openpgp.composed.SignedPublicKey.from_bytes(data)
     return _armored(data)
 
@@ -501,39 +597,35 @@ def _effective_self_signature(
 def _emitted_section(
     head: tuple[int, bytes], attached: list[tuple[int, bytes]], fingerprint: str, key_id: str
 ) -> bytes:
-    signatures: list[tuple[bytes, openpgp.packet.Signature]] = []
-    opaques: list[tuple[int, bytes]] = []
-    for tag, body in attached:
-        signature = _parsed_signature(body) if (tag == _SIGNATURE_TAG) else None
-        if signature is None:
-            opaques.append((tag, body))
-            continue
-        if _local_certification(signature):
-            continue
-        signatures.append((body, signature))
-    if head[0] == _PRIMARY_KEY_TAG:
-        revocations = [pair for pair in signatures if pair[1].typ() == _KEY_REVOCATION_SIGNATURE_TYPE]
-        others = [pair for pair in signatures if pair[1].typ() != _KEY_REVOCATION_SIGNATURE_TYPE]
-        ordered = sorted(revocations, key=_signature_order) + sorted(others, key=_signature_order)
-    else:
-        ordered = sorted(signatures, key=_signature_order)
-    frames = [head, *[(_SIGNATURE_TAG, body) for body, _ in ordered], *sorted(opaques)]
+    frames = [head, *_ordered_attachments(head, attached)]
     return b"".join(_framed(tag, body) for tag, body in frames)
 
 
-def _framed(tag: int, body: bytes) -> bytes:
-    length = len(body)
-    if length < 192:
-        header = bytes((0xC0 | tag, length))
-    elif length < 8384:
-        header = bytes((0xC0 | tag, ((length - 192) >> 8) + 192, (length - 192) & 0xFF))
-    else:
-        header = bytes((0xC0 | tag, 0xFF)) + length.to_bytes(4)
-    return header + body
+def _emitted_sections(
+    sections: dict[tuple[int, bytes], list[tuple[int, bytes]]],
+    primary: tuple[int, bytes],
+    fingerprint: str,
+    key_id: str,
+    with_primary: bool,
+) -> bytes:
+    frames = [primary] if with_primary else []
+    frames.extend(_ordered_attachments(primary, sections.get(primary, [])))
+    parts = [b"".join(_framed(tag, body) for tag, body in frames)]
+    for tag in (_USER_ID_TAG, _USER_ATTRIBUTE_TAG, _PUBLIC_SUBKEY_TAG):
+        section_heads = [head for head in sections if head[0] == tag]
+        section_heads.sort(key=lambda head: _section_order(head, sections[head], fingerprint, key_id))
+        parts.extend(_emitted_section(head, sections[head], fingerprint, key_id) for head in section_heads)
+    return b"".join(parts)
 
 
-def _frames(data: bytes) -> list[tuple[int, bytes]]:
-    frames = []
+def _fragment_or_none(placements: set[Placement], primary: tuple[int, bytes]) -> bytes | None:
+    if not placements:
+        return None
+    return fragment_bytes(frozenset(placements), primary)
+
+
+def _frame_offsets(data: bytes) -> list[tuple[int, int, int, int]]:
+    offsets = []
     offset = 0
     while offset < len(data):
         ctb = data[offset]
@@ -557,12 +649,27 @@ def _frames(data: bytes) -> list[tuple[int, bytes]]:
                 raise ValueError(f"Indeterminate packet length at offset {offset}")
             sizes = {0: 1, 1: 2, 2: 4}[kind]
             length, header = int.from_bytes(_octets(data, offset + 1, sizes)), 1 + sizes
-        body = data[offset + header : offset + header + length]
-        if len(body) != length:
+        end = offset + header + length
+        if end > len(data):
             raise ValueError(f"Truncated packet at offset {offset}")
-        frames.append((tag, bytes(body)))
-        offset += header + length
-    return frames
+        offsets.append((tag, offset, offset + header, end))
+        offset = end
+    return offsets
+
+
+def _framed(tag: int, body: bytes) -> bytes:
+    length = len(body)
+    if length < 192:
+        header = bytes((0xC0 | tag, length))
+    elif length < 8384:
+        header = bytes((0xC0 | tag, ((length - 192) >> 8) + 192, (length - 192) & 0xFF))
+    else:
+        header = bytes((0xC0 | tag, 0xFF)) + length.to_bytes(4)
+    return header + body
+
+
+def _frames(data: bytes) -> list[tuple[int, bytes]]:
+    return [(tag, bytes(data[body:end])) for tag, _, body, end in _frame_offsets(data)]
 
 
 def _identity_component(
@@ -645,11 +752,37 @@ def _local_certification(signature: openpgp.packet.Signature) -> bool:
     return signature.exportable_certification() is False
 
 
+def _local_certification_frame(frame: tuple[int, bytes]) -> bool:
+    tag, body = frame
+    if tag != _SIGNATURE_TAG:
+        return False
+    signature = _parsed_signature(body)
+    return (signature is not None) and _local_certification(signature)
+
+
 def _octets(data: bytes, offset: int, count: int) -> bytes:
     taken = data[offset : offset + count]
     if len(taken) != count:
         raise ValueError(f"Truncated packet header at offset {offset}")
     return taken
+
+
+def _ordered_attachments(head: tuple[int, bytes], attached: list[tuple[int, bytes]]) -> list[tuple[int, bytes]]:
+    signatures: list[tuple[bytes, openpgp.packet.Signature]] = []
+    opaques: list[tuple[int, bytes]] = []
+    for tag, body in attached:
+        signature = _parsed_signature(body) if (tag == _SIGNATURE_TAG) else None
+        if signature is None:
+            opaques.append((tag, body))
+            continue
+        signatures.append((body, signature))
+    if head[0] == _PRIMARY_KEY_TAG:
+        revocations = [pair for pair in signatures if pair[1].typ() == _KEY_REVOCATION_SIGNATURE_TYPE]
+        others = [pair for pair in signatures if pair[1].typ() != _KEY_REVOCATION_SIGNATURE_TYPE]
+        ordered = sorted(revocations, key=_signature_order) + sorted(others, key=_signature_order)
+    else:
+        ordered = sorted(signatures, key=_signature_order)
+    return [*[(_SIGNATURE_TAG, body) for body, _ in ordered], *sorted(opaques)]
 
 
 def _parsed_signature(body: bytes) -> openpgp.packet.Signature | None:
