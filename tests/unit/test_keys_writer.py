@@ -26,6 +26,7 @@ import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.log as log
 import atr.models.sql as sql
 import atr.pgp as pgp
 import atr.storage as storage
@@ -55,6 +56,13 @@ mhZeqo6zyn8zrO9RGU7+8jmeb5nVnXw1YmZcw2fiJgI9+tTMkTfomyR6k0EDvcEu
 =xsEd
 -----END PGP PUBLIC KEY BLOCK-----
 """
+
+
+@pytest.fixture(autouse=True)
+def request_context():
+    log.add_context(request_id="req-1")
+    yield
+    log.clear_context()
 
 
 @pytest.fixture
@@ -286,7 +294,7 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sql
         new=mock.AsyncMock(side_effect=storage.AccessError(error_message)),
     ):
         with pytest.raises(storage.AccessError, match="permission denied"):
-            await writer.delete_committee_keys("web:req-1")
+            await writer.delete_committee_keys(datatypes.KeySource.WEB)
 
     assert write_as.append_to_audit_log.call_count == 2
 
@@ -319,7 +327,7 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data
 
     with mock.patch.object(writer, "_sync_committee_keys_file", new_callable=mock.AsyncMock) as mock_sync:
         mock_sync.return_value = (0, outcome.Result(keys_writer.datatypes.KeysPublish.SVN_NOT_CONFIGURED))
-        num_unlinked, num_deleted, _ = await writer.delete_committee_keys("web:req-1")
+        num_unlinked, num_deleted, _ = await writer.delete_committee_keys(datatypes.KeySource.WEB)
 
     assert num_unlinked == 2
     assert num_deleted == 1
@@ -352,7 +360,7 @@ async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
     await sqlite_data.commit()
     writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
-    num_unlinked, num_deleted, _ = await writer.delete_committee_keys("web:req-1")
+    num_unlinked, num_deleted, _ = await writer.delete_committee_keys(datatypes.KeySource.WEB)
 
     assert num_unlinked == 0
     assert num_deleted == 0
@@ -401,7 +409,7 @@ async def test_delete_key_removal_publishes_empty_keys_file(sqlite_data):
 
     publish = mock.AsyncMock(return_value=outcome.Result(datatypes.KeysPublish.PUBLISHED))
     with mock.patch.object(writer, "_publish_keys_to_svn", publish):
-        result = await writer.delete_key(_ALPHA_FINGERPRINT, "web:req-1")
+        result = await writer.delete_key(_ALPHA_FINGERPRINT, datatypes.KeySource.WEB)
 
     assert isinstance(result, outcome.Result)
     publish.assert_awaited_once()
@@ -470,7 +478,7 @@ async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
             new=mock.AsyncMock(return_value=(database_outcome, {})),
         ) as database_add_model,
     ):
-        result, publications = await writer.ensure_stored_one("keys text", "web:req-1")
+        result, publications = await writer.ensure_stored_one("keys text", datatypes.KeySource.WEB)
 
     assert result is database_outcome
     assert publications == {}
@@ -501,7 +509,7 @@ async def test_ensure_stored_one_accepts_test_key_without_email_cache() -> None:
             new=mock.AsyncMock(side_effect=lambda key, _source: (outcome.Result(key), {})),
         ) as database_add_model,
     ):
-        result, _publications = await writer.ensure_stored_one(key_text, "web:req-1")
+        result, _publications = await writer.ensure_stored_one(key_text, datatypes.KeySource.WEB)
 
     key = result.result_or_raise()
     assert key.key_model.apache_uid == "test"
@@ -518,7 +526,7 @@ async def test_ensure_stored_one_rejects_a_block_with_two_keys() -> None:
         pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
     )
 
-    result, publications = await writer.ensure_stored_one(block, "web:req-1")
+    result, publications = await writer.ensure_stored_one(block, datatypes.KeySource.WEB)
 
     assert publications == {}
     assert "contains 2 keys" in str(result.error_or_none())
@@ -548,7 +556,7 @@ async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
             new=mock.AsyncMock(),
         ) as database_add_model,
     ):
-        result, publications = await writer.ensure_stored_one("keys text", "web:req-1")
+        result, publications = await writer.ensure_stored_one("keys text", datatypes.KeySource.WEB)
 
     assert isinstance(result, outcome.Error)
     assert publications == {}
@@ -933,3 +941,15 @@ def _signing_certificate(
         apache_uid=apache_uid,
         ascii_armored_key=armored or "-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
     )
+
+
+def test_source_string_forms_and_failures():
+    assert keys_writer._source_string(datatypes.KeySource.WEB) == "web:req-1"
+    assert keys_writer._source_string(datatypes.KeySource.API) == "api:req-1"
+    assert keys_writer._source_string(datatypes.KeySource.DOWNLOADS, "alpha") == "downloads:alpha/KEYS"
+    assert keys_writer._source_string(datatypes.KeySource.TASK) == "task:keys_import_file"
+    with pytest.raises(ValueError, match="names a committee"):
+        keys_writer._source_string(datatypes.KeySource.DOWNLOADS)
+    log.clear_context()
+    with pytest.raises(ValueError, match="request id"):
+        keys_writer._source_string(datatypes.KeySource.WEB)

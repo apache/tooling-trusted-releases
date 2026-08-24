@@ -18,6 +18,7 @@
 import atr.models.args as args
 import atr.models.results as results
 import atr.storage as storage
+import atr.storage.datatypes as datatypes
 import atr.tasks.checks as checks
 
 
@@ -27,7 +28,7 @@ async def import_file(task_args: args.ImportFile) -> results.Results | None:
     async with storage.write(task_args.asf_uid) as write:
         wacm = await write.as_project_committee_member(task_args.project_key)
         outcomes, _ = await wacm.keys.import_keys_file(
-            task_args.project_key, task_args.version_key, "task:keys_import_file"
+            task_args.project_key, task_args.version_key, datatypes.KeySource.TASK
         )
         if outcomes.any_error:
             # TODO: Log this? This code is unused anyway

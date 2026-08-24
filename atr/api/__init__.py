@@ -728,7 +728,7 @@ async def key_add(
 
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
-        ocr, publications = await wafc.keys.ensure_stored_one(data.key, f"api:{log.get_request_id()}")
+        ocr, publications = await wafc.keys.ensure_stored_one(data.key, datatypes.KeySource.API)
         try:
             key = ocr.result_or_raise()
         except (datatypes.UnknownApacheUidError, ValueError) as e:
@@ -773,9 +773,7 @@ async def key_delete(
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
         # audit_guidance fingerprint ownership verified in storage layer via authenticated user's asfuid
-        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(
-            fingerprint, f"api:{log.get_request_id()}"
-        )
+        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint, datatypes.KeySource.API)
         deletion = oc.result_or_raise()
 
     warning = shared.keys.publication_removed_warning(deletion.publications)
@@ -840,7 +838,7 @@ async def keys_upload(
     log.keys_submitted("api:keys/upload", filetext, asfuid=asf_uid, committee_keys=[str(selected_committee_key)])
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(str(selected_committee_key))
-        outcomes, publications = await wacm.keys.ensure_associated(filetext, f"api:{log.get_request_id()}")
+        outcomes, publications = await wacm.keys.ensure_associated(filetext, datatypes.KeySource.API)
 
         # TODO: It would be nice to serialise the actual outcomes
         # Or, perhaps better yet, to have a standard datatype mapping

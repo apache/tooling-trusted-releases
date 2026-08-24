@@ -69,6 +69,7 @@ import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage as storage
+import atr.storage.datatypes as datatypes
 import atr.tasks as tasks
 import atr.template as template
 import atr.util as util
@@ -1467,9 +1468,7 @@ async def delete_committee_keys_post(
     try:
         async with storage.write(session) as write:
             waca = write.as_committee_admin(committee_key)
-            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(
-                f"web:{log.get_request_id()}"
-            )
+            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(datatypes.KeySource.WEB)
     except storage.AccessError as e:
         await quart.flash(str(e), "error")
         return await session.redirect(delete_committee_keys_get)

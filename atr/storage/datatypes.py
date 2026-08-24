@@ -65,6 +65,13 @@ class KeysPublish(enum.Enum):
     SVN_NOT_CONFIGURED = "svn_not_configured"
 
 
+class KeySource(enum.Enum):
+    API = "api"
+    DOWNLOADS = "downloads"
+    TASK = "task"
+    WEB = "web"
+
+
 @dataclasses.dataclass
 class KeyAssociationUpdate:
     added: set[str]

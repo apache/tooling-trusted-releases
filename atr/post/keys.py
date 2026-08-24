@@ -67,7 +67,7 @@ async def add(
 
         async with storage.write() as write:
             wafc = write.as_foundation_committer()
-            ocr, publications = await wafc.keys.ensure_stored_one(key_text, f"web:{log.get_request_id()}")
+            ocr, publications = await wafc.keys.ensure_stored_one(key_text, datatypes.KeySource.WEB)
             key = ocr.result_or_raise()
 
             for selected_committee_key in selected_committee_keys:
@@ -193,7 +193,7 @@ async def import_selected_revision(
             outcomes, publications = await wacm.keys.import_keys_file(
                 project_key,
                 version_key,
-                f"web:{log.get_request_id()}",
+                datatypes.KeySource.WEB,
                 keys_text,
                 release.safe_latest_revision_number,
             )
@@ -340,9 +340,7 @@ async def _delete_openpgp_key(
 
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
-        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(
-            fingerprint, f"web:{log.get_request_id()}"
-        )
+        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint, datatypes.KeySource.WEB)
 
     match oc:
         case outcome.Result(deletion):
@@ -435,7 +433,7 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
 
     async with storage.write() as write:
         wacp = write.as_committee_participant(selected_committee)
-        outcomes, publications = await wacp.keys.ensure_associated(keys_text, f"web:{log.get_request_id()}")
+        outcomes, publications = await wacp.keys.ensure_associated(keys_text, datatypes.KeySource.WEB)
 
     success_count = outcomes.result_count
     error_count = outcomes.error_count

@@ -194,6 +194,21 @@ def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[
     ]
 
 
+def _source_string(source: datatypes.KeySource, committee_key: str | None = None) -> str:
+    match source:
+        case datatypes.KeySource.API | datatypes.KeySource.WEB:
+            request_id = log.get_request_id()
+            if not request_id:
+                raise ValueError(f"A {source.value} source needs a request id")
+            return f"{source.value}:{request_id}"
+        case datatypes.KeySource.DOWNLOADS:
+            if not committee_key:
+                raise ValueError("A downloads source names a committee")
+            return f"downloads:{committee_key}/KEYS"
+        case datatypes.KeySource.TASK:
+            return "task:keys_import_file"
+
+
 async def _sync_signing_keys(data: db.Session, certificates: list[sql.SigningCertificate]) -> None:
     """Bring each certificate's SigningKey rows into line with the block it holds"""
     rows = []
@@ -259,7 +274,8 @@ class FoundationCommitter(GeneralPublic):
         # Specific to this module
         self.__key_block_models_cache = {}
 
-    async def delete_key(self, fingerprint: str, source: str) -> outcome.Outcome[datatypes.KeyDeletion]:
+    async def delete_key(self, fingerprint: str, source: datatypes.KeySource) -> outcome.Outcome[datatypes.KeyDeletion]:
+        source_string = _source_string(source)
         try:
             await self.__data.begin_immediate()
             key = await self.__data.signing_certificate(
@@ -268,7 +284,7 @@ class FoundationCommitter(GeneralPublic):
                 _committees=True,
             ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
             affected_committee_keys = {committee.key for committee in key.committees}
-            await self._delete_certificate(key, source)
+            await self._delete_certificate(key, source_string)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 action="key_delete",
@@ -286,9 +302,9 @@ class FoundationCommitter(GeneralPublic):
             return outcome.Error(e)
 
     async def ensure_stored_one(
-        self, key_file_text: str, source: str
+        self, key_file_text: str, source: datatypes.KeySource
     ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        return await self.__ensure_one(key_file_text, source, associate=False)
+        return await self.__ensure_one(key_file_text, _source_string(source), associate=False)
 
     def public_key_model(
         self,
@@ -927,9 +943,10 @@ class CommitteeParticipant(FoundationCommitter):
         return self.__committee_key
 
     async def ensure_associated(
-        self, keys_file_text: str, source: str
+        self, keys_file_text: str, source: datatypes.KeySource, committee_key: str | None = None
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        outcomes, publications = await self.__ensure(keys_file_text, source, associate=True)
+        source_string = _source_string(source, committee_key)
+        outcomes, publications = await self.__ensure(keys_file_text, source_string, associate=True)
         if not outcomes.any_result:
             return outcomes, publications
         _, publication = await self.autogenerate_keys_file()
@@ -937,9 +954,10 @@ class CommitteeParticipant(FoundationCommitter):
         return outcomes, publications
 
     async def ensure_stored(
-        self, keys_file_text: str, source: str
+        self, keys_file_text: str, source: datatypes.KeySource, committee_key: str | None = None
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
-        outcomes, publications = await self.__ensure(keys_file_text, source, associate=False)
+        source_string = _source_string(source, committee_key)
+        outcomes, publications = await self.__ensure(keys_file_text, source_string, associate=False)
         if not outcomes.any_result:
             return outcomes, publications
         _, publication = await self.autogenerate_keys_file()
@@ -950,7 +968,7 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        source: str,
+        source: datatypes.KeySource,
         keys_file_text: str | None = None,
         expected_revision: safe.RevisionNumber | None = None,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
@@ -1259,8 +1277,9 @@ class FoundationAdmin(CommitteeMember):
         return self.__committee_key
 
     async def delete_committee_keys(
-        self, source: str
+        self, source: datatypes.KeySource
     ) -> tuple[int, int, outcome.Outcome[datatypes.KeysPublish] | None]:
+        source_string = _source_string(source)
         via = sql.validate_instrumented_attribute
         await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
@@ -1296,7 +1315,7 @@ class FoundationAdmin(CommitteeMember):
         )
         num_deleted = 0
         for certificate in orphaned_rows.scalars().all():
-            await self._delete_certificate(certificate, source)
+            await self._delete_certificate(certificate, source_string)
             num_deleted += 1
 
         await self.__data.commit()

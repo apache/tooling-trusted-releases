@@ -28,6 +28,7 @@ import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.db as db
+import atr.log as log
 import atr.models.sql as sql
 import atr.pgp as pgp
 import atr.storage.datatypes as datatypes
@@ -39,6 +40,13 @@ ALPHA_BLOCK = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
 ALPHA_FINGERPRINT = pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
 BETA_BLOCK = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
 BETA_FINGERPRINT = pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT
+
+
+@pytest.fixture(autouse=True)
+def request_context():
+    log.add_context(request_id="req-1")
+    yield
+    log.clear_context()
 
 
 @pytest.fixture
@@ -59,7 +67,7 @@ async def test_committee_signing_keys_exclude_deleted(sqlite_sessionmaker, monke
     async with sqlite_sessionmaker() as data:
         await _seed_keys(data)
         writer = _committer_writer(data)
-        (await writer.delete_key(ALPHA_FINGERPRINT, "web:req-1")).result_or_raise()
+        (await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)).result_or_raise()
     monkeypatch.setattr(checks.db, "session", lambda: sqlite_sessionmaker())
     release = SimpleNamespace(committee=SimpleNamespace(key="tooling"))
 
@@ -76,7 +84,7 @@ async def test_delete_committee_keys_deletes_orphans(sqlite_sessionmaker) -> Non
         await data.commit()
         writer = _admin_writer(data)
 
-        num_unlinked, num_deleted, _ = await writer.delete_committee_keys("web:req-1")
+        num_unlinked, num_deleted, _ = await writer.delete_committee_keys(datatypes.KeySource.WEB)
 
         assert (num_unlinked, num_deleted) == (2, 1)
         alpha = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT, deleted=db.NOT_SET).get()
@@ -92,7 +100,7 @@ async def test_delete_key_retains_row_and_links(sqlite_sessionmaker) -> None:
         await _seed_keys(data)
         writer = _committer_writer(data)
 
-        oc = await writer.delete_key(ALPHA_FINGERPRINT, "web:req-1")
+        oc = await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)
 
         oc.result_or_raise()
         assert await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get() is None
@@ -113,8 +121,8 @@ async def test_delete_key_twice_errors(sqlite_sessionmaker) -> None:
         await _seed_keys(data)
         writer = _committer_writer(data)
 
-        (await writer.delete_key(ALPHA_FINGERPRINT, "web:req-1")).result_or_raise()
-        second = await writer.delete_key(ALPHA_FINGERPRINT, "web:req-2")
+        (await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)).result_or_raise()
+        second = await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)
 
         assert second.error_or_none() is not None
 
@@ -123,7 +131,7 @@ async def test_deleted_key_hidden_from_committee_relationship(sqlite_sessionmake
     async with sqlite_sessionmaker() as data:
         await _seed_keys(data)
         writer = _committer_writer(data)
-        (await writer.delete_key(ALPHA_FINGERPRINT, "web:req-1")).result_or_raise()
+        (await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)).result_or_raise()
 
         committee = (
             (
@@ -144,7 +152,7 @@ async def test_keys_file_text_excludes_deleted(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         await _seed_keys(data)
         writer = _committer_writer(data)
-        (await writer.delete_key(ALPHA_FINGERPRINT, "web:req-1")).result_or_raise()
+        (await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)).result_or_raise()
 
         text = await writer.keys_file_text("tooling")
 
@@ -179,7 +187,7 @@ async def test_reupload_undeletes_and_restores_associations(sqlite_sessionmaker)
     async with sqlite_sessionmaker() as data:
         await _seed_keys(data)
         writer = _committer_writer(data)
-        (await writer.delete_key(ALPHA_FINGERPRINT, "web:req-1")).result_or_raise()
+        (await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)).result_or_raise()
         key = datatypes.Key(
             status=datatypes.KeyStatus.PARSED,
             key_model=_key(ALPHA_FINGERPRINT, "alice", ALPHA_BLOCK),
@@ -268,7 +276,7 @@ async def test_write_to_a_head_without_log_is_refused(sqlite_sessionmaker) -> No
 
         with pytest.raises(RuntimeError, match="has no log"):
             await writer._FoundationCommitter__database_add_model(key, "web:req-1")
-        assert (await writer.delete_key(ALPHA_FINGERPRINT, "web:req-2")).error_or_none() is not None
+        assert (await writer.delete_key(ALPHA_FINGERPRINT, datatypes.KeySource.WEB)).error_or_none() is not None
 
 
 async def test_signature_hints_consume_flags_and_deletes(sqlite_sessionmaker) -> None:
