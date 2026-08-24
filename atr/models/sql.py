@@ -171,6 +171,18 @@ class DistributionPlatform(enum.Enum):
     )
 
 
+class KeyOperation(enum.StrEnum):
+    DELETE = "delete"
+    RESTORE = "restore"
+    REVISE = "revise"
+
+
+class KeyRole(enum.StrEnum):
+    ADMIN = "admin"
+    SERVICE = "service"
+    USER = "user"
+
+
 class LicenseCheckMode(enum.StrEnum):
     BOTH = "Both"
     LIGHTWEIGHT = "Lightweight"
@@ -575,6 +587,10 @@ class UserPreferencesJSON(sqlalchemy.types.TypeDecorator):
 # SQL models
 
 
+def _enum_values(enum_class: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_class]
+
+
 def example(value: Any) -> dict[Literal["schema_extra"], dict[str, Any]]:
     return {"schema_extra": {"json_schema_extra": {"examples": [value]}}}
 
@@ -629,6 +645,24 @@ class Banner(sqlmodel.SQLModel, table=True):
     set_at: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+
+
+# KeyAttestable:
+class KeyAttestable(sqlmodel.SQLModel, table=True):
+    fingerprint: str = sqlmodel.Field(primary_key=True)
+    seq: int = sqlmodel.Field(primary_key=True)
+    operation: KeyOperation = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(KeyOperation, values_callable=_enum_values), nullable=False)
+    )
+    source: str = sqlmodel.Field()
+    input: bytes | None = sqlmodel.Field(default=None)
+    deletions: bytes | None = sqlmodel.Field(default=None)
+    additions: bytes | None = sqlmodel.Field(default=None)
+    updated: datetime.datetime = sqlmodel.Field(sa_column=sqlalchemy.Column(UTCDateTime, nullable=False))
+    actor: str = sqlmodel.Field()
+    role: KeyRole = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(KeyRole, values_callable=_enum_values), nullable=False)
     )
 
 

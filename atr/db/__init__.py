@@ -481,6 +481,44 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         if commit is True:
             await self.commit()
 
+    def key_attestable(
+        self,
+        fingerprint: Opt[str] = NOT_SET,
+        seq: Opt[int] = NOT_SET,
+        operation: Opt[sql.KeyOperation] = NOT_SET,
+        source: Opt[str] = NOT_SET,
+        input: Opt[bytes | None] = NOT_SET,
+        deletions: Opt[bytes | None] = NOT_SET,
+        additions: Opt[bytes | None] = NOT_SET,
+        updated: Opt[datetime.datetime] = NOT_SET,
+        actor: Opt[str] = NOT_SET,
+        role: Opt[sql.KeyRole] = NOT_SET,
+    ) -> Query[sql.KeyAttestable]:
+        query = sqlmodel.select(sql.KeyAttestable)
+
+        if is_defined(fingerprint):
+            query = query.where(sql.KeyAttestable.fingerprint == fingerprint)
+        if is_defined(seq):
+            query = query.where(sql.KeyAttestable.seq == seq)
+        if is_defined(operation):
+            query = query.where(sql.KeyAttestable.operation == operation)
+        if is_defined(source):
+            query = query.where(sql.KeyAttestable.source == source)
+        if is_defined(input):
+            query = query.where(sql.KeyAttestable.input == input)
+        if is_defined(deletions):
+            query = query.where(sql.KeyAttestable.deletions == deletions)
+        if is_defined(additions):
+            query = query.where(sql.KeyAttestable.additions == additions)
+        if is_defined(updated):
+            query = query.where(sql.KeyAttestable.updated == updated)
+        if is_defined(actor):
+            query = query.where(sql.KeyAttestable.actor == actor)
+        if is_defined(role):
+            query = query.where(sql.KeyAttestable.role == role)
+
+        return Query(self, query)
+
     def personal_access_token(
         self,
         token_hash: Opt[str] = NOT_SET,
