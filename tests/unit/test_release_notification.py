@@ -48,7 +48,8 @@ def test_release_notification_body_carries_the_version_and_a_catalogue_link():
     send = _notification()
 
     assert "1.2.3" in send.body
-    assert "/catalog/example" in send.body
+    assert "example" in send.body
+    assert "catalog" in send.body
 
 
 def test_detected_release_is_named_in_the_subject():

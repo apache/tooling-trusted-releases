@@ -324,8 +324,8 @@ def release_notification(
 ) -> args.Send:
     # A detected release is one the watcher found published in the dist area rather than
     # one ATR made itself, so it's named as such and the body says where it came from
-    host = config.get().APP_HOST
-    catalogue_url = f"https://{host}/catalog/{project.key}"
+    url = config.get().RELEASE_CATALOG_URL
+    catalogue_url = f"{url}{project.key}"
 
     if detected:
         subject = f"Detected release: {project.short_display_name} {version}"

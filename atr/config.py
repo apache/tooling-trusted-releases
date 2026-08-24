@@ -144,7 +144,9 @@ class AppConfig:
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
     CAP_API_BASE_URL = _ENVIRONMENT_CONFIG("CAP_API_BASE_URL", default="https://cap-test.apache.org")
     CAP_ROLE_ACCOUNT_TOKEN = _config_secrets("CAP_ROLE_ACCOUNT_TOKEN", STATE_DIR, default=None, cast=str)
-    RELEASE_CATALOG_URL = _config_secrets("RELEASE_CATALOG_URL", STATE_DIR, default="https://catalog.apache.org/")
+    RELEASE_CATALOG_URL = _config_secrets(
+        "RELEASE_CATALOG_URL", STATE_DIR, default="https://release-catalog.apache.org/"
+    )
 
     DEBUG = False
     TEMPLATES_AUTO_RELOAD = False
