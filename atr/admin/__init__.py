@@ -42,6 +42,7 @@ import quart.datastructures as datastructures
 import sqlalchemy
 import sqlmodel
 import werkzeug.exceptions as exceptions
+import yaml
 
 import atr.blueprints.admin as admin
 import atr.cache as cache
@@ -399,6 +400,41 @@ async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"]) -> 
         ]
     ]
     return await template.render("admin-catalog.html", committees=listing)
+
+
+@admin.typed
+async def catalog_dump_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    _dump: Literal["dump"],
+) -> web.QuartResponse:
+    """
+    URL: GET /catalog/dump
+
+    Dump every active committee and its projects as YAML: each committee's key
+    and name, and for each project its key, name and status. Projects are
+    listed whatever their own status.
+    """
+    async with db.session() as data:
+        committees = await data.committee(is_archived=False, _projects=True).order_by(sql.Committee.key).all()
+
+    contents = {
+        "committees": [
+            {
+                "key": committee.key,
+                "name": committee.name,
+                "projects": [
+                    {"key": project.key, "name": project.name, "status": str(project.status)}
+                    for project in sorted(committee.projects, key=lambda project: project.key)
+                ],
+            }
+            for committee in committees
+        ]
+    }
+
+    dump = yaml.safe_dump(contents, sort_keys=False, allow_unicode=True)
+    headers = {"Content-Disposition": 'attachment; filename="catalog.yaml"'}
+    return quart.Response(dump, mimetype="application/yaml", headers=headers)
 
 
 class CatalogReviewedForm(form.Form):
