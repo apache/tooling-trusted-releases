@@ -45,6 +45,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Final
 
+import atr.config as config
 import atr.models.cle as cle
 import atr.models.sql as sql
 
@@ -172,7 +173,8 @@ def _identifier(project: sql.Project, release: sql.Release | None = None) -> str
     (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact catalog (#911),
     not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
     """
-    return f"pkg:scid/the+asf/{project.key}" + ("" if release is None else f"@{release.version}")
+    catalog_url = (config.get().RELEASE_CATALOG_URL or "").removeprefix("https://").removesuffix("/")
+    return f"pkg:scid/{catalog_url}/the+asf/{project.key}" + ("" if release is None else f"@{release.version}")
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:

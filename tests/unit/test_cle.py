@@ -21,13 +21,15 @@ from types import SimpleNamespace
 import pytest
 
 import atr.cle as cle
+import atr.config as config
 import atr.models.cle as cle_lib
 import atr.models.sql as sql
 
 
-def test_identifier_renders_apache_purl():
+def test_identifier_renders_apache_purl(monkeypatch):
+    monkeypatch.setattr(config.get(), "RELEASE_CATALOG_URL", "https://catalog.example.test/")
     project = SimpleNamespace(key="myproject", committee_key="mycommittee")
-    assert cle._identifier(project) == "pkg:scid/the+asf/myproject"
+    assert cle._identifier(project) == "pkg:scid/catalog.example.test/the+asf/myproject"
 
 
 def test_project_document_emits_default_support_definition_when_eod_or_eos_present():
@@ -48,10 +50,11 @@ def test_project_document_emits_no_events_when_input_empty():
     assert doc["events"] == []
 
 
-def test_project_document_emits_purl_identifier():
+def test_project_document_emits_purl_identifier(monkeypatch):
+    monkeypatch.setattr(config.get(), "RELEASE_CATALOG_URL", "https://catalog.example.test/")
     project = SimpleNamespace(key="myproject", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     doc = cle.project_document(project, [], [], now=datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC))
-    assert doc["identifier"] == "pkg:scid/the+asf/myproject"
+    assert doc["identifier"] == "pkg:scid/catalog.example.test/the+asf/myproject"
 
 
 def test_project_document_emits_schema_url():
