@@ -128,7 +128,7 @@ async def finalise_failure(
     via = sql.validate_instrumented_attribute
     error = ((error or "").strip()) or "unknown error"
     completed = datetime.datetime.now(datetime.UTC)
-    notification: sql.Notification | None = None
+    notification_id: int | None = None
     async with db.ensure_session(caller_data) as data:
         async with data.begin():
             update_stmt = (
@@ -176,10 +176,12 @@ async def finalise_failure(
                 )
             if (checker is None) and asf_uid and (asf_uid != constants.SYSTEM_SERVICE_UID):
                 message = failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
-                notification = sql.Notification(asf_uid=asf_uid, message=message, level=sql.NotificationLevel.ERROR)
-                data.add(notification)
-    if notification is not None:
-        storage.audit(asf_uid=notification.asf_uid, notification_id=notification.id, level=notification.level.value)
+                insert_stmt = sql.notification_insert(asf_uid, message, sql.NotificationLevel.ERROR).returning(
+                    via(sql.Notification.id)
+                )
+                notification_id = (await data.execute(insert_stmt)).scalar_one_or_none()
+    if notification_id is not None:
+        storage.audit(asf_uid=asf_uid, notification_id=notification_id, level=sql.NotificationLevel.ERROR.value)
     return True
 
 

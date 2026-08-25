@@ -59,6 +59,22 @@ async def test_finalise_failure_notifies_for_non_check_tasks(sqlite_sessionmaker
         assert "failed" in notification.message
 
 
+async def test_finalise_failure_dedupes_repeated_notifications(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        first = _active_task(pid=1234, task_type=sql.TaskType.SBOM_GENERATE)
+        second = _active_task(pid=1234, task_type=sql.TaskType.SBOM_GENERATE)
+        second.inputs_hash = "blake3:4567"
+        data.add(first)
+        data.add(second)
+        await data.commit()
+
+        assert await task.finalise_failure(first.id, 1234, "boom", task.FAILED, caller_data=data) is True
+        assert await task.finalise_failure(second.id, 1234, "boom", task.FAILED, caller_data=data) is True
+
+        notification = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
+        assert notification.asf_uid == "alice"
+
+
 async def test_finalise_failure_skips_notification_for_the_system_uid(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         task_row = _active_task(pid=1234, asf_uid="system", task_type=sql.TaskType.SBOM_GENERATE)

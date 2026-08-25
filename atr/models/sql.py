@@ -25,7 +25,9 @@ import copy
 import dataclasses
 import datetime
 import enum
+import hashlib
 import ipaddress
+import json
 from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeVar, assert_never, overload
 
 import pydantic
@@ -686,8 +688,12 @@ class Notification(sqlmodel.SQLModel, table=True):
     # An ATR path the notification acts on, built by the sender and never by a user
     link: str | None = sqlmodel.Field(default=None)
     link_text: str | None = sqlmodel.Field(default=None)
+    dedup_hash: str = sqlmodel.Field()
 
-    __table_args__ = (sqlalchemy.Index("ix_notification_asf_uid_created", "asf_uid", "created"),)
+    __table_args__ = (
+        sqlalchemy.Index("ix_notification_asf_uid_created", "asf_uid", "created"),
+        sqlalchemy.Index("ix_notification_asf_uid_dedup_hash", "asf_uid", "dedup_hash", unique=True),
+    )
 
 
 # PersonalAccessToken:
@@ -2333,6 +2339,33 @@ class WorkflowStatus(sqlmodel.SQLModel, table=True):
     task: Task = sqlmodel.Relationship(back_populates="workflow")
     status: str = sqlmodel.Field()
     message: str | None = sqlmodel.Field(default=None)
+
+
+def notification_dedup_hash(level: NotificationLevel, message: str, link: str | None, link_text: str | None) -> str:
+    encoded = json.dumps([level.value, message, link, link_text])
+    return hashlib.sha3_256(encoded.encode()).hexdigest()
+
+
+def notification_insert(
+    asf_uid: str,
+    message: str,
+    level: NotificationLevel,
+    link: str | None = None,
+    link_text: str | None = None,
+) -> sqlite.Insert:
+    return (
+        sqlite.insert(Notification)
+        .values(
+            asf_uid=asf_uid,
+            created=datetime.datetime.now(datetime.UTC),
+            level=level,
+            message=message,
+            link=link,
+            link_text=link_text,
+            dedup_hash=notification_dedup_hash(level, message, link, link_text),
+        )
+        .on_conflict_do_nothing(index_elements=["asf_uid", "dedup_hash"])
+    )
 
 
 def revision_key(release_key: safe.ReleaseKey | str, number: str) -> str:

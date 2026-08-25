@@ -41,16 +41,14 @@ class FoundationCommitter:
         level: sql.NotificationLevel = sql.NotificationLevel.ERROR,
         link: str | None = None,
         link_text: str | None = None,
-    ) -> sql.Notification:
-        notification = sql.Notification(
-            asf_uid=self.__asf_uid,
-            message=_normalised_message(message),
-            level=level,
-            link=link,
-            link_text=link_text,
+    ) -> sql.Notification | None:
+        stmt = sql.notification_insert(self.__asf_uid, _normalised_message(message), level, link, link_text).returning(
+            sql.Notification
         )
-        self.__data.add(notification)
+        notification = (await self.__data.execute(stmt)).scalars().one_or_none()
         await self.__data.commit()
+        if notification is None:
+            return None
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             notification_id=notification.id,
