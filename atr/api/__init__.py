@@ -2003,6 +2003,8 @@ async def vote_start(
     Start a vote.
     """
     asf_uid = _jwt_asf_uid()
+    if interaction.VOTE_START_BLOCKED:
+        raise exceptions.ServiceUnavailable(interaction.VOTE_START_BLOCKED_MESSAGE)
 
     try:
         async with db.session() as db_data:

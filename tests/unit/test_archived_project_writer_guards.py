@@ -437,7 +437,8 @@ async def test_release_import_from_svn_blocks_retired() -> None:
 
 
 @pytest.mark.asyncio
-async def test_release_promote_to_candidate_blocks_retired() -> None:
+async def test_release_promote_to_candidate_blocks_retired(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(release.interaction, "VOTE_START_BLOCKED", False)
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
     data.begin_immediate = mock.AsyncMock()

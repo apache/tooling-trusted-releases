@@ -48,6 +48,12 @@ PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
     "Archive validation is still in progress. Please wait for it to complete before starting a vote."
 )
 
+VOTE_START_BLOCKED: Final[bool] = not config.is_test_mode()
+VOTE_START_BLOCKED_MESSAGE: Final[str] = (
+    "Starting a vote is temporarily unavailable until approximately Friday 28 August"
+    " while ATR is migrated to the new beta server."
+)
+
 _ATR_DEV_VOTE_RESOLUTION_BYPASS_HOST: Final[str] = "tooling-vm-ec2-de.apache.org"
 # Infra-provided service account with permission to run ATR workflows
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
@@ -718,6 +724,9 @@ async def release_ready_to_start_vote(
     data: db.Session,
     allowed_vote_modes: frozenset[sql.VoteMode],
 ) -> tuple[sql.Release, sql.Committee] | str:
+    if VOTE_START_BLOCKED:
+        return VOTE_START_BLOCKED_MESSAGE
+
     release = await session.release(
         project_key,
         version_key,

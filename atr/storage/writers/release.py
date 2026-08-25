@@ -790,6 +790,8 @@ class CommitteeParticipant(FoundationCommitter):
         expected_podling_thread_id: str | None = None,
         acknowledged_concerns: frozenset[str] = frozenset(),
     ) -> tuple[sql.Release, int, sql.VoteMode, safe.RevisionNumber]:
+        if promote and interaction.VOTE_START_BLOCKED:
+            raise storage.AccessError(interaction.VOTE_START_BLOCKED_MESSAGE, status=503)
         release_for_pre_checks = await self.__data.release(
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
         ).demand(storage.AccessError("Release candidate draft not found", status=404))
