@@ -95,6 +95,12 @@ function updateUrl(mineOnly) {
 	window.history.replaceState({}, "", url);
 }
 
+function updateRetiredUrl(showRetired) {
+	const url = new URL(window.location);
+	url.searchParams.set("retired", showRetired ? "show" : "hide");
+	window.history.replaceState({}, "", url);
+}
+
 function setCount(ctx, visible) {
 	if (ctx.countSpan) {
 		ctx.countSpan.textContent = visible;
@@ -105,10 +111,31 @@ function showingMine(ctx) {
 	return ctx.participantButton?.dataset.showing === "participant";
 }
 
+function showingRetired(ctx) {
+	return ctx.archivedButton?.dataset.showing === "retired";
+}
+
+function cardEligible(ctx, card) {
+	return showingRetired(ctx) || card.dataset.isArchived !== "true";
+}
+
+function setRetiredButton(ctx, showRetired) {
+	ctx.archivedButton.dataset.showing = showRetired ? "retired" : "current";
+	ctx.archivedButton.textContent = showRetired
+		? `Hide retired ${ctx.config.noun}`
+		: `Show retired ${ctx.config.noun}`;
+	ctx.archivedButton.setAttribute(
+		"aria-pressed",
+		showRetired ? "true" : "false",
+	);
+}
+
 function setParticipantMode(ctx, mineOnly, keepText) {
 	let visible = 0;
 	for (const card of ctx.cards) {
-		const show = !mineOnly || card.dataset.isParticipant === "true";
+		const show =
+			cardEligible(ctx, card) &&
+			(!mineOnly || card.dataset.isParticipant === "true");
 		card.parentElement.hidden = !show;
 		if (show) {
 			visible++;
@@ -138,7 +165,8 @@ function filterByText(ctx) {
 	}
 	let visible = 0;
 	for (const card of ctx.cards) {
-		const show = !query || cardMatchesText(card, query);
+		const show =
+			cardEligible(ctx, card) && (!query || cardMatchesText(card, query));
 		card.parentElement.hidden = !show;
 		if (show) {
 			visible++;
@@ -149,12 +177,16 @@ function filterByText(ctx) {
 
 function applyInitialView(ctx) {
 	// The URL wins if it names a view, else the button's default.
-	const shown = new URLSearchParams(window.location.search).get("show");
+	const params = new URLSearchParams(window.location.search);
+	const shown = params.get("show");
 	let wantMine = showingMine(ctx);
 	if (shown === "mine") {
 		wantMine = true;
 	} else if (shown === "all") {
 		wantMine = false;
+	}
+	if (ctx.archivedButton) {
+		setRetiredButton(ctx, params.get("retired") === "show");
 	}
 	setParticipantMode(ctx, wantMine, true);
 }
@@ -167,6 +199,7 @@ window.initCardGrid = function initCardGrid(config) {
 		filterInput: document.getElementById("project-filter"),
 		filterButton: document.getElementById("filter-button"),
 		participantButton: document.getElementById("filter-participant-button"),
+		archivedButton: document.getElementById("filter-archived-button"),
 	};
 
 	if (ctx.filterButton) {
@@ -185,6 +218,18 @@ window.initCardGrid = function initCardGrid(config) {
 			const mineOnly = !showingMine(ctx);
 			setParticipantMode(ctx, mineOnly);
 			updateUrl(mineOnly);
+		});
+	}
+	if (ctx.archivedButton) {
+		ctx.archivedButton.addEventListener("click", () => {
+			const showRetired = !showingRetired(ctx);
+			setRetiredButton(ctx, showRetired);
+			if (ctx.filterInput?.value) {
+				filterByText(ctx);
+			} else {
+				setParticipantMode(ctx, showingMine(ctx), true);
+			}
+			updateRetiredUrl(showRetired);
 		});
 	}
 

@@ -232,6 +232,26 @@ class FoundationAdmin(CommitteeMember):
             catalog_reviewed=True,
         )
 
+    async def restore(self) -> None:
+        await self.__data.begin_immediate()
+        try:
+            committee = await self.__data.committee(key=self.__committee_key).demand(
+                storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+            )
+            if not committee.is_archived:
+                raise storage.AccessError(f"Committee is not retired: {self.__committee_key}", status=409)
+            committee.is_archived = False
+            committee.archived = None
+            committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+        )
+
     async def roster_person_remove(self, asf_uid: str) -> None:
         asf_uid = asf_uid.strip().lower()
         await self.__data.begin_immediate()

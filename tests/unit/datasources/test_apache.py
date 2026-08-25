@@ -26,6 +26,7 @@ from atr.datasources.apache import (
     ProjectsData,
     RetiredCommitteeData,
     WhimsyCommitteeData,
+    WhimsyPodlingsData,
 )
 
 
@@ -84,6 +85,16 @@ def test_retired_committee_data_model():
 
     pmc = retired_committees.retired[0]
     assert pmc.name == "abdera"
+    assert pmc.retired_date == "2017-03-06"
+
+
+def test_whimsy_podlings_data_model():
+    podlings = WhimsyPodlingsData.model_validate(_load_test_data("whimsy_podlings"))
+
+    assert podlings.podling_count == 2
+    retired = [p for p in podlings.podling if p.status == "retired"]
+    assert [p.key for p in retired] == ["hivemall"]
+    assert retired[0].enddate == "2022-09-01"
 
 
 def _load_test_data(name: str) -> Any:

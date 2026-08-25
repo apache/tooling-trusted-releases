@@ -5,7 +5,8 @@
     "abdera": {
       "display_name": "Abdera",
       "description": "blablabla",
-      "retired": "2017-03"
+      "retired": "2017-03",
+      "retired_date": "2017-03-06"
     }
   }
 }

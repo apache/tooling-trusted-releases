@@ -388,6 +388,7 @@ async def committee_projects(
 )
 async def committees_list(
     _committees_list: Literal["committees/list"],
+    query_args: models.api.CommitteesListQuery,
 ) -> DictResponse:
     """
     URL: GET /committees/list
@@ -397,7 +398,8 @@ async def committees_list(
     The list of committees is returned in no particular order.
     """
     async with db.session() as data:
-        committees = await data.committee().all()
+        query = data.committee() if query_args.retired else data.committee(is_archived=False)
+        committees = await query.all()
     return models.api.CommitteesListResults(
         endpoint="/committees/list",
         committees=committees,

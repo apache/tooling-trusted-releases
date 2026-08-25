@@ -63,6 +63,11 @@
                     aria-pressed="true"
                     data-showing="participant">Show all committees</button>
         {% endif %}
+        <button type="button"
+                class="btn btn-secondary ms-2"
+                id="filter-archived-button"
+                aria-pressed="false"
+                data-showing="current">Show retired committees</button>
     </div>
 
     <div class="mb-3">
@@ -83,13 +88,17 @@
         {% endif %}
         <div class="col">
             <div class="card h-100 shadow-sm page-project-card"
-                 data-is-participant="{{ 'true' if is_part else 'false' }}">
+                 data-is-participant="{{ 'true' if is_part else 'false' }}"
+                 data-is-archived="{{ 'true' if committee.is_archived else 'false' }}">
                 <div class="card-body">
                     <div class="row mb-3 align-items-center">
                         <div class="col">
                             <h3 class="card-title fs-4 mb-0">
                                 <a href="{{ as_url(get.committees.view, name=committee.key) }}"
                                    class="text-decoration-none text-dark page-committee-title-link">{{ committee.display_name }}</a>
+                                {% if committee.is_archived %}
+                                    <span class="badge text-bg-secondary fs-6 align-middle">retired</span>
+                                {% endif %}
                             </h3>
                         </div>
                         <div class="col-5 col-lg-4 text-center">

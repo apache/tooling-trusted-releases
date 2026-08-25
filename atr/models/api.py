@@ -127,6 +127,11 @@ class CommitteeProjectsResults(schema.Strict):
     projects: Sequence[sql.Project]
 
 
+@dataclasses.dataclass
+class CommitteesListQuery:
+    retired: bool = False
+
+
 class CommitteesListResults(schema.Strict):
     endpoint: Literal["/committees/list"] = schema.alias("endpoint")
     committees: Sequence[sql.Committee]

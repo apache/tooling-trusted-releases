@@ -43,6 +43,7 @@ import atr.util as util
 _WHIMSY_COMMITTEE_INFO_URL: Final[str] = "https://whimsy.apache.org/public/committee-info.json"
 _WHIMSY_COMMITTEE_RETIRED_URL: Final[str] = "https://whimsy.apache.org/public/committee-retired.json"
 _WHIMSY_PEOPLE_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_people.json"
+_WHIMSY_PODLINGS_URL: Final[str] = "https://whimsy.apache.org/public/public_podlings.json"
 _WHIMSY_PROJECTS_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_projects.json"
 _PROJECTS_COMMITTEE_URL: Final[str] = "https://projects.apache.org/json/foundation/committees.json"
 _PROJECTS_PROJECTS_URL: Final[str] = "https://projects.apache.org/json/foundation/projects.json"
@@ -127,6 +128,7 @@ class RetiredCommittee(schema.Strict):
     name: str
     display_name: str
     retired: str
+    retired_date: str | None = None
     description: str | None
 
 
@@ -261,6 +263,19 @@ class ProjectsData(helpers.DictRoot[ProjectStatus]):
     pass
 
 
+class WhimsyPodling(schema.Strict):
+    key: str
+    status: str
+    enddate: str | None = None
+
+
+class WhimsyPodlingsData(schema.Strict):
+    last_updated: str
+    podling_count: int
+    status_counts: dict[str, int]
+    podling: Annotated[list[WhimsyPodling], helpers.DictToList(key="key")]
+
+
 async def get_committee_data() -> dict[str, Committee]:
     """Returns the list of committees from projects.a.o."""
 
@@ -344,6 +359,15 @@ async def get_whimsy_committee_data() -> WhimsyCommitteeData:
     return WhimsyCommitteeData.model_validate(data)
 
 
+async def get_whimsy_podlings_data() -> WhimsyPodlingsData:
+    async with util.create_secure_session() as session:
+        async with session.get(_WHIMSY_PODLINGS_URL) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+    return WhimsyPodlingsData.model_validate(data)
+
+
 async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
     """Update metadata from remote data sources.
 
@@ -356,6 +380,8 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
     podlings_data = await get_current_podlings_data()
     whimsy_committees = await get_whimsy_committee_data()
     committees = await get_committee_data()
+    retired_committees = await get_retired_committee_data()
+    whimsy_podlings = await get_whimsy_podlings_data()
     projects = await get_projects_data() if include_projects else None
 
     ldap_projects_by_name: Mapping[str, LDAPProject] = {p.name: p for p in ldap_projects.projects}
@@ -379,6 +405,11 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
             added, updated = await _update_tooling(data, ldap_projects_by_name)
             added_count += added
             updated_count += updated
+
+            current_keys = {p.name for p in ldap_projects.projects if p.pmc is True}
+            current_keys.update(name for name, _ in podlings_data)
+            current_keys.add("tooling")
+            updated_count += await _update_retirements(data, current_keys, retired_committees, whimsy_podlings)
 
             # Project catalogue and the undiscovered-committee sweep depend on projects.a.o,
             # so they only run on the admin-triggered update (#468)
@@ -456,6 +487,16 @@ def _remove_member_release_managers(committee: sql.Committee) -> None:
     removed = [uid for uid in committee.release_managers if uid not in committee.committee_members]
     if removed != committee.release_managers:
         committee.release_managers = removed
+
+
+def _retirement_datetime(value: str | None) -> datetime.datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=datetime.UTC)
 
 
 async def _update_committees(
@@ -650,6 +691,39 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         project_model.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 
     return added_count, updated_count
+
+
+async def _update_retirements(
+    data: db.Session,
+    current_keys: set[str],
+    retired_committees: RetiredCommitteeData,
+    whimsy_podlings: WhimsyPodlingsData,
+) -> int:
+    updated_count = 0
+    retired_by_key = {entry.name: entry for entry in retired_committees.retired}
+    retired_podlings_by_key = {p.key: p for p in whimsy_podlings.podling if p.status == "retired"}
+
+    committees = await data.committee().all()
+    for committee in committees:
+        if committee.key in current_keys:
+            desired = (False, None)
+        elif committee.is_podling:
+            podling = retired_podlings_by_key.get(committee.key)
+            if podling is None:
+                continue
+            desired = (True, _retirement_datetime(podling.enddate))
+        else:
+            entry = retired_by_key.get(committee.key)
+            if entry is None:
+                continue
+            desired = (True, _retirement_datetime(entry.retired_date))
+        if (committee.is_archived, committee.archived) == desired:
+            continue
+        committee.is_archived, committee.archived = desired
+        committee.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
+        updated_count += 1
+
+    return updated_count
 
 
 async def _update_tooling(data: db.Session, ldap_projects_by_name: Mapping[str, LDAPProject]) -> tuple[int, int]:

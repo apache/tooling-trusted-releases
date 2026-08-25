@@ -340,10 +340,16 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         key: Opt[str] = NOT_SET,
         name: Opt[str] = NOT_SET,
+        charter: Opt[str | None] = NOT_SET,
         is_podling: Opt[bool] = NOT_SET,
         is_archived: Opt[bool] = NOT_SET,
+        archived: Opt[datetime.datetime | None] = NOT_SET,
         automated_keys_file: Opt[bool] = NOT_SET,
+        catalog_reviewed: Opt[bool] = NOT_SET,
         parent_committee_key: Opt[str] = NOT_SET,
+        updated: Opt[datetime.datetime | None] = NOT_SET,
+        updated_by: Opt[str | None] = NOT_SET,
+        update_type: Opt[sql.UpdateType] = NOT_SET,
         committee_members: Opt[list[str]] = NOT_SET,
         committers: Opt[list[str]] = NOT_SET,
         release_managers: Opt[list[str]] = NOT_SET,
@@ -363,14 +369,26 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.key == key)
         if is_defined(name):
             query = query.where(sql.Committee.name == name)
+        if is_defined(charter):
+            query = query.where(sql.Committee.charter == charter)
         if is_defined(is_podling):
             query = query.where(sql.Committee.is_podling == is_podling)
         if is_defined(is_archived):
             query = query.where(sql.Committee.is_archived == is_archived)
+        if is_defined(archived):
+            query = query.where(sql.Committee.archived == archived)
         if is_defined(automated_keys_file):
             query = query.where(sql.Committee.automated_keys_file == automated_keys_file)
+        if is_defined(catalog_reviewed):
+            query = query.where(sql.Committee.catalog_reviewed == catalog_reviewed)
         if is_defined(parent_committee_key):
             query = query.where(sql.Committee.parent_committee_key == parent_committee_key)
+        if is_defined(updated):
+            query = query.where(sql.Committee.updated == updated)
+        if is_defined(updated_by):
+            query = query.where(sql.Committee.updated_by == updated_by)
+        if is_defined(update_type):
+            query = query.where(sql.Committee.update_type == update_type)
         if is_defined(committee_members):
             query = query.where(sql.Committee.committee_members == committee_members)
         if is_defined(committers):

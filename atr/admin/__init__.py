@@ -446,6 +446,15 @@ class CatalogReviewedForm(form.Form):
     )
 
 
+class CommitteeArchiveForm(form.Form):
+    archived: form.OptionalDate = form.label(
+        "Retirement date",
+        "The date the PMC retired, if known. The metadata sync sets retirement automatically"
+        " from the ASF retirement records, and clears it again for any committee still listed"
+        " in a current ASF source, so this override is only for committees those records miss.",
+    )
+
+
 @admin.typed
 async def catalog_committee_get(
     _session: web.Committer, _catalog: Literal["catalog"], committee_key: safe.CommitteeKey
@@ -524,11 +533,31 @@ async def catalog_committee_get(
             submit_label="Mark as reviewed",
             confirm="Marking this catalogue as reviewed cannot be undone. Continue?",
         )
+    if committee.is_archived:
+        retired_text = "This committee is retired"
+        if committee.archived is not None:
+            retired_text += f", dated {committee.archived.date().isoformat()}"
+        retirement_control: htm.Element = htpy.div[
+            htpy.div(".alert.alert-secondary")[retired_text + "."],
+            await form.render(
+                model_cls=form.Empty,
+                action=f"/admin/catalog/{committee_key}/committee/restore",
+                submit_label="Restore committee",
+                empty=True,
+            ),
+        ]
+    else:
+        retirement_control = await form.render(
+            model_cls=CommitteeArchiveForm,
+            action=f"/admin/catalog/{committee_key}/committee/archive",
+            submit_label="Retire committee",
+        )
     return await template.render(
         "catalog-committee.html",
         committee_key=str(committee_key),
         projects=table,
         reviewed_form=reviewed_control,
+        retirement_form=retirement_control,
     )
 
 
@@ -550,6 +579,44 @@ async def catalog_reviewed_post(
         async with storage.write(session) as write:
             waca = write.as_committee_admin(str(committee_key))
             await waca.committee.catalog_reviewed_mark()
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+@admin.typed
+async def catalog_committee_archive_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _committee: Literal["committee"],
+    _archive: Literal["archive"],
+    archive_form: CommitteeArchiveForm,
+) -> web.WerkzeugResponse:
+    archived = None
+    if archive_form.archived is not None:
+        archived = datetime.datetime(
+            archive_form.archived.year,
+            archive_form.archived.month,
+            archive_form.archived.day,
+            tzinfo=datetime.UTC,
+        )
+    async with storage.write(session) as write:
+        waca = write.as_committee_admin(str(committee_key))
+        await waca.committee.archive(archived)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+@admin.typed
+async def catalog_committee_restore_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _committee: Literal["committee"],
+    _restore: Literal["restore"],
+    _restore_form: form.Empty,
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        waca = write.as_committee_admin(str(committee_key))
+        await waca.committee.restore()
     return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
 
 
