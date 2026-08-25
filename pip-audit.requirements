@@ -45,7 +45,7 @@ blinker==1.9.0
     # via
     #   flask
     #   quart
-blockbuster==1.5.26
+blockbuster==1.5.27
     # via tooling-trusted-releases
 boolean-py==5.0
     # via license-expression
@@ -58,7 +58,7 @@ cffi==2.1.1
     #   cryptography
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.5.0
+charset-normalizer==3.5.1
     # via requests
 click==8.4.2
     # via
@@ -110,7 +110,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.32.2
+filelock==3.32.3
     # via
     #   python-discovery
     #   virtualenv
@@ -150,7 +150,7 @@ hyperframe==6.1.0
     # via h2
 identify==2.6.19
     # via pre-commit
-idna==3.18
+idna==3.19
     # via
     #   anyio
     #   email-validator
@@ -212,7 +212,7 @@ nodeenv==1.10.0
     # via
     #   pre-commit
     #   pyright
-orjson==3.11.9
+orjson==3.12.0
     # via tooling-trusted-releases
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
@@ -222,7 +222,7 @@ packaging==26.3
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-platformdirs==4.11.2
+platformdirs==4.11.3
     # via virtualenv
 pre-commit==4.6.2
 priority==2.0.0
@@ -254,7 +254,7 @@ pydantic-core==2.46.4
     #   pydantic-xml
 pydantic-xml==2.21.1
     # via tooling-trusted-releases
-pygments==2.20.0
+pygments==2.21.0
     # via rich
 pyhumps==3.8.0
     # via quart-schema
@@ -275,7 +275,7 @@ pyyaml==6.0.3
     #   asfquart
     #   djlint
     #   pre-commit
-quart==0.21.0
+quart==0.22.0
     # via
     #   asfquart
     #   quart-rate-limiter
@@ -315,7 +315,7 @@ rpds-py==2026.6.3
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.16.2
+ruff==0.16.4
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
