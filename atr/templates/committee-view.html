@@ -27,6 +27,39 @@
   {% if (not is_standing) or (committee.key == "tooling") %}
     <div class="row row-cols-1 row-cols-md-2 mb-4">
       <div class="col">
+        <div class="card mb-4 h-100" id="keys-processing">
+          <div class="card-header bg-light">
+            <h3 class="mb-0">KEYS file processing</h3>
+          </div>
+          <div class="card-body">
+            <p class="text-muted">
+              How this committee's <code>KEYS</code> file is maintained:
+            </p>
+            {% if is_committee_member %}
+              {{ automated_keys_file_form }}
+              {# Upload and regenerate belong to manual mode, so they show only once it is the saved
+                 setting. Switching the radio to manual takes a Save before these appear. #}
+              {% if not committee.automated_keys_file %}
+                <hr class="my-3">
+                <p class="text-muted">
+                  Manual mode: the published <code>KEYS</code> file is not updated automatically. Upload a
+                  replacement, or regenerate it from the keys held here.
+                </p>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                  <a href="{{ as_url(get.keys.upload) }}" class="btn btn-outline-primary">Upload a KEYS file</a>
+                  {{ update_committee_keys_form }}
+                </div>
+              {% endif %}
+            {% else %}
+              <p class="text-muted mb-0">
+                This committee's <code>KEYS</code> file is maintained
+                {{ "automatically" if committee.automated_keys_file else "manually" }}.
+              </p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col">
         <div class="card mb-4 h-100">
           <div class="card-header bg-light">
             <h3 class="mb-0">Permissions</h3>
@@ -48,39 +81,8 @@
           </div>
         </div>
       </div>
-
-      <div class="col">
-        <div class="card mb-4 h-100" id="keys-processing">
-          <div class="card-header bg-light">
-            <h3 class="mb-0">KEYS file processing</h3>
-          </div>
-          <div class="card-body">
-            <p class="text-muted">
-              How this committee's <code>KEYS</code> file is maintained:
-            </p>
-            {% if is_committee_member %}
-              {{ automated_keys_file_form }}
-              {# Upload and regenerate belong to manual mode, so they show only once it is the saved
-                 setting. Switching the radio to manual takes a Save before these appear. #}
-              {% if not committee.automated_keys_file %}
-                <hr class="my-3">
-                <p class="text-muted">
-                  Manual mode: the published <code>KEYS</code> file is not updated automatically. Upload a
-                  replacement, or regenerate it from the keys held here.
-                </p>
-                <a href="{{ as_url(get.keys.upload) }}" class="btn btn-outline-primary mb-3">Upload a KEYS file</a>
-                {{ update_committee_keys_form }}
-              {% endif %}
-            {% else %}
-              <p class="text-muted mb-0">
-                This committee's <code>KEYS</code> file is maintained
-                {{ "automatically" if committee.automated_keys_file else "manually" }}.
-              </p>
-            {% endif %}
-          </div>
-        </div>
-      </div>
     </div>
+
   {% endif %}
 
   <div class="card mb-4">

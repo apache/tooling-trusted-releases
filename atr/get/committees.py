@@ -180,6 +180,8 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         update_committee_keys_form=await form.render(
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
+            # Inline block so the button sits beside the Upload link, not on its own row
+            form_classes=".d-inline-block.m-0",
             submit_label="Regenerate KEYS file",
             defaults={"committee_key": committee.key},
             empty=True,
@@ -202,7 +204,7 @@ def _keys_processing_radios(automated: bool) -> htm.Element:
     # upload and regeneration. A third SVN-import mode is not offered yet. The
     # radios carry the "enabled" field the form skips, so the value still posts.
     options = (
-        ("true", "Automatically update the Committees KEYS file"),
+        ("true", "Automatically update the KEYS file"),
         ("false", "Manually upload KEYS files in ATR"),
     )
     checks: list[htm.Element] = []
