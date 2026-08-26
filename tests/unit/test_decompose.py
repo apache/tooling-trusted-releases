@@ -25,6 +25,26 @@ import atr.svn.dist as dist
 _SOURCE = classify.FileType.SOURCE
 _BINARY = classify.FileType.BINARY
 
+# The decomposer's tunables live in the dist_rule table at runtime; here they're the standard set
+# migration 0122 seeds, so the layout cases below decompose the same way they do against the seeded
+# database. Adding a case that needs a new bucket or remap means adding it here too
+_RULES = dist.DistRules(
+    project_remaps={
+        ("activemq", "activemq-artemis"): "artemis",
+        ("apr", None): "apr-portable-runtime",
+        ("httpd", None): "httpd-http-server",
+        ("sis", None): "sis-spatial-information-system",
+        ("trafficcontrol", None): "traffic-control",
+        ("trafficserver", None): "trafficserver-traffic-server",
+        ("xmlgraphics", "commons"): "xmlgraphics-xml-graphics-commons",
+    },
+    grouping_buckets=frozenset({"providers", "source", "sources", "binaries", "bin", "src", "releases"}),
+    committee_buckets=frozenset({("maven", "plugins"), ("cordova", "platforms"), ("cordova", "tools")}),
+    excluded_parts=frozenset({"repos"}),
+    name_build_suffixes=frozenset({"src", "source", "sources", "bin", "binaries", "incubating", "v"}),
+    airflow_provider_areas=frozenset({"providers", "backport-providers"}),
+)
+
 # Each case is a real dist layout we've had to handle, as (committee, dirs-below-committee,
 # filename, expected subproject, expected version, expected classification).
 _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, classify.FileType | None]] = [
@@ -184,7 +204,7 @@ def test_decompose_known_dist_layouts(
     if (filename is not None) and (classification is not None):
         full_path = pathlib.PurePosixPath(committee, *parts, filename)
         assert classify.classify_path(full_path) == classification
-    result = dist.decompose(committee, parts, filename)
+    result = _RULES.decompose(committee, parts, filename)
     assert result is not None
     assert result.subproject == subproject
     assert result.version == version
@@ -192,7 +212,7 @@ def test_decompose_known_dist_layouts(
 
 def test_repos_subtree_is_not_a_release() -> None:
     # A package repository under a release dir holds bundled components, not releases
-    result = dist.decompose(
+    result = _RULES.decompose(
         "incubator",
         ("bigtop", "bigtop-0.2.0-incubating", "repos", "centos5", "hadoop"),
         "hadoop-0.20.205.0.2-1.x86_64.rpm",

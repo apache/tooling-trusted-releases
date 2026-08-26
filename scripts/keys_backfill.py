@@ -49,6 +49,7 @@ import atr.registry as registry
 import atr.storage as storage
 import atr.storage.writers.keys as keys_writer
 import atr.svn.dist as dist
+import atr.svn.dist_rules as dist_rules
 import atr.util as util
 
 _ACTOR_OVERRIDES: Final[dict[tuple[str, str], str]] = {
@@ -295,13 +296,13 @@ def _block_certificates(
     return blocks[digest]
 
 
-def _candidate_names(top: str, rest: tuple[str, ...]) -> list[str]:
+def _candidate_names(top: str, rest: tuple[str, ...], rules: dist.DistRules) -> list[str]:
     if not rest:
         return [top]
-    decomposed = dist.decompose(top, rest, None)
+    decomposed = rules.decompose(top, rest, None)
     subproject = decomposed.subproject if decomposed else None
     subproject = dist.module_component(top, subproject) or subproject
-    remapped = dist.PROJECT_REMAPS.get((top, subproject))
+    remapped = rules.project_remap(top, subproject)
     return [remapped] if remapped is not None else dist.candidate_keys(top, subproject)
 
 
@@ -384,6 +385,7 @@ def _listed(
     switchover: int,
     committees: frozenset[str],
     projects: dict[str, str],
+    rules: dist.DistRules,
     blocks: Blocks,
     errors: collections.Counter,
 ) -> Listed:
@@ -394,7 +396,7 @@ def _listed(
     unresolved = []
     rejected = []
     for entry in listing["paths"]:
-        committee, _reason = _resolve(entry["path"], committees, projects)
+        committee, _reason = _resolve(entry["path"], committees, projects, rules)
         if committee is None:
             unresolved.append(entry["path"])
             continue
@@ -600,10 +602,12 @@ async def _registry(data: db.Session) -> tuple[frozenset[str], dict[str, str], f
     )
 
 
-def _resolve(path: str, committees: frozenset[str], projects: dict[str, str]) -> tuple[str | None, str]:
+def _resolve(
+    path: str, committees: frozenset[str], projects: dict[str, str], rules: dist.DistRules
+) -> tuple[str | None, str]:
     parts = path.removeprefix("/release/").split("/")
     top, rest = parts[0], tuple(parts[1:-1])
-    names = _candidate_names(top, rest)
+    names = _candidate_names(top, rest, rules)
     if top not in registry.STANDING_COMMITTEES:
         for name in names:
             if name.startswith(f"{top}-") and (projects.get(name) == top):
@@ -648,10 +652,11 @@ async def _run(args: argparse.Namespace) -> None:
         marker = await data.ns_text_get("openpgp-log", "format")
         mapping = await data.ns_text_get("openpgp-log", f"archive:{_ARCHIVE_CAPTURE_DATE}")
         committees, projects, existing_links = await _registry(data)
+        rules = await dist_rules.load(data)
         hint_rows = await data.execute(sqlmodel.select(sql.validate_instrumented_attribute(sql.SignatureHint.hint)))
         hints = frozenset(hint_rows.scalars().all())
     listed = _listed(
-        json.loads(raws["release-keys.json"]), history, args.switchover, committees, projects, blocks, errors
+        json.loads(raws["release-keys.json"]), history, args.switchover, committees, projects, rules, blocks, errors
     )
     problems_stored = []
     if marker is not None and (marker != "1"):

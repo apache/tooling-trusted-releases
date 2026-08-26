@@ -181,6 +181,18 @@ class DistributionPlatform(enum.Enum):
     )
 
 
+class DistRuleKind(enum.StrEnum):
+    # How the dist watcher's decomposer reads a row. Each kind used to be a hard-coded
+    # table or frozenset in svn/dist.py; adding a new one here plus a loader branch is
+    # all a future layout quirk should need
+    PROJECT_REMAP = "project_remap"
+    GROUPING_BUCKET = "grouping_bucket"
+    COMMITTEE_BUCKET = "committee_bucket"
+    EXCLUDED_PART = "excluded_part"
+    NAME_BUILD_SUFFIX = "name_build_suffix"
+    AIRFLOW_PROVIDER_AREA = "airflow_provider_area"
+
+
 class KeyOperation(enum.StrEnum):
     DELETE = "delete"
     RESTORE = "restore"
@@ -669,6 +681,33 @@ class Banner(sqlmodel.SQLModel, table=True):
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
     )
+
+
+# DistRule:
+class DistRule(sqlmodel.SQLModel, table=True):
+    # One tunable the dist watcher's decomposer reads. The kind says how to read the row;
+    # committee scopes it (null is global), and the remaining columns carry whatever that
+    # kind needs - a bare token in pattern for the membership sets, or a committee/subproject
+    # match remapped to target for a project remap
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    kind: DistRuleKind = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(DistRuleKind, values_callable=_enum_values), nullable=False)
+    )
+    # Null scopes the rule to every committee; a value scopes it to one
+    committee: str | None = sqlmodel.Field(default=None)
+    # The remap's match subproject; null matches a committee-level dist layout
+    subproject: str | None = sqlmodel.Field(default=None)
+    # The matched token or directory name - the value the membership-set kinds test against
+    pattern: str | None = sqlmodel.Field(default=None)
+    # The remap's output project key; only a project remap sets it
+    target: str | None = sqlmodel.Field(default=None)
+    # Off keeps a row in the table and out of the loaded rule set, so a quirk can be
+    # parked without losing the note that explains it
+    enabled: bool = sqlmodel.Field(default=True)
+    # Why the rule exists - the reasoning that used to sit in an inline comment
+    note: str | None = sqlmodel.Field(default=None)
+
+    __table_args__ = (sqlalchemy.Index("ix_distrule_kind", "kind"),)
 
 
 # KeyAttestable:
