@@ -19,6 +19,7 @@ import datetime
 from typing import Literal
 
 import asfquart.base as base
+import htpy
 import sqlalchemy
 import sqlmodel
 
@@ -151,8 +152,10 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
     automated_keys_file_form = await form.render(
         model_cls=shared.keys.SetAutomatedKeysFileForm,
         action=util.as_url(post.keys.keys),
-        submit_label="Disable automated publication" if keys_automated else "Enable automated publication",
-        defaults={"committee_key": committee.key, "enabled": "false" if keys_automated else "true"},
+        submit_label="Save",
+        defaults={"committee_key": committee.key},
+        pre_submit=_keys_processing_radios(keys_automated),
+        skip=["enabled"],
         empty=True,
     )
 
@@ -192,3 +195,32 @@ def _committee_key_lists(certificates: list[sql.SigningCertificate]) -> dict[str
         if keys_list is not None:
             key_lists[certificate.fingerprint] = keys_list
     return key_lists
+
+
+def _keys_processing_radios(automated: bool) -> htm.Element:
+    # Two modes for now: automatic upkeep of the published KEYS file, or manual
+    # upload and regeneration. A third SVN-import mode is not offered yet. The
+    # radios carry the "enabled" field the form skips, so the value still posts.
+    options = (
+        ("true", "Automatically update the Committees KEYS file"),
+        ("false", "Manually upload KEYS files in ATR"),
+    )
+    checks: list[htm.Element] = []
+    for value, text in options:
+        radio_id = f"keys_processing_{value}"
+        attrs: dict[str, str] = {
+            "type": "radio",
+            "name": "enabled",
+            "id": radio_id,
+            "value": value,
+            "class_": "form-check-input",
+        }
+        if (value == "true") == automated:
+            attrs["checked"] = ""
+        checks.append(
+            htm.div(".form-check")[
+                htpy.input(**attrs),
+                htpy.label(for_=radio_id, class_="form-check-label")[text],
+            ]
+        )
+    return htm.div(".mb-3")[*checks]
