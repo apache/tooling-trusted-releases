@@ -334,6 +334,11 @@
               </li>
               <li>
                 <a class="dropdown-item"
+                   href="{{ as_url(admin.test_message_get) }}"
+                   {% if request.endpoint == 'atr_admin_test_message_get' %}class="active"{% endif %}><i class="bi bi-envelope"></i> Send test message</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
                    href="{{ as_url(admin.validate_) }}"
                    {% if request.endpoint == 'atr_admin_validate_' %}class="active"{% endif %}><i class="bi bi-arrow-repeat"></i> Validate</a>
               </li>

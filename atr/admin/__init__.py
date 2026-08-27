@@ -55,6 +55,7 @@ import atr.htm as htm
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
+import atr.mail as mail
 import atr.mapping as mapping
 import atr.models.api as api
 import atr.models.safe as safe
@@ -2475,6 +2476,48 @@ async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/re
         page.append(table.collect())
 
     return await template.blank(f"Recent Tasks ({minutes}m)", content=page.collect())
+
+
+@admin.typed
+async def test_message_get(session: web.Committer, _test_message: Literal["test-message"]) -> str:
+    rendered_form = await form.render(
+        model_cls=form.Empty,
+        submit_label="Send test message",
+    )
+    page = htm.Block()
+    page.h1["Send a test message"]
+    page.p[
+        "Send a test email to ",
+        htpy.code["dev@tooling.apache.org"],
+        " from ",
+        htpy.code[f"{session.asf_uid}@apache.org"],
+        " to check that outbound mail works.",
+    ]
+    page.append(rendered_form)
+    return await template.blank(title="Send a test message", content=page.collect())
+
+
+@admin.typed
+async def test_message_post(
+    session: web.Committer, _test_message: Literal["test-message"], _send_form: form.Empty
+) -> web.WerkzeugResponse:
+    timestamp = util.format_datetime(datetime.datetime.now(datetime.UTC))
+    message = mail.Message(
+        email_sender=f"{session.asf_uid}@apache.org",
+        email_to="dev@tooling.apache.org",
+        subject="Test message",
+        body=f"Test sent by {session.asf_uid} at {timestamp}.",
+    )
+    async with storage.write(session) as write:
+        wafc = write.as_foundation_committer()
+        mid, errors = await wafc.mail.send(message, mail.MailFooterCategory.NONE)
+    if errors:
+        await quart.flash(f"Sending failed: {'; '.join(errors)}", "error")
+    elif config.is_dev_environment():
+        await quart.flash("Dev environment, so the message was logged to sent-email-dev.log and not sent.", "success")
+    else:
+        await quart.flash(f"Sent test message {mid} to dev@tooling.apache.org.", "success")
+    return await session.redirect(test_message_get)
 
 
 @admin.typed
