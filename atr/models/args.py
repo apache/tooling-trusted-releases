@@ -244,6 +244,13 @@ class SvnPublish(schema.Strict):
     )
 
 
+class SyncKeysFromSvn(schema.Strict):
+    """Arguments for the task to reflect a committee's SVN KEYS file into ATR."""
+
+    asf_uid: str = schema.description("ASF UID on whose behalf the sync runs")
+    committee_key: str = schema.description("Committee whose KEYS file to reflect")
+
+
 class Update(schema.Strict):
     """Arguments for the task to update metadata from remote data sources."""
 

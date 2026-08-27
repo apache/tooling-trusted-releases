@@ -38,7 +38,7 @@ MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
 
 type DELETE_OPENPGP_KEY = Literal["delete_openpgp_key"]
 type DELETE_SSH_KEY = Literal["delete_ssh_key"]
-type SET_AUTOMATED_KEYS_FILE = Literal["set_automated_keys_file"]
+type SET_KEYS_MODE = Literal["set_keys_mode"]
 type UPLOAD_REMOTE_KEYS = Literal["upload_remote_keys"]
 type UPDATE_COMMITTEE_KEYS = Literal["update_committee_keys"]
 type UPLOAD_FILE_KEYS = Literal["upload_file_keys"]
@@ -102,10 +102,18 @@ class DeleteSSHKeyForm(form.Form):
     fingerprint: str = form.label("Fingerprint", widget=form.Widget.HIDDEN)
 
 
-class SetAutomatedKeysFileForm(form.Empty):
-    variant: SET_AUTOMATED_KEYS_FILE = form.value(SET_AUTOMATED_KEYS_FILE)
+class SetKeysModeForm(form.Empty):
+    variant: SET_KEYS_MODE = form.value(SET_KEYS_MODE)
     committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
-    enabled: Literal["true", "false"] = form.label("Enabled", widget=form.Widget.HIDDEN)
+    mode: Literal["automatic", "manual", "reflect"] = form.label("Mode", widget=form.Widget.HIDDEN)
+
+
+# KEYS management modes for the committee page. The order here is the order the radios render in.
+KEYS_MODE_LABELS: Final[dict[sql.KeysMode, str]] = {
+    sql.KeysMode.AUTOMATIC: "Automatically update the committee's KEYS file",
+    sql.KeysMode.REFLECT: "Automatically import changes to the KEYS file made in SVN",
+    sql.KeysMode.MANUAL: "Manually upload KEYS files in ATR",
+}
 
 
 class UpdateCommitteeKeysForm(form.Empty):
@@ -114,7 +122,7 @@ class UpdateCommitteeKeysForm(form.Empty):
 
 
 type KeysForm = Annotated[
-    DeleteOpenPGPKeyForm | DeleteSSHKeyForm | SetAutomatedKeysFileForm | UpdateCommitteeKeysForm,
+    DeleteOpenPGPKeyForm | DeleteSSHKeyForm | SetKeysModeForm | UpdateCommitteeKeysForm,
     form.DISCRIMINATOR,
 ]
 

@@ -33,27 +33,40 @@
           </div>
           <div class="card-body">
             <p class="text-muted">
-              How this committee's <code>KEYS</code> file is maintained:
+              How this committee's <code>KEYS</code> file is maintained (
+              <a href="#signing-keys">show keys</a>):
             </p>
             {% if is_committee_member %}
-              {{ automated_keys_file_form }}
-              {# Upload and regenerate belong to manual mode, so they show only once it is the saved
-                 setting. Switching the radio to manual takes a Save before these appear. #}
-              {% if not committee.automated_keys_file %}
+              {{ keys_mode_form }}
+              {# The upload and regenerate buttons only make sense while ATR holds the keys, so they
+                 show under the manual option once it is the saved setting. #}
+              {% if committee.keys_mode == "automatic" %}
+                <hr class="my-3">
+                <p class="text-muted mb-0">
+                  ATR keeps the published <code>KEYS</code> file up to date and copies each change to
+                  SVN automatically.
+                </p>
+              {% elif committee.keys_mode == "manual" %}
                 <hr class="my-3">
                 <p class="text-muted">
-                  Manual mode: the published <code>KEYS</code> file is not updated automatically. Upload a
-                  replacement, or regenerate it from the keys held here.
+                  The published <code>KEYS</code> file is not updated automatically. Upload a replacement,
+                  or regenerate it from the keys held here.
                 </p>
                 <div class="d-flex flex-wrap gap-2 mb-3">
                   <a href="{{ as_url(get.keys.upload) }}" class="btn btn-outline-primary">Upload a KEYS file</a>
                   {{ update_committee_keys_form }}
                 </div>
+              {% elif committee.keys_mode == "reflect" %}
+                <hr class="my-3">
+                <p class="text-muted mb-0">
+                  The <code>KEYS</code> file is managed directly in SVN. ATR
+                  detects changes and imports them.
+                </p>
               {% endif %}
             {% else %}
               <p class="text-muted mb-0">
                 This committee's <code>KEYS</code> file is maintained
-                {{ "automatically" if committee.automated_keys_file else "manually" }}.
+                {% if committee.keys_mode == "automatic" %}automatically{% elif committee.keys_mode == "manual" %}manually{% else %}by reflecting the copy managed in SVN{% endif %}.
               </p>
             {% endif %}
           </div>
@@ -209,7 +222,7 @@
   </div>
 
   {% if (not is_standing) or (committee.key == "tooling") %}
-    <div class="card mb-4">
+    <div class="card mb-4" id="signing-keys">
       <div class="card-header bg-light">
         <h3 class="mb-0">Signing keys</h3>
       </div>
@@ -245,6 +258,9 @@
                           <a href="{{ as_url(get.keys.details, fingerprint=key.fingerprint) }}">{{ key.fingerprint[-16:]|upper }}</a>
                         {% endif %}
                       </div>
+                      {% if key.fingerprint in flagged_keys %}
+                        <span class="badge bg-warning text-dark mt-1" title="This key was removed from the committee's KEYS file in SVN.">Missing</span>
+                      {% endif %}
                       {{ key_lists.get(key.fingerprint) or "" }}
                     </td>
                     <td class="text-break px-2">{{ email_from_key(key.primary_declared_uid or '') or 'Not specified' }}</td>

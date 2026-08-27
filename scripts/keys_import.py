@@ -344,7 +344,7 @@ def _committee_list(committee_keys: list[str], by_key: dict[str, sql.Committee])
     labels = []
     for committee_key in committee_keys:
         committee = by_key.get(committee_key)
-        disabled = (committee is not None) and (not committee.automated_keys_file)
+        disabled = (committee is not None) and (committee.keys_mode is not sql.KeysMode.AUTOMATIC)
         labels.append(f"{committee_key} (publication disabled)" if disabled else committee_key)
     return ", ".join(labels)
 

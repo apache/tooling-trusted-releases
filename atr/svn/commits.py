@@ -19,6 +19,7 @@ from typing import Final
 
 import atr.log as log
 import atr.svn.catalog as catalog
+import atr.svn.keys_reflect as keys_reflect
 
 # Dist commits arrive with pubsub_path like /svn/dist/<area>/commit; the changed
 # paths inside the commit are relative to the repo root (release/httpd/...), so the
@@ -40,3 +41,4 @@ async def handle(payload: dict) -> str | None:
     paths = len(changed) if isinstance(changed, dict) else 0
     log.info(f"dist commit r{commit.get('id')} by {commit.get('committer')}: {paths} changed paths")
     await catalog.catalogue_commit(commit)
+    await keys_reflect.reflect_commit(commit)

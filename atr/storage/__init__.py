@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Final, Protocol
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    import atr.storage.datatypes as datatypes
+
 import atr.constants as constants
 import atr.db as db
 import atr.log as log
@@ -325,6 +327,17 @@ class WriteAsDistCatalogService(WriteAsSystemService):
         self.release_archive = admin.release.archive
         self.release_catalogue_release = admin.release.catalogue_release
         self.release_notify_seen = admin.release.notify_seen
+
+
+class WriteAsKeysReflectionService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        self.__write = write
+        self.__data = data
+
+    async def reflect_committee_keys(self, committee_key: str, keys_file_text: str) -> datatypes.KeysReflection:
+        admin = WriteAsCommitteeAdmin(self.__write, self.__data, committee_key)
+        return await admin.keys.reflect_from_svn(keys_file_text)
 
 
 class WriteAsInactivitySweepService(WriteAsSystemService):

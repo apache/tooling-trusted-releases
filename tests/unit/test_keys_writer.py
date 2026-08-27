@@ -357,7 +357,7 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data
 
 @pytest.mark.asyncio
 async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
-    sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
+    sqlite_data.add(keys_writer.sql.Committee(key="alpha", keys_mode=keys_writer.sql.KeysMode.AUTOMATIC))
     await sqlite_data.commit()
     writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
@@ -370,7 +370,7 @@ async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
 
 @pytest.mark.asyncio
 async def test_dissociate_fingerprints_removes_links_and_keeps_certificates(sqlite_data):
-    sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
+    sqlite_data.add(keys_writer.sql.Committee(key="alpha", keys_mode=keys_writer.sql.KeysMode.AUTOMATIC))
     sqlite_data.add(_signing_certificate("fp1", apache_uid="alice"))
     await sqlite_data.commit()
     sqlite_data.add(keys_writer.sql.KeyLink(committee_key="alpha", key_fingerprint="fp1"))
@@ -709,7 +709,7 @@ async def test_publish_keys_to_svn_puts_keys_url() -> None:
 @pytest.mark.asyncio
 async def test_publish_keys_to_svn_skips_when_automation_disabled() -> None:
     writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
-    committee = _committee("alpha", [], automated_keys_file=False)
+    committee = _committee("alpha", [], keys_mode=keys_writer.sql.KeysMode.MANUAL)
     with (
         mock.patch.object(
             keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL="https://svn.example/dist/dev/atr")
@@ -723,21 +723,21 @@ async def test_publish_keys_to_svn_skips_when_automation_disabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_set_automated_keys_file_persists_and_audits(sqlite_data):
+async def test_set_keys_mode_persists_and_audits(sqlite_data):
     sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
     await sqlite_data.commit()
     writer, write_as = _make_committee_member(sqlite_data, "alpha")
 
-    changed = await writer.set_automated_keys_file(False)
-    unchanged = await writer.set_automated_keys_file(False)
+    changed = await writer.set_keys_mode(keys_writer.sql.KeysMode.MANUAL)
+    unchanged = await writer.set_keys_mode(keys_writer.sql.KeysMode.MANUAL)
 
     committee = await sqlite_data.committee(key="alpha").get()
     assert (changed, unchanged) == (True, False)
-    assert (committee is not None) and (committee.automated_keys_file is False)
+    assert (committee is not None) and (committee.keys_mode is keys_writer.sql.KeysMode.MANUAL)
     write_as.append_to_audit_log.assert_called_once()
 
 
-def test_set_automated_keys_file_requires_membership() -> None:
+def test_set_keys_mode_requires_membership() -> None:
     authorisation = SimpleNamespace(asf_uid="alice", is_member_of=lambda _key: False)
     write = storage.Write(authorisation, mock.MagicMock())
 
@@ -839,13 +839,17 @@ async def test_update_committee_associations_removal_republishes_remaining_keys(
 
 
 def _committee(
-    key: str, signing_certificates: list[object], *, is_podling: bool = False, automated_keys_file: bool = True
+    key: str,
+    signing_certificates: list[object],
+    *,
+    is_podling: bool = False,
+    keys_mode: object = keys_writer.sql.KeysMode.AUTOMATIC,
 ):
     return SimpleNamespace(
         key=key,
         is_podling=is_podling,
         signing_certificates=signing_certificates,
-        automated_keys_file=automated_keys_file,
+        keys_mode=keys_mode,
     )
 
 
@@ -923,7 +927,8 @@ def _genesis_row(fingerprint: str, armored: str, actor: str) -> sql.KeyAttestabl
 
 
 async def _seed_committee_key(data: db.Session, committee_key: str, fingerprint: str, armored: str) -> None:
-    data.add(keys_writer.sql.Committee(key=committee_key))
+    # These helpers back tests of ATR-managed key operations, so the committee is not in reflect mode
+    data.add(keys_writer.sql.Committee(key=committee_key, keys_mode=keys_writer.sql.KeysMode.AUTOMATIC))
     data.add(_signing_certificate(fingerprint, apache_uid="alice", armored=armored))
     data.add(_genesis_row(fingerprint, armored, "alice"))
     await data.commit()

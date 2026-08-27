@@ -303,6 +303,51 @@ async def keys_import_file(
         await data.commit()
 
 
+async def queue_sync_keys_from_svn(
+    asf_uid: str, committee_key: str, caller_data: db.Session | None = None
+) -> sql.Task | None:
+    """Queue a reflect sync for one committee, reusing one already queued for the same committee."""
+    async with db.ensure_session(caller_data) as data:
+        pending = await _pending_sync_keys_tasks(data, committee_key)
+        if pending:
+            return pending[0]
+        task = sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.SYNC_KEYS_FROM_SVN,
+            task_args=args.SyncKeysFromSvn(asf_uid=asf_uid, committee_key=committee_key).model_dump(),
+            asf_uid=asf_uid,
+            revision_number=None,
+            primary_rel_path=None,
+            project_key=None,
+            version_key=None,
+        )
+        data.add(task)
+        if caller_data is None:
+            await data.commit()
+        return task
+
+
+async def cancel_pending_sync_keys_from_svn(committee_key: str, caller_data: db.Session | None = None) -> int:
+    """
+    Drop any queued reflect sync for the committee,
+    for example if a user changes their mind and the sync hasn't run yet, we can cancel safely.
+    """
+    async with db.ensure_session(caller_data) as data:
+        via = sql.validate_instrumented_attribute
+        pending = await _pending_sync_keys_tasks(data, committee_key)
+        if not pending:
+            return 0
+        await data.execute(sqlmodel.delete(sql.Task).where(via(sql.Task.id).in_([task.id for task in pending])))
+        if caller_data is None:
+            await data.commit()
+        return len(pending)
+
+
+async def _pending_sync_keys_tasks(data: db.Session, committee_key: str) -> list[sql.Task]:
+    queued_tasks = await data.task(status=sql.TaskStatus.QUEUED, task_type=sql.TaskType.SYNC_KEYS_FROM_SVN).all()
+    return [task for task in queued_tasks if task.task_args.get("committee_key") == committee_key]
+
+
 async def metadata_update(
     asf_uid: str,
     caller_data: db.Session | None = None,
@@ -427,6 +472,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return svn.import_files
         case sql.TaskType.SVN_PUBLISH:
             return svnpub.publish
+        case sql.TaskType.SYNC_KEYS_FROM_SVN:
+            return keys.sync_from_svn
         case sql.TaskType.TARGZ_INTEGRITY:
             raise ValueError("TARGZ_INTEGRITY check has been removed; quarantine extraction validates integrity")
         case sql.TaskType.TARGZ_STRUCTURE:

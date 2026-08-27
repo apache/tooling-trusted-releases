@@ -185,6 +185,16 @@ class KeyRole(enum.StrEnum):
     USER = "user"
 
 
+class KeysMode(enum.StrEnum):
+    # How a committee's published KEYS file is kept in step with ATR. AUTOMATIC lets ATR
+    # own the file and push it to SVN whenever the keys change; MANUAL keeps the keys in
+    # ATR but leaves publication to a human; REFLECT treats SVN as the source of truth, so
+    # the dist watcher pulls external KEYS changes back into ATR and ATR never pushes.
+    AUTOMATIC = "automatic"
+    MANUAL = "manual"
+    REFLECT = "reflect"
+
+
 class LicenseCheckMode(enum.StrEnum):
     BOTH = "Both"
     LIGHTWEIGHT = "Lightweight"
@@ -273,6 +283,7 @@ class TaskType(enum.StrEnum):
     SIGNATURE_CHECK = "signature_check"
     SVN_IMPORT_FILES = "svn_import_files"
     SVN_PUBLISH = "svn_publish"
+    SYNC_KEYS_FROM_SVN = "sync_keys_from_svn"
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
     VOTE_AUTO_RESOLVE = "vote_auto_resolve"
@@ -341,6 +352,8 @@ class TaskType(enum.StrEnum):
                 return "SVN import"
             case TaskType.SVN_PUBLISH:
                 return "SVN publish"
+            case TaskType.SYNC_KEYS_FROM_SVN:
+                return "Sync keys from SVN"
             case TaskType.TARGZ_INTEGRITY:
                 return "Targz integrity"
             case TaskType.TARGZ_STRUCTURE:
@@ -673,6 +686,13 @@ class KeyLink(sqlmodel.SQLModel, table=True):
     committee_key: str = sqlmodel.Field(foreign_key="committee.key", primary_key=True)
     # Authorisation is granted to the certificate as a whole, never to an individual signing key
     key_fingerprint: str = sqlmodel.Field(foreign_key="signingcertificate.fingerprint", primary_key=True)
+    # Set when a REFLECT-mode sync found this certificate gone from the committee's SVN KEYS file
+    # but couldn't drop it because the key had signed artifacts. It stays linked and flagged so the
+    # PMC can see the mismatch; cleared once the key reappears in SVN or someone resolves it by hand.
+    svn_removed_flagged: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
 
 
 # Notification:
@@ -951,7 +971,7 @@ class Committee(sqlmodel.SQLModel, table=True):
     charter: str | None = sqlmodel.Field(default=None, **example("Example"))
     # True only if this is an incubator podling with a PPMC
     is_podling: bool = sqlmodel.Field(default=False)
-    automated_keys_file: bool = sqlmodel.Field(default=True)
+    keys_mode: KeysMode = sqlmodel.Field(default=KeysMode.REFLECT)
 
     # The date the PMC itself retired, not the dates its projects did. Null when there's
     # no such date, which includes a committee that's retired but undated (an older Attic

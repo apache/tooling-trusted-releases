@@ -42,6 +42,7 @@ import atr.shared as shared
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
+import atr.tasks as tasks
 import atr.util as util
 import atr.web as web
 
@@ -239,8 +240,8 @@ async def keys(
         case shared.keys.DeleteSSHKeyForm() as delete_ssh_form:
             return await _delete_ssh_key(session, delete_ssh_form)
 
-        case shared.keys.SetAutomatedKeysFileForm() as set_automated_form:
-            return await _set_automated_keys_file(session, set_automated_form)
+        case shared.keys.SetKeysModeForm() as set_keys_mode_form:
+            return await _set_keys_mode(session, set_keys_mode_form)
 
         case shared.keys.UpdateCommitteeKeysForm() as update_committee_form:
             return await _update_committee_keys(session, update_committee_form)
@@ -452,20 +453,27 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
     return await shared.keys.render_upload_page(results=outcomes, submitted_committees=[selected_committee])
 
 
-async def _set_automated_keys_file(
-    session: web.Committer, set_form: shared.keys.SetAutomatedKeysFileForm
-) -> web.WerkzeugResponse:
+async def _set_keys_mode(session: web.Committer, set_form: shared.keys.SetKeysModeForm) -> web.WerkzeugResponse:
     committee_key = set_form.committee_key
-    enabled = set_form.enabled == "true"
+    mode = sql.KeysMode(set_form.mode)
 
     async with storage.write() as write:
         wacm = write.as_committee_member(committee_key)
-        changed = await wacm.keys.set_automated_keys_file(enabled)
+        changed = await wacm.keys.set_keys_mode(mode)
 
-    state = "enabled" if enabled else "disabled"
+    # Reflect mode reads from SVN, so import the current KEYS file now rather than waiting for the next
+    # commit there; leaving reflect mode cancels any import that hasn't run yet.
+    if mode is sql.KeysMode.REFLECT:
+        await tasks.queue_sync_keys_from_svn(session.asf_uid, committee_key)
+    else:
+        await tasks.cancel_pending_sync_keys_from_svn(committee_key)
+
     already = "now" if changed else "already"
-    message = f'Automated KEYS publication is {already} {state} for the "{committee_key}" committee.'
-    if enabled and (not config.get().SVN_PUBLISH_URL):
+    label = shared.keys.KEYS_MODE_LABELS[mode]
+    message = f'KEYS management for the "{committee_key}" committee is {already} set to: {label}.'
+    if mode is sql.KeysMode.REFLECT:
+        message += " ATR is importing the current KEYS file from SVN."
+    elif (mode is sql.KeysMode.AUTOMATIC) and (not config.get().SVN_PUBLISH_URL):
         message += " Note that SVN publication is not configured on this server."
     return await session.redirect(get.committees.view, success=message, name=committee_key)
 

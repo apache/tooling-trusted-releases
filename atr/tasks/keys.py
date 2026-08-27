@@ -19,6 +19,7 @@ import atr.models.args as args
 import atr.models.results as results
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
+import atr.svn.keys_reflect as keys_reflect
 import atr.tasks.checks as checks
 
 
@@ -33,4 +34,11 @@ async def import_file(task_args: args.ImportFile) -> results.Results | None:
         if outcomes.any_error:
             # TODO: Log this? This code is unused anyway
             pass
+    return None
+
+
+@checks.with_model(args.SyncKeysFromSvn)
+async def sync_from_svn(task_args: args.SyncKeysFromSvn) -> results.Results | None:
+    """Reflect a committee's SVN KEYS file into ATR, for a committee in reflect mode."""
+    await keys_reflect.reflect_committee(task_args.committee_key)
     return None

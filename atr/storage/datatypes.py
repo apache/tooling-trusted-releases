@@ -68,8 +68,21 @@ class KeysPublish(enum.Enum):
 class KeySource(enum.Enum):
     API = "api"
     DOWNLOADS = "downloads"
+    SVN = "svn"
     TASK = "task"
     WEB = "web"
+
+
+@dataclasses.dataclass(frozen=True)
+class KeysReflection:
+    # The outcome of reflecting one committee's SVN KEYS file into ATR. "reliable" is false when the
+    # file parsed into blocks but yielded no keys, which we treat as a bad read and so skip removals.
+    added: int
+    removed: int
+    flagged: int
+    cleared: int
+    reliable: bool
+    errors: int
 
 
 @dataclasses.dataclass

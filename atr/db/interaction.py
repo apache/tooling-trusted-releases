@@ -152,6 +152,26 @@ async def all_releases(project: sql.Project) -> list[sql.Release]:
     return results
 
 
+async def certificate_artifact_counts(data: db.Session, fingerprints: list[str]) -> dict[str, int]:
+    # How many catalogued artifacts each certificate has signed, keyed by certificate fingerprint.
+    # An artifact is attributed to the key which signed it, so counting per certificate has to go
+    # through SigningKey or everything signed by a subkey is left out.
+    if not fingerprints:
+        return {}
+    via = sql.validate_instrumented_attribute
+    count_rows = await data.execute(
+        sqlalchemy.select(
+            via(sql.SigningKey.certificate_fingerprint),
+            sqlalchemy.func.count(),
+        )
+        .select_from(sql.Artifact)
+        .join(sql.SigningKey, via(sql.SigningKey.fingerprint) == via(sql.Artifact.key_fingerprint))
+        .where(via(sql.SigningKey.certificate_fingerprint).in_(fingerprints))
+        .group_by(via(sql.SigningKey.certificate_fingerprint))
+    )
+    return {fingerprint: count for fingerprint, count in count_rows.all()}
+
+
 async def automated_release_signing_committees(caller_data: db.Session | None = None) -> frozenset[str]:
     """Get all automated release signing committees."""
     committees = []

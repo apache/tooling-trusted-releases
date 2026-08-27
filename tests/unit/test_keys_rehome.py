@@ -69,7 +69,8 @@ def _script():
 
 async def _seed(data: db.Session) -> None:
     for key, automated in (("incubator", False), ("pulsar", False), ("lucene", True), ("hadoop", False)):
-        data.add(sql.Committee(key=key, automated_keys_file=automated))
+        mode = sql.KeysMode.AUTOMATIC if automated else sql.KeysMode.MANUAL
+        data.add(sql.Committee(key=key, keys_mode=mode))
     for fingerprint in ("fp1", "fp2", "fp4", "fp5", "fp6", "fp7"):
         data.add(_certificate(fingerprint))
     data.add(_certificate("fp3", deleted=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)))

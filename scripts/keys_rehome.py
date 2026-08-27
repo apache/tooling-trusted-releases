@@ -284,7 +284,7 @@ def _setup_audit_logging() -> logging.handlers.QueueListener:
 
 async def _state(data: db.Session) -> State:
     via = sql.validate_instrumented_attribute
-    committees = await data.execute(sqlmodel.select(via(sql.Committee.key), via(sql.Committee.automated_keys_file)))
+    committees = await data.execute(sqlmodel.select(via(sql.Committee.key), via(sql.Committee.keys_mode)))
     committee_rows = committees.all()
     fingerprints = await data.execute(
         sqlmodel.select(via(sql.SigningCertificate.fingerprint)).where(via(sql.SigningCertificate.deleted).is_(None))
@@ -294,7 +294,7 @@ async def _state(data: db.Session) -> State:
         frozenset(key for key, _ in committee_rows),
         frozenset(fingerprint.lower() for fingerprint in fingerprints.scalars().all()),
         frozenset((committee, fingerprint.lower()) for committee, fingerprint in links.all()),
-        frozenset(key for key, automated in committee_rows if automated),
+        frozenset(key for key, mode in committee_rows if mode == sql.KeysMode.AUTOMATIC),
     )
 
 

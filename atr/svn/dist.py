@@ -23,6 +23,10 @@ import dataclasses
 import re
 from typing import Final, Literal
 
+# Published releases live under this prefix in the dist repo; a commit's changed paths are relative
+# to the repo root, so both the cataloguer and the KEYS reflector strip it to read the layout.
+RELEASE_PREFIX: Final[str] = "release/"
+
 # dist-path -> projects.json key remaps the bare-name match can't reach; subproject None is a
 # committee-level layout. Per-entry only - a blanket rule mis-hits (camel-karaf is Camel's)
 PROJECT_REMAPS: Final[dict[tuple[str, str | None], str]] = {

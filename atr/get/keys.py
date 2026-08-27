@@ -20,11 +20,11 @@ from typing import Literal
 
 import htpy
 import quart
-import sqlalchemy
 import sqlmodel
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.htm as htm
 import atr.models.safe as safe
@@ -156,6 +156,8 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
     if is_owner:
         committee_choices = [(c.key, c.display_name or c.key) for c in user_committees]
         current_committee_keys = [c.key for c in key.committees]
+        # Reflect-mode committees manage their keys in SVN, so their associations are locked here
+        reflect_committee_keys = {c.key for c in user_committees if c.keys_mode is sql.KeysMode.REFLECT}
 
         # form.render_block(
         #     pmc_div,
@@ -172,7 +174,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
             "ASF distribution site, used to verify the signatures on its releases. Associate a key with a "
             "committee when you sign releases for it.",
         ]
-        checkboxes = _render_committee_checkboxes(committee_choices, current_committee_keys)
+        checkboxes = _render_committee_checkboxes(committee_choices, current_committee_keys, reflect_committee_keys)
         pmc_div.form(
             method="post",
             action=util.as_url(post.keys.details, fingerprint=key_fingerprint),
@@ -236,22 +238,7 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
         ).all()
 
         all_fingerprints = [k.fingerprint for c in user_committees_with_keys for k in c.signing_certificates]
-        artifact_counts: dict[str, int] = {}
-        if all_fingerprints:
-            via = sql.validate_instrumented_attribute
-            # An artifact is attributed to the key which signed it, so counting per certificate has
-            # to go through SigningKey or everything signed by a subkey is left out
-            count_rows = await data.execute(
-                sqlalchemy.select(
-                    via(sql.SigningKey.certificate_fingerprint),
-                    sqlalchemy.func.count(),
-                )
-                .select_from(sql.Artifact)
-                .join(sql.SigningKey, via(sql.SigningKey.fingerprint) == via(sql.Artifact.key_fingerprint))
-                .where(via(sql.SigningKey.certificate_fingerprint).in_(all_fingerprints))
-                .group_by(via(sql.SigningKey.certificate_fingerprint))
-            )
-            artifact_counts = {fp: n for fp, n in count_rows.all()}
+        artifact_counts = await interaction.certificate_artifact_counts(data, all_fingerprints)
 
     for key in user_keys:
         key.committees.sort(key=lambda c: c.key)
@@ -512,12 +499,17 @@ async def _openpgp_keys(page: htm.Block, user_keys: list[sql.SigningCertificate]
 
 
 def _render_committee_checkboxes(
-    committee_choices: list[tuple[str, str]], current_committees: list[str]
+    committee_choices: list[tuple[str, str]],
+    current_committees: list[str],
+    reflect_committees: set[str] | None = None,
 ) -> htm.Element:
     """Render committee checkboxes in a grid layout."""
+    reflect_committees = reflect_committees or set()
     row_div = htm.Block(htm.div, classes=".row")
     for val, label in committee_choices:
         checkbox_id = f"selected_committees_{val}"
+        is_checked = val in current_committees
+        is_reflect = val in reflect_committees
         checkbox_attrs = {
             "type": "checkbox",
             "name": "selected_committees",
@@ -525,12 +517,26 @@ def _render_committee_checkboxes(
             "value": val,
             "class_": "form-check-input",
         }
-        if val in current_committees:
+        if is_checked:
             checkbox_attrs["checked"] = ""
+        if is_reflect:
+            # Reflect mode locks the association: SVN is the source of truth, so this can't be changed here
+            checkbox_attrs["disabled"] = ""
 
         checkbox_input = htpy.input(**checkbox_attrs)
-        checkbox_label = htpy.label(for_=checkbox_id, class_="form-check-label")[label]
-        checkbox_div = htm.div(".form-check.mb-2")[checkbox_input, checkbox_label]
+        if is_reflect:
+            checkbox_label = htpy.label(for_=checkbox_id, class_="form-check-label")[
+                label, htm.span(".text-muted.small.ms-1")["(managed in SVN)"]
+            ]
+        else:
+            checkbox_label = htpy.label(for_=checkbox_id, class_="form-check-label")[label]
+        if is_reflect and is_checked:
+            # A disabled checkbox is not submitted, so a hidden field keeps a linked reflect committee in
+            # the POST; that way saving other changes never tries to drop it and hit the server refusal.
+            hidden = htpy.input(type="hidden", name="selected_committees", value=val)
+            checkbox_div = htm.div(".form-check.mb-2")[checkbox_input, checkbox_label, hidden]
+        else:
+            checkbox_div = htm.div(".form-check.mb-2")[checkbox_input, checkbox_label]
         col_div = htm.div(".col-sm-12.col-md-6.col-lg-4")[checkbox_div]
         row_div.append(col_div)
 

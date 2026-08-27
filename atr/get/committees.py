@@ -20,7 +20,6 @@ from typing import Literal
 
 import asfquart.base as base
 import htpy
-import sqlalchemy
 import sqlmodel
 
 import atr.blueprints.get as get
@@ -82,22 +81,17 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         names: dict[str, str | None] = {u.asfuid: u.name for u in user_rows.scalars().all()}
 
         fingerprints = [k.fingerprint for k in committee.signing_certificates]
-        artifact_counts: dict[str, int] = {}
-        if fingerprints:
-            via = sql.validate_instrumented_attribute
-            # An artifact is attributed to the key which signed it, so counting per certificate has
-            # to go through SigningKey or everything signed by a subkey is left out
-            count_rows = await data.execute(
-                sqlalchemy.select(
-                    via(sql.SigningKey.certificate_fingerprint),
-                    sqlalchemy.func.count(),
-                )
-                .select_from(sql.Artifact)
-                .join(sql.SigningKey, via(sql.SigningKey.fingerprint) == via(sql.Artifact.key_fingerprint))
-                .where(via(sql.SigningKey.certificate_fingerprint).in_(fingerprints))
-                .group_by(via(sql.SigningKey.certificate_fingerprint))
+        artifact_counts = await interaction.certificate_artifact_counts(data, fingerprints)
+
+        # Certificates a reflect sync kept despite SVN dropping them, because they'd signed artifacts here
+        via = sql.validate_instrumented_attribute
+        flagged_rows = await data.execute(
+            sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(
+                sql.KeyLink.committee_key == committee.key,
+                via(sql.KeyLink.svn_removed_flagged).is_not(None),
             )
-            artifact_counts = {fp: n for fp, n in count_rows.all()}
+        )
+        flagged_keys = set(flagged_rows.scalars().all())
 
         signing_committees = await interaction.automated_release_signing_committees(data)
 
@@ -148,20 +142,21 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
                 defaults={"committee_key": committee.key, "asf_uid": uid},
             )
 
-    keys_automated = committee.automated_keys_file
-    automated_keys_file_form = await form.render(
-        model_cls=shared.keys.SetAutomatedKeysFileForm,
+    keys_mode = committee.keys_mode
+    keys_mode_form = await form.render(
+        model_cls=shared.keys.SetKeysModeForm,
         action=util.as_url(post.keys.keys),
         submit_label="Save",
         defaults={"committee_key": committee.key},
-        pre_submit=_keys_processing_radios(keys_automated),
-        skip=["enabled"],
+        pre_submit=_keys_processing_radios(keys_mode),
+        skip=["mode"],
         empty=True,
     )
 
     return await template.render(
         "committee-view.html",
-        automated_keys_file_form=automated_keys_file_form,
+        keys_mode_form=keys_mode_form,
+        flagged_keys=flagged_keys,
         committee=committee,
         projects=project_list,
         roster=roster,
@@ -199,25 +194,18 @@ def _committee_key_lists(certificates: list[sql.SigningCertificate]) -> dict[str
     return key_lists
 
 
-def _keys_processing_radios(automated: bool) -> htm.Element:
-    # Two modes for now: automatic upkeep of the published KEYS file, or manual
-    # upload and regeneration. A third SVN-import mode is not offered yet. The
-    # radios carry the "enabled" field the form skips, so the value still posts.
-    options = (
-        ("true", "Automatically update the KEYS file"),
-        ("false", "Manually upload KEYS files in ATR"),
-    )
+def _keys_processing_radios(current: sql.KeysMode) -> htm.Element:
     checks: list[htm.Element] = []
-    for value, text in options:
-        radio_id = f"keys_processing_{value}"
+    for mode, text in shared.keys.KEYS_MODE_LABELS.items():
+        radio_id = f"keys_processing_{mode.value}"
         attrs: dict[str, str] = {
             "type": "radio",
-            "name": "enabled",
+            "name": "mode",
             "id": radio_id,
-            "value": value,
+            "value": mode.value,
             "class_": "form-check-input",
         }
-        if (value == "true") == automated:
+        if mode is current:
             attrs["checked"] = ""
         checks.append(
             htm.div(".form-check")[

@@ -37,9 +37,8 @@ import atr.storage.writers.release as release
 import atr.svn as svn
 import atr.svn.dist as dist
 
-# Changed paths are relative to the dist repo root
 # We only watch published releases; dev candidate activity is out of scope
-_RELEASE_PREFIX: Final[str] = "release/"
+_RELEASE_PREFIX: Final[str] = dist.RELEASE_PREFIX
 
 # Companion files paired to an artifact by basename, strongest first
 _SIGNATURE_SUFFIXES: Final[tuple[str, ...]] = (".asc", ".sig")

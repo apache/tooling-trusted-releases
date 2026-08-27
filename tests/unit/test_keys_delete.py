@@ -362,7 +362,8 @@ def _genesis_row(fingerprint: str, armored: str, actor: str) -> sql.KeyAttestabl
 
 
 async def _seed_keys(data: db.Session, alpha_block: str = ALPHA_BLOCK) -> None:
-    data.add(sql.Committee(key="tooling"))
+    # ATR-managed committee, so the reflect-mode read-only guard doesn't block these delete tests
+    data.add(sql.Committee(key="tooling", keys_mode=sql.KeysMode.AUTOMATIC))
     data.add(_key(ALPHA_FINGERPRINT, "alice", alpha_block))
     data.add(_key(BETA_FINGERPRINT, "bob", BETA_BLOCK))
     data.add(_genesis_row(ALPHA_FINGERPRINT, alpha_block, "alice"))

@@ -499,6 +499,17 @@ def _retirement_datetime(value: str | None) -> datetime.datetime | None:
     return parsed.replace(tzinfo=datetime.UTC)
 
 
+async def _queue_reflect_sync(data: db.Session, committee: sql.Committee) -> None:
+    # A new committee starts in reflect mode, so import its SVN KEYS once rather than leaving it empty
+    # until the next commit there. Imported here, not at module load: atr.tasks reaches back to this
+    # module via the metadata task and would close an import cycle.
+    if committee.keys_mode is not sql.KeysMode.REFLECT:
+        return
+    import atr.tasks as tasks
+
+    await tasks.queue_sync_keys_from_svn(constants.SYSTEM_SERVICE_UID, committee.key, caller_data=data)
+
+
 async def _update_committees(
     data: db.Session,
     ldap_projects: LDAPProjectsData,
@@ -521,6 +532,7 @@ async def _update_committees(
             committee = sql.Committee(key=name)
             data.add(committee)
             added_count += 1
+            await _queue_reflect_sync(data, committee)
         else:
             updated_count += 1
 
@@ -572,6 +584,7 @@ async def _update_podlings(
             ppmc = sql.Committee(key=podling_name, is_podling=True)
             data.add(ppmc)
             added_count += 1
+            await _queue_reflect_sync(data, ppmc)
         else:
             updated_count += 1
 
@@ -739,6 +752,7 @@ async def _update_tooling(data: db.Session, ldap_projects_by_name: Mapping[str, 
         tooling_project = sql.Project(key="tooling", name="Apache Tooling", committee=tooling_committee)
         data.add(tooling_project)
         added_count += 1
+        await _queue_reflect_sync(data, tooling_committee)
     else:
         updated_count += 1
 

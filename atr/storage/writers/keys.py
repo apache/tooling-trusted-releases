@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import pathlib
 import shutil
@@ -228,8 +229,34 @@ def _source_string(source: datatypes.KeySource, committee_key: str | None = None
             if not committee_key:
                 raise ValueError("A downloads source names a committee")
             return f"downloads:{committee_key}/KEYS"
+        case datatypes.KeySource.SVN:
+            if not committee_key:
+                raise ValueError("An svn source names a committee")
+            return f"svn:{committee_key}/KEYS"
         case datatypes.KeySource.TASK:
             return "task:keys_import_file"
+
+
+@dataclasses.dataclass(frozen=True)
+class _ReflectionPlan:
+    to_flag: frozenset[str]
+    to_remove: frozenset[str]
+    to_clear: frozenset[str]
+
+
+def _reflection_plan(
+    present: frozenset[str], linked: frozenset[str], in_use: frozenset[str], flagged: frozenset[str]
+) -> _ReflectionPlan:
+    # present: certificates the committee's SVN KEYS file holds. linked: certificates the committee
+    # has in ATR now. in_use: linked certificates that have signed catalogued artifacts. flagged:
+    # linked certificates already carrying the "removed in SVN but kept" mark. A certificate gone
+    # from SVN is dropped unless it's in use, in which case it stays and is flagged instead; a
+    # certificate back in SVN (or one we're dropping) shouldn't keep its flag.
+    absent = linked - present
+    to_remove = absent - in_use
+    to_flag = (absent & in_use) - flagged
+    to_clear = flagged & present
+    return _ReflectionPlan(to_flag=frozenset(to_flag), to_remove=frozenset(to_remove), to_clear=frozenset(to_clear))
 
 
 async def _sync_signing_keys(data: db.Session, certificates: list[sql.SigningCertificate]) -> None:
@@ -299,6 +326,15 @@ class FoundationCommitter(GeneralPublic):
         self.__key_block_models_cache = {}
         self.__users_cache: frozenset[str] | None = None
 
+    async def _reflect_locked_committees(self, committee_keys: set[str]) -> list[str]:
+        # Which of the given committees have handed KEYS management to SVN, so ATR must stay read-only
+        locked: list[str] = []
+        for committee_key in sorted(committee_keys):
+            committee = await self.__data.committee(key=committee_key).get()
+            if (committee is not None) and (committee.keys_mode is sql.KeysMode.REFLECT):
+                locked.append(committee_key)
+        return locked
+
     async def delete_key(self, fingerprint: str, source: datatypes.KeySource) -> outcome.Outcome[datatypes.KeyDeletion]:
         source_string = _source_string(source)
         try:
@@ -309,6 +345,13 @@ class FoundationCommitter(GeneralPublic):
                 _committees=True,
             ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
             affected_committee_keys = {committee.key for committee in key.committees}
+            reflect_locked = sorted(c.key for c in key.committees if c.keys_mode is sql.KeysMode.REFLECT)
+            if reflect_locked:
+                raise storage.AccessError(
+                    f"This key is managed in SVN for {util.conjunction(reflect_locked)} (reflect mode); "
+                    "delete it in SVN, not in ATR",
+                    status=409,
+                )
             await self._delete_certificate(key, source_string)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
@@ -481,7 +524,7 @@ class FoundationCommitter(GeneralPublic):
     async def _publish_keys_to_svn(
         self, committee: sql.Committee, content: str | None
     ) -> outcome.Outcome[datatypes.KeysPublish]:
-        if not committee.automated_keys_file:
+        if committee.keys_mode is not sql.KeysMode.AUTOMATIC:
             return outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED)
         if not config.get().SVN_PUBLISH_URL:
             return outcome.Result(datatypes.KeysPublish.SVN_NOT_CONFIGURED)
@@ -582,6 +625,14 @@ class FoundationCommitter(GeneralPublic):
 
         if not affected:
             return datatypes.KeyAssociationUpdate(added=to_add, removed=to_remove, publications={})
+
+        reflect_locked = await self._reflect_locked_committees(affected)
+        if reflect_locked:
+            raise storage.AccessError(
+                f"KEYS for {util.conjunction(reflect_locked)} are managed in SVN; "
+                "change the association in SVN, not in ATR",
+                status=409,
+            )
 
         for committee_key in sorted(to_add):
             self.__write.as_committee_participant(committee_key)
@@ -927,7 +978,19 @@ class CommitteeParticipant(FoundationCommitter):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
+    async def _reject_when_reflect_locked(self) -> None:
+        # Reflect mode is read-only in ATR, SVN owns the keys.
+        if self.__asf_uid == constants.SYSTEM_SERVICE_UID:
+            return
+        committee = await self.__data.committee(key=self.__committee_key).get()
+        if (committee is not None) and (committee.keys_mode is sql.KeysMode.REFLECT):
+            raise storage.AccessError(
+                f"KEYS for {self.__committee_key} are managed in SVN (reflect mode); ATR is read-only",
+                status=409,
+            )
+
     async def associate_fingerprint(self, fingerprint: str) -> outcome.Outcome[datatypes.LinkedCommittee]:
+        await self._reject_when_reflect_locked()
         via = sql.validate_instrumented_attribute
         link_values = [{"committee_key": self.__committee_key, "key_fingerprint": fingerprint}]
         try:
@@ -971,6 +1034,7 @@ class CommitteeParticipant(FoundationCommitter):
     async def autogenerate_keys_file(
         self,
     ) -> tuple[outcome.Outcome[int], outcome.Outcome[datatypes.KeysPublish]]:
+        await self._reject_when_reflect_locked()
         no_keys = storage.AccessError(
             f"No keys found for committee {self.__committee_key} to generate KEYS file.", status=404
         )
@@ -997,6 +1061,7 @@ class CommitteeParticipant(FoundationCommitter):
     async def ensure_associated(
         self, keys_file_text: str, source: datatypes.KeySource, committee_key: str | None = None
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
+        await self._reject_when_reflect_locked()
         source_string = _source_string(source, committee_key)
         outcomes, publications = await self.__ensure(keys_file_text, source_string, associate=True)
         if not outcomes.any_result:
@@ -1008,6 +1073,7 @@ class CommitteeParticipant(FoundationCommitter):
     async def ensure_stored(
         self, keys_file_text: str, source: datatypes.KeySource, committee_key: str | None = None
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
+        await self._reject_when_reflect_locked()
         source_string = _source_string(source, committee_key)
         outcomes, publications = await self.__ensure(keys_file_text, source_string, associate=False)
         if not outcomes.any_result:
@@ -1024,6 +1090,7 @@ class CommitteeParticipant(FoundationCommitter):
         keys_file_text: str | None = None,
         expected_revision: safe.RevisionNumber | None = None,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
+        await self._reject_when_reflect_locked()
         release = await self.__data.release(
             project_key=str(project_key),
             version=str(version_key),
@@ -1290,18 +1357,18 @@ class CommitteeMember(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
-    async def set_automated_keys_file(self, enabled: bool) -> bool:
+    async def set_keys_mode(self, mode: sql.KeysMode) -> bool:
         committee = await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
         )
-        if committee.automated_keys_file == enabled:
+        if committee.keys_mode is mode:
             return False
-        committee.automated_keys_file = enabled
+        committee.keys_mode = mode
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             committee_key=self.__committee_key,
-            automated_keys_file=enabled,
+            keys_mode=mode.value,
         )
         return True
 
@@ -1331,6 +1398,7 @@ class FoundationAdmin(CommitteeMember):
     async def delete_committee_keys(
         self, source: datatypes.KeySource
     ) -> tuple[int, int, outcome.Outcome[datatypes.KeysPublish] | None]:
+        await self._reject_when_reflect_locked()
         source_string = _source_string(source)
         via = sql.validate_instrumented_attribute
         await self.__data.committee(key=self.__committee_key).demand(
@@ -1398,6 +1466,7 @@ class FoundationAdmin(CommitteeMember):
     async def dissociate_fingerprints(
         self, fingerprints: list[str]
     ) -> tuple[list[str], outcome.Outcome[datatypes.KeysPublish] | None]:
+        await self._reject_when_reflect_locked()
         via = sql.validate_instrumented_attribute
         await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
@@ -1424,6 +1493,86 @@ class FoundationAdmin(CommitteeMember):
         _, publication = await self._sync_committee_keys_file(self.__committee_key)
         await self._recheck_committee_drafts(self.__committee_key)
         return (removed, publication)
+
+    async def reflect_from_svn(self, keys_file_text: str) -> datatypes.KeysReflection:
+        # Bring the committee's keys into line with its SVN KEYS file: add what SVN holds, drop what
+        # SVN dropped, but keep and flag any key that's signed artifacts here rather than dropping it.
+        via = sql.validate_instrumented_attribute
+        linked_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(
+                via(sql.KeyLink.committee_key) == self.__committee_key
+            )
+        )
+        linked = frozenset(linked_rows.scalars().all())
+        flagged_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(
+                via(sql.KeyLink.committee_key) == self.__committee_key,
+                via(sql.KeyLink.svn_removed_flagged).is_not(None),
+            )
+        )
+        flagged = frozenset(flagged_rows.scalars().all())
+
+        # Store and link every key the file holds
+        outcomes, _ = await self.ensure_associated(keys_file_text, datatypes.KeySource.SVN, self.__committee_key)
+        present = frozenset(key.key_model.fingerprint for key in outcomes.results())
+
+        # A file that parsed into blocks but yielded no keys is a bad read, not an empty KEYS file.
+        # Skip removals then, so a transient parse error can't strip a committee's keys.
+        block_count = len(util.parse_key_blocks(keys_file_text))
+        reliable = bool(present) or (block_count == 0)
+
+        import atr.db.interaction as interaction
+
+        counts = await interaction.certificate_artifact_counts(self.__data, sorted(linked))
+        in_use = frozenset(fingerprint for fingerprint, count in counts.items() if count > 0)
+        plan = _reflection_plan(present, linked, in_use, flagged)
+        to_remove = plan.to_remove if reliable else frozenset()
+        to_flag = plan.to_flag if reliable else frozenset()
+
+        if to_remove:
+            await self.dissociate_fingerprints(sorted(to_remove))
+        if to_flag or plan.to_clear:
+            now = datetime.datetime.now(datetime.UTC)
+            if to_flag:
+                await self.__data.execute(
+                    sqlmodel.update(sql.KeyLink)
+                    .where(
+                        via(sql.KeyLink.committee_key) == self.__committee_key,
+                        via(sql.KeyLink.key_fingerprint).in_(sorted(to_flag)),
+                    )
+                    .values(svn_removed_flagged=now)
+                )
+            if plan.to_clear:
+                await self.__data.execute(
+                    sqlmodel.update(sql.KeyLink)
+                    .where(
+                        via(sql.KeyLink.committee_key) == self.__committee_key,
+                        via(sql.KeyLink.key_fingerprint).in_(sorted(plan.to_clear)),
+                    )
+                    .values(svn_removed_flagged=None)
+                )
+            await self.__data.commit()
+
+        if to_flag:
+            flagged_json: list[basic.JSON] = [fingerprint for fingerprint in sorted(to_flag)]
+            self.__write_as.append_to_audit_log(
+                action="keys_reflect_flagged",
+                asf_uid=self.__asf_uid,
+                committee_key=self.__committee_key,
+                fingerprints=flagged_json,
+            )
+            log.warning(
+                f"Reflect: {self.__committee_key} lost {util.plural(len(to_flag), 'key')} from its SVN "
+                "KEYS file that are still in use in ATR; kept and flagged for the PMC"
+            )
+        return datatypes.KeysReflection(
+            added=len(present - linked),
+            removed=len(to_remove),
+            flagged=len(to_flag),
+            cleared=len(plan.to_clear),
+            reliable=reliable,
+            errors=outcomes.error_count,
+        )
 
 
 def _validate_key_strength(key: openpgp.composed.SignedPublicKey) -> None:
