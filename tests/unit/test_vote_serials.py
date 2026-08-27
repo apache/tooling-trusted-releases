@@ -518,7 +518,6 @@ async def test_release_current_vote_task_matches_serial_and_legacy_fallback(sqli
 
 @pytest.mark.asyncio
 async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessionmaker, monkeypatch) -> None:
-    monkeypatch.setattr(interaction, "VOTE_START_BLOCKED", False)
     monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
     async with sqlite_sessionmaker() as data:
         await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
