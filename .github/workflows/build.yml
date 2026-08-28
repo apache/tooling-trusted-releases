@@ -80,7 +80,7 @@ jobs:
       - name: Open an issue on new actions breakage
         if: >-
           steps.actions-contract.outcome == 'failure' &&
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+          github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
