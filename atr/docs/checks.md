@@ -130,7 +130,9 @@ You can [read more about license check exclusions](license-checks#project-policy
 
 ### Committee signing keys
 
-Signature verification depends on the public signing keys registered for the project's committee. ATR verifies each `.asc` signature against the set of keys linked to the committee, and accepts a signature only when the signing key has a valid ASF UID association or follows the automated release key naming convention, containing "Automated Release Signing" or "Services RM" in its primary UID with the email address `private@`_committee_`.apache.org`. If a key has not been imported for the committee, or if it lacks both an ASF UID and the naming convention, signature checks will fail for artifacts signed with that key. Committee members manage these keys through the committee keys page, and ATR regenerates the `KEYS` file when keys change. See [signing artifacts](signing-artifacts) for background on how to create and register keys.
+Signature verification depends on the public signing keys registered for the project's committee. ATR verifies each `.asc` signature against the set of keys linked to the committee, and accepts a signature only when the signing key has a valid ASF UID association or follows the automated release key naming convention, containing "Automated Release Signing" or "Services RM" in its primary UID with the email address `private@`_committee_`.apache.org`.
+
+If a key has not been imported for the committee, or if it lacks both an ASF UID and the naming convention, signature checks will fail for artifacts signed with that key. Committee members manage these keys through the committee keys page, or through the `KEYS` file in SVN, depending on the committee's KEYS management mode, described in [Promoting to release](promoting-to-release#the-keys-file). See [signing artifacts](signing-artifacts) for background on how to create and register keys.
 
 ### Podling status
 

@@ -63,6 +63,20 @@ Do this once you have verified that the new release is reachable. Archiving a re
 
 ## The KEYS file
 
-The `KEYS` file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS` and is managed independently of any individual release. Depending on a setting chosen by committee members on the committee's page in ATR, either ATR maintains and publishes this file from the keys that users have uploaded and associated with the committee, or ATR follows the copy managed directly in SVN.
+Signing releases is done with individual keys, as described in [Signing artifacts](signing-artifacts). Separately, each committee publishes a single `KEYS` file listing the public keys that its release managers sign with. The file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS`, is managed independently of any individual release, and is what downstream users fetch to verify release signatures. When you upload your key to ATR and associate it with a committee, it becomes part of the set that ATR holds for that committee's `KEYS` file.
 
-Whichever way the file is managed, the public keys of any keypairs used to sign a release must be present in the committee's `KEYS` file before you publish signed artifacts.
+Committee members choose how the file is kept in step with ATR, using the KEYS file management setting on the committee's page. There are three modes:
+
+* **Automatically update the committee's KEYS file.** ATR owns the file. Whenever the committee's keys change in ATR, ATR regenerates the `KEYS` file and commits it to SVN. This is the simplest option if the committee manages its keys in ATR.
+* **Automatically import changes to the KEYS file made in SVN.** SVN owns the file, and this is the default. ATR watches the committee's `KEYS` file in SVN and imports updates to it, but never writes back. In this mode the committee's keys are read-only in ATR, so uploads, associations, and deletions for the committee are refused; make the change in SVN instead.
+* **Manually upload KEYS files in ATR.** ATR holds the keys, but commits to SVN only on an explicit request. The committee page offers two actions: import keys from an uploaded `KEYS` file, or regenerate the published file from the keys ATR already holds. Either publishes the result to SVN. Other key changes are not published until then, so the file in SVN can lag what ATR holds.
+
+| | The keys are managed... | ATR commits the file to SVN... | ATR imports changes from SVN... |
+| --- | --- | --- | --- |
+| Automatically update | in ATR | on every key change | no |
+| Automatically import (default) | in SVN | never | when the file is updated |
+| Manually upload | in ATR | when you upload or regenerate | no |
+
+Changing the mode does not, of itself, delete any keys from ATR. Switching to the import mode starts an import of the current file in SVN, however, which can remove keys from the committee that the file does not contain. A key that has signed artifacts catalogued by ATR is never removed this way: it stays associated with the committee, marked on the committee page as missing from SVN, until it reappears in the file or the situation is resolved by hand. Deleting the `KEYS` file in SVN does not remove any keys either. Switching to either of the other two modes does not publish anything; the file in SVN changes only on the triggers described above.
+
+Whichever mode is chosen, the public keys of any keypairs used to sign a release must be present in the committee's `KEYS` file before you publish signed artifacts.
