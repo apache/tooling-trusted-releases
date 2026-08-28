@@ -557,6 +557,7 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
     assert success == "Vote marked as cancelled"
 
 
+@pytest.mark.skip(reason="The production bypass is temporarily disabled")
 @pytest.mark.parametrize("vote_result", ["failed", "passed"])
 @pytest.mark.asyncio
 async def test_resolve_allows_early_result_for_production_bypass_project(
@@ -1014,6 +1015,7 @@ def test_trusted_email_context_labels_avoid_authoritative_terms() -> None:
     assert "Formal" not in {row.status_label for row in rows}
 
 
+@pytest.mark.skip(reason="The production bypass is temporarily disabled")
 @pytest.mark.asyncio
 async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
     data = _mock_data()
@@ -1318,7 +1320,7 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
         ("tooling-vm-ec2-de.apache.org", True, True, "other", "tooling", False),
         ("tooling-vm-ec2-de.apache.org", False, False, "tooling", "tooling", False),
         ("release-test.apache.org", True, True, "tooling", "tooling", False),
-        ("release-test.apache.org", True, False, "tooling", "tooling-presentations", True),
+        ("release-test.apache.org", True, False, "tooling", "tooling-presentations", False),
         ("127.0.0.1", False, False, "other", "project", True),
         ("127.0.0.1", True, True, "tooling", "tooling", False),
     ],

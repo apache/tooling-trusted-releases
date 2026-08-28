@@ -53,7 +53,9 @@ _ATR_DEV_VOTE_RESOLUTION_BYPASS_HOST: Final[str] = "tooling-vm-ec2-de.apache.org
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 _GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 _NO_EXPECTED_VOTE_ROUND: Final[object] = object()
-_PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS: Final[frozenset[str]] = frozenset({"tooling-presentations"})
+# The tooling-presentations bypass is inactive, pending us making this admin switchable with audit logging
+# _PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS: Final[frozenset[str]] = frozenset({"tooling-presentations"})
+_PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS: Final[frozenset[str]] = frozenset()
 _TOOLING_COMMITTEE_KEY: Final[str] = "tooling"
 
 
