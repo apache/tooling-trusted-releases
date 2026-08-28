@@ -31,7 +31,7 @@ import datetime
 import json
 import pathlib
 import shutil
-from collections.abc import Container, Sequence
+from collections.abc import Awaitable, Container, Sequence
 from typing import Any, Final
 
 import aiofiles.os
@@ -85,6 +85,8 @@ _ASSETS: Final[tuple[str, ...]] = (
     "svg/ASF_short-horizontal-color.svg",
     # The front page reuses the app's card filter, so the same script comes along
     "js/src/card-grid.js",
+    # Bootstrap drives the navbar's collapse and the ASF dropdown, same as the app
+    "js/min/bootstrap.bundle.min.js",
 )
 
 # A committee counts as "current" while it still has a project that hasn't
@@ -431,16 +433,41 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
         else:
             # Nothing left to release, so it belongs with the rest of the Attic
             retired_committees.append(committee)
+    # Each index is written on its own, so a failure rendering one doesn't starve the
+    # others - above all the front page, which comes last and is the page most missed.
+    # The committee is still listed even if its own index failed to render this pass;
+    # overwrite-in-place means an earlier copy is likely still served.
     if incubator is not None:
-        await _write_incubator_index(site_dir, incubator, current_podlings, retired_podlings)
+        await _guarded_write(
+            "Incubator index", _write_incubator_index(site_dir, incubator, current_podlings, retired_podlings)
+        )
         current.append(incubator)
     if attic is not None:
-        await _write_attic_index(site_dir, attic, list(attic.projects), retired_committees)
+        attic_index = _write_attic_index(site_dir, attic, list(attic.projects), retired_committees)
+        await _guarded_write("Attic index", attic_index)
         current.append(attic)
     # A committee whose projects have all retired keeps its pages, but drops off the
     # front page, so the index stays a list of where releases are still coming from.
-    summaries = await _committee_summaries(data, committees)
-    await _write_root_index(site_dir, current, summaries)
+    await _guarded_write("front page", _write_front_page(data, site_dir, committees, current))
+
+
+async def _guarded_write(description: str, work: Awaitable[None]) -> None:
+    """Run one index write on its own, logging and swallowing a failure so the rest proceed."""
+    try:
+        await work
+    except Exception:
+        log.exception(f"Failed to render catalog site {description}")
+
+
+async def _write_front_page(
+    data: db.Session,
+    site_dir: safe.StatePath,
+    all_committees: Sequence[sql.Committee],
+    listed: Sequence[sql.Committee],
+) -> None:
+    # Summaries cover every committee; only the still-releasing ones are listed.
+    summaries = await _committee_summaries(data, all_committees)
+    await _write_root_index(site_dir, listed, summaries)
 
 
 async def _write_project(

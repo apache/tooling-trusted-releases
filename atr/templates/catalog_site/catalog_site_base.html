@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="{{ root }}assets/css/bootstrap.custom.css" />
   </head>
   <body class="d-flex flex-column min-vh-100">
-    <nav class="navbar navbar-light bg-info-light navbar-ribbon" aria-label="Release catalog">
+    <nav class="navbar navbar-expand-md navbar-light bg-info-light navbar-ribbon" aria-label="Release catalog">
       <div class="container-fluid">
         <a class="navbar-atr" href="{{ root }}index.html">
           <img src="{{ root }}assets/svg/atr_logo.svg"
@@ -23,6 +23,21 @@
                class="asf-logo" />
         </a>
         <span class="navbar-text ms-3 me-auto fw-semibold">ASF Release catalog</span>
+
+        <button class="navbar-toggler"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#navbarADP"
+                aria-controls="navbarADP"
+                aria-expanded="false"
+                aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse navbar-adp-offset" id="navbarADP">
+          <ul class="navbar-nav me-auto align-items-lg-center">
+            {% include "includes/asf-menu.html" %}
+          </ul>
+        </div>
       </div>
     </nav>
 
@@ -32,6 +47,8 @@
     </main>
 
     {% include "includes/footer.html" %}
+    {# Loaded outside the block so a page overriding scripts still gets the navbar behaviour #}
+    <script src="{{ root }}assets/js/min/bootstrap.bundle.min.js"></script>
     {% block scripts %}{% endblock scripts %}
   </body>
 </html>
