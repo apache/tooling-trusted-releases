@@ -2380,7 +2380,11 @@ async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/re
         statement = (
             sqlmodel.select(sql.Task)
             .where(
-                via(sql.Task.added) >= cutoff,
+                # Always show active tasks since they're running now!
+                sqlalchemy.or_(
+                    via(sql.Task.added) >= cutoff,
+                    via(sql.Task.status) == sql.TaskStatus.ACTIVE,
+                ),
                 sqlalchemy.or_(sqlalchemy.not_(via(sql.Task.scheduled) > now), via(sql.Task.scheduled).is_(None)),
             )
             .order_by(via(sql.Task.added).desc())
