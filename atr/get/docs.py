@@ -26,6 +26,7 @@ import quart
 
 import atr.blueprints.get as get
 import atr.config as config
+import atr.htm as htm
 import atr.models.safe as safe
 import atr.template as template
 import atr.web as web
@@ -98,4 +99,4 @@ async def _serve_docs_page(page: str) -> str:
     except Exception:
         title = filename_title
 
-    return await template.blank(title=title, content=safe_content)
+    return await template.blank(title=title, content=htm.div(".atr-docs")[safe_content])

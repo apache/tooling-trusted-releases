@@ -291,6 +291,21 @@ table tr:last-child {
     border-bottom: none;
 }
 
+.atr-docs table {
+    margin-bottom: 1rem;
+}
+
+.atr-docs table th, .atr-docs table td {
+    border: 1px solid #c1c2c3;
+    padding: 0.25rem 0.5rem;
+}
+
+.atr-docs table td {
+    font-family: inherit;
+    font-size: inherit;
+    word-break: normal;
+}
+
 aside h1 {
     margin: 1rem 0 1.5rem;
     padding-left: 2rem;
