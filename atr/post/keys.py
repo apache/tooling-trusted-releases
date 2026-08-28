@@ -486,7 +486,8 @@ async def _update_committee_keys(
 
     async with storage.write() as write:
         wacm = write.as_committee_member(committee_key)
-        keys_outcome, publication = await wacm.keys.autogenerate_keys_file()
+        # The Regenerate button is an explicit request, so it publishes even in manual mode
+        keys_outcome, publication = await wacm.keys.autogenerate_keys_file(on_demand=True)
         match keys_outcome:
             case outcome.Result():
                 base = f'Regenerated the KEYS file for the "{committee_key}" committee'

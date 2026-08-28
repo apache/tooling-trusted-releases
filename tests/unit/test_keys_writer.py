@@ -723,6 +723,38 @@ async def test_publish_keys_to_svn_skips_when_automation_disabled() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publish_keys_to_svn_publishes_in_manual_mode_on_demand() -> None:
+    writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
+    committee = _committee("alpha", [], keys_mode=keys_writer.sql.KeysMode.MANUAL)
+    with (
+        mock.patch.object(
+            keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL="https://svn.example/dist/dev/atr")
+        ),
+        mock.patch.object(keys_writer.svn, "publish_file", new_callable=mock.AsyncMock) as publish_file,
+    ):
+        result = await writer._publish_keys_to_svn(committee, None, on_demand=True)
+
+    publish_file.assert_awaited_once()
+    assert result.result_or_raise() is keys_writer.datatypes.KeysPublish.PUBLISHED
+
+
+@pytest.mark.asyncio
+async def test_publish_keys_to_svn_never_publishes_in_reflect_mode_even_on_demand() -> None:
+    writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
+    committee = _committee("alpha", [], keys_mode=keys_writer.sql.KeysMode.REFLECT)
+    with (
+        mock.patch.object(
+            keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL="https://svn.example/dist/dev/atr")
+        ),
+        mock.patch.object(keys_writer.svn, "publish_file", new_callable=mock.AsyncMock) as publish_file,
+    ):
+        result = await writer._publish_keys_to_svn(committee, None, on_demand=True)
+
+    publish_file.assert_not_awaited()
+    assert result.result_or_raise() is keys_writer.datatypes.KeysPublish.AUTOMATION_DISABLED
+
+
+@pytest.mark.asyncio
 async def test_set_keys_mode_persists_and_audits(sqlite_data):
     sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
     await sqlite_data.commit()

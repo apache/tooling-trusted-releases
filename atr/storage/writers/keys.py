@@ -522,9 +522,13 @@ class FoundationCommitter(GeneralPublic):
         return status
 
     async def _publish_keys_to_svn(
-        self, committee: sql.Committee, content: str | None
+        self, committee: sql.Committee, content: str | None, on_demand: bool = False
     ) -> outcome.Outcome[datatypes.KeysPublish]:
-        if committee.keys_mode is not sql.KeysMode.AUTOMATIC:
+        # Reflect mode never pushes: SVN owns the file. Manual mode pushes only on an explicit
+        # regenerate or upload (on_demand), not as a side effect of an automatic key change.
+        if committee.keys_mode is sql.KeysMode.REFLECT:
+            return outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED)
+        if (not on_demand) and (committee.keys_mode is not sql.KeysMode.AUTOMATIC):
             return outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED)
         if not config.get().SVN_PUBLISH_URL:
             return outcome.Result(datatypes.KeysPublish.SVN_NOT_CONFIGURED)
@@ -548,18 +552,20 @@ class FoundationCommitter(GeneralPublic):
                 await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
         return outcome.Result(datatypes.KeysPublish.PUBLISHED)
 
-    async def _sync_committee_keys_file(self, committee_key: str) -> tuple[int, outcome.Outcome[datatypes.KeysPublish]]:
+    async def _sync_committee_keys_file(
+        self, committee_key: str, on_demand: bool = False
+    ) -> tuple[int, outcome.Outcome[datatypes.KeysPublish]]:
         committee = await self.__data.committee(key=committee_key, _signing_certificates=True).demand(
             storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
 
         if not committee.signing_certificates:
             # We use an empty file for no KEYS in SVN
-            svn_outcome = await self._publish_keys_to_svn(committee, None)
+            svn_outcome = await self._publish_keys_to_svn(committee, None, on_demand=on_demand)
             return 0, svn_outcome
 
         full_keys_file_content = await self._keys_file_text(committee)
-        svn_outcome = await self._publish_keys_to_svn(committee, full_keys_file_content)
+        svn_outcome = await self._publish_keys_to_svn(committee, full_keys_file_content, on_demand=on_demand)
         return len(committee.signing_certificates), svn_outcome
 
     async def test_user_delete_all(self, test_uid: str) -> outcome.Outcome[int]:
@@ -1032,7 +1038,7 @@ class CommitteeParticipant(FoundationCommitter):
         )
 
     async def autogenerate_keys_file(
-        self,
+        self, on_demand: bool = False
     ) -> tuple[outcome.Outcome[int], outcome.Outcome[datatypes.KeysPublish]]:
         await self._reject_when_reflect_locked()
         no_keys = storage.AccessError(
@@ -1042,7 +1048,7 @@ class CommitteeParticipant(FoundationCommitter):
             committee = await self.committee()
             if not committee.signing_certificates:
                 return outcome.Error(no_keys), outcome.Error(no_keys)
-            key_count, svn_outcome = await self._sync_committee_keys_file(self.__committee_key)
+            key_count, svn_outcome = await self._sync_committee_keys_file(self.__committee_key, on_demand=on_demand)
         except Exception as e:
             return outcome.Error(e), outcome.Error(e)
         if key_count == 0:
@@ -1066,7 +1072,8 @@ class CommitteeParticipant(FoundationCommitter):
         outcomes, publications = await self.__ensure(keys_file_text, source_string, associate=True)
         if not outcomes.any_result:
             return outcomes, publications
-        _, publication = await self.autogenerate_keys_file()
+        # Uploading a KEYS file is an explicit request, so it publishes even in manual mode
+        _, publication = await self.autogenerate_keys_file(on_demand=True)
         publications[self.__committee_key] = publication
         return outcomes, publications
 
@@ -1078,7 +1085,8 @@ class CommitteeParticipant(FoundationCommitter):
         outcomes, publications = await self.__ensure(keys_file_text, source_string, associate=False)
         if not outcomes.any_result:
             return outcomes, publications
-        _, publication = await self.autogenerate_keys_file()
+        # Uploading a KEYS file is an explicit request, so it publishes even in manual mode
+        _, publication = await self.autogenerate_keys_file(on_demand=True)
         publications[self.__committee_key] = publication
         return outcomes, publications
 
