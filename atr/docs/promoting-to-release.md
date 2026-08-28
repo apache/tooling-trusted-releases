@@ -9,113 +9,60 @@
 **Sections**:
 
 * [Overview](#overview)
-* [Prerequisites](#prerequisites)
-* [Moving the files](#moving-the-files)
-* [Verifying the move](#verifying-the-move)
+* [Publishing to SVN](#publishing-to-svn)
+* [Announcing](#announcing)
 * [Removing superseded releases](#removing-superseded-releases)
 * [The KEYS file](#the-keys-file)
 
 ## Overview
 
-SVN is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting). Where ATR publishes to at the end of that process differs between Alpha and Beta.
-
-### Alpha
-
-During Alpha, when the ATR workflow completes, i.e. when the vote is resolved and the release announced, ATR commits the approved artifacts to its own area of the Apache distribution SVN repository:
-
-* TLP: `https://dist.apache.org/repos/dist/atr/<committee>/`
-* Podling: `https://dist.apache.org/repos/dist/atr/incubator/<committee>/`
-
-Files in `/dist/atr/` are **not mirrored** by the Apache distribution mirror network and are not considered official releases. To make the release official and available on `downloads.apache.org` and the mirror network, a project committer with write permissions on the destination must move the files into the canonical release area:
+SVN is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting). When the vote passes, the release moves to the finish phase, in which ATR commits the approved artifacts to the canonical release area of the Apache distribution SVN repository:
 
 * TLP: `https://dist.apache.org/repos/dist/release/<committee>/`
 * Podling: `https://dist.apache.org/repos/dist/release/incubator/<committee>/`
 
-The move is a manual SVN step performed once per release, and the rest of this page describes it. ATR does not do it for you during Alpha because automatic publishing to SVN is being tested: `/dist/atr/` is a testing area, not a release area.
+Files committed there are served from `downloads.apache.org` and the download CDN, and are picked up by `archive.apache.org` automatically. No manual SVN step is needed to publish a release.
 
-### Beta
+**Podling note**: for a podling, prefix the committee path with `incubator/` in every path below, including the `downloads.apache.org` URL.
 
-From Beta, ATR publishes the approved artifacts directly to `/dist/release/` after a successful vote, and the manual step described on this page is no longer needed. The finish page for your release shows which area your ATR instance publishes to.
+## Publishing to SVN
 
-## Prerequisites
+Publication happens in the finish phase, once the vote has resolved successfully. There are two ways to trigger it:
 
-You need a working `svn` client and your ASF committer credentials. The destination path under `/dist/release/` must be writable by your ASF user. You can check committee membership on [the Whimsy roster](https://whimsy.apache.org/roster/).
+* Automatically, by selecting "Automatically publish to SVN when this vote resolves" when starting the vote. This option is offered when a committee member starts a non-expedited vote in email or Trusted Vote mode.
+* Manually, by pressing the publish button on the finish page for the release.
 
-Before you start, confirm what ATR published and where. List the source directory with:
+The finish page shows the destination, and the resulting SVN revision and URL once publication completes.
 
-```shell
-svn ls https://dist.apache.org/repos/dist/atr/<committee>/
-```
+By default the files are placed in a per release subdirectory, `release/<committee>/<project>-<version>/`, except for a committee's top level project, whose files go directly into `release/<committee>/`. Projects can configure this layout with the download path suffix in their release policy, using the `{{PROJECT_KEY}}`, `{{VERSION}}`, and `{{MAJOR_VERSION}}` tokens, and the release manager can adjust the suffix when publishing manually.
 
-**Podling note**: For a podling, prefix the committee path with `incubator/`. Podlings replace `release/<committee>/` with `release/incubator/<committee>/` everywhere below. The source paths under `atr/incubator/<committee>/` follow the same shape.
+## Announcing
 
-You should also decide the destination layout. Two common conventions exist. The first is a flat layout that matches what ATR produced, where files sit directly under `release/<committee>/`. The second is a per version subdirectory, where files live at `release/<committee>/<version>/`_file_. Most TLPs use the per version layout. Stick to whatever your project has used for previous releases, which you can check with:
+A release cannot be announced until it has been published to SVN. When you announce, ATR verifies that the published artifacts are reachable on the download servers, and asks you to try again later if they have not finished propagating. Once verified, ATR sends the announcement email and adds the release to the release catalog.
 
-```shell
-svn ls https://dist.apache.org/repos/dist/release/<committee>/
-```
-
-## Moving the files
-
-There are two general ways to perform the move. Choose based on whether the destination layout matches the source.
-
-Both `svn move` and `svnmucc mv` record copyfrom metadata, linking each file in `dist/release` to the exact path and revision that it was moved from in `dist/atr`. This preserves the provenance of the artifacts across the move, and can be inspected with `svn log -v`. Do not download and re-import the files instead, as that would break the link.
-
-### Option A: flat to flat
-
-If the destination layout matches the source layout, a single `svn move` from URL to URL moves every artifact for one version in one revision. List each source URL explicitly so that unrelated files in `/dist/atr/<committee>/`, e.g. artifacts from other versions, are left alone:
-
-```shell
-svn move -m "Promote <committee> <version> to release" \
-  https://dist.apache.org/repos/dist/atr/<committee>/<artifact>.tar.gz \
-  https://dist.apache.org/repos/dist/atr/<committee>/<artifact>.tar.gz.asc \
-  https://dist.apache.org/repos/dist/atr/<committee>/<artifact>.tar.gz.sha256 \
-  https://dist.apache.org/repos/dist/release/<committee>/
-```
-
-Multiple sources moved to a single destination directory commit atomically as one revision.
-
-### Option B: flat to per version subdirectory
-
-If you need to place files under a new _version_ directory, or you need to rename anything in flight, use `svnmucc`. This is the _Multiple URL Command Client_, and it ships with the standard `subversion` package. It can perform many URL operations in a single atomic revision:
-
-```shell
-svnmucc -m "Promote <committee> <version> to release" \
-  mkdir   https://dist.apache.org/repos/dist/release/<committee>/<version> \
-  mv      https://dist.apache.org/repos/dist/atr/<committee>/<artifact>.tar.gz \
-          https://dist.apache.org/repos/dist/release/<committee>/<version>/<artifact>.tar.gz \
-  mv      https://dist.apache.org/repos/dist/atr/<committee>/<artifact>.tar.gz.asc \
-          https://dist.apache.org/repos/dist/release/<committee>/<version>/<artifact>.tar.gz.asc \
-  mv      https://dist.apache.org/repos/dist/atr/<committee>/<artifact>.tar.gz.sha256 \
-          https://dist.apache.org/repos/dist/release/<committee>/<version>/<artifact>.tar.gz.sha256
-```
-
-Drop the `mkdir` line if the version directory already exists. `svnmucc` will refuse with error `E160020` if it does.
-
-## Verifying the move
-
-After the commit, list both directories and confirm that the artifacts have moved:
+You can also verify the publication yourself:
 
 ```shell
 svn ls https://dist.apache.org/repos/dist/release/<committee>/
-svn ls https://dist.apache.org/repos/dist/atr/<committee>/
 ```
 
-The artifacts should appear under `release/` and be gone from `atr/`. The files should soon become visible at `https://downloads.apache.org/<committee>/...`.
+The files should soon become visible at `https://downloads.apache.org/<committee>/...`.
 
 ## Removing superseded releases
 
-Apache distribution policy is that `/dist/release/` should hold only the current release of each line, with everything older moved to `archive.apache.org`. Releases committed to `/dist/release/` are picked up by the archive automatically, so you do not have to copy them there yourself. You do, however, have to delete the superseded ones:
+Apache distribution policy is that `/dist/release/` should hold only the current release of each line, with everything older moved to `archive.apache.org`. Releases committed to `/dist/release/` are picked up by the archive automatically, so you do not have to copy them there yourself. You do, however, have to delete the superseded ones. What to delete depends on the layout your project publishes to, described above. With the default layout for a project that is not the committee's top level project, a superseded release is a single subdirectory:
 
 ```shell
 svn rm -m "Remove superseded <committee> <previous-version>" \
-  https://dist.apache.org/repos/dist/release/<committee>/<previous-version>
+  https://dist.apache.org/repos/dist/release/<committee>/<project>-<previous-version>
 ```
 
-Do this as a separate commit, after promotion, once you have verified that the new release is reachable.
+A top level project's files sit directly in the committee directory, so list each superseded file in the `svn rm` command instead.
+
+Do this once you have verified that the new release is reachable. Archiving a release in ATR records the archival in the release catalog, but does not currently remove the files from `/dist/release/`, so this step remains manual.
 
 ## The KEYS file
 
-The `KEYS` file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS` and is managed independently of any individual release. ATR publishes its own version into `dist/atr/<committee>/KEYS` during Alpha as long as `dist/atr/<committee>` already exists. This file is the result of attempting to import the `dist/release` version of `KEYS`, augmenting it with any keys which have been uploaded and associated with this committee by users on ATR, and then formatting it cleanly. It may therefore diverge from the `dist/release` version in several ways.
+The `KEYS` file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS` and is managed independently of any individual release. Depending on a setting chosen by committee members on the committee's page in ATR, either ATR maintains and publishes this file from the keys that users have uploaded and associated with the committee, or ATR follows the copy managed directly in SVN.
 
-If you want to use ATR's version of the `KEYS` file, you can move it to the `dist/release` area in similar ways to the above. You must ensure that the public keys of any keypairs used to sign a release are present in your `dist/release` `KEYS` file, no matter its origin, before you publish signed artifacts to `dist/release`. When ATR goes to Beta, we will review how `KEYS` files are managed and published, and this process will likely change.
+Whichever way the file is managed, the public keys of any keypairs used to sign a release must be present in the committee's `KEYS` file before you publish signed artifacts.

@@ -62,8 +62,8 @@ The ASF releases open source software. The ATR platform helps PMCs release their
    * ***Vote***. In this phase the PMC votes on the release and approves (or not). Votes may be canceled. Once the vote passes it is ready to publish.
      The artifacts being voted on remain in ATR for the duration of the vote, and vote emails should link to them there. See [Staging and voting](staging-and-voting).
    * ***Finish***. In this phase the Release Artifacts are committed to the Apache distribution SVN repository and announcement is deferred until the artifacts have made it
-     onto the download servers. The announcement is sent and the artifacts published to the Release Catalog. During Alpha the commit goes to `svn:dist:atr` and a
-     manual move is needed to publish, as described in [Promoting to release](promoting-to-release); from Beta the commit goes directly to `svn:dist:release`.
+     onto the download servers. The announcement is sent and the artifacts published to the Release Catalog. The commit goes directly to `svn:dist:release`,
+     as described in [Promoting to release](promoting-to-release).
 2. ***Released***. Releases that are released are active and cataloged and available via both a standard catalog api and at the proper urls using the CDN and download servers.
    Releases that use the current legacy methods skipping the ATR are also cataloged,
 3. ***Archived***. All cataloged releases may be archived using the ATR platform or by direct removal from `svn:dist:release`.

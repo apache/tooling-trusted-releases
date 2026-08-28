@@ -50,4 +50,4 @@ The SVN import is one option among four, and we expect most release managers to 
 
 Before ATR published anything to SVN, we advised release managers to upload their candidate to `dist/dev`, copy the files into ATR, hold the vote, and then move the files from `dist/dev` to `dist/release` to publish. Under that workflow it was the release manager's responsibility to make sure that the files in `dist/dev` matched the ones in ATR for the duration of the vote.
 
-That workflow still works, but it is no longer necessary, because ATR now publishes the approved artifacts itself once the vote passes: to `dist/atr` during Alpha, and directly to `dist/release` from Beta. Unless you have a specific reason to keep using `dist/dev`, you do not need it when using ATR.
+That workflow still works, but it is no longer necessary, because ATR now publishes the approved artifacts itself, directly to `dist/release`, after the vote passes. Unless you have a specific reason to keep using `dist/dev`, you do not need it when using ATR.
