@@ -525,8 +525,6 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
 
     logger = structlog.get_logger("atr.request")
 
-    app.before_request(_apply_upload_body_timeout)
-
     @app.before_request
     async def bind_request_context_vars() -> None:
         await _reset_request_log_context()
@@ -693,6 +691,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     jwtoken.setup_signing_key(app)
 
     _app_setup_api_docs(app)
+    app.before_request(_apply_upload_body_timeout)
     quart_wtf.CSRFProtect(app)
 
     _app_setup_rate_limits(app, app_config)
