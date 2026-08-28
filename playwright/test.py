@@ -418,8 +418,7 @@ def main() -> None:
 
 
 def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, revision: str) -> None:
-    rev_path = f"{project_key}/{version_key}/{revision}"
-    polling_url = f"{ATR_BASE_URL}/admin/ongoing-tasks/{rev_path}"
+    polling_url = f"{ATR_BASE_URL}/compose/status/{project_key}/{version_key}"
     logging.info(f"Polling URL: {polling_url}")
 
     max_wait_seconds = 120
@@ -432,29 +431,23 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
 
         elapsed_time = time.monotonic() - start_time
         if elapsed_time > max_wait_seconds:
-            dump_ongoing_task_details(page, project_key, version_key, revision)
-            dump_server_logs(page)
-            raise TimeoutError(f"Tasks did not complete within {max_wait_seconds} seconds")
+            break
 
         response = page.request.get(polling_url)
         if not response.ok:
             raise RuntimeError(f"Polling request failed with status {response.status}")
-        try:
-            ongoing_count_str = response.text()
-            if not ongoing_count_str:
-                raise RuntimeError("Polling request returned empty body")
-            ongoing_count = int(ongoing_count_str)
-            if (attempt > 0) and ((attempt % 20) == 0):
-                logging.info(f"Still waiting on {rev_path}: ongoing={ongoing_count}, elapsed={elapsed_time:.1f}s")
-            if ongoing_count == 0:
-                elapsed_time = time.monotonic() - start_time
-                logging.info(f"All tasks completed in {elapsed_time} seconds")
-                return
-        except ValueError:
-            raise RuntimeError(f"Polling request returned non-integer body: {response.text()}")
-        except Exception:
-            logging.exception("Unexpected error during polling response processing")
-            raise
+        status = response.json()
+        polling_active = status["polling_active"]
+        latest_revision_number = status["latest_revision_number"]
+        if (attempt > 0) and ((attempt % 20) == 0):
+            logging.info(
+                f"Still waiting on {project_key}/{version_key}/{revision}: active={polling_active},"
+                f" latest={latest_revision_number}, elapsed={elapsed_time:.1f}s"
+            )
+        if (polling_active is False) and (latest_revision_number == revision):
+            elapsed_time = time.monotonic() - start_time
+            logging.info(f"All tasks completed in {elapsed_time} seconds")
+            return
 
     dump_ongoing_task_details(page, project_key, version_key, revision)
     dump_server_logs(page)
