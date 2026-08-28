@@ -346,10 +346,6 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         admins_task = asyncio.create_task(cache.admins_refresh_loop())
         app.extensions["admins_task"] = admins_task
 
-        await cache.project_version_startup_load()
-        project_version_task = asyncio.create_task(cache.project_version_refresh_loop())
-        app.extensions["project_version_task"] = project_version_task
-
         await cache.email_uid_startup_load()
 
         await cache.banner_startup_load()
