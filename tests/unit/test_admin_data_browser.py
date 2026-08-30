@@ -18,21 +18,21 @@
 import atr.admin as admin
 
 
-def test_data_browse_page_beyond_end() -> None:
-    page = admin._data_browse_page(500, 50, 123, 0)
-    assert page == admin.DataBrowserPage(start=0, end=0, previous_offset=100, next_offset=None)
+def test_page_nav_beyond_end() -> None:
+    page = admin._page_nav(500, 50, 123, 0)
+    assert page == admin.PageNav(start=0, end=0, previous_offset=100, next_offset=None)
 
 
-def test_data_browse_page_empty_table() -> None:
-    page = admin._data_browse_page(0, 50, 0, 0)
-    assert page == admin.DataBrowserPage(start=0, end=0, previous_offset=None, next_offset=None)
+def test_page_nav_empty_table() -> None:
+    page = admin._page_nav(0, 50, 0, 0)
+    assert page == admin.PageNav(start=0, end=0, previous_offset=None, next_offset=None)
 
 
-def test_data_browse_page_first_full_page() -> None:
-    page = admin._data_browse_page(0, 50, 200, 50)
-    assert page == admin.DataBrowserPage(start=1, end=50, previous_offset=None, next_offset=50)
+def test_page_nav_first_full_page() -> None:
+    page = admin._page_nav(0, 50, 200, 50)
+    assert page == admin.PageNav(start=1, end=50, previous_offset=None, next_offset=50)
 
 
-def test_data_browse_page_partial_final_page() -> None:
-    page = admin._data_browse_page(150, 50, 180, 30)
-    assert page == admin.DataBrowserPage(start=151, end=180, previous_offset=100, next_offset=None)
+def test_page_nav_partial_final_page() -> None:
+    page = admin._page_nav(150, 50, 180, 30)
+    assert page == admin.PageNav(start=151, end=180, previous_offset=100, next_offset=None)

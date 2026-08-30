@@ -122,6 +122,19 @@ class LdapLookupForm(form.Form):
     )
 
 
+class PageNav(NamedTuple):
+    start: int
+    end: int
+    previous_offset: int | None
+    next_offset: int | None
+
+
+@dataclasses.dataclass
+class PageQuery:
+    limit: int = 50
+    offset: int = 0
+
+
 class ReleaseAgeRow(NamedTuple):
     release: sql.Release
     age_label: str
@@ -221,17 +234,37 @@ type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestR
 
 
 @admin.typed
-async def all_releases(_session: web.Committer, _all_releases: Literal["all/releases"]) -> str:
+async def all_releases(_session: web.Committer, _all_releases: Literal["all/releases"], query_args: PageQuery) -> str:
     """
     URL: GET /all/releases
 
     Display a list of all releases across all phases.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
-        releases = await data.release(_project=True, _committee=True, _revisions=True).order_by(sql.Release.key).all()
+        count_result = await data.execute(sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release))
+        count = count_result.scalar_one()
+        releases = await (
+            data.release(_project=True, _committee=True, _revisions=True)
+            .order_by(sql.Release.key)
+            .limit(query_args.limit)
+            .offset(query_args.offset)
+            .all()
+        )
     now = datetime.datetime.now(datetime.UTC)
     release_rows = [_release_age_row(release, now) for release in releases]
-    return await template.render("all-releases.html", release_rows=release_rows, release_as_url=mapping.release_as_url)
+    page = _page_nav(query_args.offset, query_args.limit, count, len(releases))
+    return await template.render(
+        "all-releases.html",
+        release_rows=release_rows,
+        release_as_url=mapping.release_as_url,
+        count=count,
+        limit=query_args.limit,
+        page=page,
+    )
 
 
 @admin.typed
@@ -1508,21 +1541,8 @@ async def consistency(_session: web.Committer, _consistency: Literal["consistenc
     )
 
 
-class DataBrowserPage(NamedTuple):
-    start: int
-    end: int
-    previous_offset: int | None
-    next_offset: int | None
-
-
-@dataclasses.dataclass
-class DataBrowserQuery:
-    limit: int = 50
-    offset: int = 0
-
-
 @admin.typed
-async def data(session: web.Committer, _data: Literal["data"], query_args: DataBrowserQuery) -> str:
+async def data(session: web.Committer, _data: Literal["data"], query_args: PageQuery) -> str:
     """
     URL: GET /data
     """
@@ -1531,7 +1551,7 @@ async def data(session: web.Committer, _data: Literal["data"], query_args: DataB
 
 @admin.typed
 async def data_model(
-    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr, query_args: DataBrowserQuery
+    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr, query_args: PageQuery
 ) -> str:
     """
     URL: GET /data/<model>
@@ -2835,7 +2855,7 @@ async def _check_keys(fix: bool = False) -> str:
     return message
 
 
-async def _data_browse(_session: web.Committer, model: str, query_args: DataBrowserQuery) -> str:
+async def _data_browse(_session: web.Committer, model: str, query_args: PageQuery) -> str:
     """Browse all records in the database."""
     try:
         validation.pagination_args_validate(query_args)
@@ -2887,7 +2907,7 @@ async def _data_browse(_session: web.Committer, model: str, query_args: DataBrow
                         record_dict[key] = getattr(record, key)
             records_dict.append(record_dict)
 
-        page = _data_browse_page(query_args.offset, query_args.limit, count, len(records))
+        page = _page_nav(query_args.offset, query_args.limit, count, len(records))
         return await template.render(
             "data-browser.html",
             models=list(model_methods.keys()),
@@ -2897,23 +2917,6 @@ async def _data_browse(_session: web.Committer, model: str, query_args: DataBrow
             limit=query_args.limit,
             page=page,
         )
-
-
-def _data_browse_page(offset: int, limit: int, count: int, shown: int) -> DataBrowserPage:
-    start = 0
-    end = 0
-    if shown > 0:
-        start = offset + 1
-        end = offset + shown
-    previous_offset = None
-    if offset > 0:
-        previous_offset = max(offset - limit, 0)
-        if (shown == 0) and (0 < count <= offset):
-            previous_offset = ((count - 1) // limit) * limit
-    next_offset = None
-    if (shown > 0) and ((offset + shown) < count):
-        next_offset = offset + limit
-    return DataBrowserPage(start=start, end=end, previous_offset=previous_offset, next_offset=next_offset)
 
 
 async def _delete_releases(session: web.Committer, releases_to_delete: list[str]) -> None:
@@ -3038,6 +3041,23 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 def _keys_update_gated() -> bool:
     return util.svn_publish_target() is util.SvnPublishTarget.RELEASE
+
+
+def _page_nav(offset: int, limit: int, count: int, shown: int) -> PageNav:
+    start = 0
+    end = 0
+    if shown > 0:
+        start = offset + 1
+        end = offset + shown
+    previous_offset = None
+    if offset > 0:
+        previous_offset = max(offset - limit, 0)
+        if (shown == 0) and (0 < count <= offset):
+            previous_offset = ((count - 1) // limit) * limit
+    next_offset = None
+    if (shown > 0) and ((offset + shown) < count):
+        next_offset = offset + limit
+    return PageNav(start=start, end=end, previous_offset=previous_offset, next_offset=next_offset)
 
 
 def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAgeRow:

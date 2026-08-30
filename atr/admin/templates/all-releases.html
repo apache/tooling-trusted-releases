@@ -7,6 +7,10 @@
 {% block content %}
   <h1>All releases</h1>
 
+  {% if release_rows %}
+    <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} releases.</p>
+  {% endif %}
+
   <table class="table table-striped">
     <thead>
       <tr>
@@ -54,10 +58,37 @@
         </tr>
       {% else %}
         <tr>
-          <td colspan="6">No releases found.</td>
+          {% if count %}
+            <td colspan="6">No releases to show on this page ({{ count }} total).</td>
+          {% else %}
+            <td colspan="6">No releases found.</td>
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>
   </table>
+
+  {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
+    <nav aria-label="All releases pages">
+      <ul class="pagination">
+        {% if page.previous_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(admin.all_releases, limit=limit, offset=page.previous_offset) }}">Previous</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+        {% if page.next_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(admin.all_releases, limit=limit, offset=page.next_offset) }}">Next</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+      </ul>
+    </nav>
+  {% endif %}
 
 {% endblock content %}
