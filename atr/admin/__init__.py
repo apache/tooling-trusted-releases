@@ -1508,23 +1508,36 @@ async def consistency(_session: web.Committer, _consistency: Literal["consistenc
     )
 
 
+class DataBrowserPage(NamedTuple):
+    start: int
+    end: int
+    previous_offset: int | None
+    next_offset: int | None
+
+
+@dataclasses.dataclass
+class DataBrowserQuery:
+    limit: int = 50
+    offset: int = 0
+
+
 @admin.typed
-async def data(session: web.Committer, _data: Literal["data"]) -> str:
+async def data(session: web.Committer, _data: Literal["data"], query_args: DataBrowserQuery) -> str:
     """
     URL: GET /data
     """
-    return await _data_browse(session, "Committee")
+    return await _data_browse(session, "Committee", query_args)
 
 
 @admin.typed
 async def data_model(
-    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr = unsafe.UnsafeStr("Committee")
+    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr, query_args: DataBrowserQuery
 ) -> str:
     """
     URL: GET /data/<model>
     """
 
-    return await _data_browse(session, str(model))
+    return await _data_browse(session, str(model), query_args)
 
 
 @admin.typed
@@ -2822,8 +2835,12 @@ async def _check_keys(fix: bool = False) -> str:
     return message
 
 
-async def _data_browse(_session: web.Committer, model: str = "Committee") -> str:
+async def _data_browse(_session: web.Committer, model: str, query_args: DataBrowserQuery) -> str:
     """Browse all records in the database."""
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
         # Map of model names to their classes
         # TODO: Add distribution channel, key link, and any others
@@ -2846,7 +2863,12 @@ async def _data_browse(_session: web.Committer, model: str = "Committee") -> str
             raise base.ASFQuartException(f"Model type '{model}' not found", 404)
 
         # Get all records for the selected model
-        records = await model_methods[model]().all()
+        query = model_methods[model]()
+        model_class = query.query.column_descriptions[0]["type"]
+        count_result = await data.execute(sqlalchemy.select(sqlalchemy.func.count()).select_from(model_class))
+        count = count_result.scalar_one()
+        query = query.order_by(*sqlalchemy.inspect(model_class).primary_key)
+        records = await query.limit(query_args.limit).offset(query_args.offset).all()
 
         # Convert records to dictionaries for JSON serialization
         records_dict = []
@@ -2865,9 +2887,33 @@ async def _data_browse(_session: web.Committer, model: str = "Committee") -> str
                         record_dict[key] = getattr(record, key)
             records_dict.append(record_dict)
 
+        page = _data_browse_page(query_args.offset, query_args.limit, count, len(records))
         return await template.render(
-            "data-browser.html", models=list(model_methods.keys()), model=model, records=records_dict
+            "data-browser.html",
+            models=list(model_methods.keys()),
+            model=model,
+            records=records_dict,
+            count=count,
+            limit=query_args.limit,
+            page=page,
         )
+
+
+def _data_browse_page(offset: int, limit: int, count: int, shown: int) -> DataBrowserPage:
+    start = 0
+    end = 0
+    if shown > 0:
+        start = offset + 1
+        end = offset + shown
+    previous_offset = None
+    if offset > 0:
+        previous_offset = max(offset - limit, 0)
+        if (shown == 0) and (0 < count <= offset):
+            previous_offset = ((count - 1) // limit) * limit
+    next_offset = None
+    if (shown > 0) and ((offset + shown) < count):
+        next_offset = offset + limit
+    return DataBrowserPage(start=start, end=end, previous_offset=previous_offset, next_offset=next_offset)
 
 
 async def _delete_releases(session: web.Committer, releases_to_delete: list[str]) -> None:

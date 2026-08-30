@@ -97,6 +97,10 @@ class Query[T]:
         self.query = self.query.limit(count)
         return self
 
+    def offset(self, count: int) -> Query[T]:
+        self.query = self.query.offset(count)
+        return self
+
     def log_query(self, method_name: str, log_query: bool) -> None:
         if not (self.session.log_queries or global_log_query or log_query):
             return

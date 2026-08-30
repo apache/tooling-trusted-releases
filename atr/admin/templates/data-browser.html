@@ -72,6 +72,7 @@
   </div>
 
   {% if records %}
+    <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} records.</p>
     <div>
       {% for record in records %}
         <div class="page-record">
@@ -94,6 +95,33 @@
       {% endfor %}
     </div>
   {% else %}
-    <p class="page-no-records">No records found for {{ model }}.</p>
+    {% if count %}
+      <p class="page-no-records">No records to show on this page ({{ count }} in {{ model }}).</p>
+    {% else %}
+      <p class="page-no-records">No records found for {{ model }}.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
+    <nav aria-label="Data browser pages">
+      <ul class="pagination">
+        {% if page.previous_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(admin.data_model, model=model, limit=limit, offset=page.previous_offset) }}">Previous</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+        {% if page.next_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(admin.data_model, model=model, limit=limit, offset=page.next_offset) }}">Next</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+      </ul>
+    </nav>
   {% endif %}
 {% endblock content %}
