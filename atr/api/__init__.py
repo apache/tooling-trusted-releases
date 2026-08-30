@@ -14,9 +14,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import asyncio
+import contextlib
 import datetime
 import gc
 import hashlib
+import os
+import pathlib
+import tempfile
 from typing import Any, Final, Literal
 
 import aiofiles.os
@@ -1489,6 +1494,67 @@ async def release_revisions(
 
 @api.typed(
     auth_scheme=api_auth.Auth.BEARER,
+    method="POST",
+    response=[(models.api.ReleaseStoreResults, 201), (models.api.ReleaseStoreResults, 202)],
+)
+async def release_store(
+    _release_store: Literal["release/store"],
+    query_args: models.api.ReleaseStoreQuery,
+) -> DictResponse:
+    """
+    URL: POST /release/store
+
+    Store a file in a release, streaming the raw request body to disk.
+    Metadata is passed in the query string, and the body is the file content.
+    """
+    asf_uid = _jwt_asf_uid()
+    try:
+        project = safe.ProjectKey(query_args.project)
+        version = safe.VersionKey(query_args.version)
+        relpath = safe.RelPath(query_args.relpath)
+        expected_revision = (
+            safe.RevisionNumber(query_args.expected_revision) if (query_args.expected_revision is not None) else None
+        )
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+
+    source = ""
+    try:
+        fd, source = tempfile.mkstemp(dir=paths.get_tmp_dir())
+        os.close(fd)
+        try:
+            async with asyncio.timeout(quart.request.body_timeout):
+                async with aiofiles.open(source, "wb") as w:
+                    async for chunk in quart.request.body:
+                        await w.write(chunk)
+        except TimeoutError as e:
+            raise exceptions.RequestTimeout() from e
+        async with storage.write(asf_uid) as write:
+            wacp = await write.as_project_committee_participant(project)
+            result = await wacp.release.store_file(project, version, relpath, pathlib.Path(source), expected_revision)
+    except (datatypes.PhaseMismatchError, datatypes.RevisionMismatchError) as e:
+        raise exceptions.Conflict(str(e))
+    except datatypes.ContentInvalidError as e:
+        raise exceptions.BadRequest(str(e))
+    finally:
+        if source:
+            with contextlib.suppress(FileNotFoundError):
+                await aiofiles.os.remove(source)
+    if isinstance(result, sql.Quarantined):
+        return models.api.ReleaseStoreResults(
+            endpoint="/release/store",
+            quarantined=True,
+            revision=None,
+        ).model_dump(mode="json"), 202
+    return models.api.ReleaseStoreResults(
+        endpoint="/release/store",
+        quarantined=False,
+        revision=result,
+    ).model_dump(mode="json"), 201
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
     response=(models.api.ReleaseUploadResults, 201),
 )
 async def release_upload(
@@ -1516,6 +1582,8 @@ async def release_upload(
             result = await wacp.release.upload_file(data)
     except (datatypes.PhaseMismatchError, datatypes.RevisionMismatchError) as e:
         raise exceptions.Conflict(str(e))
+    except datatypes.ContentInvalidError as e:
+        raise exceptions.BadRequest(str(e))
     if isinstance(result, sql.Quarantined):
         return {
             "endpoint": "/release/upload",

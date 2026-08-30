@@ -184,6 +184,10 @@ class FailedError(Exception):
     pass
 
 
+class ContentInvalidError(FailedError):
+    pass
+
+
 class PhaseMismatchError(FailedError):
     pass
 

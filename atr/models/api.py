@@ -794,6 +794,20 @@ class ReleaseRevisionsResults(schema.Strict):
     revisions: Sequence[sql.Revision]
 
 
+@dataclasses.dataclass
+class ReleaseStoreQuery:
+    project: str
+    version: str
+    relpath: str
+    expected_revision: str | None = None
+
+
+class ReleaseStoreResults(schema.Strict):
+    endpoint: Literal["/release/store"] = schema.alias("endpoint")
+    quarantined: bool
+    revision: sql.Revision | None
+
+
 class ReleaseUploadArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
@@ -1041,6 +1055,7 @@ type Results = Annotated[
     | ReleaseGetResults
     | ReleasePathsResults
     | ReleaseRevisionsResults
+    | ReleaseStoreResults
     | ReleaseUploadResults
     | ReleasesListResults
     | SbomGenerateResults
@@ -1104,6 +1119,7 @@ validate_release_draft_delete = validator(ReleaseDraftDeleteResults)
 validate_release_get = validator(ReleaseGetResults)
 validate_release_paths = validator(ReleasePathsResults)
 validate_release_revisions = validator(ReleaseRevisionsResults)
+validate_release_store = validator(ReleaseStoreResults)
 validate_release_upload = validator(ReleaseUploadResults)
 validate_releases_list = validator(ReleasesListResults)
 validate_sbom_generate = validator(SbomGenerateResults)

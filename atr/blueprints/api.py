@@ -59,7 +59,8 @@ def route_auth_schemes() -> dict[str, str]:
 def typed(
     *,
     auth_scheme: auth.Auth,
-    response: tuple[type[pydantic.BaseModel], int] | None = None,
+    method: str = "",
+    response: list[tuple[type[pydantic.BaseModel], int]] | tuple[type[pydantic.BaseModel], int] | None = None,
     rate_limit: tuple[int, datetime.timedelta] | None = None,
 ) -> Callable[[Callable[..., Awaitable[Any]]], web.RouteFunction[Any]]:
     """Single decorator for an API route.
@@ -74,7 +75,7 @@ def typed(
         path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
             handler
         )
-        method = "POST" if (body_param is not None) else "GET"
+        http_method = method or ("POST" if (body_param is not None) else "GET")
         body_safe_params = common.safe_params_for_type(body_param[1]) if (body_param is not None) else []
         query_safe_params = common.safe_params_for_type(query_param[1]) if (query_param is not None) else []
 
@@ -95,7 +96,7 @@ def typed(
             start_time_ns = time.perf_counter_ns()
             result = await handler(**kwargs)
             total_ms = (time.perf_counter_ns() - start_time_ns) // 1_000_000
-            log.performance(f"API {method} {path} {handler.__name__} = 0 0 {total_ms}")
+            log.performance(f"API {http_method} {path} {handler.__name__} = 0 0 {total_ms}")
             return result
 
         endpoint = common.setup_wrapper(wrapper, handler, _BLUEPRINT_NAME)
@@ -113,7 +114,7 @@ def typed(
             rate_limit=rate_limit,
         )
 
-        _add_url_rules(view, path, endpoint, method, optional_params)
+        _add_url_rules(view, path, endpoint, http_method, optional_params)
         common.register_route(handler, "api", _routes)
         _route_auth_schemes[handler.__name__] = auth_scheme.value
         return view
@@ -152,7 +153,7 @@ def _decorate_view(
     view: Callable[..., Any],
     *,
     auth_scheme: auth.Auth,
-    response: tuple[type[pydantic.BaseModel], int] | None,
+    response: list[tuple[type[pydantic.BaseModel], int]] | tuple[type[pydantic.BaseModel], int] | None,
     query_param: tuple[str, type] | None,
     body_param: tuple[str, type[pydantic.BaseModel]] | None,
     rate_limit: tuple[int, datetime.timedelta] | None,
@@ -162,7 +163,8 @@ def _decorate_view(
     # then header auth (outside body validation), then rate limiting (outermost).
     view = auth.security_scheme_for(auth_scheme)(view)
     if response is not None:
-        view = quart_schema.validate_response(response[0], response[1])(view)
+        for response_model, response_status in response if isinstance(response, list) else [response]:
+            view = quart_schema.validate_response(response_model, response_status)(view)
     if query_param is not None:
         view = quart_schema.validate_querystring(query_param[1])(view)
     if body_param is not None:

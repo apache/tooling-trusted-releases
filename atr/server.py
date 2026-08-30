@@ -128,6 +128,20 @@ asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code
 
 
 class ApiOnlyOpenAPIProvider(quart_schema.OpenAPIProvider):
+    def build_paths(self, rule: routing.Rule) -> tuple[dict, dict]:
+        paths, components = super().build_paths(rule)
+        if rule.rule == "/api/release/store":
+            for operations in paths.values():
+                for operation in operations.values():
+                    for parameter in operation.get("parameters", []):
+                        if parameter["name"] in {"project", "version", "relpath"}:
+                            parameter["required"] = True
+                    operation["requestBody"] = {
+                        "content": {"application/octet-stream": {"schema": {"format": "binary", "type": "string"}}},
+                        "required": True,
+                    }
+        return paths, components
+
     def generate_rules(self) -> Iterable[routing.Rule]:
         for rule in super().generate_rules():
             if rule.rule.startswith("/api"):
@@ -1308,7 +1322,7 @@ def _unique_routes_check(app: base.QuartApp) -> None:
 def _uses_upload_body_timeout(method: str, path: str) -> bool:
     if method != "POST":
         return False
-    return path.startswith("/upload/") or (path == "/api/release/upload")
+    return path.startswith("/upload/") or (path == "/api/release/store") or (path == "/api/release/upload")
 
 
 def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> None:

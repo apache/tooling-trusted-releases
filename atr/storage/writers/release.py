@@ -939,6 +939,33 @@ class CommitteeParticipant(FoundationCommitter):
             download_path_suffix=download_path_suffix,
         )
 
+    async def store_file(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        relpath: safe.RelPath,
+        source: pathlib.Path,
+        expected_revision: safe.RevisionNumber | None,
+    ) -> sql.Revision | sql.Quarantined:
+        validated_path = relpath.as_path()
+        description = f"Store via API: {validated_path}"
+
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
+            target_path = path / validated_path
+            await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
+            await aiofiles.os.replace(source, target_path.path)
+
+        result = await self.__write_as.revision.create_revision_with_quarantine(
+            project_key,
+            version_key,
+            self.__asf_uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
+            expected_revision=expected_revision,
+        )
+        return await self.__stored_revision(project_key, version_key, result)
+
     async def upload_file(self, upload_args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
         file_bytes = base64.b64decode(upload_args.content, validate=True)
         validated_path = upload_args.relpath.as_path()
@@ -959,16 +986,7 @@ class CommitteeParticipant(FoundationCommitter):
             modify=modify,
             expected_revision=upload_args.expected_revision,
         )
-        if isinstance(result, sql.Quarantined):
-            return result
-        async with db.session() as data:
-            release = await data.release(project_key=str(upload_args.project), version=str(upload_args.version)).demand(
-                storage.AccessError("Release not found", status=404)
-            )
-            return await data.revision(
-                release_key=release.key,
-                number=result.number,
-            ).demand(storage.AccessError("Revision not found", status=404))
+        return await self.__stored_revision(upload_args.project, upload_args.version, result)
 
     async def upload_files(
         self,
@@ -1107,6 +1125,23 @@ class CommitteeParticipant(FoundationCommitter):
                 await aiofiles.os.rename(interim_path / f, target_path / f.name)
                 if f == source_path:
                     moved_files_names.append(f.name)
+
+    async def __stored_revision(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        result: sql.Revision | sql.Quarantined,
+    ) -> sql.Revision | sql.Quarantined:
+        if isinstance(result, sql.Quarantined):
+            return result
+        async with db.session() as data:
+            release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+                storage.AccessError("Release not found", status=404)
+            )
+            return await data.revision(
+                release_key=release.key,
+                number=result.number,
+            ).demand(storage.AccessError("Revision not found", status=404))
 
     async def __tasks_ongoing(
         self,

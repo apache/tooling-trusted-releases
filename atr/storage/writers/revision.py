@@ -505,7 +505,7 @@ class CommitteeParticipant(FoundationCommitter):
         validation_errors = await asyncio.to_thread(detection.validate_directory, temp_dir_path.path)
         if validation_errors:
             await aioshutil.rmtree(temp_dir)
-            raise datatypes.FailedError("File validation failed:\n" + "\n".join(validation_errors))
+            raise datatypes.ContentInvalidError("File validation failed:\n" + "\n".join(validation_errors))
 
         # Ensure that the permissions of every directory are 755
         try:
