@@ -59,7 +59,7 @@ The SSH server, in the application process, allows, per minute, 100 connections 
 
 ## Limits
 
-From [`config`](/ref/atr/config.py): `MAX_CONTENT_LENGTH` (512 MB) caps declared or buffered bodies (chunked multipart can evade it, hence a proxy cap too), `UPLOAD_BODY_TIMEOUT` (3600s), `MAX_EXTRACT_SIZE` (2 GB), `MAX_SESSION_AGE` (72 hours), and `ACCOUNT_CHECK_INTERVAL` (300s).
+From [`config`](/ref/atr/config.py): `MAX_CONTENT_LENGTH` (512 MiB) caps declared or received bodies, `UPLOAD_BODY_TIMEOUT` (3600s), `MAX_EXTRACT_SIZE` (2 GiB), `MAX_SESSION_AGE` (72 hours), and `ACCOUNT_CHECK_INTERVAL` (300s). Request bodies over 1 MiB are written to the state temporary directory, and such writes are refused with a 503 if they would leave no more than 512 MiB of disk space plus the maximum body size free. Multipart part submissions and concurrent writers can temporarily push free space below that limit.
 
 As enforced, the defaults (100 a minute, 1000 an hour) apply per endpoint, keyed by web session user or client address, in process memory, and reset by restarts. Announce and vote start get five an hour, vote cast 60, and key, token, and similar endpoints ten. API wide 500 an hour and website token route limits are declared but appear to be unenforced. Sessions last 72 hours.
 

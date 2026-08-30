@@ -50,6 +50,7 @@ import werkzeug.routing as routing
 import atr
 import atr.analysis as analysis
 import atr.blueprints as blueprints
+import atr.body as body
 import atr.cache as cache
 import atr.config as config
 import atr.constants as constants
@@ -157,6 +158,7 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
         token_file="secrets/generated/apptoken.txt",
         basic_auth=False,
     )
+    app.request_class = body.Request
     app.jinja_environment = template.SyncEnvironment
     # ASFQuart sets secret_key from apptoken.txt, or generates a new one
     # We must preserve this because from_object will overwrite it
