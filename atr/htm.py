@@ -41,6 +41,7 @@ code = htpy.code
 details = htpy.details
 div = htpy.div
 em = htpy.em
+fieldset = htpy.fieldset
 form = htpy.form
 h1 = htpy.h1
 h2 = htpy.h2

@@ -306,6 +306,7 @@ async def render(  # noqa: C901
     pre_submit: htm.Element | None = None,
     flash_error_data: dict[str, Any] | None = None,
     enum_filter_include: dict[str, list[Any]] | None = None,
+    readonly: bool = False,
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -319,11 +320,14 @@ async def render(  # noqa: C901
     elif border and (".px-" not in form_classes):
         form_classes += ".px-5"
 
-    if flash_error_data is None:
+    if readonly:
+        flash_error_data = {}
+    elif flash_error_data is None:
         flash_error_data = await _get_flash_error_data() if use_error_data else {}
     field_rows: list[htm.Element] = []
     hidden_fields: list[htm.Element | htm.VoidElement | markupsafe.Markup] = []
-    hidden_fields.append(csrf_input())
+    if not readonly:
+        hidden_fields.append(csrf_input())
     skip_fields = set(skip) if skip else set()
 
     for field_name, field_info in model_cls.model_fields.items():
@@ -348,6 +352,13 @@ async def render(  # noqa: C901
             hidden_fields.append(hidden_field)
         if row:
             field_rows.append(row)
+
+    if custom:
+        unused = ", ".join(custom.keys())
+        raise ValueError(f"Custom widgets provided but not used: {unused}")
+
+    if readonly:
+        return htm.div(form_classes)[htm.fieldset(".p-0.m-0.border-0", disabled=True)[field_rows]]
 
     form_children: list[htm.Element | htm.VoidElement | markupsafe.Markup] = hidden_fields + field_rows
 
@@ -375,10 +386,6 @@ async def render(  # noqa: C901
         submit_div_children.extend(submit_div_contents)
         submit_row = htm.div(".row")[submit_div[submit_div_children]]
         form_children.append(submit_row)
-
-    if custom:
-        unused = ", ".join(custom.keys())
-        raise ValueError(f"Custom widgets provided but not used: {unused}")
 
     form_attrs: dict[str, str] = {
         "action": action,

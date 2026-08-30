@@ -350,11 +350,18 @@ async def view(
         project_cycles,
         visible_releases,
     )
+    if project.is_active and (not can_edit_policy):
+        page.append(
+            htm.p(".text-muted")[
+                "You are not a participant of this committee, so the metadata below is read only."
+                " You cannot edit or submit changes."
+            ]
+        )
     page.append(tabs)
 
     content = page.collect()
 
-    javascripts = ["copy-variable", "version-scheme-toggle"] if can_edit_policy else []
+    javascripts = ["copy-variable", "version-scheme-toggle"]
     return await template.blank(
         title=f"{project.display_name}",
         description=f"Information regarding {project.display_name}.",
@@ -624,31 +631,25 @@ async def _generate_tabs(
         ),
     ]
 
-    if can_edit_policy:
-        tab_items.append(
-            htm.Tab(
-                key="lifecycle",
-                label="Lifecycle",
-                render=lambda: _render_lifecycle_tab(project, can_edit_policy=can_edit_policy),
-            )
-        )
-
     if project.is_active:
-        if can_edit_policy:
-            tab_items.extend(
-                [
-                    htm.Tab(
-                        "trusted-publishing",
-                        "Trusted Publishing",
-                        lambda: _render_trusted_publishing_form(project),
-                    ),
-                    htm.Tab("compose", "Compose", lambda: _render_compose_form(project)),
-                    htm.Tab("vote", "Vote", lambda: _render_vote_form(project)),
-                    htm.Tab("finish", "Finish", lambda: _render_finish_form(project)),
-                ]
-            )
-        else:
-            tab_items.append(htm.Tab("policy", "Policy", lambda: _render_policy_readonly(project)))
+        readonly = not can_edit_policy
+        tab_items.extend(
+            [
+                htm.Tab(
+                    "lifecycle",
+                    "Lifecycle",
+                    lambda: _render_version_scheme_form(project, readonly=readonly),
+                ),
+                htm.Tab(
+                    "trusted-publishing",
+                    "Trusted Publishing",
+                    lambda: _render_trusted_publishing_form(project, readonly=readonly),
+                ),
+                htm.Tab("compose", "Compose", lambda: _render_compose_form(project, readonly=readonly)),
+                htm.Tab("vote", "Vote", lambda: _render_vote_form(project, readonly=readonly)),
+                htm.Tab("finish", "Finish", lambda: _render_finish_form(project, readonly=readonly)),
+            ]
+        )
 
     active_tab = quart.request.args.get("tab", tab_items[0].key)
     base_url = util.as_url(view, project_key=str(project.key))
@@ -715,7 +716,7 @@ def _optional_link(url: str | None) -> htm.Element | str:
     return htm.a(href=url)[url]
 
 
-def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) -> htm.Element:
+def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction, *, readonly: bool) -> htm.Element:
     committee = project.committee
     committee_key = committee.key if (committee is not None) else str(project.key)
     is_podling = bool(committee is not None and committee.is_podling)
@@ -724,29 +725,24 @@ def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) ->
     # Include any already-stored recipients (eg set via .asf.yaml) so a saved
     # value remains a selectable option even when it's outside the committee
     # defaults.
-    for address in (stored_to, *stored_cc, *stored_bcc):
+    stored = (stored_to,) if readonly else (stored_to, *stored_cc, *stored_bcc)
+    for address in stored:
         if address and (address not in options):
             options.append(address)
     default_to = stored_to if (stored_to in options) else (options[0] if options else None)
+    to_radios = render.html_recipients_to_radios(options, default_to=default_to)
+    if readonly:
+        return htm.div("#email_to")[
+            to_radios,
+            htm.p(".text-muted.mt-2.mb-0")[f"{len(stored_cc)} CC, {len(stored_bcc)} BCC"],
+        ]
     return htm.div("#email_to")[
-        render.html_recipients_to_radios(options, default_to=default_to),
+        to_radios,
         htpy.details(".mt-2")[
             htpy.summary["Select CC and BCC recipients"],
             render.html_recipients_cc_bcc_table(options, selected_cc=set(stored_cc), selected_bcc=set(stored_bcc)),
         ],
     ]
-
-
-def _recipient_summary(to: str, cc: list[str], bcc: list[str]) -> htm.Element | str:
-    if not to:
-        return "Not set"
-    extras = []
-    if cc:
-        extras.append(f"{len(cc)} CC")
-    if bcc:
-        extras.append(f"{len(bcc)} BCC")
-    suffix = f" (+{', '.join(extras)})" if extras else ""
-    return htm.span[htm.a(href=f"mailto:{to}")[to], suffix]
 
 
 def _release_url(project: sql.Project, release: sql.Release) -> str:
@@ -845,7 +841,7 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-async def _render_compose_form(project: sql.Project) -> htm.Element:
+async def _render_compose_form(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Compose options"]
@@ -873,6 +869,7 @@ async def _render_compose_form(project: sql.Project) -> htm.Element:
             border=True,
             # wider_widgets=True,
             textarea_rows=5,
+            readonly=readonly,
         )
     return card.collect()
 
@@ -936,13 +933,13 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
     return card.collect()
 
 
-async def _render_finish_form(project: sql.Project) -> htm.Element:
+async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Finish options"]
     ]
 
-    flash_error_data = await sessions.form_error_pop(quart.request.path)
+    flash_error_data = {} if readonly else await sessions.form_error_pop(quart.request.path)
 
     announce_release_subject_widget = _input_with_variables(
         field_name="announce_release_subject",
@@ -983,10 +980,11 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
             custom={
                 "announce_release_subject": announce_release_subject_widget,
                 "announce_release_template": announce_release_template_widget,
-                "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE),
+                "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE, readonly=readonly),
             },
             skip=["email_cc", "email_bcc", *(["archive_prior_release"] if not project.cycle_match else [])],
             flash_error_data=flash_error_data,
+            readonly=readonly,
         )
     return card.collect()
 
@@ -1054,13 +1052,6 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
         if language_badges:
             card_body.append(htm.div(".d-flex.flex-wrap.gap-2.align-items-center.mt-3")[*language_badges])
     return card.collect()
-
-
-async def _render_lifecycle_tab(project: sql.Project, *, can_edit_policy: bool) -> htm.Element:
-    block = htm.Block()
-    if can_edit_policy:
-        block.append(await _render_version_scheme_form(project))
-    return block.collect()
 
 
 def _metadata_uri(url: str, allowed_schemes: frozenset[str]) -> htm.Element | str:
@@ -1161,36 +1152,6 @@ def _render_pmc_card(project: sql.Project) -> htm.Element:
         ]
     else:
         card.div(".card-body")[htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")["No committee"]]
-    return card.collect()
-
-
-def _render_policy_readonly(project: sql.Project) -> htm.Element:
-    card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Release policy"]]
-
-    vote_to, vote_cc, vote_bcc = project.policy_recipients(sql.RecipientAction.VOTE)
-    announce_to, announce_cc, announce_bcc = project.policy_recipients(sql.RecipientAction.ANNOUNCE)
-
-    tbody = htm.tbody[
-        htm.tr[
-            htm.th(".border-0.w-25")["Vote email"],
-            htm.td(".text-break.border-0")[_recipient_summary(vote_to, vote_cc, vote_bcc)],
-        ],
-        htm.tr[
-            htm.th(".border-0")["Announce email"],
-            htm.td(".text-break.border-0")[_recipient_summary(announce_to, announce_cc, announce_bcc)],
-        ],
-        htm.tr[
-            htm.th(".border-0")["Vote mode"],
-            htm.td(".text-break.border-0")[_vote_mode_label(project.policy_vote_mode)],
-        ],
-        htm.tr[
-            htm.th(".border-0")["Minimum voting period"],
-            htm.td(".text-break.border-0")[f"{project.policy_min_hours}h"],
-        ],
-    ]
-
-    card.div(".card-body")[htm.div(".card.h-100.border")[htm.div(".card-body")[htm.table(".table.mb-0")[tbody]]]]
     return card.collect()
 
 
@@ -1423,7 +1384,7 @@ async def _render_security_tab(project: sql.Project, *, can_edit_metadata: bool)
     return _render_security_readonly(project)
 
 
-async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
+async def _render_trusted_publishing_form(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Trusted Publishing"]
@@ -1451,11 +1412,12 @@ async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
             form_classes=".atr-canary.py-4.px-5",
             border=True,
             textarea_rows=5,
+            readonly=readonly,
         )
     return card.collect()
 
 
-async def _render_version_scheme_form(project: sql.Project) -> htm.Element:
+async def _render_version_scheme_form(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-0")["Version scheme"]]
     with card.block(htm.div, classes=".card-body") as body:
@@ -1472,17 +1434,18 @@ async def _render_version_scheme_form(project: sql.Project) -> htm.Element:
                 "calver_format": project.calver_format or "",
                 "branch_template": project.branch_template or "",
             },
+            readonly=readonly,
         )
     return card.collect()
 
 
-async def _render_vote_form(project: sql.Project) -> htm.Element:
+async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Vote options"]
     ]
 
-    flash_error_data = await sessions.form_error_pop(quart.request.path)
+    flash_error_data = {} if readonly else await sessions.form_error_pop(quart.request.path)
 
     defaults_dict = {
         "project_key": str(project.key),
@@ -1538,7 +1501,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
             # wider_widgets=True,
             textarea_rows=10,
             custom={
-                "email_to": _recipient_grid_widget(project, sql.RecipientAction.VOTE),
+                "email_to": _recipient_grid_widget(project, sql.RecipientAction.VOTE, readonly=readonly),
                 "release_checklist": release_checklist_widget,
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,
@@ -1547,6 +1510,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
             },
             skip=["email_cc", "email_bcc"],
             flash_error_data=flash_error_data,
+            readonly=readonly,
         )
     return card.collect()
 
