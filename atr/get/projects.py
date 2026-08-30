@@ -787,7 +787,7 @@ async def _render_actions_card(
     return card.collect()
 
 
-def _render_categories_section(project: sql.Project) -> htm.Element:
+def _render_categories_section(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Categories"]]
 
@@ -809,7 +809,7 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
                     ".btn-close.btn-close-white.ms-1.page-remove-tag", type="submit", aria_label=f"Remove {cat}"
                 ),
             ]
-            if (cat not in registry.FORBIDDEN_PROJECT_CATEGORIES)
+            if (not readonly) and (cat not in registry.FORBIDDEN_PROJECT_CATEGORIES)
             else ""
         )
         badge = htm.div(".badge.bg-primary.d-inline-flex.align-items-center.px-2.py-1")[
@@ -818,26 +818,13 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
         ]
         category_badges.append(badge)
 
-    add_form = htm.form(
-        ".mb-3",
-        method="post",
-        action=_view_action(project, "metadata"),
-    )[
-        form.csrf_input(),
-        htpy.input(type="hidden", name="project_key", value=str(project.key)),
-        htpy.input(type="hidden", name="variant", value="add_category"),
-        htm.div(".d-flex.align-items-center")[
-            htpy.input(
-                ".form-control.form-control-sm.me-2", type="text", name="category_to_add", placeholder="New category"
-            ),
-            htpy.button(".btn.btn-sm.btn-success.text-nowrap.pe-3", type="submit")[htpy.i(".bi.bi-plus"), " Add"],
-        ],
-    ]
-
     with card.block(htm.div, classes=".card-body") as card_body:
-        card_body.append(add_form)
+        if not readonly:
+            card_body.append(_taxonomy_add_form(project, "add_category", "category_to_add", "New category"))
         if category_badges:
             card_body.append(htm.div(".d-flex.flex-wrap.gap-2.align-items-center.mt-3")[*category_badges])
+        elif readonly:
+            card_body.append(htm.div(".text-muted.fst-italic")["No categories set."])
     return card.collect()
 
 
@@ -1006,7 +993,7 @@ async def _render_header_cards(
     return block.collect()
 
 
-def _render_languages_section(project: sql.Project) -> htm.Element:
+def _render_languages_section(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Programming languages"]]
 
@@ -1014,43 +1001,36 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
     language_badges = []
     for lang in current_languages:
         # Manual form as badges are not handled by the form system
-        remove_button = htm.form(
-            ".d-inline.m-0",
-            method="post",
-            action=_view_action(project, "metadata"),
-        )[
-            form.csrf_input(),
-            htpy.input(type="hidden", name="project_key", value=str(project.key)),
-            htpy.input(type="hidden", name="variant", value="remove_language"),
-            htpy.input(type="hidden", name="language_to_remove", value=lang),
-            htpy.button(".btn-close.btn-close-white.ms-1.page-remove-tag", type="submit", aria_label=f"Remove {lang}"),
-        ]
+        remove_button = (
+            htm.form(
+                ".d-inline.m-0",
+                method="post",
+                action=_view_action(project, "metadata"),
+            )[
+                form.csrf_input(),
+                htpy.input(type="hidden", name="project_key", value=str(project.key)),
+                htpy.input(type="hidden", name="variant", value="remove_language"),
+                htpy.input(type="hidden", name="language_to_remove", value=lang),
+                htpy.button(
+                    ".btn-close.btn-close-white.ms-1.page-remove-tag", type="submit", aria_label=f"Remove {lang}"
+                ),
+            ]
+            if not readonly
+            else ""
+        )
         badge = htm.div(".badge.bg-success.d-inline-flex.align-items-center.px-2.py-1")[
             htm.span[lang],
             remove_button,
         ]
         language_badges.append(badge)
 
-    add_form = htm.form(
-        ".mb-3",
-        method="post",
-        action=_view_action(project, "metadata"),
-    )[
-        form.csrf_input(),
-        htpy.input(type="hidden", name="project_key", value=str(project.key)),
-        htpy.input(type="hidden", name="variant", value="add_language"),
-        htm.div(".d-flex.align-items-center")[
-            htpy.input(
-                ".form-control.form-control-sm.me-2", type="text", name="language_to_add", placeholder="New language"
-            ),
-            htpy.button(".btn.btn-sm.btn-success.text-nowrap.pe-3", type="submit")[htpy.i(".bi.bi-plus"), " Add"],
-        ],
-    ]
-
     with card.block(htm.div, classes=".card-body") as card_body:
-        card_body.append(add_form)
+        if not readonly:
+            card_body.append(_taxonomy_add_form(project, "add_language", "language_to_add", "New language"))
         if language_badges:
             card_body.append(htm.div(".d-flex.flex-wrap.gap-2.align-items-center.mt-3")[*language_badges])
+        elif readonly:
+            card_body.append(htm.div(".text-muted.fst-italic")["No programming languages set."])
     return card.collect()
 
 
@@ -1068,6 +1048,19 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Reference metadata"]]
 
     rows: list[htm.Element] = []
+    for label, text in [
+        ("Name", project.name),
+        ("Description", project.description),
+        ("Short description", project.short_description),
+    ]:
+        if text:
+            rows.append(
+                htm.tr[
+                    htm.th(".border-0.w-25")[label],
+                    htm.td(".text-break.border-0")[text],
+                ]
+            )
+
     for label, url in [
         ("Homepage", project.homepage),
         ("Lifecycle page", project.lifecycle_page),
@@ -1079,7 +1072,7 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
             rows.append(
                 htm.tr[
                     htm.th(".border-0.w-25")[label],
-                    htm.td(".text-break.border-0")[htm.a(href=url, target="_blank", rel="noopener")[url]],
+                    htm.td(".text-break.border-0")[_metadata_uri(url, validation.STANDARD_URI_SCHEMES)],
                 ]
             )
 
@@ -1129,9 +1122,8 @@ async def _render_metadata_tab(
         block.append(await _render_metadata_form(project))
     else:
         block.append(_render_metadata_card(project))
-    if can_manage_taxonomy:
-        block.append(_render_categories_section(project))
-        block.append(_render_languages_section(project))
+    block.append(_render_categories_section(project, readonly=not can_manage_taxonomy))
+    block.append(_render_languages_section(project, readonly=not can_manage_taxonomy))
     return block.collect()
 
 
@@ -1541,6 +1533,22 @@ def _security_contact_radios(project: sql.Project) -> htm.Element:
             ]
         )
     return htm.div("#security_contact")[*radios]
+
+
+def _taxonomy_add_form(project: sql.Project, variant: str, field_name: str, placeholder: str) -> htm.Element:
+    return htm.form(
+        ".mb-3",
+        method="post",
+        action=_view_action(project, "metadata"),
+    )[
+        form.csrf_input(),
+        htpy.input(type="hidden", name="project_key", value=str(project.key)),
+        htpy.input(type="hidden", name="variant", value=variant),
+        htm.div(".d-flex.align-items-center")[
+            htpy.input(".form-control.form-control-sm.me-2", type="text", name=field_name, placeholder=placeholder),
+            htpy.button(".btn.btn-sm.btn-success.text-nowrap.pe-3", type="submit")[htpy.i(".bi.bi-plus"), " Add"],
+        ],
+    ]
 
 
 def _textarea_with_variables(
