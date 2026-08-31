@@ -45,7 +45,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Final
 
-import atr.config as config
 import atr.models.cle as cle
 import atr.models.sql as sql
 
@@ -54,6 +53,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 CLE_SCHEMA_URL: Final[str] = cle.CLE_SCHEMA_URL
+
+_PURL_DOMAIN: Final[str] = "apache.org"
 
 _SUPPORT_DEFAULT_DESCRIPTION: Final[str] = "Apache project community support"
 _SUPPORT_DEFAULT_ID: Final[str] = "default"
@@ -173,8 +174,12 @@ def _identifier(project: sql.Project, release: sql.Release | None = None) -> str
     (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact catalog (#911),
     not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
     """
-    catalog_url = (config.get().RELEASE_CATALOG_URL or "").removeprefix("https://").removesuffix("/")
-    return f"pkg:scid/{catalog_url}/the+asf/{project.key}" + ("" if release is None else f"@{release.version}")
+    return f"pkg:scid/{_purl_namespace()}/{project.key}" + ("" if release is None else f"@{release.version}")
+
+
+def _purl_namespace() -> str:
+    """The domain and vendor part of the PURL, ie everything before the project key."""
+    return f"{_PURL_DOMAIN}/the+asf"
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:
