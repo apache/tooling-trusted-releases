@@ -64,10 +64,12 @@ class _ReleaseFiles:
 
 
 class _StructuralChanges(NamedTuple):
-    # Releases whose files the commit lists, version directories it deleted, and version
-    # directories it added whole, mapped to their path under the release root
+    # Releases whose files the commit lists, version directories it deleted, artifact files it
+    # deleted on their own (as download-path-suffix and file name, to look up in the artifacts
+    # table), and version directories it added whole, mapped to their path under the release root
     added: dict[_ReleaseKey, _ReleaseFiles]
     removed: set[_ReleaseKey]
+    removed_files: list[tuple[str, str]]
     copied: dict[_ReleaseKey, str]
 
 
@@ -83,13 +85,13 @@ async def catalogue_commit(commit: dict) -> None:
     added, removed = changes.added, changes.removed
     await _expand_copied(changes.copied, added)
     added = _collapse_airflow_providers(added)
-    if not (added or removed):
+    if not (added or removed or changes.removed_files):
         return
     date = _commit_date(commit)
     # Resolve against ATR's projects in a read session first, so decomposition and
     # project lookups stay out of the storage writer
     async with db.session() as data:
-        releases, archives = await _resolve_changes(data, added, removed)
+        releases, archives = await _resolve_changes(data, added, removed, changes.removed_files)
     # Report mode (the default) just logs the cataloguing it would do; active mode hands
     # the resolved work to the system actor. The releases list is told either way, since
     # that only depends on having seen the release, not on having recorded it
@@ -265,8 +267,9 @@ async def _resolve_archive(
 
 async def _resolve_changes(
     data: db.Session,
-    added: dict[tuple[str, str | None, str], _ReleaseFiles],
-    removed: set[tuple[str, str | None, str]],
+    added: dict[_ReleaseKey, _ReleaseFiles],
+    removed: set[_ReleaseKey],
+    removed_files: list[tuple[str, str]],
 ) -> tuple[list[_ResolvedRelease], list[_ResolvedArchive]]:
     releases: list[_ResolvedRelease] = []
     for rel_files in sorted(added.values(), key=lambda r: (r.committee, r.subproject or "", r.version)):
@@ -274,10 +277,26 @@ async def _resolve_changes(
         if resolved is not None:
             releases.append(resolved)
     archives: list[_ResolvedArchive] = []
+    archived_keys: set[str] = set()
     for committee, subproject, version in sorted(removed, key=lambda k: (k[0], k[1] or "", k[2])):
         resolved_archive = await _resolve_archive(data, committee, subproject, version)
         if resolved_archive is not None:
             archives.append(resolved_archive)
+            archived_keys.add(f"{resolved_archive[0]!s}-{resolved_archive[1]!s}")
+    if removed_files:
+        # A release getting a source published in this same commit is being replaced, not
+        # retired, so a source deleted here does not archive it - even one ATR already holds,
+        # which _resolve_release skips
+        published = await _published_release_keys(data, added)
+        for download_path_suffix, artifact_path in sorted(set(removed_files)):
+            resolved_file = await _resolve_removed_file(data, download_path_suffix, artifact_path)
+            if resolved_file is None:
+                continue
+            project_key, version_key, release_key = resolved_file
+            if (release_key in published) or (release_key in archived_keys):
+                continue
+            archives.append((project_key, version_key))
+            archived_keys.add(release_key)
     return releases, archives
 
 
@@ -291,6 +310,42 @@ async def _resolve_project(data: db.Session, committee: str, subproject: str | N
         if project is not None:
             return project
     return None
+
+
+async def _resolve_removed_file(
+    data: db.Session, download_path_suffix: str, artifact_path: str
+) -> tuple[safe.ProjectKey, safe.VersionKey, str] | None:
+    # The artifacts table is authoritative: it names the release the file belongs to, whether
+    # ATR classified it as the source, and (via the release) whether it's already archived.
+    # Only a source going retires the release; a companion or a binary leaves it be, and a
+    # file ATR never catalogued has no row to match
+    artifact = await data.artifact(
+        download_path_suffix=download_path_suffix,
+        artifact_path=artifact_path,
+        classification=classify.FileType.SOURCE.value,
+        _release=True,
+    ).get()
+    if artifact is None:
+        return None
+    release_record = artifact.release
+    if (release_record is None) or release_record.is_archived:
+        return None
+    keys = _safe_keys(release_record.project_key, release_record.version)
+    if keys is None:
+        return None
+    project_key, version_key = keys
+    return project_key, version_key, release_record.key
+
+
+async def _published_release_keys(data: db.Session, added: dict[_ReleaseKey, _ReleaseFiles]) -> set[str]:
+    # The release keys getting a source published in this commit, resolved the same way
+    # _resolve_release resolves projects, so an archival can tell a replace from a retirement
+    keys: set[str] = set()
+    for rel_files in added.values():
+        project = await _resolve_project(data, rel_files.committee, rel_files.subproject)
+        if project is not None:
+            keys.add(f"{project.key}-{rel_files.version}")
+    return keys
 
 
 async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _ResolvedRelease | None:
@@ -326,43 +381,85 @@ def _sbom_companion(siblings: set[str], artifact: str) -> str | None:
     return None
 
 
+def _add_to_bundle(added: dict[_ReleaseKey, _ReleaseFiles], key: _ReleaseKey, path: str, filename: str) -> None:
+    # Record one added artifact file against its release's bundle, classified once, so companions
+    # pair from the same directory later and a source artifact marks the bundle as a real release
+    committee, subproject, version = key
+    bundle = added.get(key)
+    if bundle is None:
+        bundle = _ReleaseFiles(committee, subproject, version)
+        added[key] = bundle
+    rel = path.removeprefix(_RELEASE_PREFIX)
+    dirpath = rel.rsplit("/", 1)[0] if "/" in rel else ""
+    file_type = classify.classify_path(pathlib.PurePosixPath(rel))
+    bundle.files.append((dirpath, filename, file_type))
+    if file_type is classify.FileType.SOURCE:
+        bundle.has_source = True
+
+
+def _record_decomposed(
+    path: str,
+    flags: str,
+    change: tuple[str, dist.Decomposed, bool, str | None],
+    added: dict[_ReleaseKey, _ReleaseFiles],
+    removed: set[_ReleaseKey],
+    copied: dict[_ReleaseKey, str],
+) -> None:
+    # A version directory deleted whole is an archival, one added whole is a copy to expand
+    # later, and an added file joins its release's bundle
+    committee, decomposed, is_dir, filename = change
+    if decomposed.version is None:
+        # No version means no release to key on
+        return
+    # aries/sling/felix ship each maven module as its own release; collapse to the component
+    subproject = dist.module_component(committee, decomposed.subproject) or decomposed.subproject
+    key: _ReleaseKey = (committee, subproject, decomposed.version)
+    if flags.startswith("D") and is_dir:
+        removed.add(key)
+    elif flags.startswith("A") and is_dir:
+        copied[key] = path.removeprefix(_RELEASE_PREFIX).rstrip("/")
+    elif flags.startswith("A") and (filename is not None):
+        _add_to_bundle(added, key, path, filename)
+
+
+def _removed_artifact_file(path: str) -> tuple[str, str] | None:
+    # A lone deleted file as its directory and name, for an artifacts-table lookup. Companions
+    # and other non-artifacts have no row of their own, so they're left out
+    rel = path.removeprefix(_RELEASE_PREFIX)
+    if "/" not in rel:
+        return None
+    dirpath, filename = rel.rsplit("/", 1)
+    if not analysis.is_artifact(filename):
+        return None
+    return dirpath, filename
+
+
 def _structural_changes(changed: dict) -> _StructuralChanges:
-    # Group added files by release so we can record their artifacts, and collect
-    # version-dir deletions as archivals. A release is only identified by an added
-    # source artifact; binary/doc/metadata files are included but don't make a release.
-    # A version directory added whole is kept aside, since its files are not in the commit
+    # Group added files by release so we can record their artifacts, collect version-dir
+    # deletions as archivals, and collect individually deleted artifact files to resolve later
+    # against the artifacts table - which knows their release, whether they're the source, and
+    # its archive state, so no decomposition or reclassification is needed for them here. A
+    # version directory added whole is kept aside, since its files are not in the commit
     added: dict[_ReleaseKey, _ReleaseFiles] = {}
     removed: set[_ReleaseKey] = set()
+    removed_files: list[tuple[str, str]] = []
     copied: dict[_ReleaseKey, str] = {}
     for raw_path, info in changed.items():
         path = str(raw_path)
+        if not path.startswith(_RELEASE_PREFIX):
+            continue
         flags = str(info.get("flags", "")) if isinstance(info, dict) else ""
+        if flags.startswith("D") and not path.endswith("/"):
+            removed_file = _removed_artifact_file(path)
+            if removed_file is not None:
+                removed_files.append(removed_file)
+            continue
         change = _decompose_change(path)
         if change is None:
             continue
-        committee, decomposed, is_dir, filename = change
-        if decomposed.version is None:
-            continue
-        # aries/sling/felix ship each maven module as its own release; collapse to the component
-        subproject = dist.module_component(committee, decomposed.subproject) or decomposed.subproject
-        key = (committee, subproject, decomposed.version)
-        if flags.startswith("D") and is_dir:
-            removed.add(key)
-        elif flags.startswith("A") and is_dir:
-            copied[key] = path.removeprefix(_RELEASE_PREFIX).rstrip("/")
-        elif flags.startswith("A") and (filename is not None):
-            bundle = added.get(key)
-            if bundle is None:
-                bundle = _ReleaseFiles(committee, subproject, decomposed.version)
-                added[key] = bundle
-            rel = path.removeprefix(_RELEASE_PREFIX)
-            dirpath = rel.rsplit("/", 1)[0] if "/" in rel else ""
-            file_type = classify.classify_path(pathlib.PurePosixPath(rel))
-            bundle.files.append((dirpath, filename, file_type))
-            if file_type is classify.FileType.SOURCE:
-                bundle.has_source = True
+        _record_decomposed(path, flags, change, added, removed, copied)
     with_source = {key: bundle for key, bundle in added.items() if bundle.has_source}
-    return _StructuralChanges(added=with_source, removed=removed, copied=copied)
+    return _StructuralChanges(added=with_source, removed=removed, removed_files=removed_files, copied=copied)
 
 
 def _airflow_bundle_area(bundle: _ReleaseFiles) -> str | None:
