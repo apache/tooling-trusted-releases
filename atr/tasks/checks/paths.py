@@ -266,10 +266,18 @@ async def _check_metadata_rules(
     if (ext_metadata not in {".asc", ".sha256", ".sha512", ".md5", ".sha", ".sha1"}) and (not is_cyclonedx_sbom):
         warnings.append("The use of this metadata file is discouraged")
 
-    # Check whether the corresponding artifact exists
+    # Check whether the corresponding artifact exists.
     artifact_path_base = str(relative_path).removesuffix(ext_metadata)
     if is_standalone:
-        has_artifact = any((p.startswith(artifact_path_base + ".") and analysis.is_artifact(p)) for p in relative_paths)
+        has_artifact = any(
+            analysis.is_artifact(p)
+            and (
+                (p == artifact_path_base)
+                or p.startswith(artifact_path_base + ".")  # non-maven, suffixed-style
+                or p.startswith(artifact_path_base + "-")  # maven, classifier-style
+            )
+            for p in relative_paths
+        )
         if not has_artifact:
             errors.append(
                 f"Metadata file exists but no corresponding artifact with base '{artifact_path_base}' was found"
