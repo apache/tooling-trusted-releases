@@ -30,7 +30,9 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import re
 import shutil
+import urllib.parse
 from collections.abc import Awaitable, Container, Sequence
 from typing import Any, Final
 
@@ -40,6 +42,7 @@ import jinja2
 import sqlmodel
 
 import atr.cle as cle
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.metadata as metadata
@@ -559,6 +562,38 @@ async def _write_release(
         ),
     )
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
+    htaccess = _release_htaccess(version)
+    if htaccess is not None:
+        await _write(release_dir / ".htaccess", htaccess)
+
+
+def _release_htaccess(version: api.CatalogVersion) -> str | None:
+    """Render a release's artifacts to an Apache `.htaccess` qualifier map (#1517).
+
+    A PURL names a single artifact with the `file_name` qualifier, which reaches us as
+    the query string - a `#subpath` fragment never leaves the browser, a query string
+    does. The vhost hands any qualified request into the release directory, where each
+    downloadable artifact gets a rule matching `?file_name=<its name>` and redirecting
+    to the file's real download URL. A bare request goes straight to artifacts.json and
+    never reaches this file. Returns None when nothing in the release is downloadable.
+    """
+    lines = ["RewriteEngine On"]
+    for artifact in version.artifacts:
+        if artifact.artifact_url is None:
+            continue
+        # archive.a.o is a permanent archive, so a 301; anything else
+        # will eventually move to archive, so don't let it be cached
+        archived = artifact.artifact_url.startswith(constants.ARCHIVE_APACHE_URL)
+        status = 301 if archived else 302
+        # The file_name value arrives percent-encoded in the query string, so match that
+        # encoded form, escaped so its metacharacters read literally. NE keeps the already
+        # percent-encoded download URL from being escaped a second time.
+        value = re.escape(urllib.parse.quote(artifact.artifact_path, safe=""))
+        lines.append(f'RewriteCond %{{QUERY_STRING}} "(^|&)file_name={value}(&|$)"')
+        lines.append(f'RewriteRule "^$" "{artifact.artifact_url}" [R={status},NE,L]')
+    if len(lines) == 1:
+        return None
+    return "\n".join(lines) + "\n"
 
 
 async def _write_root_index(
