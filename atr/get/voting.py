@@ -311,6 +311,16 @@ async def _render_page(  # noqa: C901
         else:
             skip.append("concerns_noted")
     else:
+        documentation = None
+        if config.get().ATR_STATUS == "ALPHA":
+            documentation = (
+                "Note: The options to send to the user-tests "
+                "mailing list and yourself are provided for "
+                "testing purposes only, and will not be "
+                "available in the finished version of ATR. "
+                "If the option you pick is not a mailing list, "
+                "you will not be able to use vote tabulation."
+            )
         custom["body"] = _render_body_field(default_body, release.project.key)
         policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.VOTE)
         permitted_set = set(permitted_recipients)
@@ -321,14 +331,7 @@ async def _render_page(  # noqa: C901
             render.html_recipients_to_radios(
                 permitted_recipients,
                 default_to=default_to,
-                documentation=(
-                    "Note: The options to send to the user-tests "
-                    "mailing list and yourself are provided for "
-                    "testing purposes only, and will not be "
-                    "available in the finished version of ATR. "
-                    "If the option you pick is not a mailing list, "
-                    "you will not be able to use vote tabulation."
-                ),
+                documentation=documentation,
             ),
             htpy.details(".mt-2")[
                 htpy.summary["Select CC and BCC recipients"],
