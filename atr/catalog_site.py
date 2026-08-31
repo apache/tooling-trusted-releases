@@ -562,9 +562,7 @@ async def _write_release(
         ),
     )
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
-    htaccess = _release_htaccess(version)
-    if htaccess is not None:
-        await _write(release_dir / ".htaccess", htaccess)
+    await _write_htaccess(release_dir, version)
 
 
 def _release_htaccess(version: api.CatalogVersion) -> str | None:
@@ -594,6 +592,15 @@ def _release_htaccess(version: api.CatalogVersion) -> str | None:
     if len(lines) == 1:
         return None
     return "\n".join(lines) + "\n"
+
+
+async def _write_htaccess(release_dir: safe.StatePath, version: api.CatalogVersion) -> None:
+    htaccess = _release_htaccess(version)
+    if htaccess is None:
+        return
+    # RelPath refuses dotfiles, so this drops to the raw OS path for the fixed .htaccess name
+    # rather than routing it through StatePath's validating join.
+    await util.atomic_write_file(release_dir.path / ".htaccess", htaccess)
 
 
 async def _write_root_index(
