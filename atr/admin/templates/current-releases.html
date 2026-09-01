@@ -1,11 +1,17 @@
 {% extends "layouts/base-admin.html" %}
 
-{%- block title -%}All releases ~ ATR Admin{%- endblock title -%}
+{%- block title -%}Current releases ~ ATR Admin{%- endblock title -%}
 
-{%- block description -%}View all releases across all stages and phases, for debugging.{%- endblock description -%}
+{%- block description -%}Live release-workflow releases across all phases.{%- endblock description -%}
 
 {% block content %}
-  <h1>All releases</h1>
+  <h1>Current releases</h1>
+
+  <div class="alert alert-info" role="alert">
+    These are live release-workflow releases, across all phases. Historical
+    catalogued releases (those with no workflow revisions) are managed in
+    <a href="{{ as_url(admin.catalog_get) }}" class="alert-link">Catalog admin</a>.
+  </div>
 
   {% if release_rows %}
     <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} releases.</p>
@@ -20,6 +26,7 @@
         <th>Phase</th>
         <th>Created</th>
         <th>Age &amp; inactivity</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -37,7 +44,6 @@
           <td>{{ release.project.key if release.project else "N/A" }}</td>
           <td>
             {% set phase_value = release.phase.value %}
-            <!-- {{ phase_value }} <br> -->
             {% if phase_value == "release_candidate_draft" %}
               <span class="badge bg-secondary">1. Draft</span>
             {% elif phase_value == "release_candidate" %}
@@ -55,13 +61,19 @@
             <span{% if row.age_bold %} class="fw-bold"{% endif %}>{{ row.age_label }}</span><br>
             <small class="text-muted{% if row.inactive_bold %} fw-bold{% endif %}">{{ row.inactive_label }}</small>
           </td>
+          <td>
+            <a class="btn btn-sm btn-outline-danger"
+               href="{{ as_url(admin.current_release_delete_get, project_key=release.project_key, version_key=release.version) }}">
+              <i class="bi bi-trash"></i> Delete
+            </a>
+          </td>
         </tr>
       {% else %}
         <tr>
           {% if count %}
-            <td colspan="6">No releases to show on this page ({{ count }} total).</td>
+            <td colspan="7">No releases to show on this page ({{ count }} total).</td>
           {% else %}
-            <td colspan="6">No releases found.</td>
+            <td colspan="7">No current releases found.</td>
           {% endif %}
         </tr>
       {% endfor %}
@@ -69,12 +81,12 @@
   </table>
 
   {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
-    <nav aria-label="All releases pages">
+    <nav aria-label="Current releases pages">
       <ul class="pagination">
         {% if page.previous_offset is not none %}
           <li class="page-item">
             <a class="page-link"
-               href="{{ as_url(admin.all_releases, limit=limit, offset=page.previous_offset) }}">Previous</a>
+               href="{{ as_url(admin.current_releases, limit=limit, offset=page.previous_offset) }}">Previous</a>
           </li>
         {% else %}
           <li class="page-item disabled"><span class="page-link">Previous</span></li>
@@ -82,7 +94,7 @@
         {% if page.next_offset is not none %}
           <li class="page-item">
             <a class="page-link"
-               href="{{ as_url(admin.all_releases, limit=limit, offset=page.next_offset) }}">Next</a>
+               href="{{ as_url(admin.current_releases, limit=limit, offset=page.next_offset) }}">Next</a>
           </li>
         {% else %}
           <li class="page-item disabled"><span class="page-link">Next</span></li>

@@ -93,16 +93,8 @@ class DeleteCommitteeKeysForm(form.Form):
     confirm_delete: Literal["DELETE KEYS"] = form.label("Confirmation", "Type DELETE KEYS to confirm.")
 
 
-class DeleteReleaseForm(form.Form):
-    releases_to_delete: form.StrList = form.label("Select releases to delete", widget=form.Widget.CUSTOM)
+class DeleteReleaseConfirmForm(form.Form):
     confirm_delete: Literal["DELETE"] = form.label("Confirmation", "Type DELETE to confirm.")
-
-    @pydantic.field_validator("releases_to_delete")
-    @classmethod
-    def validate_releases_to_delete(cls, v: form.StrList) -> form.StrList:
-        if len(v) == 0:
-            raise ValueError("You must select at least one release to delete")
-        return v
 
 
 class EditBannerForm(form.Form):
@@ -231,40 +223,6 @@ class TestRosterResetForm(form.Form):
 
 
 type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestRosterResetForm, form.DISCRIMINATOR]
-
-
-@admin.typed
-async def all_releases(_session: web.Committer, _all_releases: Literal["all/releases"], query_args: PageQuery) -> str:
-    """
-    URL: GET /all/releases
-
-    Display a list of all releases across all phases.
-    """
-    try:
-        validation.pagination_args_validate(query_args)
-    except ValueError as e:
-        raise exceptions.BadRequest(str(e))
-    async with db.session() as data:
-        count_result = await data.execute(sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release))
-        count = count_result.scalar_one()
-        releases = await (
-            data.release(_project=True, _committee=True, _revisions=True)
-            .order_by(sql.Release.key)
-            .limit(query_args.limit)
-            .offset(query_args.offset)
-            .all()
-        )
-    now = datetime.datetime.now(datetime.UTC)
-    release_rows = [_release_age_row(release, now) for release in releases]
-    page = _page_nav(query_args.offset, query_args.limit, count, len(releases))
-    return await template.render(
-        "all-releases.html",
-        release_rows=release_rows,
-        release_as_url=mapping.release_as_url,
-        count=count,
-        limit=query_args.limit,
-        page=page,
-    )
 
 
 @admin.typed
@@ -1542,6 +1500,96 @@ async def consistency(_session: web.Committer, _consistency: Literal["consistenc
 
 
 @admin.typed
+async def current_release_delete_get(
+    _session: web.Committer,
+    _current_releases: Literal["current/releases"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    _delete: Literal["delete"],
+) -> str:
+    """
+    URL: GET /current/releases/<project_key>/<version_key>/delete
+
+    Confirm permanent deletion of a single release and its files.
+    """
+    release_key = sql.release_key(str(project_key), str(version_key))
+    async with db.session() as data:
+        release = await data.release(key=release_key, _project=True).demand(exceptions.NotFound("Release not found"))
+    rendered_form = await form.render(
+        model_cls=DeleteReleaseConfirmForm,
+        submit_label="Delete this release permanently",
+        submit_classes="btn-danger",
+    )
+    return await template.render(
+        "current-release-delete.html",
+        release=release,
+        form=rendered_form,
+    )
+
+
+@admin.typed
+async def current_release_delete_post(
+    session: web.Committer,
+    _current_releases: Literal["current/releases"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    _delete: Literal["delete"],
+    _delete_form: DeleteReleaseConfirmForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /current/releases/<project_key>/<version_key>/delete
+
+    Permanently delete a single release and its associated data and files.
+    """
+    release_key = sql.release_key(str(project_key), str(version_key))
+    await _delete_releases(session, [release_key])
+    return await session.redirect(current_releases)
+
+
+@admin.typed
+async def current_releases(
+    _session: web.Committer, _current_releases: Literal["current/releases"], query_args: PageQuery
+) -> str:
+    """
+    URL: GET /current/releases
+
+    Display live release-workflow releases across all phases. Catalogued releases
+    (those with no workflow revisions) live in the catalog admin pages instead.
+    """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+    # A release is "current" when it has at least one workflow revision; the
+    # imported catalogue has none, so this is the line between the two surfaces
+    has_revisions = sql.latest_revision_number_query().is_not(None)
+    async with db.session() as data:
+        count_result = await data.execute(
+            sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release).where(has_revisions)
+        )
+        count = count_result.scalar_one()
+        releases = await (
+            data.release(_project=True, _committee=True, _revisions=True)
+            .where(has_revisions)
+            .order_by(sql.Release.key)
+            .limit(query_args.limit)
+            .offset(query_args.offset)
+            .all()
+        )
+    now = datetime.datetime.now(datetime.UTC)
+    release_rows = [_release_age_row(release, now) for release in releases]
+    page = _page_nav(query_args.offset, query_args.limit, count, len(releases))
+    return await template.render(
+        "current-releases.html",
+        release_rows=release_rows,
+        release_as_url=mapping.release_as_url,
+        count=count,
+        limit=query_args.limit,
+        page=page,
+    )
+
+
+@admin.typed
 async def data(session: web.Committer, _data: Literal["data"], query_args: PageQuery) -> str:
     """
     URL: GET /data
@@ -1629,68 +1677,6 @@ async def delete_committee_keys_post(
             await quart.flash(failure, "error")
 
     return await session.redirect(delete_committee_keys_get)
-
-
-@admin.typed
-async def delete_release_get(
-    _session: web.Committer, _delete_release_get: Literal["delete-release"]
-) -> str | web.WerkzeugResponse:
-    """
-    URL: GET /delete-release
-
-    Display the form to delete releases.
-    """
-    async with db.session() as data:
-        releases = await data.release(_project=True).order_by(sql.Release.key).all()
-
-    if releases:
-        releases_widget = htpy.div[
-            [
-                htpy.div(".form-check")[
-                    htpy.input(
-                        class_="form-check-input",
-                        type="checkbox",
-                        name="releases_to_delete",
-                        value=release.key,
-                        id=f"release_{release.key}",
-                    ),
-                    htpy.label(".form-check-label", for_=f"release_{release.key}")[
-                        htpy.strong[release.key],
-                        f" ({release.project.display_name}, {release.phase.value.upper()})",
-                    ],
-                ]
-                for release in releases
-            ]
-        ]
-        block = htm.Block(htm.div)
-        block.append(releases_widget)
-        block.div(".form-text.mt-1")["Select one or more releases to delete permanently."]
-        releases_widget_with_help = block.collect()
-    else:
-        releases_widget_with_help = htpy.p(".text-muted")["No releases found in the database."]
-
-    rendered_form = await form.render(
-        model_cls=DeleteReleaseForm,
-        submit_label="Delete selected releases permanently",
-        submit_classes="btn-danger",
-        custom={"releases_to_delete": releases_widget_with_help},
-    )
-
-    return await template.render("delete-release.html", form=rendered_form)
-
-
-@admin.typed
-async def delete_release_post(
-    session: web.Committer, _delete_release_get: Literal["delete-release"], delete_form: DeleteReleaseForm
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /delete-release
-
-    Delete selected releases and their associated data and files.
-    """
-    await _delete_releases(session, delete_form.releases_to_delete)
-
-    return await session.redirect(delete_release_get)
 
 
 @admin.typed

@@ -538,34 +538,34 @@ def ensure_note_results_are_visible(page: Page, result_type: str) -> None:
                 expect(first_note_row).not_to_have_class("atr-hide", timeout=1000)
 
 
-def release_remove(page: Page, release_key: str) -> None:
+def release_remove(page: Page, project_key: str, version_key: str) -> None:
+    release_key = f"{project_key}-{version_key}"
     logging.info(f"Checking whether the {release_key} release exists")
-    release_checkbox_locator = page.locator(f'input[name="releases_to_delete"][value="{release_key}"]')
+    # The confirm page 404s when the release is gone, so a missing confirm field
+    # means there is nothing to delete
+    go_to_path(page, f"/admin/current/releases/{project_key}/{version_key}/delete")
+    confirm_locator = page.locator('input[name="confirm_delete"]')
 
-    if release_checkbox_locator.is_visible():
-        logging.info(f"Found the {release_key} release, proceeding with deletion")
-        logging.info(f"Selecting {release_key} for deletion")
-        release_checkbox_locator.check()
-
-        logging.info(f"Filling deletion confirmation for {release_key}")
-        page.locator("#confirm_delete").fill("DELETE")
-
-        logging.info(f"Submitting deletion form for {release_key}")
-        submit_button_locator = page.get_by_role("button", name="Delete selected releases permanently")
-        expect(submit_button_locator).to_be_enabled()
-        submit_button_locator.click()
-
-        logging.info(f"Waiting for page load after deletion submission for {release_key}")
-        page.wait_for_load_state()
-        logging.info(f"Page loaded after deletion for {release_key}")
-
-        logging.info(f"Checking for success flash message for {release_key}")
-        flash_message_locator = page.locator("div.flash-success")
-        expect(flash_message_locator).to_be_visible()
-        expect(flash_message_locator).to_contain_text("Successfully deleted 1 release")
-        logging.info(f"Deletion successful for {release_key}")
-    else:
+    if confirm_locator.count() == 0:
         logging.info(f"Could not find the {release_key} release, no deletion needed")
+        return
+
+    logging.info(f"Found the {release_key} release, proceeding with deletion")
+    confirm_locator.fill("DELETE")
+
+    logging.info(f"Submitting deletion form for {release_key}")
+    submit_button_locator = page.get_by_role("button", name="Delete this release permanently")
+    expect(submit_button_locator).to_be_enabled()
+    submit_button_locator.click()
+
+    logging.info(f"Waiting for page load after deletion submission for {release_key}")
+    page.wait_for_load_state()
+
+    logging.info(f"Checking for success flash message for {release_key}")
+    flash_message_locator = page.locator("div.flash-success")
+    expect(flash_message_locator).to_be_visible()
+    expect(flash_message_locator).to_contain_text("Successfully deleted 1 release")
+    logging.info(f"Deletion successful for {release_key}")
 
 
 def run_tests(skip_slow: bool, tidy_after: bool) -> None:
@@ -1614,16 +1614,14 @@ def test_tidy_up_ssh_keys_continued(page: Page, credentials: Credentials, finger
 
 
 def test_tidy_up_releases(page: Page) -> None:
-    logging.info("Navigating to the admin delete release page")
-    go_to_path(page, "/admin/delete-release")
-    logging.info("Admin delete release page loaded")
+    logging.info("Tidying up test releases")
 
     # TODO: Get these names automatically
-    release_remove(page, f"{TEST_PROJECT}-0.1+draft")
-    release_remove(page, f"{TEST_PROJECT}-0.1+candidate")
-    release_remove(page, f"{TEST_PROJECT}-0.1+preview")
-    release_remove(page, f"{TEST_PROJECT}-0.1+release")
-    release_remove(page, f"{TEST_PROJECT}-0.2")
+    release_remove(page, TEST_PROJECT, "0.1+draft")
+    release_remove(page, TEST_PROJECT, "0.1+candidate")
+    release_remove(page, TEST_PROJECT, "0.1+preview")
+    release_remove(page, TEST_PROJECT, "0.1+release")
+    release_remove(page, TEST_PROJECT, "0.2")
 
 
 def wait_for_path(page: Page, path: str, timeout: int = 30000) -> None:

@@ -44,14 +44,14 @@ def api_post(request: APIRequestContext, path: str, data: dict[str, Any]) -> dic
 
 
 def delete_release_if_exists(page: Page, project_key: str, version_key: str) -> None:
-    release_key = f"{project_key}-{version_key}"
-    visit(page, "/admin/delete-release")
-    checkbox = page.locator(f'input[name="releases_to_delete"][value="{release_key}"]')
-    if checkbox.count() == 0:
+    # The confirm page 404s when the release is gone, so a missing confirm field
+    # means there is nothing to delete
+    visit(page, f"/admin/current/releases/{project_key}/{version_key}/delete")
+    confirm = page.locator('input[name="confirm_delete"]')
+    if confirm.count() == 0:
         return
-    checkbox.check()
-    page.locator('input[name="confirm_delete"]').fill("DELETE")
-    page.get_by_role("button", name="Delete selected releases permanently").click()
+    confirm.fill("DELETE")
+    page.get_by_role("button", name="Delete this release permanently").click()
     page.wait_for_load_state()
 
 

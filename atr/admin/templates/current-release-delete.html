@@ -1,0 +1,20 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Delete {{ release.key }} ~ ATR Admin{%- endblock title -%}
+
+{%- block description -%}Confirm permanent deletion of a release.{%- endblock description -%}
+
+{% block content %}
+  <h1>Delete release</h1>
+  <p><a href="{{ as_url(admin.current_releases) }}">Back to current releases</a></p>
+
+  <div class="alert alert-danger" role="alert">
+    <p class="mb-1"><strong>This permanently deletes {{ release.key }}.</strong></p>
+    <p class="mb-0">
+      Its database records, background tasks, check results, and files on disk
+      are all removed. This cannot be undone.
+    </p>
+  </div>
+
+  {{ form }}
+{% endblock content %}

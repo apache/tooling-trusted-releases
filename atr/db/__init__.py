@@ -93,6 +93,10 @@ class Query[T]:
         self.query = self.query.order_by(*args, **kwargs)
         return self
 
+    def where(self, *args: Any, **kwargs: Any) -> Query[T]:
+        self.query = self.query.where(*args, **kwargs)
+        return self
+
     def limit(self, count: int) -> Query[T]:
         self.query = self.query.limit(count)
         return self

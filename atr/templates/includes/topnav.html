@@ -264,13 +264,8 @@
               </li>
               <li>
                 <a class="dropdown-item"
-                   href="{{ as_url(admin.all_releases) }}"
-                   {% if request.endpoint == 'atr_admin_all_releases' %}class="active"{% endif %}><i class="bi bi-list-ul"></i> All releases</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.delete_release_get) }}"
-                   {% if request.endpoint == 'atr_admin_delete_release_get' %}class="active"{% endif %}><i class="bi bi-trash"></i> Delete release</a>
+                   href="{{ as_url(admin.current_releases) }}"
+                   {% if request.endpoint == 'atr_admin_current_releases' %}class="active"{% endif %}><i class="bi bi-list-ul"></i> Current releases</a>
               </li>
               <li>
                 <a class="dropdown-item"
