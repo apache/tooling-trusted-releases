@@ -95,11 +95,18 @@ class CatalogProjectResults(schema.Strict):
     cycles: Sequence[CatalogCycle]
 
 
+@dataclasses.dataclass
+class ChecksListQuery:
+    offset: int = 0
+    limit: int = 1000
+
+
 class ChecksListResults(schema.Strict):
     endpoint: Literal["/checks/list"] = schema.alias("endpoint")
     checks: Sequence[sql.CheckResult]
     checks_revision: safe.RevisionNumber = schema.example("00005")
     current_phase: sql.ReleasePhase = schema.example(sql.ReleasePhase.RELEASE_CANDIDATE)
+    count: int
 
     @pydantic.field_validator("current_phase", mode="before")
     @classmethod
@@ -784,9 +791,16 @@ class ReleaseGetResults(schema.Strict):
         return v
 
 
+@dataclasses.dataclass
+class ReleasePathsQuery:
+    offset: int = 0
+    limit: int = 1000
+
+
 class ReleasePathsResults(schema.Strict):
     endpoint: Literal["/release/paths"] = schema.alias("endpoint")
     rel_paths: Sequence[str] = schema.example(["example/0.0.1/example-0.0.1-bin.tar.gz"])
+    count: int
 
 
 class ReleaseRevisionsResults(schema.Strict):

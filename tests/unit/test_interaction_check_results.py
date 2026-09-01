@@ -23,16 +23,19 @@ import pytest
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.models.safe as safe
+import atr.models.sql as sql
 
 
 class CheckResultQuery:
     def __init__(self, results: list[object]) -> None:
         self._results = results
+        self.order_by_args: tuple[object, ...] = ()
 
     async def all(self) -> list[object]:
         return self._results
 
     def order_by(self, *args: object, **kwargs: object) -> "CheckResultQuery":
+        self.order_by_args = args
         return self
 
 
@@ -44,6 +47,7 @@ class ReleaseQuery:
 class CheckResultSession:
     def __init__(self, results: list[object]) -> None:
         self.kwargs: dict[str, object] | None = None
+        self.query: CheckResultQuery | None = None
         self._results = results
 
     async def __aenter__(self) -> "CheckResultSession":
@@ -54,7 +58,8 @@ class CheckResultSession:
 
     def check_result(self, **kwargs: object) -> CheckResultQuery:
         self.kwargs = kwargs
-        return CheckResultQuery(self._results)
+        self.query = CheckResultQuery(self._results)
+        return self.query
 
     def release(self, **_kwargs: object) -> ReleaseQuery:
         return ReleaseQuery()
@@ -89,6 +94,12 @@ async def test_check_results_for_revision_uses_attestable_check_hash() -> None:
         "inputs_hash_in": ["blake3:signature"],
         "primary_rel_path": "artifact.tar.gz.asc",
     }
+    assert session.query is not None
+    assert [str(arg) for arg in session.query.order_by_args] == [
+        str(sql.validate_instrumented_attribute(sql.CheckResult.checker).asc()),
+        str(sql.validate_instrumented_attribute(sql.CheckResult.created).desc()),
+        str(sql.validate_instrumented_attribute(sql.CheckResult.id).desc()),
+    ]
 
 
 @pytest.mark.asyncio

@@ -311,6 +311,7 @@ async def check_results_for_revision(
             await query.order_by(
                 sql.validate_instrumented_attribute(sql.CheckResult.checker).asc(),
                 sql.validate_instrumented_attribute(sql.CheckResult.created).desc(),
+                sql.validate_instrumented_attribute(sql.CheckResult.id).desc(),
             ).all()
         )
 

@@ -80,6 +80,7 @@ async def checks_list(
     _checks_list: Literal["checks/list"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
+    query_args: models.api.ChecksListQuery,
 ) -> DictResponse:
     """
     URL: GET /checks/list/<project_key>/<version_key>
@@ -94,7 +95,10 @@ async def checks_list(
     Warning: the check results include results for archive members, so there
     may potentially be thousands or results or more.
     """
-    # TODO: We should perhaps paginate this
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
         release_key = sql.release_key(str(project_key), str(version_key))
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
@@ -104,9 +108,10 @@ async def checks_list(
 
     return models.api.ChecksListResults(
         endpoint="/checks/list",
-        checks=check_results,
+        checks=check_results[query_args.offset : (query_args.offset + query_args.limit)],
         checks_revision=release.safe_latest_revision_number,
         current_phase=release.phase,
+        count=len(check_results),
     ).model_dump(mode="json"), 200
 
 
@@ -119,6 +124,7 @@ async def checks_list_revision(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
+    query_args: models.api.ChecksListQuery,
 ) -> DictResponse:
     """
     URL: GET /checks/list/<project_key>/<version_key>/<revision>
@@ -133,6 +139,10 @@ async def checks_list_revision(
     Warning: the check results include results for archive members, so there
     may potentially be thousands or results or more.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
         release_key = sql.release_key(str(project_key), str(version_key))
         release_result = await data.release(project_key=str(project_key), version=str(version_key)).demand(
@@ -147,9 +157,10 @@ async def checks_list_revision(
 
     return models.api.ChecksListResults(
         endpoint="/checks/list",
-        checks=check_results,
+        checks=check_results[query_args.offset : (query_args.offset + query_args.limit)],
         checks_revision=revision,
         current_phase=release_result.phase,
+        count=len(check_results),
     ).model_dump(mode="json"), 200
 
 
@@ -1429,6 +1440,7 @@ async def release_paths(
     _release_paths: Literal["release/paths"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
+    query_args: models.api.ReleasePathsQuery,
     revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
@@ -1436,6 +1448,10 @@ async def release_paths(
 
     List paths in a release by project and version.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             exceptions.NotFound()
@@ -1448,7 +1464,8 @@ async def release_paths(
             raise exceptions.NotFound("Files not found")
         return models.api.ReleasePathsResults(
             endpoint="/release/paths",
-            rel_paths=files,
+            rel_paths=files[query_args.offset : (query_args.offset + query_args.limit)],
+            count=len(files),
         ).model_dump(mode="json"), 200
     if revision is None:
         dir_path = paths.release_directory(release)
@@ -1459,7 +1476,8 @@ async def release_paths(
     files = sorted(str(path) for path in [p async for p in util.paths_recursive(dir_path)])
     return models.api.ReleasePathsResults(
         endpoint="/release/paths",
-        rel_paths=files,
+        rel_paths=files[query_args.offset : (query_args.offset + query_args.limit)],
+        count=len(files),
     ).model_dump(mode="json"), 200
 
 
