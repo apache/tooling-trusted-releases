@@ -253,7 +253,7 @@ def test_build_path_combined_literal_and_safe():
     ) -> str:
         return ""
 
-    path, validated, literals, _, _ = common.build_path(route)
+    path, validated, literals, _, _, _ = common.build_path(route)
     assert path == "/project/<_project_key>/version/<_version_key>"
     assert validated == [("_project_key", safe.ProjectKey), ("_version_key", safe.VersionKey)]
     assert literals == {"_page": "project", "_sub": "version"}
@@ -266,7 +266,7 @@ def test_build_path_form_param():
     async def route(_session: web.Committer, _page: Literal["submit"], _data: TestForm) -> str:
         return ""
 
-    path, _, _, form_param, _ = common.build_path(route)
+    path, _, _, form_param, _, _ = common.build_path(route)
     assert path == "/submit"
     assert form_param is not None
     assert form_param[0] == "_data"
@@ -277,7 +277,7 @@ def test_build_path_int_converter():
     async def route(_session: web.Committer, _page: Literal["item"], _item_id: int) -> str:
         return ""
 
-    path, _, _, _, _ = common.build_path(route)
+    path, _, _, _, _, _ = common.build_path(route)
     assert path == "/item/<int:_item_id>"
 
 
@@ -285,7 +285,7 @@ def test_build_path_literal_segment():
     async def route(_session: web.Committer, _page: Literal["dashboard"]) -> str:
         return ""
 
-    path, validated, literals, form_param, public = common.build_path(route)
+    path, validated, literals, form_param, _, public = common.build_path(route)
     assert path == "/dashboard"
     assert literals == {"_page": "dashboard"}
     assert validated == []
@@ -297,8 +297,25 @@ def test_build_path_public_session():
     async def route(_session: web.Public, _page: Literal["home"]) -> str:
         return ""
 
-    _, _, _, _, public = common.build_path(route)
+    _, _, _, _, _, public = common.build_path(route)
     assert public is True
+
+
+def test_build_path_query_param():
+    @dataclasses.dataclass
+    class Filters:
+        limit: int = 50
+        offset: int = 0
+
+    async def route(_session: web.Committer, _page: Literal["list"], _filters: Filters) -> str:
+        return ""
+
+    path, _, _, form_param, query, _ = common.build_path(route)
+    assert path == "/list"
+    assert form_param is None
+    assert query is not None
+    assert query[0] == "_filters"
+    assert query[1] is Filters
 
 
 def test_build_path_rejects_bare_str():
@@ -343,7 +360,7 @@ def test_build_path_relpath_uses_path_converter():
     async def route(_session: web.Committer, _file_path: safe.RelPath) -> str:
         return ""
 
-    path, validated, _, _, _ = common.build_path(route)
+    path, validated, _, _, _, _ = common.build_path(route)
     assert path == "/<path:_file_path>"
     assert validated == [("_file_path", safe.RelPath)]
 
@@ -352,7 +369,7 @@ def test_build_path_safe_type():
     async def route(_session: web.Committer, _project_key: safe.ProjectKey) -> str:
         return ""
 
-    path, validated, _, _, _ = common.build_path(route)
+    path, validated, _, _, _, _ = common.build_path(route)
     assert path == "/<_project_key>"
     assert validated == [("_project_key", safe.ProjectKey)]
 

@@ -17,8 +17,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar
 
 import asfquart.base as base
 import markupsafe
@@ -274,6 +275,19 @@ class HeaderValue:
         return self.__value
 
 
+class PageNav(NamedTuple):
+    start: int
+    end: int
+    previous_offset: int | None
+    next_offset: int | None
+
+
+@dataclasses.dataclass
+class PageQuery:
+    limit: int = 50
+    offset: int = 0
+
+
 type Public = Committer | None
 
 
@@ -326,6 +340,23 @@ async def flash_success(*messages: htm.Element) -> None:
 
 async def form_error(error: str) -> None:
     pass
+
+
+def page_nav(offset: int, limit: int, count: int, shown: int) -> PageNav:
+    start = 0
+    end = 0
+    if shown > 0:
+        start = offset + 1
+        end = offset + shown
+    previous_offset = None
+    if offset > 0:
+        previous_offset = max(offset - limit, 0)
+        if (shown == 0) and (0 < count <= offset):
+            previous_offset = ((count - 1) // limit) * limit
+    next_offset = None
+    if (shown > 0) and ((offset + shown) < count):
+        next_offset = offset + limit
+    return PageNav(start=start, end=end, previous_offset=previous_offset, next_offset=next_offset)
 
 
 async def redirect[R](

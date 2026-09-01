@@ -114,19 +114,6 @@ class LdapLookupForm(form.Form):
     )
 
 
-class PageNav(NamedTuple):
-    start: int
-    end: int
-    previous_offset: int | None
-    next_offset: int | None
-
-
-@dataclasses.dataclass
-class PageQuery:
-    limit: int = 50
-    offset: int = 0
-
-
 class ReleaseAgeRow(NamedTuple):
     release: sql.Release
     age_label: str
@@ -1548,7 +1535,7 @@ async def current_release_delete_post(
 
 @admin.typed
 async def current_releases(
-    _session: web.Committer, _current_releases: Literal["current/releases"], query_args: PageQuery
+    _session: web.Committer, _current_releases: Literal["current/releases"], query_args: web.PageQuery
 ) -> str:
     """
     URL: GET /current/releases
@@ -1578,7 +1565,7 @@ async def current_releases(
         )
     now = datetime.datetime.now(datetime.UTC)
     release_rows = [_release_age_row(release, now) for release in releases]
-    page = _page_nav(query_args.offset, query_args.limit, count, len(releases))
+    page = web.page_nav(query_args.offset, query_args.limit, count, len(releases))
     return await template.render(
         "current-releases.html",
         release_rows=release_rows,
@@ -1590,7 +1577,7 @@ async def current_releases(
 
 
 @admin.typed
-async def data(session: web.Committer, _data: Literal["data"], query_args: PageQuery) -> str:
+async def data(session: web.Committer, _data: Literal["data"], query_args: web.PageQuery) -> str:
     """
     URL: GET /data
     """
@@ -1599,7 +1586,7 @@ async def data(session: web.Committer, _data: Literal["data"], query_args: PageQ
 
 @admin.typed
 async def data_model(
-    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr, query_args: PageQuery
+    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr, query_args: web.PageQuery
 ) -> str:
     """
     URL: GET /data/<model>
@@ -2841,7 +2828,7 @@ async def _check_keys(fix: bool = False) -> str:
     return message
 
 
-async def _data_browse(_session: web.Committer, model: str, query_args: PageQuery) -> str:
+async def _data_browse(_session: web.Committer, model: str, query_args: web.PageQuery) -> str:
     """Browse all records in the database."""
     try:
         validation.pagination_args_validate(query_args)
@@ -2893,7 +2880,7 @@ async def _data_browse(_session: web.Committer, model: str, query_args: PageQuer
                         record_dict[key] = getattr(record, key)
             records_dict.append(record_dict)
 
-        page = _page_nav(query_args.offset, query_args.limit, count, len(records))
+        page = web.page_nav(query_args.offset, query_args.limit, count, len(records))
         return await template.render(
             "data-browser.html",
             models=list(model_methods.keys()),
@@ -3027,23 +3014,6 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 def _keys_update_gated() -> bool:
     return util.svn_publish_target() is util.SvnPublishTarget.RELEASE
-
-
-def _page_nav(offset: int, limit: int, count: int, shown: int) -> PageNav:
-    start = 0
-    end = 0
-    if shown > 0:
-        start = offset + 1
-        end = offset + shown
-    previous_offset = None
-    if offset > 0:
-        previous_offset = max(offset - limit, 0)
-        if (shown == 0) and (0 < count <= offset):
-            previous_offset = ((count - 1) // limit) * limit
-    next_offset = None
-    if (shown > 0) and ((offset + shown) < count):
-        next_offset = offset + limit
-    return PageNav(start=start, end=end, previous_offset=previous_offset, next_offset=next_offset)
 
 
 def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAgeRow:

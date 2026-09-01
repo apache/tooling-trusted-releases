@@ -58,7 +58,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - int, float use Quart's built-in type converters
     - A single form.Form subclass parameter is validated from the request body and injected
     """
-    path, validated_params, literal_params, form_param, public = common.build_path(func)
+    path, validated_params, literal_params, form_param, _, public = common.build_path(func)
     form_safe_params = common.safe_params_for_type(form_param[1]) if (form_param is not None) else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:

@@ -55,13 +55,17 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - safe.SafeType subclass parameters are validated from the URL path
     - int, float use Quart's built-in type converters
     """
-    path, validated_params, literal_params, _, public = common.build_path(func)
+    path, validated_params, literal_params, _, query_param, public = common.build_path(func)
+    query_safe_params = common.safe_params_for_type(query_param[1]) if (query_param is not None) else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         enhanced_session = await common.authenticate_public() if public else await common.authenticate()
         await common.validate_params(kwargs, validated_params)
         kwargs.update(literal_params)
         await common.confidential_release_block(kwargs, validated_params, enhanced_session, allow_asf_member=True)
+
+        if query_param is not None:
+            await common.parse_query(query_param, query_safe_params, kwargs)
 
         start_time_ns = time.perf_counter_ns()
         response = await func(enhanced_session, **kwargs)

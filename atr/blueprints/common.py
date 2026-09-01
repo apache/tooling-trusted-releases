@@ -85,7 +85,7 @@ async def authenticate_public() -> web.Public:
 
 def build_path(
     func: Callable[..., Any],
-) -> tuple[str, list[tuple[str, type]], dict[str, str], tuple[str, type] | None, bool]:
+) -> tuple[str, list[tuple[str, type]], dict[str, str], tuple[str, type] | None, tuple[str, type] | None, bool]:
     """Inspect a function's type hints to build a URL path and a validation plan.
 
     Accepts URL path params for data, Literal strings for plain URL text, and Form params for POST bodies
@@ -122,7 +122,7 @@ def build_path(
         _classify_url_param(param_name, hint, func.__name__, segments, validated_params, literal_params)
 
     path = "/" + "/".join(segments)
-    return path, validated_params, literal_params, unique.form, public
+    return path, validated_params, literal_params, unique.form, unique.query, public
 
 
 def build_api_path(
