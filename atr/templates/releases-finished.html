@@ -13,6 +13,7 @@
 
   {% if releases %}
     <p class="mb-4">The following releases have been published for this project.</p>
+    <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} releases.</p>
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
       {% for release in releases %}
         <div class="col">
@@ -42,8 +43,37 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="alert alert-info mt-4" role="alert">
-      <i class="bi bi-info-circle me-2"></i> There are no completed releases recorded for {{ project.display_name }}.
-    </div>
+    {% if count %}
+      <div class="alert alert-info mt-4" role="alert">
+        <i class="bi bi-info-circle me-2"></i> No releases to show on this page ({{ count }} total).
+      </div>
+    {% else %}
+      <div class="alert alert-info mt-4" role="alert">
+        <i class="bi bi-info-circle me-2"></i> There are no completed releases recorded for {{ project.display_name }}.
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
+    <nav aria-label="Finished releases pages">
+      <ul class="pagination">
+        {% if page.previous_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(get.release.finished, project_key=project.key, limit=limit, offset=page.previous_offset) }}">Previous</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+        {% if page.next_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(get.release.finished, project_key=project.key, limit=limit, offset=page.next_offset) }}">Next</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+      </ul>
+    </nav>
   {% endif %}
 {% endblock content %}

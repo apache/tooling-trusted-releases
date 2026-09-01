@@ -1065,19 +1065,26 @@ async def project_get(
 async def project_releases(
     _project_releases: Literal["project/releases"],
     project_key: safe.ProjectKey,
+    query_args: models.api.ProjectReleasesQuery,
 ) -> DictResponse:
     """
     URL: GET /project/releases/<project_key>
 
     List releases by project name.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
         await data.project(key=str(project_key)).demand(exceptions.NotFound())
         releases = await data.release(project_key=str(project_key)).all()
     releases = [r for r in releases if (not r.is_embargoed)]
+    releases.sort(key=lambda r: (r.released or r.created, r.key), reverse=True)
     return models.api.ProjectReleasesResults(
         endpoint="/project/releases",
-        releases=releases,
+        releases=releases[query_args.offset : (query_args.offset + query_args.limit)],
+        count=len(releases),
     ).model_dump(mode="json"), 200
 
 

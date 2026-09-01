@@ -646,9 +646,16 @@ class ProjectConfigResults(schema.Strict):
     created: bool = schema.example(False)
 
 
+@dataclasses.dataclass
+class ProjectReleasesQuery:
+    offset: int = 0
+    limit: int = 1000
+
+
 class ProjectReleasesResults(schema.Strict):
     endpoint: Literal["/project/releases"] = schema.alias("endpoint")
     releases: Sequence[sql.Release]
+    count: int
 
 
 class ProjectsListResults(schema.Strict):

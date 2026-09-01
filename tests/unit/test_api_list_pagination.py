@@ -35,6 +35,9 @@ class MockQuery:
     def __init__(self, value: object) -> None:
         self._value = value
 
+    async def all(self) -> object:
+        return self._value
+
     async def demand(self, error: Exception) -> object:
         if self._value is None:
             raise error
@@ -45,9 +48,10 @@ class MockQuery:
 
 
 class MockDBSession:
-    def __init__(self, release: object, revision: object = None) -> None:
+    def __init__(self, release: object, revision: object = None, releases: list | None = None) -> None:
         self._release = release
         self._revision = revision
+        self._releases = releases
 
     async def __aenter__(self) -> "MockDBSession":
         return self
@@ -55,7 +59,12 @@ class MockDBSession:
     async def __aexit__(self, _exc_type: object, _exc: object, _tb: object) -> bool:
         return False
 
+    def project(self, **_kwargs: object) -> MockQuery:
+        return MockQuery(self._release)
+
     def release(self, **_kwargs: object) -> MockQuery:
+        if self._releases is not None:
+            return MockQuery(self._releases)
         return MockQuery(self._release)
 
     def revision(self, **_kwargs: object) -> MockQuery:
@@ -127,16 +136,18 @@ async def test_checks_list_revision_slices_and_counts(monkeypatch: pytest.Monkey
     assert [check["message"] for check in body["checks"]] == ["message 1", "message 2"]
 
 
-@pytest.mark.parametrize("handler_name", ["checks_list", "checks_list_revision", "release_paths"])
+@pytest.mark.parametrize("handler_name", ["checks_list", "checks_list_revision", "project_releases", "release_paths"])
 async def test_pagination_limit_cap_rejected(handler_name: str) -> None:
     handler = inspect.unwrap(getattr(api, handler_name))
-    kwargs: dict[str, object] = {
-        "project_key": safe.ProjectKey("example"),
-        "version_key": safe.VersionKey("0.0.1"),
-    }
+    kwargs: dict[str, object] = {"project_key": safe.ProjectKey("example")}
+    if handler_name != "project_releases":
+        kwargs["version_key"] = safe.VersionKey("0.0.1")
     if handler_name == "checks_list_revision":
         kwargs["revision"] = safe.RevisionNumber("00001")
-    if handler_name == "release_paths":
+    if handler_name == "project_releases":
+        kwargs["query_args"] = atr.models.api.ProjectReleasesQuery(limit=2000)
+        literal = "project/releases"
+    elif handler_name == "release_paths":
         kwargs["query_args"] = atr.models.api.ReleasePathsQuery(limit=2000)
         literal = "release/paths"
     else:
@@ -145,6 +156,40 @@ async def test_pagination_limit_cap_rejected(handler_name: str) -> None:
 
     with pytest.raises(exceptions.BadRequest):
         await handler(literal, **kwargs)
+
+
+async def test_project_releases_orders_slices_and_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    created = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+
+    def row(version: str, days: int, expedited: bool = False, phase: sql.ReleasePhase = sql.ReleasePhase.RELEASE):
+        return sql.Release(
+            key=f"example-{version}",
+            project_key="example",
+            version=version,
+            phase=phase,
+            created=created,
+            released=created + datetime.timedelta(days=days),
+            expedited=expedited,
+        )
+
+    rows = [
+        row("0.0.1", 2),
+        row("0.0.2", 3),
+        row("0.0.3", 2),
+        row("0.0.4", 4, expedited=True, phase=sql.ReleasePhase.RELEASE_CANDIDATE),
+    ]
+    monkeypatch.setattr(api.db, "session", lambda: MockDBSession(SimpleNamespace(), releases=rows))
+
+    handler = inspect.unwrap(api.project_releases)
+    body, status = await handler(
+        "project/releases",
+        project_key=safe.ProjectKey("example"),
+        query_args=atr.models.api.ProjectReleasesQuery(offset=1, limit=2),
+    )
+
+    assert status == 200
+    assert body["count"] == 3
+    assert [release["version"] for release in body["releases"]] == ["0.0.3", "0.0.1"]
 
 
 @pytest.mark.parametrize("branch", ["published", "latest", "revision"])
