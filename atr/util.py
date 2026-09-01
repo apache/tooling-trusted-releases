@@ -707,10 +707,12 @@ def create_path_matcher(
 def create_secure_session(
     timeout: aiohttp.ClientTimeout | None = None,
     public: bool = False,
+    ipv4_only: bool = False,
 ) -> aiohttp.ClientSession:
     """Create a secure aiohttp.ClientSession with hardened SSL/TLS configuration."""
     resolver = PublicResolver() if public else None
-    connector = aiohttp.TCPConnector(ssl=create_secure_ssl_context(), resolver=resolver)
+    family = socket.AF_INET if ipv4_only else socket.AF_UNSPEC
+    connector = aiohttp.TCPConnector(ssl=create_secure_ssl_context(), resolver=resolver, family=family)
     # We pass the timeout to the ClientSession constructor
     return aiohttp.ClientSession(connector=connector, timeout=timeout)
 
@@ -932,7 +934,7 @@ async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
 
 async def get_urls_as_completed(urls: Sequence[str]) -> AsyncGenerator[tuple[str, int | str | None, bytes]]:
     """GET a list of URLs in parallel and yield (url, status, content_bytes) as they become available."""
-    async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as session:
+    async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT, ipv4_only=True) as session:
 
         async def _fetch(one_url: str) -> tuple[str, int | str | None, bytes]:
             try:
@@ -1442,7 +1444,7 @@ async def task_archive_url_strict(task_mid: str, recipient: str | None = None) -
     lid = urllib.parse.quote(recipient_address.replace("@", "."))
     url = f"https://lists.apache.org/api/email.json?id=%3C{urllib.parse.quote(task_mid)}%3E&listid=%3C{lid}%3E"
     try:
-        async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as session:
+        async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT, ipv4_only=True) as session:
             async with session.get(url) as response:
                 if response.status == 404:
                     return None
@@ -1467,7 +1469,7 @@ async def thread_messages(  # noqa: C901
     thread_url = f"https://lists.apache.org/api/thread.json?id={urllib.parse.quote(thread_id)}"
 
     try:
-        async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as session:
+        async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT, ipv4_only=True) as session:
             async with session.get(thread_url) as resp:
                 resp.raise_for_status()
                 thread_data: Any = await resp.json(content_type=None)

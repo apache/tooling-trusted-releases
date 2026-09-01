@@ -63,7 +63,7 @@ async def test_thread_messages_raises_on_partial_email_fetch_when_strict(
     monkeypatch.setattr(
         util,
         "create_secure_session",
-        lambda timeout=None: FakeSession({"emails": [{"id": "missing"}]}),
+        lambda timeout=None, ipv4_only=False: FakeSession({"emails": [{"id": "missing"}]}),
     )
     monkeypatch.setattr(util, "get_urls_as_completed", _fake_get_urls_as_completed)
 
@@ -81,7 +81,7 @@ async def test_thread_messages_raises_on_partial_email_parse_when_strict(
     monkeypatch.setattr(
         util,
         "create_secure_session",
-        lambda timeout=None: FakeSession({"emails": [{"id": "broken"}]}),
+        lambda timeout=None, ipv4_only=False: FakeSession({"emails": [{"id": "broken"}]}),
     )
     monkeypatch.setattr(util, "get_urls_as_completed", _fake_get_urls_as_completed)
 
@@ -100,7 +100,7 @@ async def test_thread_messages_skips_partial_email_fetches_when_not_strict(
     monkeypatch.setattr(
         util,
         "create_secure_session",
-        lambda timeout=None: FakeSession({"emails": [{"id": "missing"}, {"id": "ok"}]}),
+        lambda timeout=None, ipv4_only=False: FakeSession({"emails": [{"id": "missing"}, {"id": "ok"}]}),
     )
     monkeypatch.setattr(util, "get_urls_as_completed", _fake_get_urls_as_completed)
 
