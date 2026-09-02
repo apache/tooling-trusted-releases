@@ -83,15 +83,12 @@ async def releases(_session: web.Committer, _releases: Literal["releases"]) -> s
     View all releases.
     """
     async with db.session() as data:
-        releases = await data.release(
-            phase=sql.ReleasePhase.RELEASE,
-            _committee=True,
-            _project=True,
-        ).all()
+        latest = await interaction.project_latest_finished(data)
+        projects = await data.project(_committee=True).all()
 
     return await template.render(
         "releases.html",
-        catalog=_committee_release_catalog(releases),
+        catalog=_committee_release_catalog(projects, latest),
     )
 
 
@@ -130,43 +127,37 @@ class _CommitteeReleaseEntry:
     projects: list[_ProjectReleaseEntry]
 
 
-def _committee_release_catalog(releases: Sequence[sql.Release]) -> list[_CommitteeReleaseEntry]:
+def _committee_release_catalog(
+    projects: Sequence[sql.Project], latest: dict[str, tuple[int, str, datetime.datetime | None]]
+) -> list[_CommitteeReleaseEntry]:
     committees: dict[str, sql.Committee] = {}
-    by_committee: dict[str, list[sql.Release]] = collections.defaultdict(list)
-    for release in releases:
-        committee = release.project.committee
+    by_committee: dict[str, list[_ProjectReleaseEntry]] = collections.defaultdict(list)
+    for project in projects:
+        finished = latest.get(project.key)
+        if finished is None:
+            continue
+        committee = project.committee
         if committee is None:
             # Nothing to group it under here, so skip it. Shouldn't happen in practice.
             continue
+        finished_count, latest_version, latest_date = finished
         committees[committee.key] = committee
-        by_committee[committee.key].append(release)
+        by_committee[committee.key].append(
+            _ProjectReleaseEntry(
+                project=project,
+                finished_count=finished_count,
+                latest_version=latest_version or None,
+                latest_date=latest_date,
+            )
+        )
 
+    for entries in by_committee.values():
+        entries.sort(key=lambda entry: interaction.project_order_key(entry.project, entry.latest_date))
     catalog = [
-        _CommitteeReleaseEntry(committee=committees[key], projects=_project_entries(committee_releases))
-        for key, committee_releases in by_committee.items()
+        _CommitteeReleaseEntry(committee=committees[key], projects=entries) for key, entries in by_committee.items()
     ]
     catalog.sort(key=lambda entry: entry.committee.display_name.lower())
     return catalog
-
-
-def _project_entries(releases: list[sql.Release]) -> list[_ProjectReleaseEntry]:
-    by_project: dict[str, list[sql.Release]] = collections.defaultdict(list)
-    for release in releases:
-        by_project[release.project.key].append(release)
-
-    entries: list[_ProjectReleaseEntry] = []
-    for project_releases in by_project.values():
-        latest = max(project_releases, key=_release_sort_key)
-        entries.append(
-            _ProjectReleaseEntry(
-                project=latest.project,
-                finished_count=len(project_releases),
-                latest_version=latest.version or None,
-                latest_date=latest.released or None,
-            )
-        )
-    entries.sort(key=lambda entry: interaction.project_order_key(entry.project, entry.latest_date))
-    return entries
 
 
 def _release_sort_key(release: sql.Release) -> tuple[datetime.datetime, str]:

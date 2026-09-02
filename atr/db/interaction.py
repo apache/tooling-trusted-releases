@@ -585,6 +585,31 @@ async def prior_release_for_archive(
     return cycles.prior_release_in_cycle(project, version, candidates)
 
 
+async def project_latest_finished(data: db.Session) -> dict[str, tuple[int, str, datetime.datetime | None]]:
+    via = sql.validate_instrumented_attribute
+    latest = sqlalchemy.func.coalesce(via(sql.Release.released), via(sql.Release.created))
+    row_number = sqlalchemy.func.row_number().over(
+        partition_by=via(sql.Release.project_key), order_by=(latest.desc(), via(sql.Release.key).desc())
+    )
+    count = sqlalchemy.func.count().over(partition_by=via(sql.Release.project_key))
+    ranked = (
+        sqlalchemy.select(
+            via(sql.Release.project_key),
+            via(sql.Release.version),
+            via(sql.Release.released),
+            row_number.label("row_number"),
+            count.label("count"),
+        )
+        .where(via(sql.Release.phase) == sql.ReleasePhase.RELEASE)
+        .subquery()
+    )
+    query = sqlalchemy.select(ranked.c.project_key, ranked.c.version, ranked.c.released, ranked.c.count).where(
+        ranked.c.row_number == 1
+    )
+    result = await data.execute(query)
+    return {project_key: (count, version, released) for project_key, version, released, count in result.all()}
+
+
 async def project_latest_releases(
     data: db.Session, project_keys: Sequence[str] | None = None
 ) -> dict[str, datetime.datetime]:
