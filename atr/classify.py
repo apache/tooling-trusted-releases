@@ -63,28 +63,35 @@ _BIN_DISTRIBUTION_TOKENS: Final[frozenset[str]] = frozenset(
 _BIN_PATH_PARTS: Final[frozenset[str]] = frozenset({"bin", "binaries", "binary"})
 
 # 0.9% (path), 28.2% (filename)
-_BIN_PLATFORM_TOKENS: Final[frozenset[str]] = frozenset(
-    {
-        "64bit",
-        "aarch64",
-        "amd64",
-        "apk",
-        "arm64",
-        "arm64bit",
-        "darwin",
-        "linux",
-        "mac",
-        "macos",
-        "osx",
-        "win",
-        "windows",
-        "win32",
-        "win64",
-        "x64",
-        "x86",
-        "x86_64",
-    }
-)
+# OS and CPU-architecture tokens marking a binary distribution, as {token: canonical} so a
+# caller can read which OS or arch a filename declares (os_in/arch_in). Both separator
+# spellings of a compound arch are listed (x86-64/x86_64) since filenames use either;
+# classify only tests membership, taken from the union below.
+_OS_TOKENS: Final[dict[str, str]] = {
+    "darwin": "macos",
+    "mac": "macos",
+    "macos": "macos",
+    "osx": "macos",
+    "linux": "linux",
+    "win": "windows",
+    "win32": "windows",
+    "win64": "windows",
+    "windows": "windows",
+}
+_ARCH_TOKENS: Final[dict[str, str]] = {
+    "aarch64": "aarch64",
+    "arm64": "aarch64",
+    "arm64bit": "aarch64",
+    "amd64": "x86-64",
+    "x64": "x86-64",
+    "x86-64": "x86-64",
+    "x86_64": "x86-64",
+    "x86": "x86",
+    "64bit": "64bit",
+}
+# Platform markers that name neither an OS nor an arch (a package format).
+_PLATFORM_OTHER_TOKENS: Final[frozenset[str]] = frozenset({"apk"})
+_BIN_PLATFORM_TOKENS: Final[frozenset[str]] = frozenset(_OS_TOKENS) | frozenset(_ARCH_TOKENS) | _PLATFORM_OTHER_TOKENS
 
 # Docs markers
 
@@ -134,6 +141,11 @@ class FileType(enum.Enum):
     SBOM = "sbom"
 
 
+def arch_in(name: str) -> str | None:
+    """The canonical CPU architecture a name declares, if any."""
+    return _platform_match(name, _ARCH_TOKENS)
+
+
 def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, int]:
     name = pathlib.PurePosixPath(stem).name
     tokens = _get_stem_tokens(name)
@@ -151,29 +163,6 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
     )
     docs_count = _doc_extra_token(tokens) + _doc_filename_token(name) + _doc_path_token(ptokens)
     return source_count, binary_count, docs_count
-
-
-def classify_path(path: pathlib.PurePath) -> FileType:
-    # The path-only half of classify(): no policy matchers and no reading of file
-    # content, so it works when all we have is a path (a find-ls dump, or an SVN
-    # commit payload). The marker counts and tie-breaks are the same, so a path
-    # classified here lands the same as it would through the full classify(), give
-    # or take an SBOM that only its content would give away.
-    name = path.name
-    if (name in analysis.DISALLOWED_FILENAMES) or (path.suffix in analysis.DISALLOWED_SUFFIXES):
-        return FileType.DISALLOWED
-    if analysis.is_cyclonedx(name):
-        return FileType.SBOM
-    if analysis.is_sbom_metadata(name):
-        return FileType.METADATA
-    path_str = str(path)
-    search = re.search(analysis.extension_pattern(), path_str)
-    if search and search.group("metadata"):
-        return FileType.METADATA
-    if (not search) or (not search.group("artifact")):
-        return FileType.BINARY
-    stem = path_str[: search.start()]
-    return classify_from_counts(path_str, *archive_marker_counts(stem, path))
 
 
 async def classify(
@@ -230,6 +219,38 @@ def classify_from_counts(path_str: str, source_count: int, binary_count: int, do
     return FileType.BINARY
 
 
+def classify_path(path: pathlib.PurePath) -> FileType:
+    # The path-only half of classify(): no policy matchers and no reading of file
+    # content, so it works when all we have is a path (a find-ls dump, or an SVN
+    # commit payload). The marker counts and tie-breaks are the same, so a path
+    # classified here lands the same as it would through the full classify(), give
+    # or take an SBOM that only its content would give away.
+    name = path.name
+    if (name in analysis.DISALLOWED_FILENAMES) or (path.suffix in analysis.DISALLOWED_SUFFIXES):
+        return FileType.DISALLOWED
+    if analysis.is_cyclonedx(name):
+        return FileType.SBOM
+    if analysis.is_sbom_metadata(name):
+        return FileType.METADATA
+    path_str = str(path)
+    search = re.search(analysis.extension_pattern(), path_str)
+    if search and search.group("metadata"):
+        return FileType.METADATA
+    if (not search) or (not search.group("artifact")):
+        return FileType.BINARY
+    stem = path_str[: search.start()]
+    return classify_from_counts(path_str, *archive_marker_counts(stem, path))
+
+
+def ext_of(name: str) -> str | None:
+    """The packaging extension of an artifact file name (tar.gz, zip, jar, ...), or None."""
+    match = re.search(analysis.extension_pattern(), name)
+    if match is None:
+        return None
+    suffix = match.group("artifact") or match.group("metadata_artifact")
+    return suffix.removeprefix(".") if suffix else None
+
+
 def matchers_from_policy(
     source_artifact_paths: list[str],
     binary_artifact_paths: list[str],
@@ -240,6 +261,11 @@ def matchers_from_policy(
     source_matcher = util.create_path_matcher(source_artifact_paths, None, base_path) if source_artifact_paths else None
     binary_matcher = util.create_path_matcher(binary_artifact_paths, None, base_path) if binary_artifact_paths else None
     return source_matcher, binary_matcher
+
+
+def os_in(name: str) -> str | None:
+    """The canonical operating system a name declares, if any."""
+    return _platform_match(name, _OS_TOKENS)
 
 
 def _bin_binary_token(name: str) -> bool:
@@ -339,6 +365,17 @@ async def _npm_content_marker(archive_cache_dir: safe.StatePath) -> FileType | N
     if npm_info is None:
         return None
     return FileType.BINARY
+
+
+def _platform_match(name: str, table: dict[str, str]) -> str | None:
+    # Match a vocab token delimited by the usual separators (or the ends), longest token first
+    # so a compound like x86-64 wins over x86. The name is a filename fragment, not a bare token,
+    # so darwin-aarch64 and MacOS_x86-64 both resolve however their axes are joined.
+    lower = name.lower()
+    for token in sorted(table, key=len, reverse=True):
+        if re.search(r"(^|[-_.])" + re.escape(token) + r"(?=[-_.]|$)", lower):
+            return table[token]
+    return None
 
 
 async def _sbom_markers(path: safe.RelPath, base_path: safe.StatePath | None) -> FileType | None:
