@@ -110,6 +110,34 @@ def test_certificate_for_fingerprint_refuses_a_repeated_certificate() -> None:
         pgp.certificate_for_fingerprint(block, pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT)
 
 
+def test_certificate_parts_split_a_block_in_one_pass() -> None:
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    parts, packets = pgp.certificate_parts(block)
+
+    assert packets == len(pgp._frames(pgp._dearmored(block)))
+    assert b"".join(span for _, span in parts) == pgp._dearmored(block)
+    assert [pgp.certificate_block_fingerprint(armored) for armored, _ in parts] == [
+        pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT,
+        pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT,
+    ]
+
+
+def test_certificate_parts_refuse_a_block_over_a_limit() -> None:
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+    _, packets = pgp.certificate_parts(block)
+
+    assert pgp.certificate_parts(block, packet_limit=packets, certificate_limit=2)[1] == packets
+    with pytest.raises(pgp.LimitError, match="packets"):
+        pgp.certificate_parts(block, packet_limit=packets - 1)
+    with pytest.raises(pgp.LimitError, match="certificates"):
+        pgp.certificate_parts(block, certificate_limit=1)
+
+
 def test_latest_self_signature_skips_uid_revocations() -> None:
     key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
 

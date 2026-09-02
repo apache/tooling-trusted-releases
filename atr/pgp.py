@@ -58,6 +58,10 @@ class Component:
     facts: "SigningKeyFacts | None"
 
 
+class LimitError(ValueError):
+    pass
+
+
 @dataclasses.dataclass(frozen=True)
 class SigningKeyFacts:
     """The stored form of one key which can carry a signature, the primary or one of its subkeys."""
@@ -132,11 +136,7 @@ def certificate_block_shape(keys: list[openpgp.composed.SignedPublicKey], finger
 
 
 def certificate_blocks(text: str) -> list[str]:
-    frames = _frames(_dearmored(text))
-    starts = [index for index, frame in enumerate(frames) if frame[0] == _PRIMARY_KEY_TAG]
-    bounds = [*starts, len(frames)]
-    segments = [frames[begin:end] for begin, end in itertools.pairwise(bounds)]
-    return [_armored(b"".join(_framed(tag, body) for tag, body in segment)) for segment in segments]
+    return [block for block, _ in certificate_parts(text)[0]]
 
 
 def certificate_components(
@@ -174,6 +174,22 @@ def certificate_for_fingerprint(armored: str, fingerprint: str) -> openpgp.compo
     if len(matches) > 1:
         raise ValueError(f"Certificate {fingerprint} appears {len(matches)} times in the block")
     return matches[0] if matches else None
+
+
+def certificate_parts(
+    text: str, *, packet_limit: int | None = None, certificate_limit: int | None = None
+) -> tuple[list[tuple[str, bytes]], int]:
+    data = _dearmored(text)
+    offsets = _frame_offsets(data, packet_limit)
+    starts = [index for index, (tag, _, _, _) in enumerate(offsets) if tag == _PRIMARY_KEY_TAG]
+    if (certificate_limit is not None) and (len(starts) > certificate_limit):
+        raise LimitError(f"More than {certificate_limit} certificates in one block")
+    parts = []
+    for begin, end in itertools.pairwise([*starts, len(offsets)]):
+        segment = offsets[begin:end]
+        block = _armored(b"".join(_framed(tag, data[body:stop]) for tag, _, body, stop in segment))
+        parts.append((block, data[segment[0][1] : segment[-1][3]]))
+    return parts, len(offsets)
 
 
 def certificate_placements(block: str) -> frozenset[Placement]:
@@ -618,10 +634,12 @@ def _fragment_or_none(placements: set[Placement], primary: tuple[int, bytes]) ->
     return fragment_bytes(frozenset(placements), primary)
 
 
-def _frame_offsets(data: bytes) -> list[tuple[int, int, int, int]]:
+def _frame_offsets(data: bytes, limit: int | None = None) -> list[tuple[int, int, int, int]]:
     offsets = []
     offset = 0
     while offset < len(data):
+        if (limit is not None) and (len(offsets) == limit):
+            raise LimitError(f"More than {limit} packets in one block")
         ctb = data[offset]
         if not ctb & 0x80:
             raise ValueError(f"Invalid packet marker {ctb:#x} at offset {offset}")

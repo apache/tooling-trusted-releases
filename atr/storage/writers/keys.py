@@ -1163,14 +1163,13 @@ class CommitteeParticipant(FoundationCommitter):
 
     def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
         try:
-            blocks = pgp.certificate_blocks(key_block)
-            spans = pgp.certificate_spans(key_block)
+            parts, _ = pgp.certificate_parts(key_block)
         except Exception as e:
             raise ValueError(f"Error loading OpenPGP key block: {e}") from e
-        if not blocks:
+        if not parts:
             raise ValueError("Error loading OpenPGP key block: no keys found")
         key_list: list[datatypes.Key | Exception] = []
-        for block, span in zip(blocks, spans, strict=True):
+        for block, span in parts:
             try:
                 public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(block)
                 if len(public_keys) != 1:
