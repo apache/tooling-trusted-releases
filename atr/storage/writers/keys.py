@@ -93,8 +93,11 @@ _KEY_AUDIT_ACTIONS: Final = (
     (datatypes.KeyStatus.REFRESHED, "key_refresh"),
     (datatypes.KeyStatus.LINKED, "key_associate_committee"),
 )
+_MAX_ARMOR_BLOCKS_PER_REQUEST: Final = 256
 _MAX_CERTIFICATE_BYTES: Final = 4 * 1024 * 1024
 _MAX_CERTIFICATE_PLACEMENTS: Final = 16384
+_MAX_CERTIFICATES_PER_REQUEST: Final = 512
+_MAX_PACKETS_PER_REQUEST: Final = 32768
 _POINTER_SOURCE_SCHEMES: Final = frozenset({"archive", "svn"})
 _RSA_ALGORITHMS: Final = frozenset({1, 3})
 _RSA_MINIMUM_BITS: Final = 4096
@@ -725,6 +728,7 @@ class FoundationCommitter(GeneralPublic):
         return key
 
     def __block_model_create(self, key_block: str, ldap_data: cache.EmailUidLookup) -> datatypes.Key:
+        parts, _ = pgp.certificate_parts(key_block, packet_limit=_MAX_PACKETS_PER_REQUEST)
         public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(key_block)
         if len(public_keys) != 1:
             raise ValueError(
@@ -738,7 +742,7 @@ class FoundationCommitter(GeneralPublic):
             status=datatypes.KeyStatus.PARSED,
             key_model=key_model,
             member_ids=sorted(util.openpgp_member_ids(public_key)),
-            input=pgp.certificate_spans(key_block)[0],
+            input=parts[0][1],
         )
 
     async def __certificate_chain(
@@ -1161,31 +1165,38 @@ class CommitteeParticipant(FoundationCommitter):
             linked=bool(status & datatypes.KeyStatus.LINKED),
         )
 
-    def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
-        try:
-            parts, _ = pgp.certificate_parts(key_block)
-        except Exception as e:
-            raise ValueError(f"Error loading OpenPGP key block: {e}") from e
-        if not parts:
-            raise ValueError("Error loading OpenPGP key block: no keys found")
+    def __block_models(self, keys_file_text: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
+        if len(keys_file_text.encode()) > constants.KEYS_FILE_LIMIT_BYTES:
+            raise pgp.LimitError(f"The KEYS file is larger than {constants.KEYS_FILE_LIMIT_BYTES} bytes")
+        if keys_file_text.count("-----BEGIN PGP PUBLIC KEY BLOCK-----") > _MAX_ARMOR_BLOCKS_PER_REQUEST:
+            raise pgp.LimitError(f"The KEYS file has more than {_MAX_ARMOR_BLOCKS_PER_REQUEST} key blocks")
+        key_blocks = util.parse_key_blocks(keys_file_text)
         key_list: list[datatypes.Key | Exception] = []
-        for block, span in parts:
+        packets = 0
+        certificates = 0
+        for key_block in key_blocks:
             try:
-                public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(block)
-                if len(public_keys) != 1:
-                    raise ValueError(f"Expected one certificate in the block, got {len(public_keys)}")
-                key_model = self.public_key_model(public_keys[0], ldap_data, original_key_block=block)
-                _validate_key_strength(public_keys[0])
-                key = datatypes.Key(
-                    status=datatypes.KeyStatus.PARSED,
-                    key_model=key_model,
-                    member_ids=sorted(util.openpgp_member_ids(public_keys[0])),
-                    input=span,
+                parts, used = pgp.certificate_parts(
+                    key_block, packet_limit=_MAX_PACKETS_PER_REQUEST, certificate_limit=_MAX_CERTIFICATES_PER_REQUEST
                 )
-                key_list.append(key)
+                if not parts:
+                    raise ValueError("no keys found")
+            except pgp.LimitError:
+                raise
             except Exception as e:
-                key_list.append(e)
-        return key_list
+                parts, used = [], len(key_block) * 3 // 8
+                key_list.append(ValueError(f"Error loading OpenPGP key block: {e}"))
+            packets += used
+            certificates += len(parts)
+            self.__check_budget(packets, certificates)
+            key_list.extend(self.__part_models(parts, ldap_data))
+        return _deduplicate_keys(key_list)
+
+    def __check_budget(self, packets: int, certificates: int) -> None:
+        if packets > _MAX_PACKETS_PER_REQUEST:
+            raise pgp.LimitError(f"The KEYS file has more than {_MAX_PACKETS_PER_REQUEST} packets")
+        if certificates > _MAX_CERTIFICATES_PER_REQUEST:
+            raise pgp.LimitError(f"The KEYS file has more than {_MAX_CERTIFICATES_PER_REQUEST} certificates")
 
     async def __database_add_models(
         self, outcomes: outcome.List[datatypes.Key], source: str, associate: bool = True
@@ -1270,25 +1281,12 @@ class CommitteeParticipant(FoundationCommitter):
         outcomes = outcome.List[datatypes.Key]()
         try:
             ldap_data = await cache.email_uid_view_or_live()
-            key_blocks = util.parse_key_blocks(keys_file_text)
+            # TODO: Change self.__block_models to return outcomes
+            roes = await asyncio.to_thread(self.__block_models, keys_file_text, ldap_data)
         except Exception as e:
             outcomes.append_error(e)
             return outcomes, {}
-        # TODO: Change self.__block_models to return outcomes
-        tasks = [
-            asyncio.create_task(asyncio.to_thread(self.__block_models, key_block, ldap_data))
-            for key_block in key_blocks
-        ]
-        key_model_batches = await asyncio.gather(*tasks, return_exceptions=True)
-        roes: list[datatypes.Key | Exception] = []
-        for key_model_batch in key_model_batches:
-            if isinstance(key_model_batch, Exception):
-                roes.append(key_model_batch)
-            elif isinstance(key_model_batch, BaseException):
-                raise key_model_batch
-            else:
-                roes.extend(key_model_batch)
-        outcomes.extend_roes(Exception, await asyncio.to_thread(_deduplicate_keys, roes))
+        outcomes.extend_roes(Exception, roes)
         # Try adding the keys to the database
         # If not, all keys will be replaced with a PostParseError
         return await self.__database_add_models(outcomes, source, associate=associate)
@@ -1302,6 +1300,28 @@ class CommitteeParticipant(FoundationCommitter):
             .returning(via(sql.KeyLink.key_fingerprint))
         )
         return link_insert_result.one_or_none() is not None
+
+    def __part_models(
+        self, parts: list[tuple[str, bytes]], ldap_data: cache.EmailUidLookup
+    ) -> list[datatypes.Key | Exception]:
+        key_list: list[datatypes.Key | Exception] = []
+        for block, span in parts:
+            try:
+                public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(block)
+                if len(public_keys) != 1:
+                    raise ValueError(f"Expected one certificate in the block, got {len(public_keys)}")
+                key_model = self.public_key_model(public_keys[0], ldap_data, original_key_block=block)
+                _validate_key_strength(public_keys[0])
+                key = datatypes.Key(
+                    status=datatypes.KeyStatus.PARSED,
+                    key_model=key_model,
+                    member_ids=sorted(util.openpgp_member_ids(public_keys[0])),
+                    input=span,
+                )
+                key_list.append(key)
+            except Exception as e:
+                key_list.append(e)
+        return key_list
 
     async def __signature_hints_consume(self, keys: list[datatypes.Key]) -> list[str]:
         via = sql.validate_instrumented_attribute

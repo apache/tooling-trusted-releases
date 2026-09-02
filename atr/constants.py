@@ -254,6 +254,8 @@ GENERATED_FILE_SUFFIXES: Final[tuple[str, ...]] = (
 INACTIVITY_DELETE_DAYS: Final[int] = 90
 INACTIVITY_WARNING_DAYS: Final[int] = 80
 
+KEYS_FILE_LIMIT_BYTES: Final[int] = 10 * 1024 * 1024
+
 # Fixed sub claim on JWTs minted from system PATs, and the UID we log for
 # their actions. The minting admin is recorded separately in PAT.created_by.
 SYSTEM_SERVICE_UID: Final[str] = "system"

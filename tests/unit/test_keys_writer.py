@@ -177,6 +177,27 @@ def test_block_models_reports_a_failing_certificate_without_losing_its_siblings(
     assert isinstance(keys[1], ValueError)
 
 
+def test_block_models_rejects_a_keys_file_over_its_packet_budget(monkeypatch) -> None:
+    writer, _write_as = _make_committee_member(MockData(None, committees_after_commit={}), "test")
+    block = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+    _, packets = pgp.certificate_parts(block)
+    monkeypatch.setattr(keys_writer, "_MAX_PACKETS_PER_REQUEST", packets)
+    lookup = keys_writer.cache.EmailUidLookup({})
+
+    assert len(writer._CommitteeParticipant__block_models(block, lookup)) == 1
+    with pytest.raises(pgp.LimitError, match="KEYS file has more than"):
+        writer._CommitteeParticipant__block_models(block + block, lookup)
+
+
+def test_block_models_rejects_a_keys_file_over_the_byte_limit(monkeypatch) -> None:
+    writer, _write_as = _make_committee_member(MockData(None, committees_after_commit={}), "test")
+    text = "\u00e9" * 8
+    monkeypatch.setattr(keys_writer.constants, "KEYS_FILE_LIMIT_BYTES", len(text) + 1)
+
+    with pytest.raises(pgp.LimitError, match="larger than"):
+        writer._CommitteeParticipant__block_models(text, keys_writer.cache.EmailUidLookup({}))
+
+
 @pytest.mark.asyncio
 async def test_database_add_model_writes_a_genesis_row_and_audits_the_insert(sqlite_data):
     writer, _write, write_as = _make_foundation_committer_with_audit(sqlite_data)
@@ -439,7 +460,6 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
         mock.patch.object(
             keys_writer.cache, "email_uid_view_or_live", new=mock.AsyncMock(return_value=lookup)
         ) as email_uid_view,
-        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one"]),
         mock.patch.object(writer, "_CommitteeParticipant__block_models", return_value=[key]) as block_models,
         mock.patch.object(
             writer,
@@ -452,10 +472,35 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
     assert result is database_outcomes
     assert publications == {}
     email_uid_view.assert_awaited_once()
-    block_models.assert_called_once_with("block-one", lookup)
+    block_models.assert_called_once_with("keys text", lookup)
     database_add_models.assert_awaited_once()
     parsed_outcomes = database_add_models.await_args.args[0]
     assert parsed_outcomes.result_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_rejects_a_keys_file_over_budget_before_the_database(monkeypatch) -> None:
+    data = MockData(None, committees_after_commit={})
+    writer, _write_as = _make_foundation_admin(data, "alpha")
+    monkeypatch.setattr(keys_writer, "_MAX_ARMOR_BLOCKS_PER_REQUEST", 1)
+    text = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC + pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+
+    with (
+        mock.patch.object(
+            keys_writer.cache,
+            "email_uid_view_or_live",
+            new=mock.AsyncMock(return_value=keys_writer.cache.EmailUidLookup({})),
+        ),
+        mock.patch.object(
+            writer, "_CommitteeParticipant__database_add_models", new=mock.AsyncMock()
+        ) as database_add_models,
+    ):
+        result, publications = await writer._CommitteeParticipant__ensure(text, "web:req-1")
+
+    assert (result.result_count, result.error_count) == (0, 1)
+    assert "more than 1 key blocks" in str(result.errors()[0])
+    assert publications == {}
+    database_add_models.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -583,14 +628,10 @@ async def test_ensure_uses_cached_email_lookup_for_bulk_import() -> None:
         mock.patch.object(
             keys_writer.cache, "email_uid_view_or_live", new=mock.AsyncMock(return_value=lookup)
         ) as email_uid_view,
-        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one", "block-two"]),
         mock.patch.object(
             writer,
             "_CommitteeParticipant__block_models",
-            side_effect=[
-                [SimpleNamespace(fingerprint="one")],
-                [SimpleNamespace(fingerprint="two")],
-            ],
+            return_value=[SimpleNamespace(fingerprint="one"), SimpleNamespace(fingerprint="two")],
         ) as block_models,
         mock.patch.object(
             writer,
@@ -602,9 +643,7 @@ async def test_ensure_uses_cached_email_lookup_for_bulk_import() -> None:
 
     assert result is database_outcomes
     email_uid_view.assert_awaited_once()
-    assert block_models.call_count == 2
-    assert {call.args[0] for call in block_models.call_args_list} == {"block-one", "block-two"}
-    assert all(call.args[1] is lookup for call in block_models.call_args_list)
+    block_models.assert_called_once_with("keys text", lookup)
     database_add_models.assert_awaited_once()
     parsed_outcomes = database_add_models.await_args.args[0]
     assert parsed_outcomes.result_count == 2

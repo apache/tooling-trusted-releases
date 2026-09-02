@@ -23,6 +23,7 @@ from typing import Annotated, Final, Literal
 import markupsafe
 import pydantic
 
+import atr.constants as constants
 import atr.form as form
 import atr.htm as htm
 import atr.models.sql as sql
@@ -33,7 +34,7 @@ import atr.template as template
 import atr.util as util
 
 # The Apache Subversion KEYS file is largest at 3732091 bytes
-MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
+MAX_KEYS_SIZE: Final[int] = constants.KEYS_FILE_LIMIT_BYTES
 MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
 
 type DELETE_OPENPGP_KEY = Literal["delete_openpgp_key"]
