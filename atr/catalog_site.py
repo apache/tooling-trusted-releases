@@ -26,14 +26,16 @@ only adds the file layout and the rendering.
 """
 
 import asyncio
+import collections
 import dataclasses
 import datetime
+import itertools
 import json
 import pathlib
 import re
 import shutil
 import urllib.parse
-from collections.abc import Awaitable, Container, Sequence
+from collections.abc import Awaitable, Container, Iterable, Iterator, Sequence
 from typing import Any, Final
 
 import aiofiles.os
@@ -41,6 +43,7 @@ import aioshutil
 import jinja2
 import sqlmodel
 
+import atr.classify as classify
 import atr.cle as cle
 import atr.constants as constants
 import atr.db as db
@@ -70,6 +73,8 @@ _ENVIRONMENT: Final = jinja2.Environment(
 # The footer states the running ATR version, the same as the main site's footer.
 _ENVIRONMENT.globals["version"] = metadata.version
 _ENVIRONMENT.globals["commit"] = metadata.commit
+# The footer stamps the render time, so it's evaluated per page rather than at import.
+_ENVIRONMENT.globals["last_updated"] = lambda: datetime.datetime.now(datetime.UTC).strftime("%d %b %Y %H:%M UTC")
 
 # ATR's own stylesheets and the certified badge, copied under the site's assets/
 # so the pages carry the app's look with nothing resolving back to the server.
@@ -111,6 +116,28 @@ _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 # Both index the rest of the catalogue rather than releases of their own, so their
 # pages are written once the walk has been through every committee.
 _INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
+
+# The `class` qualifier abbreviates an artifact's stored classification to the short token
+# filenames use. Only the primary-artifact classes appear; sbom and metadata are companions.
+_CLASS_QUALIFIER: Final[dict[str, str]] = {
+    classify.FileType.SOURCE.value: "src",
+    classify.FileType.BINARY.value: "bin",
+    classify.FileType.DOCS.value: "docs",
+}
+
+
+@dataclasses.dataclass
+class _CommitteeSummary:
+    release_count: int
+    latest_date: datetime.datetime | None
+    project_names: list[str]
+
+
+@dataclasses.dataclass
+class _SubprojectSummary:
+    release_count: int
+    latest_date: datetime.datetime | None
+    has_archived: bool
 
 
 async def generate_all(data: db.Session) -> None:
@@ -204,18 +231,106 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     await _write_index_pages(data, site_dir, committees)
 
 
-@dataclasses.dataclass
-class _CommitteeSummary:
-    release_count: int
-    latest_date: datetime.datetime | None
-    project_names: list[str]
+def _artifact_classifier_combos(
+    version: api.CatalogVersion, pmc: str, project: str
+) -> Iterator[tuple[dict[str, str], str]]:
+    """(minimal unique classifier combo, download URL) per downloadable artifact.
+
+    A file's classifiers are class/os/arch/ext; the combo is the smallest subset no other file in
+    the release shares, so `?<combo>` names it and no fewer qualifiers would. A file whose whole
+    classifier set another file also has - or which carries no classifiers - yields nothing;
+    file_name and subpath still address it. Larger combos come first, so an over-specified query
+    matches the most specific rule.
+    """
+    strip = {"apache", pmc, project}
+    release_version = str(version.version)
+    classified: list[tuple[dict[str, str], str]] = []
+    for artifact in version.artifacts:
+        url = artifact.artifact_url
+        if url is None:
+            continue
+        classifiers = _artifact_classifiers(artifact, release_version, strip)
+        if classifiers:
+            classified.append((classifiers, url))
+    combos: list[tuple[dict[str, str], str]] = []
+    for index, (classifiers, url) in enumerate(classified):
+        others = [other for i, (other, _) in enumerate(classified) if i != index]
+        combo = _minimal_combo(classifiers, others)
+        if combo is not None:
+            combos.append((combo, url))
+    combos.sort(key=lambda combo_url: len(combo_url[0]), reverse=True)
+    yield from combos
 
 
-@dataclasses.dataclass
-class _SubprojectSummary:
-    release_count: int
-    latest_date: datetime.datetime | None
-    has_archived: bool
+def _artifact_classifiers(artifact: api.CatalogArtifact, version: str, strip: Iterable[str]) -> dict[str, str]:
+    """The classifier qualifiers a downloadable artifact carries: class, os, arch, ext.
+
+    `class` is the stored classification mapped to its short token; `os`/`arch` are read from
+    the subpath tail and `ext` from the file name, all canonicalised by classify.
+    """
+    classifiers: dict[str, str] = {}
+    if artifact.classification is not None:
+        class_token = _CLASS_QUALIFIER.get(artifact.classification)
+        if class_token is not None:
+            classifiers["class"] = class_token
+    tail = _artifact_subpath(artifact.artifact_path, version, strip)
+    if (os_value := classify.os_in(tail)) is not None:
+        classifiers["os"] = os_value
+    if (arch_value := classify.arch_in(tail)) is not None:
+        classifiers["arch"] = arch_value
+    if (ext_value := classify.ext_of(artifact.artifact_path)) is not None:
+        classifiers["ext"] = ext_value
+    return classifiers
+
+
+def _artifact_downloads(artifact: api.CatalogArtifact) -> Iterator[tuple[str, str]]:
+    """(file name, download URL) per file an artifact exposes: itself, signature, checksum, SBOM.
+
+    A pair with no URL - not downloadable, or the companion absent - is skipped.
+    """
+    pairs = (
+        (artifact.artifact_path, artifact.artifact_url),
+        (artifact.signature_path, artifact.signature_url),
+        (artifact.checksum_path, artifact.checksum_url),
+        (artifact.sbom_path, artifact.sbom_url),
+    )
+    for file_name, url in pairs:
+        if (file_name is not None) and (url is not None):
+            yield file_name, url
+
+
+def _artifact_subpath(file_name: str, version: str, strip: Iterable[str]) -> str:
+    """An artifact's distinguishing tail, for the `subpath` qualifier.
+
+    The part after the release version when the file name carries it
+    (apache-ivy-2.0.0-bin-with-deps.tar.gz -> bin-with-deps.tar.gz); otherwise the file name
+    with `strip` (apache, the PMC and project names) removed longest-first
+    (apache-airflow-providers-amazon-1.0.0-bin.tar.gz -> amazon-1.0.0-bin.tar.gz).
+    """
+    index = file_name.find(version)
+    if index != -1:
+        return file_name[index + len(version) :].lstrip("-+._")
+    trimmed = file_name
+    for token in sorted(strip, key=len, reverse=True):
+        if token:
+            trimmed = re.sub(re.escape(token), "", trimmed, flags=re.IGNORECASE)
+    return trimmed.lstrip("-+._")
+
+
+def _artifact_subpaths(version: api.CatalogVersion, pmc: str, project: str) -> Iterator[tuple[str, str]]:
+    """(subpath, download URL) per downloadable artifact, skipping empty or colliding tails.
+
+    A tail two artifacts share can't name one file, so it's dropped; file_name still covers them.
+    """
+    release_version = str(version.version)
+    strip = {"apache", pmc, project}
+    derived: list[tuple[str, str]] = []
+    for artifact in version.artifacts:
+        url = artifact.artifact_url
+        if url is None:
+            continue
+        derived.append((_artifact_subpath(artifact.artifact_path, release_version, strip), url))
+    yield from _unique(derived)
 
 
 async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
@@ -250,21 +365,45 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
     }
 
 
+async def _guarded_write(description: str, work: Awaitable[None]) -> None:
+    """Run one index write on its own, logging and swallowing a failure so the rest proceed."""
+    try:
+        await work
+    except Exception:
+        log.exception(f"Failed to render catalog site {description}")
+
+
 def _has_live_project(committee: sql.Committee) -> bool:
     return any(project.status in _LIVE_PROJECT_STATUSES for project in committee.projects)
 
 
-def _last_updated() -> str:
-    return datetime.datetime.now(datetime.UTC).strftime("%d %b %Y %H:%M UTC")
+def _htaccess_cond(qualifier: str, value: str) -> str:
+    """A RewriteCond matching `<qualifier>=<value>` anywhere in the query string."""
+    # Match the raw (percent-encoded) query string, regex-escaped so its metacharacters
+    # read literally.
+    encoded = re.escape(urllib.parse.quote(value, safe=""))
+    return f'RewriteCond %{{QUERY_STRING}} "(^|&){qualifier}={encoded}(&|$)"'
 
 
-_ENVIRONMENT.globals["last_updated"] = _last_updated
+def _htaccess_rule(qualifier: str, value: str, url: str) -> tuple[str, str]:
+    """One qualifier's RewriteCond/RewriteRule pair, redirecting `?<qualifier>=<value>`."""
+    return _htaccess_cond(qualifier, value), _redirect_rule(url)
 
 
 async def _lifecycle_events(data: db.Session, project: sql.Project) -> Sequence[sql.LifecycleEvent]:
     via = sql.validate_instrumented_attribute
     stmt = sqlmodel.select(sql.LifecycleEvent).where(via(sql.LifecycleEvent.project_key) == project.key)
     return (await data.execute(stmt)).scalars().all()
+
+
+def _minimal_combo(classifiers: dict[str, str], others: list[dict[str, str]]) -> dict[str, str] | None:
+    """The smallest subset of `classifiers` that no dict in `others` contains, or None."""
+    items = sorted(classifiers.items())
+    for size in range(1, len(items) + 1):
+        for subset in itertools.combinations(items, size):
+            if not any(all(other.get(key) == value for key, value in subset) for other in others):
+                return dict(subset)
+    return None
 
 
 async def _prune_directories(directory: safe.StatePath, keep: Container[str]) -> None:
@@ -288,6 +427,35 @@ async def _prune_directories(directory: safe.StatePath, keep: Container[str]) ->
         log.info(f"Catalog site: pruned {len(pruned)} stale directories from {path}: {', '.join(pruned)}")
 
 
+def _redirect_rule(url: str) -> str:
+    """The RewriteRule redirecting the release directory to a download URL."""
+    # archive.apache.org is a permanent home (301); the closer.lua mirror is not (302). NE
+    # stops Apache re-encoding the already percent-encoded URL.
+    status = 301 if url.startswith(constants.ARCHIVE_APACHE_URL) else 302
+    return f'RewriteRule "^$" "{url}" [R={status},NE,L]'
+
+
+def _release_htaccess(version: api.CatalogVersion, pmc: str, project: str) -> str | None:
+    """Render a release's files to an Apache `.htaccess` map, or None if none are downloadable.
+
+    The vhost routes a qualified PURL request into the release directory; these rules match its
+    query string and redirect to the download URL. Every file is reachable by `?file_name=`, each
+    artifact also by `?subpath=` and by the minimal combo of its class/os/arch/ext classifiers.
+    """
+    rules: list[str] = []
+    for artifact in version.artifacts:
+        for file_name, url in _artifact_downloads(artifact):
+            rules.extend(_htaccess_rule("file_name", file_name, url))
+    for subpath, url in _artifact_subpaths(version, pmc, project):
+        rules.extend(_htaccess_rule("subpath", subpath, url))
+    for combo, url in _artifact_classifier_combos(version, pmc, project):
+        rules.extend(_htaccess_cond(key, combo[key]) for key in sorted(combo))
+        rules.append(_redirect_rule(url))
+    if not rules:
+        return None
+    return "RewriteEngine On\n" + "\n".join(rules) + "\n"
+
+
 async def _subproject_summaries(data: db.Session, subprojects: Sequence[sql.Project]) -> dict[str, _SubprojectSummary]:
     return {subproject.key: await _subproject_summary(data, subproject) for subproject in subprojects}
 
@@ -306,6 +474,18 @@ async def _subproject_summary(data: db.Session, project: sql.Project) -> _Subpro
         if (latest_date is None) or (released > latest_date):
             latest_date = released
     return _SubprojectSummary(release_count=release_count, latest_date=latest_date, has_archived=has_archived)
+
+
+def _unique(pairs: list[tuple[str, str]]) -> Iterator[tuple[str, str]]:
+    """Yield the pairs whose (non-empty) key is unique in the list.
+
+    A qualifier value that more than one artifact derives can't address a single file, so it's
+    dropped rather than resolving ambiguously; file_name always covers what's dropped.
+    """
+    counts = collections.Counter(key for key, _ in pairs)
+    for key, value in pairs:
+        if key and (counts[key] == 1):
+            yield key, value
 
 
 async def _write(path: safe.StatePath, content: str) -> None:
@@ -398,6 +578,25 @@ async def _write_committee_pages(
     return written
 
 
+async def _write_front_page(
+    data: db.Session,
+    site_dir: safe.StatePath,
+    all_committees: Sequence[sql.Committee],
+    listed: Sequence[sql.Committee],
+) -> None:
+    # Summaries cover every committee; only the still-releasing ones are listed.
+    summaries = await _committee_summaries(data, all_committees)
+    await _write_root_index(site_dir, listed, summaries)
+
+
+async def _write_htaccess(release_dir: safe.StatePath, version: api.CatalogVersion, pmc: str, project: str) -> None:
+    htaccess = _release_htaccess(version, pmc, project)
+    if htaccess is None:
+        return
+    # .htaccess is a dotfile, which StatePath's join rejects, so write via the raw OS path
+    await util.atomic_write_file(release_dir.path / ".htaccess", htaccess)
+
+
 async def _write_incubator_index(
     site_dir: safe.StatePath,
     incubator: sql.Committee,
@@ -452,25 +651,6 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
     # A committee whose projects have all retired keeps its pages, but drops off the
     # front page, so the index stays a list of where releases are still coming from.
     await _guarded_write("front page", _write_front_page(data, site_dir, committees, current))
-
-
-async def _guarded_write(description: str, work: Awaitable[None]) -> None:
-    """Run one index write on its own, logging and swallowing a failure so the rest proceed."""
-    try:
-        await work
-    except Exception:
-        log.exception(f"Failed to render catalog site {description}")
-
-
-async def _write_front_page(
-    data: db.Session,
-    site_dir: safe.StatePath,
-    all_committees: Sequence[sql.Committee],
-    listed: Sequence[sql.Committee],
-) -> None:
-    # Summaries cover every committee; only the still-releasing ones are listed.
-    summaries = await _committee_summaries(data, all_committees)
-    await _write_root_index(site_dir, listed, summaries)
 
 
 async def _write_project(
@@ -562,45 +742,7 @@ async def _write_release(
         ),
     )
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
-    await _write_htaccess(release_dir, version)
-
-
-def _release_htaccess(version: api.CatalogVersion) -> str | None:
-    """Render a release's artifacts to an Apache `.htaccess` qualifier map (#1517).
-
-    A PURL names a single artifact with the `file_name` qualifier, which reaches us as
-    the query string - a `#subpath` fragment never leaves the browser, a query string
-    does. The vhost hands any qualified request into the release directory, where each
-    downloadable artifact gets a rule matching `?file_name=<its name>` and redirecting
-    to the file's real download URL. A bare request goes straight to artifacts.json and
-    never reaches this file. Returns None when nothing in the release is downloadable.
-    """
-    lines = ["RewriteEngine On"]
-    for artifact in version.artifacts:
-        if artifact.artifact_url is None:
-            continue
-        # archive.a.o is a permanent archive, so a 301; anything else
-        # will eventually move to archive, so don't let it be cached
-        archived = artifact.artifact_url.startswith(constants.ARCHIVE_APACHE_URL)
-        status = 301 if archived else 302
-        # The file_name value arrives percent-encoded in the query string, so match that
-        # encoded form, escaped so its metacharacters read literally. NE keeps the already
-        # percent-encoded download URL from being escaped a second time.
-        value = re.escape(urllib.parse.quote(artifact.artifact_path, safe=""))
-        lines.append(f'RewriteCond %{{QUERY_STRING}} "(^|&)file_name={value}(&|$)"')
-        lines.append(f'RewriteRule "^$" "{artifact.artifact_url}" [R={status},NE,L]')
-    if len(lines) == 1:
-        return None
-    return "\n".join(lines) + "\n"
-
-
-async def _write_htaccess(release_dir: safe.StatePath, version: api.CatalogVersion) -> None:
-    htaccess = _release_htaccess(version)
-    if htaccess is None:
-        return
-    # RelPath refuses dotfiles, so this drops to the raw OS path for the fixed .htaccess name
-    # rather than routing it through StatePath's validating join.
-    await util.atomic_write_file(release_dir.path / ".htaccess", htaccess)
+    await _write_htaccess(release_dir, version, committee.key, project.key)
 
 
 async def _write_root_index(
