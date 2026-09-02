@@ -55,8 +55,22 @@ async def test_denied_credential_redirects(
     monkeypatch: pytest.MonkeyPatch, handler: Callable[[Any, Any], Awaitable[Any]], message: str
 ) -> None:
     monkeypatch.setattr(projects.storage, "write", _denying_write)
-    session = mock.Mock()
+    session = mock.Mock(is_admin=False)
     session.redirect = mock.AsyncMock(return_value="redirected")
     form = mock.Mock(project_key=safe.ProjectKey("httpd-foo"), category_to_add="Web")
     assert await handler(session, form) == "redirected"
     assert message in session.redirect.await_args.kwargs["error"]
+
+
+@pytest.mark.parametrize("handler", [projects._process_add_category, projects._process_compose_form])
+async def test_admin_uses_committee_admin(
+    monkeypatch: pytest.MonkeyPatch, handler: Callable[[Any, Any], Awaitable[Any]]
+) -> None:
+    write = mock.AsyncMock()
+    monkeypatch.setattr(projects.storage, "write", lambda _session: contextlib.nullcontext(write))
+    session = mock.Mock(is_admin=True)
+    session.redirect = mock.AsyncMock(return_value="redirected")
+    form = mock.Mock(project_key=safe.ProjectKey("httpd-foo"), category_to_add="Web")
+    assert await handler(session, form) == "redirected"
+    write.as_project_committee_admin.assert_awaited_once_with(safe.ProjectKey("httpd-foo"))
+    assert "success" in session.redirect.await_args.kwargs

@@ -59,7 +59,10 @@ async def add_project(
 
     async with storage.write(session) as write:
         try:
-            wacm = write.as_committee_member(str(committee_key))
+            if session.is_admin:
+                wacm = write.as_committee_admin(str(committee_key))
+            else:
+                wacm = write.as_committee_member(str(committee_key))
             await wacm.project.create(display_name, project_key)
         except storage.AccessError as e:
             return await session.redirect(
@@ -211,7 +214,7 @@ async def _complete_action(
     approval_request_id: int,
 ) -> None:
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        wacm = await _write_as_committee_member(write, session, project_key)
         if action == sql.ApprovalAction.DELETE:
             await wacm.project.delete(project_key, approval_request_id)
             return
@@ -261,7 +264,7 @@ async def _process_add_category(
 
     async with storage.write(session) as write:
         try:
-            wacm = await write.as_project_committee_member(project_key)
+            wacm = await _write_as_committee_member(write, session, project_key)
             modified = await wacm.project.category_add(project_key, category_to_add)
         except storage.AccessError as e:
             return await session.redirect(
@@ -294,7 +297,7 @@ async def _process_add_language(
 
     async with storage.write(session) as write:
         try:
-            wacm = await write.as_project_committee_member(project_key)
+            wacm = await _write_as_committee_member(write, session, project_key)
             modified = await wacm.project.language_add(project_key, language_to_add)
         except storage.AccessError as e:
             return await session.redirect(
@@ -326,7 +329,7 @@ async def _process_compose_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -351,7 +354,7 @@ async def _process_edit_cycle_dates_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.policy.edit_cycle_dates(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -375,7 +378,7 @@ async def _process_edit_metadata_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.project.edit_metadata(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -399,7 +402,7 @@ async def _process_edit_version_scheme_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.policy.edit_version_scheme(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -425,7 +428,7 @@ async def _process_finish_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -451,7 +454,7 @@ async def _process_remove_category(
 
     async with storage.write(session) as write:
         try:
-            wacm = await write.as_project_committee_member(project_key)
+            wacm = await _write_as_committee_member(write, session, project_key)
             modified = await wacm.project.category_remove(project_key, category_to_remove)
         except storage.AccessError as e:
             return await session.redirect(
@@ -484,7 +487,7 @@ async def _process_remove_language(
 
     async with storage.write(session) as write:
         try:
-            wacm = await write.as_project_committee_member(project_key)
+            wacm = await _write_as_committee_member(write, session, project_key)
             modified = await wacm.project.language_remove(project_key, language_to_remove)
         except storage.AccessError as e:
             return await session.redirect(
@@ -516,7 +519,7 @@ async def _process_security_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.project.edit_security(security_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -540,7 +543,7 @@ async def _process_trusted_publishing_form(
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.policy.edit_trusted_publishing(tp_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -563,7 +566,7 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
 
     async with storage.write(session) as write:
         try:
-            warm = await write.as_project_release_manager(project_key)
+            warm = await _write_as_release_manager(write, session, project_key)
             await warm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -591,7 +594,7 @@ async def _request_approval(
 
     async with storage.write(session) as write:
         try:
-            wacm = await write.as_project_committee_member(project_key)
+            wacm = await _write_as_committee_member(write, session, project_key)
         except storage.AccessError as e:
             return await session.redirect(get.projects.projects, error=f"Error requesting {action.value} approval: {e}")
 
@@ -639,6 +642,22 @@ async def _request_approval(
         return await _persist_approval(
             session, wacm, project_key, committee_key, action, question.question_id, closes_at
         )
+
+
+async def _write_as_committee_member(
+    write: storage.Write, session: web.Committer, project_key: safe.ProjectKey
+) -> storage.WriteAsCommitteeMember:
+    if session.is_admin:
+        return await write.as_project_committee_admin(project_key)
+    return await write.as_project_committee_member(project_key)
+
+
+async def _write_as_release_manager(
+    write: storage.Write, session: web.Committer, project_key: safe.ProjectKey
+) -> storage.WriteAsReleaseManager:
+    if session.is_admin:
+        return await write.as_project_committee_admin(project_key)
+    return await write.as_project_release_manager(project_key)
 
 
 _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.WerkzeugResponse]]]] = {
