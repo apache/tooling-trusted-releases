@@ -161,6 +161,15 @@ def test_certificate_spans_are_the_raw_bytes_of_the_upload() -> None:
     ]
 
 
+@pytest.mark.parametrize("footer", ["=AAAA", "=xyz"])
+def test_dearmored_ignores_the_checksum_footer(footer: str) -> None:
+    block = pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC
+    lines = block.splitlines()
+    index = next(i for i, line in enumerate(lines) if line.startswith("="))
+    altered = "\n".join([*lines[:index], footer, *lines[index + 1 :]]) + "\n"
+    assert pgp._dearmored(altered) == pgp._dearmored(block)
+
+
 def test_delta_fragments_are_minimal_and_fold_back_to_the_result() -> None:
     state = pgp.certificate_placements(pgp.merge_certificate_blocks([pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC]))
     primary = next(head for head, frame in state if (frame is None) and (head[0] == 6))

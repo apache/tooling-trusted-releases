@@ -512,20 +512,8 @@ def _certificate_groups(
     return groups
 
 
-def _crc24(data: bytes) -> int:
-    crc = 0xB704CE
-    for octet in data:
-        crc ^= octet << 16
-        for _ in range(8):
-            crc <<= 1
-            if crc & 0x1000000:
-                crc ^= 0x1864CFB
-    return crc & 0xFFFFFF
-
-
 def _dearmored(text: str) -> bytes:
     lines = []
-    checksum = None
     in_data = False
     for line in text.splitlines()[1:]:
         stripped = line.strip()
@@ -539,15 +527,9 @@ def _dearmored(text: str) -> bytes:
         if stripped.startswith("-----END"):
             break
         if stripped.startswith("="):
-            checksum = stripped[1:5]
             continue
         lines.append(stripped)
-    data = base64.b64decode("".join(lines), validate=True)
-    if checksum is not None:
-        declared = int.from_bytes(base64.b64decode(checksum, validate=True))
-        if declared != _crc24(data):
-            raise ValueError("Armor checksum mismatch")
-    return data
+    return base64.b64decode("".join(lines), validate=True)
 
 
 def _declares_signing(signature: openpgp.packet.Signature | None) -> bool:
