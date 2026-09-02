@@ -20,7 +20,6 @@ from __future__ import annotations
 import datetime
 from typing import TYPE_CHECKING, Any, Final, Literal
 
-import quart
 import sqlalchemy.exc
 
 import atr.blueprints.post as post
@@ -59,8 +58,8 @@ async def add_project(
         raise ValueError(f"Invalid committee key: {committee_key}")
 
     async with storage.write(session) as write:
-        wacm = write.as_committee_member(str(committee_key))
         try:
+            wacm = write.as_committee_member(str(committee_key))
             await wacm.project.create(display_name, project_key)
         except storage.AccessError as e:
             return await session.redirect(
@@ -225,46 +224,6 @@ async def _complete_action(
         await wacm.project.archive(project_key, approval_request_id)
 
 
-async def _metadata_category_add(
-    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, category_to_add: str
-) -> bool:
-    try:
-        return await wacm.project.category_add(project_key, category_to_add.strip())
-    except storage.AccessError as e:
-        await quart.flash(f"Error adding category: {e}", "error")
-        return False
-
-
-async def _metadata_category_remove(
-    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, action_value: str
-) -> bool:
-    try:
-        return await wacm.project.category_remove(project_key, action_value)
-    except storage.AccessError as e:
-        await quart.flash(f"Error removing category: {e}", "error")
-        return False
-
-
-async def _metadata_language_add(
-    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, language_to_add: str
-) -> bool:
-    try:
-        return await wacm.project.language_add(project_key, language_to_add)
-    except storage.AccessError as e:
-        await quart.flash(f"Error adding language: {e}", "error")
-        return False
-
-
-async def _metadata_language_remove(
-    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, action_value: str
-) -> bool:
-    try:
-        return await wacm.project.language_remove(project_key, action_value)
-    except storage.AccessError as e:
-        await quart.flash(f"Error removing language: {e}", "error")
-        return False
-
-
 async def _persist_approval(
     session: web.Committer,
     wacm: storage.WriteAsCommitteeMember,
@@ -301,8 +260,16 @@ async def _process_add_category(
     category_to_add = add_category_form.category_to_add.strip()
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
-        modified = await _metadata_category_add(wacm, project_key, category_to_add)
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+            modified = await wacm.project.category_add(project_key, category_to_add)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=str(project_key),
+                tab="metadata",
+                error=f"Error adding category: {e}",
+            )
 
     if modified:
         return await session.redirect(
@@ -326,8 +293,16 @@ async def _process_add_language(
     language_to_add = add_language_form.language_to_add.strip()
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
-        modified = await _metadata_language_add(wacm, project_key, language_to_add)
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+            modified = await wacm.project.language_add(project_key, language_to_add)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=str(project_key),
+                tab="metadata",
+                error=f"Error adding language: {e}",
+            )
 
     if modified:
         return await session.redirect(
@@ -350,8 +325,8 @@ async def _process_compose_form(
     project_key = compose_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -375,8 +350,8 @@ async def _process_edit_cycle_dates_form(
     project_key = edit_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.policy.edit_cycle_dates(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -399,8 +374,8 @@ async def _process_edit_metadata_form(
     project_key = edit_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.project.edit_metadata(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -423,8 +398,8 @@ async def _process_edit_version_scheme_form(
     project_key = edit_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.policy.edit_version_scheme(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -449,8 +424,8 @@ async def _process_finish_form(
     project_key = finish_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -475,8 +450,16 @@ async def _process_remove_category(
     category_to_remove = remove_form.category_to_remove
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
-        modified = await _metadata_category_remove(wacm, project_key, category_to_remove)
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+            modified = await wacm.project.category_remove(project_key, category_to_remove)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=str(project_key),
+                tab="metadata",
+                error=f"Error removing category: {e}",
+            )
 
     if modified:
         return await session.redirect(
@@ -500,8 +483,16 @@ async def _process_remove_language(
     language_to_remove = remove_form.language_to_remove
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
-        modified = await _metadata_language_remove(wacm, project_key, language_to_remove)
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+            modified = await wacm.project.language_remove(project_key, language_to_remove)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=project_key,
+                tab="metadata",
+                error=f"Error removing language: {e}",
+            )
 
     if modified:
         return await session.redirect(
@@ -524,8 +515,8 @@ async def _process_security_form(
     project_key = security_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.project.edit_security(security_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -548,8 +539,8 @@ async def _process_trusted_publishing_form(
     project_key = tp_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.policy.edit_trusted_publishing(tp_form)
         except storage.AccessError as e:
             return await session.redirect(
@@ -571,8 +562,8 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
     project_key = vote_form.project_key
 
     async with storage.write(session) as write:
-        warm = await write.as_project_release_manager(project_key)
         try:
+            warm = await write.as_project_release_manager(project_key)
             await warm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
             return await session.redirect(
