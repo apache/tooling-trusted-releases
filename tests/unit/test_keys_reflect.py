@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pytest
+
 import atr.storage.writers.keys as keys
 import atr.svn.keys_reflect as keys_reflect
 
@@ -91,3 +93,20 @@ def test_non_keys_and_subproject_keys_paths_are_ignored():
         "dev/httpd/KEYS": {"flags": "A"},
     }
     assert keys_reflect._committees_with_keys_change(changed) == set()
+
+
+async def test_export_keys_refuses_a_file_over_the_byte_limit(monkeypatch, tmp_path) -> None:
+    written = {}
+
+    async def export(_url: str, _revision: int | None, destination) -> None:
+        destination.write_bytes(written["data"])
+
+    monkeypatch.setattr(keys_reflect.constants, "KEYS_FILE_LIMIT_BYTES", 8)
+    monkeypatch.setattr(keys_reflect.paths, "get_tmp_dir", lambda: tmp_path)
+    monkeypatch.setattr(keys_reflect.svn, "export", export)
+
+    written["data"] = b"x\r\nx" * 2
+    assert await keys_reflect._export_keys("svn://dist/release/alpha/KEYS", None) == "x\nx" * 2
+    written["data"] = b"x" * 9
+    with pytest.raises(ValueError, match="9 bytes, larger than 8"):
+        await keys_reflect._export_keys("svn://dist/release/alpha/KEYS", None)

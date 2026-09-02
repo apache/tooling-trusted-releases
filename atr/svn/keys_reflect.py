@@ -31,6 +31,7 @@ from typing import Final
 
 import aiofiles
 
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
@@ -128,6 +129,9 @@ async def _export_keys(keys_url: str, revision: int | None) -> str:
     try:
         destination = pathlib.Path(temp_dir) / _KEYS_FILENAME
         await svn.export(keys_url, revision, destination)
+        size = (await asyncio.to_thread(destination.stat)).st_size
+        if size > constants.KEYS_FILE_LIMIT_BYTES:
+            raise ValueError(f"The KEYS file is {size} bytes, larger than {constants.KEYS_FILE_LIMIT_BYTES}")
         async with aiofiles.open(destination, encoding="utf-8") as f:
             return await f.read()
     finally:
