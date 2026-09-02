@@ -174,7 +174,7 @@ async def import_selected_revision(
             return await session.redirect(
                 get.compose.selected, project_key=str(project_key), version_key=str(version_key)
             )
-        keys_text = keys_content.decode("utf-8")
+        keys_text = keys_content.decode("utf-8", errors="replace")
         if util.contains_private_key_text(keys_text):
             del keys_content
             del keys_text
@@ -395,7 +395,7 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
                             errorcode=502,
                         )
                     chunks.append(chunk)
-                return b"".join(chunks).decode("utf-8")
+                return b"".join(chunks).decode("utf-8", errors="replace")
     except aiohttp.ClientResponseError as e:
         raise base.ASFQuartException(f"Unable to fetch keys from remote server: {e.status} {e.message}", errorcode=502)
     except aiohttp.ClientError as e:

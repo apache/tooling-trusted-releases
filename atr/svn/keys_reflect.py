@@ -132,7 +132,7 @@ async def _export_keys(keys_url: str, revision: int | None) -> str:
         size = (await asyncio.to_thread(destination.stat)).st_size
         if size > constants.KEYS_FILE_LIMIT_BYTES:
             raise ValueError(f"The KEYS file is {size} bytes, larger than {constants.KEYS_FILE_LIMIT_BYTES}")
-        async with aiofiles.open(destination, encoding="utf-8") as f:
+        async with aiofiles.open(destination, encoding="utf-8", errors="replace") as f:
             return await f.read()
     finally:
         await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)

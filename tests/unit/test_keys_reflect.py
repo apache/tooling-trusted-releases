@@ -19,6 +19,7 @@ import pytest
 
 import atr.storage.writers.keys as keys
 import atr.svn.keys_reflect as keys_reflect
+import tests.unit.pgp_fixtures as pgp_fixtures
 
 
 def _plan(
@@ -110,3 +111,18 @@ async def test_export_keys_refuses_a_file_over_the_byte_limit(monkeypatch, tmp_p
     written["data"] = b"x" * 9
     with pytest.raises(ValueError, match="9 bytes, larger than 8"):
         await keys_reflect._export_keys("svn://dist/release/alpha/KEYS", None)
+
+
+async def test_export_keys_tolerates_prose_that_is_not_utf8(monkeypatch, tmp_path) -> None:
+    block = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+
+    async def export(_url: str, _revision: int | None, destination) -> None:
+        destination.write_bytes(b"Ren\xe9 <r@example.org>\r\n" + block.encode())
+
+    monkeypatch.setattr(keys_reflect.paths, "get_tmp_dir", lambda: tmp_path)
+    monkeypatch.setattr(keys_reflect.svn, "export", export)
+
+    text = await keys_reflect._export_keys("svn://dist/release/alpha/KEYS", None)
+
+    assert text.startswith("Ren\ufffd <r@example.org>\n")
+    assert keys_reflect.util.parse_key_blocks(text) == [block.rstrip("\n")]

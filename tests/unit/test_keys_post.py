@@ -70,6 +70,28 @@ async def test_upload_remote_keys_uses_canonical_committee_url(monkeypatch: pyte
     fetch.assert_awaited_once_with(canonical_url)
 
 
+async def test_fetch_keys_from_url_tolerates_prose_that_is_not_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def iter_chunked(_size: int):
+        yield b"Ren\xe9 <"
+        yield b"r@example.org>\n"
+
+    response = SimpleNamespace(
+        content_length=None, content=SimpleNamespace(iter_chunked=iter_chunked), raise_for_status=lambda: None
+    )
+
+    @contextlib.asynccontextmanager
+    async def get(_url: str, **_kwargs: object):
+        yield response
+
+    @contextlib.asynccontextmanager
+    async def session(**_kwargs: object):
+        yield SimpleNamespace(get=get)
+
+    monkeypatch.setattr(keys.util, "create_secure_session", session)
+
+    assert await keys._fetch_keys_from_url("https://downloads.apache.org/alpha/KEYS") == "Ren\ufffd <r@example.org>\n"
+
+
 def _public_key(apache_uid: str | None) -> sql.SigningCertificate:
     return sql.SigningCertificate(
         fingerprint="fp",
