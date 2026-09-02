@@ -275,34 +275,6 @@ async def draft_checks(
     return len(relative_paths)
 
 
-async def keys_import_file(
-    asf_uid: str,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    revision_number: str,
-    caller_data: db.Session | None = None,
-) -> None:
-    """Import a KEYS file from a draft release candidate revision."""
-    async with db.ensure_session(caller_data) as data:
-        data.add(
-            sql.Task(
-                status=sql.TaskStatus.QUEUED,
-                task_type=sql.TaskType.KEYS_IMPORT_FILE,
-                task_args=args.ImportFile(
-                    asf_uid=asf_uid,
-                    project_key=project_key,
-                    version_key=version_key,
-                ).model_dump(),
-                asf_uid=asf_uid,
-                revision_number=revision_number,
-                primary_rel_path=None,
-                project_key=str(project_key),
-                version_key=str(version_key),
-            )
-        )
-        await data.commit()
-
-
 async def queue_sync_keys_from_svn(
     asf_uid: str, committee_key: str, caller_data: db.Session | None = None
 ) -> sql.Task | None:
@@ -433,7 +405,7 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
         case sql.TaskType.HASHING_CHECK:
             return hashing.check
         case sql.TaskType.KEYS_IMPORT_FILE:
-            return keys.import_file
+            raise ValueError("KEYS_IMPORT_FILE has been removed; KEYS files are imported through the web interface")
         case sql.TaskType.LICENSE_FILES:
             return license.files
         case sql.TaskType.LICENSE_HEADERS:

@@ -1024,7 +1024,6 @@ def test_source_string_forms_and_failures():
     assert keys_writer._source_string(datatypes.KeySource.WEB) == "web:req-1"
     assert keys_writer._source_string(datatypes.KeySource.API) == "api:req-1"
     assert keys_writer._source_string(datatypes.KeySource.DOWNLOADS, "alpha") == "downloads:alpha/KEYS"
-    assert keys_writer._source_string(datatypes.KeySource.TASK) == "task:keys_import_file"
     with pytest.raises(ValueError, match="names a committee"):
         keys_writer._source_string(datatypes.KeySource.DOWNLOADS)
     log.clear_context()

@@ -17,24 +17,8 @@
 
 import atr.models.args as args
 import atr.models.results as results
-import atr.storage as storage
-import atr.storage.datatypes as datatypes
 import atr.svn.keys_reflect as keys_reflect
 import atr.tasks.checks as checks
-
-
-@checks.with_model(args.ImportFile)
-async def import_file(task_args: args.ImportFile) -> results.Results | None:
-    """Import a KEYS file from a draft release candidate revision."""
-    async with storage.write(task_args.asf_uid) as write:
-        wacm = await write.as_project_committee_member(task_args.project_key)
-        outcomes, _ = await wacm.keys.import_keys_file(
-            task_args.project_key, task_args.version_key, datatypes.KeySource.TASK
-        )
-        if outcomes.any_error:
-            # TODO: Log this? This code is unused anyway
-            pass
-    return None
 
 
 @checks.with_model(args.SyncKeysFromSvn)

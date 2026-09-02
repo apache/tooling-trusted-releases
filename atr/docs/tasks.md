@@ -52,8 +52,6 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
     match task_type:
         case sql.TaskType.HASHING_CHECK:
             return hashing.check
-        case sql.TaskType.KEYS_IMPORT_FILE:
-            return keys.import_file
         case sql.TaskType.LICENSE_FILES:
             return license.files
         case sql.TaskType.LICENSE_HEADERS:

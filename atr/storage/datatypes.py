@@ -69,7 +69,6 @@ class KeySource(enum.Enum):
     API = "api"
     DOWNLOADS = "downloads"
     SVN = "svn"
-    TASK = "task"
     WEB = "web"
 
 

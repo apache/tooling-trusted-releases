@@ -236,8 +236,6 @@ def _source_string(source: datatypes.KeySource, committee_key: str | None = None
             if not committee_key:
                 raise ValueError("An svn source names a committee")
             return f"svn:{committee_key}/KEYS"
-        case datatypes.KeySource.TASK:
-            return "task:keys_import_file"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1099,7 +1097,7 @@ class CommitteeParticipant(FoundationCommitter):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         source: datatypes.KeySource,
-        keys_file_text: str | None = None,
+        keys_file_text: str,
         expected_revision: safe.RevisionNumber | None = None,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         await self._reject_when_reflect_locked()
@@ -1108,10 +1106,6 @@ class CommitteeParticipant(FoundationCommitter):
             version=str(version_key),
             _committee=True,
         ).demand(storage.AccessError(f"Release not found: {project_key} {version_key}", status=404))
-        if keys_file_text is None:
-            keys_path = paths.release_directory(release) / "KEYS"
-            async with aiofiles.open(keys_path, encoding="utf-8") as f:
-                keys_file_text = await f.read()
         if release.committee is None:
             raise storage.AccessError("No committee found for release - Invalid state", status=500)
         if release.committee.key != self.__committee_key:

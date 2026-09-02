@@ -97,14 +97,6 @@ class GenerateCycloneDX(schema.Strict):
     )
 
 
-class ImportFile(schema.Strict):
-    """Import a KEYS file from a draft release candidate revision."""
-
-    asf_uid: str
-    project_key: safe.ProjectKey
-    version_key: safe.VersionKey
-
-
 class Initiate(schema.Strict):
     """Arguments for the task to start a vote."""
 
