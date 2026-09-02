@@ -33,6 +33,13 @@ _GROUPED_METHODS: Final[frozenset[sql.VersionMethod]] = frozenset({sql.VersionMe
 
 
 @dataclasses.dataclass
+class ArtifactWindow:
+    versions: list[str]
+    skip: int
+    count: int
+
+
+@dataclasses.dataclass
 class CatalogProject:
     versions: list[models.api.CatalogVersion]
     cycles: list[models.api.CatalogCycle]
@@ -50,6 +57,29 @@ class CycleGroup:
     label: str | None
     lifecycle: str | None
     versions: Sequence[models.api.CatalogVersion]
+
+
+def artifact_window(
+    version_method: sql.VersionMethod,
+    rows: Sequence[tuple[str, datetime.datetime | None, int | None, int]],
+    offset: int,
+    limit: int,
+) -> ArtifactWindow:
+    counts = {row[0]: row[3] for row in rows}
+    versions: list[str] = []
+    skip = 0
+    end = 0
+    for version_key in version_order(version_method, [row[:3] for row in rows]):
+        start = end
+        end += counts[version_key]
+        if end <= offset:
+            continue
+        if start >= (offset + limit):
+            break
+        if not versions:
+            skip = offset - start
+        versions.append(version_key)
+    return ArtifactWindow(versions=versions, skip=skip, count=sum(counts.values()))
 
 
 def assemble(
@@ -81,10 +111,27 @@ def cle_release_url(atr_host: str, project_key: str, version: str) -> str:
     return f"https://{atr_host}/api/cle/release/{project_key}/{version}"
 
 
+def clip_versions(
+    versions: Sequence[models.api.CatalogVersion], window: ArtifactWindow, limit: int
+) -> list[models.api.CatalogVersion]:
+    ranks = {key: index for index, key in enumerate(window.versions)}
+    clipped = sorted(versions, key=lambda entry: ranks[str(entry.version)])
+    skip = window.skip
+    remaining = limit
+    for entry in clipped:
+        artifacts = sorted(entry.artifacts, key=lambda artifact: artifact.artifact_path)
+        entry.artifacts = artifacts[skip : (skip + remaining)]
+        remaining -= len(entry.artifacts)
+        skip = 0
+    return clipped
+
+
 def cycle_groups(
     versions: Sequence[models.api.CatalogVersion],
     project_cycles: Sequence[sql.ProjectCycle],
     now: datetime.datetime,
+    *,
+    order: Sequence[str] | None = None,
 ) -> list[CycleGroup]:
     """Group versions into their cycles for display, most recently active first.
 
@@ -93,6 +140,9 @@ def cycle_groups(
     releases on one page, archives on another - labels each side by the same rule.
     """
     grouped = _cycles(versions, {cycle.cycle: cycle for cycle in project_cycles}, now)
+    if order is not None:
+        ranks = {key: index for index, key in enumerate(order)}
+        grouped.sort(key=lambda entry: ranks[str(entry.versions[0].version)])
     headed = cycles.headings_needed(entry.cycle for entry in grouped)
     return [
         CycleGroup(
@@ -102,6 +152,16 @@ def cycle_groups(
         )
         for entry in grouped
     ]
+
+
+def version_order(
+    version_method: sql.VersionMethod, items: Iterable[tuple[str, datetime.datetime | None, int | None]]
+) -> list[str]:
+    entries = list(items)
+    if _grouped_layout(version_method):
+        ranks = _version_ranks(entry[0] for entry in entries)
+        return [entry[0] for entry in sorted(entries, key=lambda entry: ranks[entry[0]], reverse=True)]
+    return [entry[0] for entry in sorted(entries, key=_version_date_key, reverse=True)]
 
 
 def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.api.CatalogArtifact:
@@ -203,22 +263,22 @@ def _loose_version_key(text: str) -> tuple[tuple[int, int | str], ...]:
     return tuple(parts)
 
 
+def _version_date_key(entry: tuple[str, datetime.datetime | None, int | None]) -> tuple[datetime.datetime, int, str]:
+    # Newest first: released date leads, svn revision breaks ties for older rows.
+    released = entry[1] or datetime.datetime.min.replace(tzinfo=datetime.UTC)
+    return (released, entry[2] or 0, entry[0])
+
+
 def _version_ranks(labels: Iterable[str]) -> dict[str, int]:
     # Rank distinct version strings (or cycle labels, which are version prefixes) low to high, so a
     # caller sorts newest first by reversing. PEP 440 first; one string it rejects drops the whole set
     # to the loose split, so an odd tag can't throw the order or raise
     distinct = list(set(labels))
     try:
-        ordered = sorted(distinct, key=version.Version)
+        ordered = sorted(distinct, key=lambda label: (version.Version(label), label))
     except version.InvalidVersion:
-        ordered = sorted(distinct, key=_loose_version_key)
+        ordered = sorted(distinct, key=lambda label: (_loose_version_key(label), label))
     return {label: index for index, label in enumerate(ordered)}
-
-
-def _version_sort_key(entry: models.api.CatalogVersion) -> tuple[datetime.datetime, int]:
-    # Newest first: released date leads, svn revision breaks ties for older rows.
-    released = entry.released or datetime.datetime.min.replace(tzinfo=datetime.UTC)
-    return (released, entry.svn_revision or 0)
 
 
 def _versions(
@@ -262,9 +322,9 @@ def _versions(
     # A project with a version scheme (semver/calver) orders by the version itself, so a later patch
     # of an older line can't jump a newer line the way a date sort lets it. A simple project has no
     # scheme, so it keeps the by-date order its lone default cycle wants
-    if _grouped_layout(version_method):
-        ranks = _version_ranks(str(entry.version) for entry in versions)
-        versions.sort(key=lambda entry: ranks[str(entry.version)], reverse=True)
-    else:
-        versions.sort(key=_version_sort_key, reverse=True)
+    order = version_order(
+        version_method, [(str(entry.version), entry.released, entry.svn_revision) for entry in versions]
+    )
+    ranks = {key: index for index, key in enumerate(order)}
+    versions.sort(key=lambda entry: ranks[str(entry.version)])
     return versions

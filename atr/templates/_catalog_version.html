@@ -9,6 +9,9 @@
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-1">
         <strong class="fs-5">{{ version.version }}</strong>
+        {% if version.version|string == continued_version %}
+          <span class="badge text-bg-light">Continued</span>
+        {% endif %}
         <span>
           <span class="badge {{ status_classes[version.status] }}">{{ version.status | capitalize }}</span>
           {% if version.vote_thread_url %}

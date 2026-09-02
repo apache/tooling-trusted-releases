@@ -154,6 +154,26 @@ async def all_releases(project: sql.Project) -> list[sql.Release]:
     return results
 
 
+async def catalog_version_rows(
+    data: db.Session, project_key: str
+) -> list[tuple[str, datetime.datetime | None, int | None, int]]:
+    via = sql.validate_instrumented_attribute
+    released = sqlalchemy.func.coalesce(via(sql.Release.released), via(sql.Release.created))
+    rows = await data.execute(
+        sqlalchemy.select(
+            via(sql.Artifact.version),
+            sqlalchemy.func.max(released),
+            sqlalchemy.func.max(via(sql.Artifact.svn_revision)),
+            sqlalchemy.func.count(),
+        )
+        .select_from(sql.Artifact)
+        .outerjoin(sql.Release, via(sql.Release.key) == via(sql.Artifact.release_key))
+        .where(via(sql.Artifact.project_key) == project_key)
+        .group_by(via(sql.Artifact.version))
+    )
+    return [(row[0], row[1], row[2], row[3]) for row in rows.all()]
+
+
 async def certificate_artifact_counts(data: db.Session, fingerprints: list[str]) -> dict[str, int]:
     # How many catalogued artifacts each certificate has signed, keyed by certificate fingerprint.
     # An artifact is attributed to the key which signed it, so counting per certificate has to go

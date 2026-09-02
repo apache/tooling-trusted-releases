@@ -210,6 +210,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         project_key: Opt[str] = NOT_SET,
         version: Opt[str] = NOT_SET,
+        version_in: Opt[Sequence[str]] = NOT_SET,
         artifact_path: Opt[str] = NOT_SET,
         release_key: Opt[str | None] = NOT_SET,
         key_fingerprint: Opt[str | None] = NOT_SET,
@@ -222,11 +223,14 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         _release: bool = False,
     ) -> Query[sql.Artifact]:
         query = sqlmodel.select(sql.Artifact)
+        via = sql.validate_instrumented_attribute
 
         if is_defined(project_key):
             query = query.where(sql.Artifact.project_key == project_key)
         if is_defined(version):
             query = query.where(sql.Artifact.version == version)
+        if is_defined(version_in):
+            query = query.where(via(sql.Artifact.version).in_(version_in))
         if is_defined(artifact_path):
             query = query.where(sql.Artifact.artifact_path == artifact_path)
         if is_defined(release_key):

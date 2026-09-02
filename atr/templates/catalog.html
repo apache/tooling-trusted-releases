@@ -21,10 +21,20 @@
     </div>
   {% endif %}
 
+  {% if versions %}
+    <p>Showing artifacts {{ page.start }} to {{ page.end }} of {{ count }}.</p>
+  {% endif %}
+
   {% if not versions %}
-    <div class="alert alert-info mt-3" role="alert">
-      <i class="bi bi-info-circle me-2"></i> No catalogued releases yet for {{ project.display_name }}.
-    </div>
+    {% if count %}
+      <div class="alert alert-info mt-3" role="alert">
+        <i class="bi bi-info-circle me-2"></i> No artifacts to show on this page ({{ count }} total).
+      </div>
+    {% else %}
+      <div class="alert alert-info mt-3" role="alert">
+        <i class="bi bi-info-circle me-2"></i> No catalogued releases yet for {{ project.display_name }}.
+      </div>
+    {% endif %}
   {% elif grouped %}
     {% for group in groups %}
       <div class="mb-4">
@@ -41,6 +51,7 @@
     {% endfor %}
   {% else %}
     <div class="mb-3" id="catalog-filter">
+      <span class="text-muted small me-2">This page:</span>
       <button type="button" class="btn btn-sm btn-primary active" data-status-filter="all">All</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status-filter="released">Released</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status-filter="archived">Archived</button>
@@ -48,6 +59,29 @@
     {% for version in versions %}
       {% include "_catalog_version.html" %}
     {% endfor %}
+  {% endif %}
+
+  {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
+    <nav aria-label="Catalog pages">
+      <ul class="pagination">
+        {% if page.previous_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=page.previous_offset) }}">Previous</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+        {% if page.next_offset is not none %}
+          <li class="page-item">
+            <a class="page-link"
+               href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=page.next_offset) }}">Next</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+      </ul>
+    </nav>
   {% endif %}
 {% endblock content %}
 

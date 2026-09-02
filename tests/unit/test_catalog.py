@@ -51,6 +51,30 @@ def test_archived_status_holds_without_an_archive_date() -> None:
     assert versions["3.11.0"].artifacts[0].downloadable is True
 
 
+def test_artifact_window_clips_at_an_exact_version_boundary() -> None:
+    rows = [("1.0", _NOW, None, 2), ("2.0", _NOW + datetime.timedelta(days=1), None, 3)]
+
+    window = catalog.artifact_window(sql.VersionMethod.SIMPLE, rows, 0, 3)
+
+    assert window == catalog.ArtifactWindow(versions=["2.0"], skip=0, count=5)
+
+
+def test_artifact_window_is_empty_beyond_the_end() -> None:
+    rows = [("1.0", _NOW, None, 2)]
+
+    window = catalog.artifact_window(sql.VersionMethod.SIMPLE, rows, 2, 200)
+
+    assert window == catalog.ArtifactWindow(versions=[], skip=0, count=2)
+
+
+def test_artifact_window_splits_a_dense_version_with_a_skip() -> None:
+    rows = [("1.0", _NOW, None, 2), ("2.0", _NOW + datetime.timedelta(days=1), None, 5)]
+
+    window = catalog.artifact_window(sql.VersionMethod.SIMPLE, rows, 4, 2)
+
+    assert window == catalog.ArtifactWindow(versions=["2.0", "1.0"], skip=4, count=7)
+
+
 def test_cle_url_is_omitted_for_versions_without_a_backing_release() -> None:
     project = _project()
     artifacts = [_artifact(project, "3.0.0", "a-3.0.0.tar.gz", svn_revision=100)]
@@ -83,6 +107,26 @@ def test_cle_url_links_versions_backed_by_a_release_when_a_host_is_supplied() ->
     }
 
     assert versions["5.0.2"].cle_url == "https://atr.example.org/api/cle/release/cassandra/5.0.2"
+
+
+def test_clip_versions_follows_window_order_and_keeps_header_metadata() -> None:
+    project = _project()
+    release = _release(project, "2.0", cycle_key="cassandra-default", released=_NOW)
+    artifacts = [
+        _artifact(project, "1.0", "a-1.0.tar.gz", svn_revision=10),
+        _artifact(project, "2.0", "b-2.0.tar.gz", release=release, managed=True),
+        _artifact(project, "2.0", "a-2.0.tar.gz", release=release, svn_revision=20),
+    ]
+    assembled = catalog.assemble(sql.VersionMethod.SIMPLE, artifacts, [], _NOW)
+    window = catalog.ArtifactWindow(versions=["2.0", "1.0"], skip=1, count=3)
+
+    clipped = catalog.clip_versions(assembled.versions, window, 2)
+
+    assert [str(entry.version) for entry in clipped] == ["2.0", "1.0"]
+    assert [artifact.artifact_path for artifact in clipped[0].artifacts] == ["b-2.0.tar.gz"]
+    assert [artifact.artifact_path for artifact in clipped[1].artifacts] == ["a-1.0.tar.gz"]
+    assert clipped[0].managed is True
+    assert clipped[0].svn_revision == 20
 
 
 def test_cycles_are_ordered_by_version_not_activity() -> None:
@@ -199,6 +243,24 @@ def test_version_is_managed_when_any_artifact_is_managed() -> None:
     versions = {str(v.version): v for v in catalog._versions(artifacts, {}, sql.VersionMethod.SIMPLE)}
 
     assert versions["1.0.0"].managed is True
+
+
+def test_version_order_breaks_simple_ties_by_version_string() -> None:
+    items = [("1.0", _NOW, None), ("1.1", _NOW, None), ("0.9", _NOW, 5)]
+
+    assert catalog.version_order(sql.VersionMethod.SIMPLE, items) == ["0.9", "1.1", "1.0"]
+
+
+def test_version_order_is_deterministic_for_colliding_loose_labels() -> None:
+    items = [("1.0", None, None), ("1-0", None, None), ("2.0-SNAPSHOT", None, None)]
+
+    assert catalog.version_order(sql.VersionMethod.SEMVER, items) == ["2.0-SNAPSHOT", "1.0", "1-0"]
+
+
+def test_version_order_is_deterministic_for_equal_pep440_labels() -> None:
+    items = [("1.0.0", None, None), ("1.0", None, None), ("2.0", None, None)]
+
+    assert catalog.version_order(sql.VersionMethod.SEMVER, items) == ["2.0", "1.0.0", "1.0"]
 
 
 def test_versioned_projects_use_the_grouped_layout() -> None:
