@@ -47,3 +47,42 @@ def test_sbom_candidates() -> None:
     assert "apache-example-1.0-cyclonedx.xml" in analysis.sbom_candidates(
         "apache-example-1.0.jar", analysis.SBOM_SUFFIXES
     )
+
+
+def test_sbom_candidates_maven_classifier() -> None:
+    # The CycloneDX Maven plugin names its output off the version alone, dropping the artifact's
+    # own classifier, so a classified artifact still has to reach the declassified SBOM name
+    candidates = analysis.sbom_candidates(
+        "atr-maven-plugin-1.0.0-beta-2-SNAPSHOT-source-release.zip", analysis.CYCLONEDX_JSON_SUFFIXES
+    )
+    assert "atr-maven-plugin-1.0.0-beta-2-SNAPSHOT-cyclonedx.json" in candidates
+
+
+def test_sbom_pairs_artifact() -> None:
+    # The inverse of sbom_candidates: an SBOM pairs with an artifact when it is one of the names that
+    # artifact would generate, so the whole-name, stem, and dropped-classifier styles all pair
+    assert analysis.sbom_pairs_artifact(
+        "apache-example-1.0.tar.gz.cdx.json", "apache-example-1.0.tar.gz", analysis.SBOM_SUFFIXES
+    )
+    assert analysis.sbom_pairs_artifact(
+        "apache-example-1.0-cyclonedx.json", "apache-example-1.0.jar", analysis.SBOM_SUFFIXES
+    )
+    assert analysis.sbom_pairs_artifact(
+        "atr-maven-plugin-1.0.0-beta-2-SNAPSHOT-cyclonedx.json",
+        "atr-maven-plugin-1.0.0-beta-2-SNAPSHOT-source-release.zip",
+        analysis.SBOM_SUFFIXES,
+    )
+    # An SBOM does not pair with an unrelated artifact
+    assert not analysis.sbom_pairs_artifact(
+        "apache-example-1.0-cyclonedx.json", "apache-other-2.0.jar", analysis.SBOM_SUFFIXES
+    )
+
+
+def test_classifier_removed() -> None:
+    # A classifier abutting the extension comes off, along with its leading separator
+    assert analysis._classifier_removed("apache-example-1.0-source-release.zip") == "apache-example-1.0.zip"
+    assert analysis._classifier_removed("apache-example-1.0-bin.tar.gz") == "apache-example-1.0.tar.gz"
+    # A name with no classifier is returned untouched, so callers can tell nothing was stripped
+    assert analysis._classifier_removed("apache-example-1.0.jar") == "apache-example-1.0.jar"
+    # A variant word elsewhere in the name is not a classifier, so it stays put
+    assert analysis._classifier_removed("apache-source-tool-1.0.tar.gz") == "apache-source-tool-1.0.tar.gz"

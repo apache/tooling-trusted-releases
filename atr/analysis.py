@@ -488,7 +488,21 @@ def sbom_candidates(name: str, suffixes: tuple[str, ...]) -> list[str]:
     candidates = [name + suffix for suffix in suffixes]
     if (stem := artifact_stem(name)) is not None:
         candidates.extend(stem + suffix for suffix in suffixes)
+    # Where the artifact carries a Maven classifier, e.g. the source-release in
+    # atr-maven-plugin-1.0.0-source-release.zip, the SBOM tooling names its output off the
+    # version alone, dropping the classifier - so also try the stem with the classifier removed
+    declassified = _classifier_removed(name)
+    if (declassified != name) and ((declassified_stem := artifact_stem(declassified)) is not None):
+        candidates.extend(declassified_stem + suffix for suffix in suffixes)
     return candidates
+
+
+def sbom_pairs_artifact(sbom_name: str, artifact_name: str, suffixes: tuple[str, ...]) -> bool:
+    # Whether sbom_name is the SBOM belonging to artifact_name, i.e. the artifact's own hunt for its
+    # SBOM would turn up exactly this name. Both directions - an artifact looking for its SBOM and an
+    # SBOM looking for its artifact - go through sbom_candidates, so the naming rule lives in one
+    # place and the two can't drift apart
+    return sbom_name in sbom_candidates(artifact_name, suffixes)
 
 
 def substitutions_format(substitutions: dict[str, list[str]]) -> str:
@@ -512,6 +526,16 @@ def version_parse(version: str, elements: dict[str, str | None]) -> str:
     if version.startswith(elements["core"] + "-"):
         return version[len(elements["core"]) + 1 :]
     return version
+
+
+def _classifier_removed(name: str) -> str:
+    # A Maven classifier sits between the version and the extension, e.g. the source-release in
+    # apache-example-1.0-source-release.zip. Strip it, but only where it abuts the artifact
+    # extension, so a source or bin appearing elsewhere in the name is left alone. The extension
+    # must still be attached for this to work, as variant_pattern wants a trailing separator and
+    # the extension's dot provides it
+    pattern = r"[_-](?:" + "|".join(VARIANT_PATTERNS) + r")(?=" + extension_pattern() + r")"
+    return re.sub(pattern, "", name, count=1)
 
 
 if __name__ == "__main__":

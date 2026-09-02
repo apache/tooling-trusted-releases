@@ -269,13 +269,11 @@ async def _check_metadata_rules(
     # Check whether the corresponding artifact exists.
     artifact_path_base = str(relative_path).removesuffix(ext_metadata)
     if is_standalone:
+        # An SBOM pairs with any artifact whose own search would generate this SBOM name, which
+        # covers the whole-name, stem, and dropped-classifier styles in one place
+        sbom_name = str(relative_path)
         has_artifact = any(
-            analysis.is_artifact(p)
-            and (
-                (p == artifact_path_base)
-                or p.startswith(artifact_path_base + ".")  # non-maven, suffixed-style
-                or p.startswith(artifact_path_base + "-")  # maven, classifier-style
-            )
+            analysis.is_artifact(p) and analysis.sbom_pairs_artifact(sbom_name, p, analysis.SBOM_SUFFIXES)
             for p in relative_paths
         )
         if not has_artifact:
