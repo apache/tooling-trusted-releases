@@ -2843,6 +2843,7 @@ async def _users_page(session: web.Committer, active_tab: str, ldap_form: LdapLo
     tab_items = [
         htm.Tab("browse-as", "Browse as user", _users_browse_as_tab),
         htm.Tab("ldap", "LDAP lookup", lambda: _users_ldap_tab(ldap_form)),
+        htm.Tab("sessions", "Sessions", _users_sessions_tab),
         htm.Tab("revoke-tokens", "Revoke tokens", _users_revoke_tokens_tab),
         htm.Tab("revoke-all-tokens", "Revoke all tokens", _users_revoke_all_tokens_tab),
         htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
@@ -3024,6 +3025,36 @@ async def _users_rotate_jwt_tab() -> htm.Element:
     block.h2["Rotate JWT key"]
     block.p["Rotate the JWT signing key immediately. This will invalidate all currently usable JWTs."]
     block.append(rendered_form)
+    return block.collect()
+
+
+async def _users_sessions_tab() -> htm.Element:
+    tbody = htm.Block(htm.tbody)
+    for user_session in await asfquart.APP.sessions.current():
+        tbody.tr[
+            htm.td[htm.code[user_session.uid]],
+            htm.td[htm.code[user_session.admin_uid] if user_session.admin_uid else ""],
+            htm.td[util.format_datetime(int(user_session.cts))],
+            htm.td[util.format_datetime(int(user_session.uts))],
+            htm.td[user_session.ip_address or "unknown"],
+        ]
+    block = htm.Block()
+    block.h2["Sessions"]
+    block.p["Every recorded session, most recently active first."]
+    block.append(
+        htm.table(".table.table-sm.table-striped.table-bordered")[
+            htm.thead[
+                htm.tr[
+                    htm.th["User ID"],
+                    htm.th["Admin"],
+                    htm.th["Created"],
+                    htm.th["Last active"],
+                    htm.th["IP address"],
+                ]
+            ],
+            tbody.collect(),
+        ]
+    )
     return block.collect()
 
 

@@ -181,6 +181,17 @@ class Store:
             await data.commit()
         log.auth_success("oauth", user_session.uid)
 
+    async def current(self) -> list[sql.UserSession]:
+        now = time.time()
+        max_session_age = config.get().MAX_SESSION_AGE
+        via = sql.validate_instrumented_attribute
+        statement = sqlmodel.select(sql.UserSession).where(sql.UserSession.uts >= (now - _SESSION_IDLE_TIMEOUT))
+        if max_session_age > 0:
+            statement = statement.where(sql.UserSession.cts >= (now - max_session_age))
+        async with db.session() as data:
+            result = await data.execute(statement.order_by(via(sql.UserSession.uts).desc()))
+            return list(result.scalars().all())
+
     async def destroy(self, hsid: str) -> None:
         async with db.session() as data:
             statement = sqlmodel.select(sql.UserSession).where(sql.UserSession.sid_hash == hsid)
