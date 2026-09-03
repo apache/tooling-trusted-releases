@@ -116,6 +116,14 @@ class CheckResultStatusIgnore(enum.StrEnum):
         return f"CheckResultStatusIgnore.{self.value.upper()}"
 
 
+CHECK_RESULT_IGNORABLE_STATUSES: Final[tuple[CheckResultStatus, ...]] = tuple(
+    CheckResultStatus(status.value) for status in CheckResultStatusIgnore
+)
+CHECK_RESULT_NON_NOTE_STATUSES: Final[tuple[CheckResultStatus, ...]] = tuple(
+    status for status in CheckResultStatus if (status != CheckResultStatus.NOTE)
+)
+
+
 class DistributionPlatform(enum.Enum):
     ARTIFACT_HUB = DistributionPlatformValue(
         name="Artifact Hub",

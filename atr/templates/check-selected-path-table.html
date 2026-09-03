@@ -13,7 +13,7 @@
     </thead>
     <tbody>
       {% for path in paths %}
-        {% set notes_count = info.notes[path]|length if info else 0 %}
+        {% set notes_count = info.note_counts.get(path, 0) if info else 0 %}
         {% set suggestions_count = info.suggestions[path]|length if info else 0 %}
         {% set concerns_count = info.concerns[path]|length if info else 0 %}
         {% set blockers_count = info.blockers[path]|length if info else 0 %}

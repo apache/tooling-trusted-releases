@@ -19,7 +19,7 @@ import dataclasses
 import datetime
 import enum
 from collections.abc import Sequence
-from typing import Final
+from typing import Final, NamedTuple
 
 import asfquart.base as base
 import packaging.version as version
@@ -76,6 +76,19 @@ class PublicKeyError(RuntimeError):
 
 class ReleasePolicyNotFoundError(RuntimeError):
     pass
+
+
+class CheckCount(NamedTuple):
+    primary_rel_path: str | None
+    checker: str
+    status: sql.CheckResultStatus
+    member: bool
+    total: int
+
+
+class ChecksTally(NamedTuple):
+    counts: list[CheckCount]
+    results: list[sql.CheckResult]
 
 
 class TrustedProjectPhase(enum.Enum):
@@ -338,6 +351,45 @@ async def checks_for(
         statuses=statuses,
         caller_data=caller_data,
     )
+
+
+async def checks_tally_for(
+    release: sql.Release,
+    revision: safe.RevisionNumber | None = None,
+    *,
+    statuses: Sequence[sql.CheckResultStatus],
+    caller_data: db.Session | None = None,
+) -> ChecksTally:
+    if revision is None:
+        revision = release.safe_latest_revision_number
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = await _check_results_query(
+            data, release.safe_project_key, release.safe_version_key, revision, None, False, None
+        )
+        if query is None:
+            return ChecksTally([], [])
+        rows = query.query.subquery()
+        member = rows.c.member_rel_path.is_not(None).label("member")
+        counted = await data.execute(
+            sqlalchemy.select(
+                rows.c.primary_rel_path, rows.c.checker, rows.c.status, member, sqlalchemy.func.count()
+            ).group_by(rows.c.primary_rel_path, rows.c.checker, rows.c.status, member)
+        )
+        counts = [
+            CheckCount(path, checker, sql.CheckResultStatus(status), bool(flag), total)
+            for path, checker, status, flag, total in counted.all()
+        ]
+        results = await (
+            query.where(via(sql.CheckResult.status).in_(statuses))
+            .order_by(
+                via(sql.CheckResult.checker).asc(),
+                via(sql.CheckResult.created).desc(),
+                via(sql.CheckResult.id).desc(),
+            )
+            .all()
+        )
+    return ChecksTally(counts, list(results))
 
 
 async def count_checks_for_revision_by_status(

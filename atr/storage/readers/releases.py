@@ -56,7 +56,14 @@ class GeneralPublic:
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             return None
-        await self.__notes_suggestions_concerns(release, release.safe_latest_revision_number, info)
+        tally = await interaction.checks_tally_for(
+            release,
+            revision=release.safe_latest_revision_number,
+            statuses=sql.CHECK_RESULT_NON_NOTE_STATUSES,
+            caller_data=self.__data,
+        )
+        await self.__suggestions_concerns(release, info, tally.results)
+        self.__note_counts(info, tally.counts)
         base_path = paths.release_directory(release)
         revision_seq = int(str(release.safe_latest_revision_number))
         db_classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
@@ -79,7 +86,7 @@ class GeneralPublic:
                         path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
                     )
         self.__pair_sboms(info, all_paths)
-        self.__compute_checker_stats(info, all_paths)
+        self.__compute_checker_stats(info, all_paths, tally.counts)
         return info
 
     def __accumulate_results(
@@ -100,11 +107,16 @@ class GeneralPublic:
                     files_for_status = acc.files.setdefault(status, {})
                     files_for_status[path_str] = files_for_status.get(path_str, 0) + 1
 
-    def __compute_checker_stats(self, info: datatypes.PathInfo, paths: list[safe.RelPath]) -> None:
+    def __compute_checker_stats(
+        self, info: datatypes.PathInfo, paths: list[safe.RelPath], counts: list[interaction.CheckCount]
+    ) -> None:
         paths_set = set(paths)
+        path_strs = {str(path) for path in paths}
         checker_data: dict[str, CheckerAccumulator] = {}
 
-        self.__accumulate_results(info.notes, paths_set, checker_data)
+        for count in counts:
+            if (count.status == sql.CheckResultStatus.NOTE) and (count.primary_rel_path in path_strs):
+                checker_data.setdefault(count.checker, CheckerAccumulator()).counts[count.status] += count.total
         self.__accumulate_results(info.suggestions, paths_set, checker_data)
         self.__accumulate_results(info.concerns, paths_set, checker_data)
         self.__accumulate_results(info.exceptions, paths_set, checker_data)
@@ -133,22 +145,18 @@ class GeneralPublic:
                     info.sbom_paths[path] = safe.RelPath(candidate)
                     break
 
-    async def __notes_suggestions_concerns(
-        self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: datatypes.PathInfo
+    async def __suggestions_concerns(
+        self, release: sql.Release, info: datatypes.PathInfo, results: list[sql.CheckResult]
     ) -> None:
         match_ignore = await self.__read_as.checks.ignores_matcher(release.safe_project_key)
-        attestable_checks = await interaction.checks_for(
-            release, revision=latest_revision_number, caller_data=self.__data
-        )
 
         cs = datatypes.ChecksSubset(
-            checks=attestable_checks,
+            checks=results,
             info=info,
             match_ignore=match_ignore,
         )
         # TODO: These get just the ones for the revision.
         # It might be better to get all like we do in by_release_path, filter by hash, then filter by status
-        await self.__notes(cs)
         await self.__suggestions(cs)
         await self.__concerns(cs)
         await self.__exceptions(cs)
@@ -184,12 +192,11 @@ class GeneralPublic:
             else:
                 cs.info.release_level_exceptions.append(exception)
 
-    async def __notes(self, cs: datatypes.ChecksSubset) -> None:
-        notes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.NOTE]
-        for note in notes:
-            # Notes cannot be ignored
-            if path := note.safe_primary_rel_path:
-                cs.info.notes.setdefault(path, []).append(note)
+    def __note_counts(self, info: datatypes.PathInfo, counts: list[interaction.CheckCount]) -> None:
+        for count in counts:
+            if (count.status == sql.CheckResultStatus.NOTE) and count.primary_rel_path:
+                path = safe.RelPath(count.primary_rel_path)
+                info.note_counts[path] = info.note_counts.get(path, 0) + count.total
 
     async def __suggestions(self, cs: datatypes.ChecksSubset) -> None:
         suggestions = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUGGESTION]

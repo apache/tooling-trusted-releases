@@ -914,8 +914,10 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
         # Avoid a filesystem walk when the DB has no concern rows at all
-        check_results = await interaction.checks_for(release, caller_data=self.__data)
-        if not any(cr.status == sql.CheckResultStatus.CONCERN for cr in check_results):
+        check_results = await interaction.checks_for(
+            release, statuses=(sql.CheckResultStatus.CONCERN,), caller_data=self.__data
+        )
+        if not check_results:
             return []
         read = storage.Read(self.__write.authorisation, self.__data)
         ragp = read.as_general_public()

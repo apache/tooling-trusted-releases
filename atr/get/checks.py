@@ -231,18 +231,19 @@ async def _compute_stats(
         return per_file, _file_stats_empty()
 
     async with db.session() as data:
-        check_results = await interaction.checks_for(release, caller_data=data)
+        tally = await interaction.checks_tally_for(
+            release, statuses=sql.CHECK_RESULT_IGNORABLE_STATUSES, caller_data=data
+        )
 
-    for check_result in check_results:
-        if not check_result.primary_rel_path:
-            continue
+    for count in tally.counts:
+        stats = _file_stats_for(per_file, count.primary_rel_path)
+        if (stats is not None) and (count.status not in sql.CHECK_RESULT_IGNORABLE_STATUSES):
+            _file_stats_count_add(stats, count)
 
-        file_path = safe.RelPath(check_result.primary_rel_path)
-        stats = per_file.get(file_path)
-        if stats is None:
-            continue
-
-        _file_stats_result_add(stats, check_result, match_ignore(check_result))
+    for check_result in tally.results:
+        stats = _file_stats_for(per_file, check_result.primary_rel_path)
+        if stats is not None:
+            _file_stats_result_add(stats, check_result, match_ignore(check_result))
 
     totals = _file_stats_empty()
     for stats in per_file.values():
@@ -271,6 +272,12 @@ def _error_count(counts: collections.Counter[sql.CheckResultStatus]) -> int:
     )
 
 
+def _file_stats_count_add(stats: FileStats, count: interaction.CheckCount) -> None:
+    before, after = (stats.member_before, stats.member_after) if count.member else (stats.file_before, stats.file_after)
+    before[count.status] += count.total
+    after[count.status] += count.total
+
+
 def _file_stats_empty() -> FileStats:
     return FileStats(
         file_before=collections.Counter[sql.CheckResultStatus](),
@@ -278,6 +285,12 @@ def _file_stats_empty() -> FileStats:
         member_before=collections.Counter[sql.CheckResultStatus](),
         member_after=collections.Counter[sql.CheckResultStatus](),
     )
+
+
+def _file_stats_for(per_file: dict[safe.RelPath, FileStats], primary_rel_path: str | None) -> FileStats | None:
+    if not primary_rel_path:
+        return None
+    return per_file.get(safe.RelPath(primary_rel_path))
 
 
 def _file_stats_result_add(stats: FileStats, check_result: sql.CheckResult, is_ignored: bool) -> None:

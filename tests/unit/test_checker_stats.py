@@ -20,6 +20,7 @@ import collections
 import datetime
 import unittest.mock as mock
 
+import atr.db.interaction as interaction
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.datatypes as datatypes
@@ -28,20 +29,22 @@ import atr.storage.readers.releases as releases
 
 def test_checker_stats_counts_and_files_by_status():
     path = safe.RelPath("apache-test-1.0-source.tar.gz")
-    success = _make_check_result(sql.CheckResultStatus.NOTE, "Success", primary_rel_path=str(path))
     warning = _make_check_result(sql.CheckResultStatus.SUGGESTION, "Warning", primary_rel_path=str(path))
     failure = _make_check_result(sql.CheckResultStatus.CONCERN, "Failure", primary_rel_path=str(path))
     blocker = _make_check_result(sql.CheckResultStatus.BLOCKER, "Blocker", primary_rel_path=str(path))
     info = datatypes.PathInfo(
-        notes={path: [success]},
+        note_counts={path: 1},
         suggestions={path: [warning]},
         concerns={path: [failure]},
         blockers={path: [blocker]},
     )
+    notes = [
+        interaction.CheckCount(str(path), "atr.tasks.checks.paths.check_errors", sql.CheckResultStatus.NOTE, False, 1)
+    ]
     reader = _make_reader()
     compute_checker_stats = getattr(reader, "_GeneralPublic__compute_checker_stats")
 
-    compute_checker_stats(info, [path])
+    compute_checker_stats(info, [path], notes)
 
     assert len(info.checker_stats) == 1
     stat = info.checker_stats[0]

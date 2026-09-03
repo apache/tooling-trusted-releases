@@ -23,6 +23,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.db.interaction as interaction
 import atr.get.checks as checks
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -30,18 +31,24 @@ import atr.models.sql as sql
 
 async def test_compute_stats_counts_by_status_before_and_after(monkeypatch: pytest.MonkeyPatch) -> None:
     path = safe.RelPath("apache-test-1.0-source.tar.gz")
-    check_results = [
-        _make_check_result(sql.CheckResultStatus.NOTE, "Success", str(path)),
+    counts = [
+        _make_count(str(path), sql.CheckResultStatus.NOTE, False),
+        _make_count(str(path), sql.CheckResultStatus.SUGGESTION, False),
+        _make_count(str(path), sql.CheckResultStatus.CONCERN, False),
+        _make_count(str(path), sql.CheckResultStatus.BLOCKER, True),
+        _make_count(str(path), sql.CheckResultStatus.EXCEPTION, True),
+    ]
+    ignorable = [
         _make_check_result(sql.CheckResultStatus.SUGGESTION, "Warning", str(path)),
         _make_check_result(sql.CheckResultStatus.CONCERN, "Failure", str(path)),
-        _make_check_result(sql.CheckResultStatus.BLOCKER, "Blocker", str(path), "apache-test-1.0/pom.xml"),
         _make_check_result(sql.CheckResultStatus.EXCEPTION, "Exception", str(path), "apache-test-1.0/build.xml"),
     ]
+    tally = interaction.ChecksTally(counts, ignorable)
     release = mock.MagicMock()
     release.latest_revision_number = "00001"
 
     monkeypatch.setattr(checks.db, "session", _mock_db_session)
-    monkeypatch.setattr(checks.interaction, "checks_for", mock.AsyncMock(return_value=check_results))
+    monkeypatch.setattr(checks.interaction, "checks_tally_for", mock.AsyncMock(return_value=tally))
 
     per_file, totals = await checks._compute_stats(release, [path], _match_ignore)
     stats = per_file[path]
@@ -94,6 +101,10 @@ def _make_check_result(
         data={},
         inputs_hash=None,
     )
+
+
+def _make_count(primary_rel_path: str, status: sql.CheckResultStatus, member: bool) -> interaction.CheckCount:
+    return interaction.CheckCount(primary_rel_path, "atr.tasks.checks.paths.check_errors", status, member, 1)
 
 
 def _match_ignore(check_result: sql.CheckResult) -> bool:

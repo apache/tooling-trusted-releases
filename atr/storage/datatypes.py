@@ -120,7 +120,7 @@ class PathInfo(schema.Strict):
     ignored_concerns: list[sql.CheckResult] = schema.factory(list)
     ignored_exceptions: list[sql.CheckResult] = schema.factory(list)
     ignored_suggestions: list[sql.CheckResult] = schema.factory(list)
-    notes: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
+    note_counts: dict[safe.RelPath, int] = schema.factory(dict)
     release_level_blockers: list[sql.CheckResult] = schema.factory(list)
     release_level_concerns: list[sql.CheckResult] = schema.factory(list)
     release_level_exceptions: list[sql.CheckResult] = schema.factory(list)
