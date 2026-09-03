@@ -1,90 +1,82 @@
-{% extends "layouts/base-admin.html" %}
+<h2>LDAP lookup</h2>
+<p>Query the ASF LDAP directory for user information.</p>
 
-{%- block title -%}LDAP lookup ~ ATR{%- endblock title -%}
+<div class="card mb-4">
+  <div class="card-header">
+    <h5 class="mb-0">Search criteria</h5>
+  </div>
+  <div class="card-body">
+    {{ form }}
+  </div>
+</div>
 
-{%- block description -%}Perform a lookup in the ASF LDAP directory.{%- endblock description -%}
-
-{% block content %}
-  <h1>LDAP lookup</h1>
-  <p>Query the ASF LDAP directory for user information.</p>
-
-  <div class="card mb-4">
+{% if ldap_query_performed %}
+  <div class="card">
     <div class="card-header">
-      <h5 class="mb-0">Search criteria</h5>
+      <h5 class="mb-0">Lookup results</h5>
     </div>
     <div class="card-body">
-      {{ form }}
-    </div>
-  </div>
-
-  {% if ldap_query_performed %}
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">Lookup results</h5>
-      </div>
-      <div class="card-body">
-        {% if ldap_params and ldap_params.err_msg %}
-          <div class="alert alert-danger" role="alert">
-            <p class="fw-bold">{{ ldap_params.err_msg }}</p>
-            {% if ldap_params.srv_info %}
-              <p class="mb-1">Attempted server configuration:</p>
-              <pre class="small bg-light p-2 rounded"><code>{{ ldap_params.srv_info }}</code></pre>
-            {% endif %}
-            {% if ldap_params.detail_err %}
-              <p class="mb-1 mt-2">Detailed error information:</p>
-              <pre class="small bg-light p-2 rounded"><code>{{ ldap_params.detail_err }}</code></pre>
-            {% endif %}
-          </div>
-        {% elif ldap_params and ldap_params.results_list %}
-          {% if uid_query == '*' %}
-            <table class="table table-sm table-striped table-bordered">
+      {% if ldap_params and ldap_params.err_msg %}
+        <div class="alert alert-danger" role="alert">
+          <p class="fw-bold">{{ ldap_params.err_msg }}</p>
+          {% if ldap_params.srv_info %}
+            <p class="mb-1">Attempted server configuration:</p>
+            <pre class="small bg-light p-2 rounded"><code>{{ ldap_params.srv_info }}</code></pre>
+          {% endif %}
+          {% if ldap_params.detail_err %}
+            <p class="mb-1 mt-2">Detailed error information:</p>
+            <pre class="small bg-light p-2 rounded"><code>{{ ldap_params.detail_err }}</code></pre>
+          {% endif %}
+        </div>
+      {% elif ldap_params and ldap_params.results_list %}
+        {% if uid_query == '*' %}
+          <table class="table table-sm table-striped table-bordered">
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th>Full Name</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for result in ldap_params.results_list %}
+                <tr>
+                  <td>{{ (result.uid or [''])[0] }}</td>
+                  <td>{{ (result.cn or [''])[0] }}</td>
+                  <td>{{ (result.mail or [''])[0] }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          {% for result in ldap_params.results_list %}
+            <table class="table table-sm table-striped">
               <thead>
                 <tr>
-                  <th>UID</th>
-                  <th>Full Name</th>
-                  <th>Email</th>
+                  <th class="w-25">Attribute</th>
+                  <th>Value</th>
                 </tr>
               </thead>
               <tbody>
-                {% for result in ldap_params.results_list %}
+                {% for key, value in result.model_dump(by_alias=True).items()|sort %}
                   <tr>
-                    <td>{{ (result.uid or [''])[0] }}</td>
-                    <td>{{ (result.cn or [''])[0] }}</td>
-                    <td>{{ (result.mail or [''])[0] }}</td>
+                    <td><strong>{{ key }}</strong></td>
+                    <td>
+                      {% if (value is iterable) and (value is not string) %}
+                        {{ value|join(", ") }}
+                      {% else %}
+                        {{ value }}
+                      {% endif %}
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>
             </table>
-          {% else %}
-            {% for result in ldap_params.results_list %}
-              <table class="table table-sm table-striped">
-                <thead>
-                  <tr>
-                    <th class="w-25">Attribute</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for key, value in result.model_dump(by_alias=True).items()|sort %}
-                    <tr>
-                      <td><strong>{{ key }}</strong></td>
-                      <td>
-                        {% if (value is iterable) and (value is not string) %}
-                          {{ value|join(", ") }}
-                        {% else %}
-                          {{ value }}
-                        {% endif %}
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% endfor %}
-          {% endif %}
-        {% else %}
-          <div class="alert alert-info" role="alert">No results found for the given criteria.</div>
+          {% endfor %}
         {% endif %}
-      </div>
+      {% else %}
+        <div class="alert alert-info" role="alert">No results found for the given criteria.</div>
+      {% endif %}
     </div>
-  {% endif %}
-{% endblock content %}
+  </div>
+{% endif %}

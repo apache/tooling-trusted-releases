@@ -19,8 +19,8 @@ from typing import Final
 
 from playwright.sync_api import Page
 
-REVOKE_TOKENS_PATH: Final[str] = "/admin/revoke-user-tokens"
-REVOKE_SSH_KEYS_PATH: Final[str] = "/admin/revoke-user-ssh-keys"
+REVOKE_TOKENS_PATH: Final[str] = "/admin/users?tab=revoke-tokens"
+REVOKE_SSH_KEYS_PATH: Final[str] = "/admin/users?tab=revoke-ssh-keys"
 TOKENS_PATH: Final[str] = "/tokens"
 TOKEN_LABEL_FOR_TESTING: Final[str] = "e2e-revoke-test-token"
 

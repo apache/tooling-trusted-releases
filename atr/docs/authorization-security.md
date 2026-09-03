@@ -134,13 +134,13 @@ Token operations apply to the authenticated user:
 **Revoke all tokens for a user (admin)**:
 
 * Allowed for: ATR administrators only
-* Interface: Admin "Revoke user tokens" page
+* Interface: Admin Users dashboard, "Revoke user tokens" tab
 * Constraint: Requires typing "REVOKE" as confirmation
 
 **Revoke all SSH keys for a user (admin)**:
 
 * Allowed for: ATR administrators only
-* Interface: Admin "Revoke user SSH keys" page
+* Interface: Admin Users dashboard, "Revoke user SSH keys" tab
 * Constraint: Requires typing "REVOKE" as confirmation
 
 **Exchange PAT for JWT**:

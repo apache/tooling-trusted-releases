@@ -19,7 +19,7 @@ from playwright.sync_api import Page, expect
 
 
 def test_revoke_ssh_keys_nav_link_exists(page_revoke_ssh_keys: Page) -> None:
-    nav_link = page_revoke_ssh_keys.locator('a.dropdown-item:has-text("Revoke user SSH keys")')
+    nav_link = page_revoke_ssh_keys.locator('a.nav-link:has-text("Revoke user SSH keys")')
     expect(nav_link).to_have_count(1)
 
 
@@ -55,7 +55,7 @@ def test_revoke_ssh_keys_page_has_uid_input(page_revoke_ssh_keys: Page) -> None:
 
 
 def test_revoke_ssh_keys_page_loads(page_revoke_ssh_keys: Page) -> None:
-    expect(page_revoke_ssh_keys).to_have_title("Revoke user SSH keys ~ ATR")
+    expect(page_revoke_ssh_keys).to_have_title("Users ~ ATR")
 
 
 def test_revoke_ssh_keys_shows_error_for_wrong_confirmation(page_revoke_ssh_keys: Page) -> None:

@@ -1,76 +1,68 @@
-{% extends "layouts/base-admin.html" %}
+<h2>Revoke user SSH keys</h2>
+<p>Revoke all SSH keys (persistent and workflow) for a user account. Use this when an
+  account is being disabled or when immediate SSH key revocation is needed.</p>
 
-{%- block title -%}Revoke user SSH keys ~ ATR{%- endblock title -%}
+<div class="card mb-4">
+  <div class="card-header">
+    <h5 class="mb-0">Revoke SSH keys</h5>
+  </div>
+  <div class="card-body">
+    {{ form }}
+  </div>
+</div>
 
-{%- block description -%}Revoke all SSH keys for a user.{%- endblock description -%}
-
-{% block content %}
-  <h1>Revoke user SSH keys</h1>
-  <p>Revoke all SSH keys (persistent and workflow) for a user account. Use this when an
-    account is being disabled or when immediate SSH key revocation is needed.</p>
-
+{% if ssh_key_counts %}
   <div class="card mb-4">
     <div class="card-header">
-      <h5 class="mb-0">Revoke SSH keys</h5>
+      <h5 class="mb-0">Users with persistent SSH keys</h5>
     </div>
     <div class="card-body">
-      {{ form }}
+      <table class="table table-sm table-striped table-bordered">
+        <thead>
+          <tr>
+            <th>ASF UID</th>
+            <th>Key count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for uid, count in ssh_key_counts %}
+            <tr>
+              <td><code>{{ uid }}</code></td>
+              <td>{{ count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
+{% else %}
+  <div class="alert alert-info" role="alert">No users currently have persistent SSH keys.</div>
+{% endif %}
 
-  {% if ssh_key_counts %}
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5 class="mb-0">Users with persistent SSH keys</h5>
-      </div>
-      <div class="card-body">
-        <table class="table table-sm table-striped table-bordered">
-          <thead>
-            <tr>
-              <th>ASF UID</th>
-              <th>Key count</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for uid, count in ssh_key_counts %}
-              <tr>
-                <td><code>{{ uid }}</code></td>
-                <td>{{ count }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+{% if workflow_key_counts %}
+  <div class="card">
+    <div class="card-header">
+      <h5 class="mb-0">Users with active workflow SSH keys</h5>
     </div>
-  {% else %}
-    <div class="alert alert-info" role="alert">No users currently have persistent SSH keys.</div>
-  {% endif %}
-
-  {% if workflow_key_counts %}
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">Users with active workflow SSH keys</h5>
-      </div>
-      <div class="card-body">
-        <table class="table table-sm table-striped table-bordered">
-          <thead>
+    <div class="card-body">
+      <table class="table table-sm table-striped table-bordered">
+        <thead>
+          <tr>
+            <th>ASF UID</th>
+            <th>Key count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for uid, count in workflow_key_counts %}
             <tr>
-              <th>ASF UID</th>
-              <th>Key count</th>
+              <td><code>{{ uid }}</code></td>
+              <td>{{ count }}</td>
             </tr>
-          </thead>
-          <tbody>
-            {% for uid, count in workflow_key_counts %}
-              <tr>
-                <td><code>{{ uid }}</code></td>
-                <td>{{ count }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  {% else %}
-    <div class="alert alert-info" role="alert">No users currently have active workflow SSH keys.</div>
-  {% endif %}
-{% endblock content %}
+  </div>
+{% else %}
+  <div class="alert alert-info" role="alert">No users currently have active workflow SSH keys.</div>
+{% endif %}

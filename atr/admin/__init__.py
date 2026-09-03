@@ -35,6 +35,7 @@ import asfquart
 import asfquart.base as base
 import htpy
 import jwt
+import markupsafe
 import openpgp.composed
 import pydantic
 import quart
@@ -84,7 +85,17 @@ _CERTIFICATE_FINDING_RANK: Final[dict[str, int]] = {"signing-keys": 1, "metadata
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 
 
+type BROWSE_AS = Literal["BROWSE_AS"]
+type LDAP = Literal["LDAP"]
+type REVOKE_SSH_KEYS = Literal["REVOKE_SSH_KEYS"]
+type REVOKE_TOKENS = Literal["REVOKE_TOKENS"]
+type ROTATE_JWT = Literal["ROTATE_JWT"]
+type SYSTEM_TOKEN_CREATE = Literal["SYSTEM_TOKEN_CREATE"]
+type SYSTEM_TOKEN_REVOKE = Literal["SYSTEM_TOKEN_REVOKE"]
+
+
 class BrowseAsUserForm(form.Form):
+    variant: BROWSE_AS = form.value(BROWSE_AS)
     uid: str = form.label("ASF UID", "Enter the ASF UID to browse as.")
 
 
@@ -108,6 +119,7 @@ class EditBannerForm(form.Form):
 
 
 class LdapLookupForm(form.Form):
+    variant: LDAP = form.value(LDAP)
     uid: str = form.label("ASF UID (optional)", "Enter ASF UID, e.g. johnsmith, or * for all")
     email: form.OptionalEmail = form.label(
         "Email address (optional)", "Enter email address, e.g. user@example.org", widget=form.Widget.EMAIL
@@ -127,16 +139,19 @@ class RestoreBannerForm(form.Form):
 
 
 class RevokeUserTokensForm(form.Form):
+    variant: REVOKE_TOKENS = form.value(REVOKE_TOKENS)
     asf_uid: str = form.label("ASF UID", "Enter the ASF UID whose tokens should be revoked.")
     confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
 
 
 class RevokeUserSSHKeysForm(form.Form):
+    variant: REVOKE_SSH_KEYS = form.value(REVOKE_SSH_KEYS)
     asf_uid: str = form.label("ASF UID", "Enter the ASF UID whose SSH keys should be revoked.")
     confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
 
 
 class RotateJwtKeyForm(form.Form):
+    variant: ROTATE_JWT = form.value(ROTATE_JWT)
     confirm_rotate: Literal["ROTATE"] = form.label("Confirmation", "Type ROTATE to confirm.")
 
 
@@ -153,6 +168,7 @@ class ValidateJwtForm(form.Form):
 
 
 class CreateSystemTokenForm(form.Form):
+    variant: SYSTEM_TOKEN_CREATE = form.value(SYSTEM_TOKEN_CREATE)
     label: str = form.label("Label", "A name to identify this system token.")
     allowed_ip: str = form.label(
         "Allowed IP",
@@ -184,6 +200,7 @@ class CreateSystemTokenForm(form.Form):
 
 
 class RevokeSystemTokenForm(form.Form):
+    variant: SYSTEM_TOKEN_REVOKE = form.value(SYSTEM_TOKEN_REVOKE)
     token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
 
 
@@ -210,6 +227,18 @@ class TestRosterResetForm(form.Form):
 
 
 type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestRosterResetForm, form.DISCRIMINATOR]
+
+
+type UsersForm = Annotated[
+    BrowseAsUserForm
+    | LdapLookupForm
+    | RevokeUserTokensForm
+    | RevokeUserSSHKeysForm
+    | RotateJwtKeyForm
+    | CreateSystemTokenForm
+    | RevokeSystemTokenForm,
+    form.DISCRIMINATOR,
+]
 
 
 @admin.typed
@@ -296,70 +325,6 @@ def _banner_history_table(restore_rows: list[tuple[sql.Banner, htm.Element]]) ->
             ]
         ],
     ]
-
-
-@admin.typed
-async def browse_as_get(_session: web.Committer, _browse_as: Literal["browse-as"]) -> str | web.WerkzeugResponse:
-    """
-    URL: GET /browse-as
-
-    Allows an admin to browse as another user.
-    """
-    rendered_form = await form.render(
-        model_cls=BrowseAsUserForm,
-        submit_label="Browse as this user",
-    )
-    return await template.render("browse-as.html", form=rendered_form)
-
-
-@admin.typed
-async def browse_as_post(
-    session: web.Committer, _browse_as: Literal["browse-as"], browse_form: BrowseAsUserForm
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /browse-as
-
-    Allows an admin to browse as another user.
-    """
-    # We specifically need to use this on the production server
-    import atr.get.root as root
-
-    new_uid = browse_form.uid
-
-    try:
-        committer = principal.Committer(safe.AsfUid(new_uid))
-        await asyncio.to_thread(committer.verify)
-    except (principal.CommitterError, ValueError) as exc:
-        await quart.flash(f"Unable to browse as '{new_uid}': {exc}", "error")
-        return await session.redirect(browse_as_get)
-
-    admin_id: str = session.asf_uid
-    existing_admin = session.session.admin_uid
-    if isinstance(existing_admin, str) and existing_admin:
-        admin_id = existing_admin
-
-    await util.write_session(
-        sql.UserSession(
-            uid=committer.uid,
-            fullname=committer.fullname or committer.uid,
-            email=committer.email,
-            is_member=committer.isMember,
-            is_chair=committer.isChair,
-            # is_root=committer.isRoot,
-            member_committees=sorted(set(committer.member_committees)),
-            participant_committees=sorted(set(committer.participant_committees)),
-            mfa=session.session.mfa,
-            admin_uid=admin_id,
-            ip_address=quart.request.remote_addr,
-        )
-    )
-    log.auth_event("impersonate", admin_id, as_user=committer.uid)
-
-    await quart.flash(
-        f"You are now browsing as '{new_uid}'. To return to your own account, please log out and log back in.",
-        "success",
-    )
-    return await session.redirect(root.index)
 
 
 @admin.typed
@@ -1819,66 +1784,6 @@ async def keys_update_post(
 
 
 @admin.typed
-async def ldap_get(session: web.Committer, _ldap: Literal["ldap"]) -> str:
-    """
-    URL: GET /ldap
-    """
-    rendered_form = await form.render(
-        model_cls=LdapLookupForm,
-        submit_label="Lookup",
-    )
-    return await template.render(
-        "ldap-lookup.html",
-        form=rendered_form,
-        ldap_params=None,
-        asf_id=session.asf_uid,
-        ldap_query_performed=False,
-        uid_query=None,
-    )
-
-
-@admin.typed
-async def ldap_post(session: web.Committer, _ldap: Literal["ldap"], lookup_form: LdapLookupForm) -> str:
-    """
-    URL POST /ldap
-    """
-    # TODO: This is one case where we should perhaps allow str | None on the form
-    uid_query = lookup_form.uid if lookup_form.uid else None
-    email_query = lookup_form.email if lookup_form.email else None
-
-    ldap_params: ldap.SearchParameters | None = None
-    if uid_query or email_query:
-        bind_dn = quart.current_app.config.get("LDAP_BIND_DN")
-        bind_password = quart.current_app.config.get("LDAP_BIND_PASSWORD")
-
-        start = time.perf_counter_ns()
-        ldap_params = ldap.SearchParameters(
-            uid_query=uid_query,
-            email_query=email_query,
-            bind_dn_from_config=bind_dn,
-            bind_password_from_config=bind_password,
-        )
-        await asyncio.to_thread(ldap.search, ldap_params)
-        end = time.perf_counter_ns()
-        log.info(f"LDAP search took {(end - start) / 1000000} ms")
-
-    rendered_form = await form.render(
-        model_cls=LdapLookupForm,
-        submit_label="Lookup",
-        defaults={"uid": uid_query, "email": email_query},
-    )
-
-    return await template.render(
-        "ldap-lookup.html",
-        form=rendered_form,
-        ldap_params=ldap_params,
-        asf_id=session.asf_uid,
-        ldap_query_performed=ldap_params is not None,
-        uid_query=uid_query,
-    )
-
-
-@admin.typed
 async def logs(_session: web.Committer, _logs: Literal["logs"]) -> web.QuartResponse:
     """
     URL: GET /logs
@@ -2032,276 +1937,6 @@ async def raise_error(_session: web.Committer, _raise_error: Literal["raise-erro
     URL: GET /raise-error
     """
     raise RuntimeError("Admin test route deliberately raised an unhandled error")
-
-
-@admin.typed
-async def revoke_user_ssh_keys_get(
-    _session: web.Committer, _revoke_user_ssh_keys: Literal["revoke-user-ssh-keys"]
-) -> str:
-    """
-    URL: GET /revoke-user-ssh-keys
-
-    Revoke all SSH keys for a specified user.
-    """
-    via = sql.validate_instrumented_attribute
-    ssh_key_counts: list[tuple[str, int]] = []
-    workflow_key_counts: list[tuple[str, int]] = []
-    async with db.session() as data:
-        ssh_stmt = (
-            sqlmodel.select(
-                sql.SSHKey.asf_uid,
-                sqlmodel.func.count(),
-            )
-            .group_by(sql.SSHKey.asf_uid)
-            .order_by(sql.SSHKey.asf_uid)
-        )
-        ssh_rows = await data.execute_query(ssh_stmt)
-        ssh_key_counts = [(row[0], row[1]) for row in ssh_rows]
-
-        workflow_stmt = (
-            sqlmodel.select(
-                sql.WorkflowSSHKey.asf_uid,
-                sqlmodel.func.count(),
-            )
-            .where(
-                via(sql.WorkflowSSHKey.revoked).is_(False),
-                sql.WorkflowSSHKey.expires > int(time.time()),
-            )
-            .group_by(sql.WorkflowSSHKey.asf_uid)
-            .order_by(sql.WorkflowSSHKey.asf_uid)
-        )
-        workflow_rows = await data.execute_query(workflow_stmt)
-        workflow_key_counts = [(row[0], row[1]) for row in workflow_rows]
-
-    rendered_form = await form.render(
-        model_cls=RevokeUserSSHKeysForm,
-        submit_label="Revoke all SSH keys",
-    )
-    return await template.render(
-        "revoke-user-ssh-keys.html",
-        form=rendered_form,
-        ssh_key_counts=ssh_key_counts,
-        workflow_key_counts=workflow_key_counts,
-    )
-
-
-@admin.typed
-async def revoke_user_ssh_keys_post(
-    session: web.Committer,
-    _revoke_user_ssh_keys: Literal["revoke-user-ssh-keys"],
-    revoke_form: RevokeUserSSHKeysForm,
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /revoke-user-ssh-keys
-
-    Revoke all SSH keys for a specified user.
-    """
-    target_uid = revoke_form.asf_uid
-
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        persistent_count, workflow_count = await wafa.ssh.revoke_all_user_keys(target_uid)
-
-    total = persistent_count + workflow_count
-    if total > 0:
-        parts = []
-        if persistent_count > 0:
-            parts.append(util.plural(persistent_count, "persistent key"))
-        if workflow_count > 0:
-            parts.append(util.plural(workflow_count, "workflow key"))
-        await quart.flash(f"Revoked {' and '.join(parts)} for {target_uid}.", "success")
-    else:
-        await quart.flash(f"No SSH keys found for {target_uid}.", "info")
-
-    return await session.redirect(revoke_user_ssh_keys_get)
-
-
-@admin.typed
-async def revoke_user_tokens_get(_session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"]) -> str:
-    """
-    URL: GET /revoke-user-tokens
-
-    Revoke all Personal Access Tokens for a specified user.
-    """
-    # (uid, owned_count, minted_count). owned counts user PATs the uid holds;
-    # minted counts system PATs the uid created. Both are revoked by the form
-    # below, so they need to appear in the same view.
-    token_counts: list[tuple[str, int, int]] = []
-    async with db.session() as data:
-        via = sql.validate_instrumented_attribute
-        owned_stmt = (
-            sqlmodel.select(sql.PersonalAccessToken.asfuid, sqlmodel.func.count())
-            .where(via(sql.PersonalAccessToken.asfuid).is_not(None))
-            .group_by(sql.PersonalAccessToken.asfuid)
-        )
-        minted_stmt = (
-            sqlmodel.select(sql.PersonalAccessToken.created_by, sqlmodel.func.count())
-            .where(via(sql.PersonalAccessToken.is_system).is_(True))
-            .group_by(sql.PersonalAccessToken.created_by)
-        )
-        owned_rows = await data.execute_query(owned_stmt)
-        minted_rows = await data.execute_query(minted_stmt)
-
-        owned = {row[0]: row[1] for row in owned_rows}
-        minted = {row[0]: row[1] for row in minted_rows}
-        token_counts = sorted(
-            ((uid, owned.get(uid, 0), minted.get(uid, 0)) for uid in (owned.keys() | minted.keys())),
-            key=lambda row: row[0],
-        )
-
-    rendered_form = await form.render(
-        model_cls=RevokeUserTokensForm,
-        submit_label="Revoke all tokens",
-    )
-    return await template.render(
-        "revoke-user-tokens.html",
-        form=rendered_form,
-        token_counts=token_counts,
-    )
-
-
-@admin.typed
-async def revoke_user_tokens_post(
-    session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"], revoke_form: RevokeUserTokensForm
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /revoke-user-tokens
-
-    Revoke all Personal Access Tokens for a specified user.
-    """
-    # audit_guidance PAT revocation does not terminate web sessions
-    # audit_guidance PATs and OAuth sessions are independent auth paths
-    target_uid = revoke_form.asf_uid
-
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        count = await wafa.tokens.revoke_all_user_tokens(target_uid)
-
-    if count > 0:
-        await quart.flash(f"Revoked {util.plural(count, 'token')} for {target_uid}.", "success")
-    else:
-        await quart.flash(f"No tokens found for {target_uid}.", "info")
-
-    return await session.redirect(revoke_user_tokens_get)
-
-
-@admin.typed
-async def rotate_jwt_key_get(_session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"]) -> str:
-    """
-    URL: GET /rotate-jwt-key
-    """
-    rendered_form = await form.render(
-        model_cls=RotateJwtKeyForm,
-        submit_label="Rotate JWT key",
-    )
-    return await _rotate_jwt_key_page(rendered_form)
-
-
-@admin.typed
-async def rotate_jwt_key_post(
-    session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"], _rotate_form: RotateJwtKeyForm
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /rotate-jwt-key
-    """
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        await wafa.tokens.rotate_jwt_signing_key()
-    await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
-    return await session.redirect(rotate_jwt_key_get)
-
-
-@admin.typed
-async def system_tokens_create_post(
-    session: web.Committer,
-    _system_tokens_create: Literal["system-tokens/create"],
-    create_form: CreateSystemTokenForm,
-) -> web.WerkzeugResponse:
-    """
-    URL: POST /system-tokens/create
-
-    Mint a system token and show its secret once.
-    """
-    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
-    token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
-    created = datetime.datetime.now(datetime.UTC)
-    expires = created + datetime.timedelta(days=shared.tokens.PAT_EXPIRY_DAYS)
-    allowed_ip = create_form.allowed_ip.strip() or None
-
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        await wafa.tokens.add_system_token(token_hash, created, expires, create_form.label, allowed_ip)
-
-    await web.flash_success(
-        htm.p[
-            htm.strong["New system token"],
-            " (",
-            htm.code[create_form.label],
-            "): ",
-            htm.code(".bg-light.border.rounded.px-1.text-break")[plaintext],
-        ],
-        htm.p(".mb-0")["Copy it now - it will not be shown again."],
-    )
-    return await session.redirect(system_tokens_get)
-
-
-@admin.typed
-async def system_tokens_get(session: web.Committer, _system_tokens: Literal["system-tokens"]) -> str:
-    """
-    URL: GET /system-tokens
-
-    Mint and manage system tokens.
-    """
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        tokens = await wafa.tokens.list_system_tokens()
-
-    create_form = await form.render(
-        model_cls=CreateSystemTokenForm,
-        action=util.as_url(system_tokens_create_post),
-        submit_label="Create system token",
-    )
-    rows = []
-    for token in tokens:
-        revoke_form = await form.render(
-            model_cls=RevokeSystemTokenForm,
-            action=util.as_url(system_tokens_revoke_post),
-            form_classes=".mb-0",
-            submit_classes="btn-sm btn-danger",
-            submit_label="Revoke",
-            confirm="Revoke this system token? Any JWTs issued from it stop working immediately.",
-            defaults={"token_id": token.id},
-            empty=True,
-        )
-        rows.append((token, revoke_form))
-    return await template.render(
-        "system-tokens.html",
-        create_form=create_form,
-        rows=rows,
-        format_datetime=util.format_datetime,
-    )
-
-
-@admin.typed
-async def system_tokens_revoke_post(
-    session: web.Committer,
-    _system_tokens_revoke: Literal["system-tokens/revoke"],
-    revoke_form: RevokeSystemTokenForm,
-) -> web.WerkzeugResponse:
-    """
-    URL: POST /system-tokens/revoke
-
-    Revoke a single system token.
-    """
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        revoked = await wafa.tokens.revoke_system_token(revoke_form.token_id)
-
-    if revoked:
-        await quart.flash("System token revoked.", "success")
-    else:
-        await quart.flash("System token not found.", "info")
-    return await session.redirect(system_tokens_get)
 
 
 @admin.typed
@@ -2653,6 +2288,32 @@ async def toggle_view_post(
     if referrer and web.valid_url(referrer, quart.request.host):
         return quart.redirect(referrer)
     return quart.redirect("https://" + quart.request.host + "/")
+
+
+@admin.typed
+async def users_get(session: web.Committer, _users: Literal["users"]) -> str:
+    return await _users_page(session, quart.request.args.get("tab", "browse-as"))
+
+
+@admin.typed
+async def users_post(
+    session: web.Committer, _users: Literal["users"], users_form: UsersForm
+) -> str | web.WerkzeugResponse:
+    match users_form:
+        case BrowseAsUserForm():
+            return await _users_browse_as(session, users_form)
+        case LdapLookupForm():
+            return await _users_page(session, "ldap", ldap_form=users_form)
+        case RevokeUserTokensForm():
+            return await _users_revoke_tokens(session, users_form)
+        case RevokeUserSSHKeysForm():
+            return await _users_revoke_ssh_keys(session, users_form)
+        case RotateJwtKeyForm():
+            return await _users_rotate_jwt(session)
+        case CreateSystemTokenForm():
+            return await _users_system_token_create(session, users_form)
+        case RevokeSystemTokenForm():
+            return await _users_system_token_revoke(session, users_form)
 
 
 @admin.typed
@@ -3033,19 +2694,6 @@ def _require_non_production_mode() -> None:
         quart.abort(404)
 
 
-async def _rotate_jwt_key_page(rendered_form: htm.Element) -> str:
-    page = htm.Block()
-    page.h1["Rotate JWT key"]
-    page.p["Rotate the JWT signing key immediately. This will invalidate all currently usable JWTs."]
-
-    page.append(rendered_form)
-
-    return await template.blank(
-        title="Rotate JWT key",
-        content=page.collect(),
-    )
-
-
 async def _update_keys(asf_uid: str) -> int:
     async def _log_process(process: asyncio.subprocess.Process) -> None:
         try:
@@ -3088,6 +2736,322 @@ async def _update_keys(asf_uid: str) -> int:
     task.add_done_callback(app.background_tasks.discard)
 
     return process.pid
+
+
+async def _users_browse_as(session: web.Committer, browse_form: BrowseAsUserForm) -> web.WerkzeugResponse:
+    # We specifically need to use this on the production server
+    import atr.get.root as root
+
+    new_uid = browse_form.uid
+
+    try:
+        committer = principal.Committer(safe.AsfUid(new_uid))
+        await asyncio.to_thread(committer.verify)
+    except (principal.CommitterError, ValueError) as exc:
+        await quart.flash(f"Unable to browse as '{new_uid}': {exc}", "error")
+        return await session.redirect(users_get, tab="browse-as")
+
+    admin_id: str = session.asf_uid
+    existing_admin = session.session.admin_uid
+    if isinstance(existing_admin, str) and existing_admin:
+        admin_id = existing_admin
+
+    await util.write_session(
+        sql.UserSession(
+            uid=committer.uid,
+            fullname=committer.fullname or committer.uid,
+            email=committer.email,
+            is_member=committer.isMember,
+            is_chair=committer.isChair,
+            # is_root=committer.isRoot,
+            member_committees=sorted(set(committer.member_committees)),
+            participant_committees=sorted(set(committer.participant_committees)),
+            mfa=session.session.mfa,
+            admin_uid=admin_id,
+            ip_address=quart.request.remote_addr,
+        )
+    )
+    log.auth_event("impersonate", admin_id, as_user=committer.uid)
+
+    await quart.flash(
+        f"You are now browsing as '{new_uid}'. To return to your own account, please log out and log back in.",
+        "success",
+    )
+    return await session.redirect(root.index)
+
+
+async def _users_browse_as_tab() -> htm.Element:
+    rendered_form = await form.render(
+        model_cls=BrowseAsUserForm,
+        action=util.as_url(users_post, tab="browse-as"),
+        submit_label="Browse as this user",
+    )
+    content = await template.render("browse-as.html", form=rendered_form)
+    return htm.div[markupsafe.Markup(content)]
+
+
+async def _users_ldap_tab(lookup_form: LdapLookupForm | None) -> htm.Element:
+    uid_query = None
+    email_query = None
+    if lookup_form is not None:
+        # TODO: This is one case where we should perhaps allow str | None on the form
+        uid_query = lookup_form.uid if lookup_form.uid else None
+        email_query = lookup_form.email if lookup_form.email else None
+
+    ldap_params: ldap.SearchParameters | None = None
+    if uid_query or email_query:
+        bind_dn = quart.current_app.config.get("LDAP_BIND_DN")
+        bind_password = quart.current_app.config.get("LDAP_BIND_PASSWORD")
+
+        start = time.perf_counter_ns()
+        ldap_params = ldap.SearchParameters(
+            uid_query=uid_query,
+            email_query=email_query,
+            bind_dn_from_config=bind_dn,
+            bind_password_from_config=bind_password,
+        )
+        await asyncio.to_thread(ldap.search, ldap_params)
+        end = time.perf_counter_ns()
+        log.info(f"LDAP search took {(end - start) / 1000000} ms")
+
+    rendered_form = await form.render(
+        model_cls=LdapLookupForm,
+        action=util.as_url(users_post, tab="ldap"),
+        submit_label="Lookup",
+        defaults={"uid": uid_query, "email": email_query},
+    )
+    content = await template.render(
+        "ldap-lookup.html",
+        form=rendered_form,
+        ldap_params=ldap_params,
+        ldap_query_performed=ldap_params is not None,
+        uid_query=uid_query,
+    )
+    return htm.div[markupsafe.Markup(content)]
+
+
+async def _users_page(session: web.Committer, active_tab: str, ldap_form: LdapLookupForm | None = None) -> str:
+    tab_items = [
+        htm.Tab("browse-as", "Browse as user", _users_browse_as_tab),
+        htm.Tab("ldap", "LDAP lookup", lambda: _users_ldap_tab(ldap_form)),
+        htm.Tab("revoke-tokens", "Revoke user tokens", _users_revoke_tokens_tab),
+        htm.Tab("revoke-ssh-keys", "Revoke user SSH keys", _users_revoke_ssh_keys_tab),
+        htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session)),
+        htm.Tab("rotate-jwt", "Rotate JWT key", _users_rotate_jwt_tab),
+    ]
+    page = htm.Block()
+    page.h1["Users"]
+    page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=util.as_url(users_get)))
+    return await template.render("admin-blank.html", title="Users", content=page.collect())
+
+
+async def _users_revoke_ssh_keys(session: web.Committer, revoke_form: RevokeUserSSHKeysForm) -> web.WerkzeugResponse:
+    target_uid = revoke_form.asf_uid
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        persistent_count, workflow_count = await wafa.ssh.revoke_all_user_keys(target_uid)
+
+    total = persistent_count + workflow_count
+    if total > 0:
+        parts = []
+        if persistent_count > 0:
+            parts.append(util.plural(persistent_count, "persistent key"))
+        if workflow_count > 0:
+            parts.append(util.plural(workflow_count, "workflow key"))
+        await quart.flash(f"Revoked {' and '.join(parts)} for {target_uid}.", "success")
+    else:
+        await quart.flash(f"No SSH keys found for {target_uid}.", "info")
+
+    return await session.redirect(users_get, tab="revoke-ssh-keys")
+
+
+async def _users_revoke_ssh_keys_tab() -> htm.Element:
+    via = sql.validate_instrumented_attribute
+    ssh_key_counts: list[tuple[str, int]] = []
+    workflow_key_counts: list[tuple[str, int]] = []
+    async with db.session() as data:
+        ssh_stmt = (
+            sqlmodel.select(
+                sql.SSHKey.asf_uid,
+                sqlmodel.func.count(),
+            )
+            .group_by(sql.SSHKey.asf_uid)
+            .order_by(sql.SSHKey.asf_uid)
+        )
+        ssh_rows = await data.execute_query(ssh_stmt)
+        ssh_key_counts = [(row[0], row[1]) for row in ssh_rows]
+
+        workflow_stmt = (
+            sqlmodel.select(
+                sql.WorkflowSSHKey.asf_uid,
+                sqlmodel.func.count(),
+            )
+            .where(
+                via(sql.WorkflowSSHKey.revoked).is_(False),
+                sql.WorkflowSSHKey.expires > int(time.time()),
+            )
+            .group_by(sql.WorkflowSSHKey.asf_uid)
+            .order_by(sql.WorkflowSSHKey.asf_uid)
+        )
+        workflow_rows = await data.execute_query(workflow_stmt)
+        workflow_key_counts = [(row[0], row[1]) for row in workflow_rows]
+
+    rendered_form = await form.render(
+        model_cls=RevokeUserSSHKeysForm,
+        action=util.as_url(users_post, tab="revoke-ssh-keys"),
+        submit_label="Revoke all SSH keys",
+    )
+    content = await template.render(
+        "revoke-user-ssh-keys.html",
+        form=rendered_form,
+        ssh_key_counts=ssh_key_counts,
+        workflow_key_counts=workflow_key_counts,
+    )
+    return htm.div[markupsafe.Markup(content)]
+
+
+async def _users_revoke_tokens(session: web.Committer, revoke_form: RevokeUserTokensForm) -> web.WerkzeugResponse:
+    # audit_guidance PAT revocation does not terminate web sessions
+    # audit_guidance PATs and OAuth sessions are independent auth paths
+    target_uid = revoke_form.asf_uid
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        count = await wafa.tokens.revoke_all_user_tokens(target_uid)
+
+    if count > 0:
+        await quart.flash(f"Revoked {util.plural(count, 'token')} for {target_uid}.", "success")
+    else:
+        await quart.flash(f"No tokens found for {target_uid}.", "info")
+
+    return await session.redirect(users_get, tab="revoke-tokens")
+
+
+async def _users_revoke_tokens_tab() -> htm.Element:
+    # (uid, owned_count, minted_count). owned counts user PATs the uid holds;
+    # minted counts system PATs the uid created. Both are revoked by the form
+    # below, so they need to appear in the same view.
+    token_counts: list[tuple[str, int, int]] = []
+    async with db.session() as data:
+        via = sql.validate_instrumented_attribute
+        owned_stmt = (
+            sqlmodel.select(sql.PersonalAccessToken.asfuid, sqlmodel.func.count())
+            .where(via(sql.PersonalAccessToken.asfuid).is_not(None))
+            .group_by(sql.PersonalAccessToken.asfuid)
+        )
+        minted_stmt = (
+            sqlmodel.select(sql.PersonalAccessToken.created_by, sqlmodel.func.count())
+            .where(via(sql.PersonalAccessToken.is_system).is_(True))
+            .group_by(sql.PersonalAccessToken.created_by)
+        )
+        owned_rows = await data.execute_query(owned_stmt)
+        minted_rows = await data.execute_query(minted_stmt)
+
+        owned = {row[0]: row[1] for row in owned_rows}
+        minted = {row[0]: row[1] for row in minted_rows}
+        token_counts = sorted(
+            ((uid, owned.get(uid, 0), minted.get(uid, 0)) for uid in (owned.keys() | minted.keys())),
+            key=lambda row: row[0],
+        )
+
+    rendered_form = await form.render(
+        model_cls=RevokeUserTokensForm,
+        action=util.as_url(users_post, tab="revoke-tokens"),
+        submit_label="Revoke all tokens",
+    )
+    content = await template.render("revoke-user-tokens.html", form=rendered_form, token_counts=token_counts)
+    return htm.div[markupsafe.Markup(content)]
+
+
+async def _users_rotate_jwt(session: web.Committer) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.tokens.rotate_jwt_signing_key()
+    await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
+    return await session.redirect(users_get, tab="rotate-jwt")
+
+
+async def _users_rotate_jwt_tab() -> htm.Element:
+    rendered_form = await form.render(
+        model_cls=RotateJwtKeyForm,
+        action=util.as_url(users_post, tab="rotate-jwt"),
+        submit_label="Rotate JWT key",
+    )
+    block = htm.Block()
+    block.h2["Rotate JWT key"]
+    block.p["Rotate the JWT signing key immediately. This will invalidate all currently usable JWTs."]
+    block.append(rendered_form)
+    return block.collect()
+
+
+async def _users_system_token_create(
+    session: web.Committer, create_form: CreateSystemTokenForm
+) -> web.WerkzeugResponse:
+    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
+    created = datetime.datetime.now(datetime.UTC)
+    expires = created + datetime.timedelta(days=shared.tokens.PAT_EXPIRY_DAYS)
+    allowed_ip = create_form.allowed_ip.strip() or None
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.tokens.add_system_token(token_hash, created, expires, create_form.label, allowed_ip)
+
+    await web.flash_success(
+        htm.p[
+            htm.strong["New system token"],
+            " (",
+            htm.code[create_form.label],
+            "): ",
+            htm.code(".bg-light.border.rounded.px-1.text-break")[plaintext],
+        ],
+        htm.p(".mb-0")["Copy it now - it will not be shown again."],
+    )
+    return await session.redirect(users_get, tab="system-tokens")
+
+
+async def _users_system_token_revoke(
+    session: web.Committer, revoke_form: RevokeSystemTokenForm
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        revoked = await wafa.tokens.revoke_system_token(revoke_form.token_id)
+
+    if revoked:
+        await quart.flash("System token revoked.", "success")
+    else:
+        await quart.flash("System token not found.", "info")
+    return await session.redirect(users_get, tab="system-tokens")
+
+
+async def _users_system_tokens_tab(session: web.Committer) -> htm.Element:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        tokens = await wafa.tokens.list_system_tokens()
+
+    action = util.as_url(users_post, tab="system-tokens")
+    create_form = await form.render(model_cls=CreateSystemTokenForm, action=action, submit_label="Create system token")
+    rows = []
+    for token in tokens:
+        revoke_form = await form.render(
+            model_cls=RevokeSystemTokenForm,
+            action=action,
+            form_classes=".mb-0",
+            submit_classes="btn-sm btn-danger",
+            submit_label="Revoke",
+            confirm="Revoke this system token? Any JWTs issued from it stop working immediately.",
+            defaults={"token_id": token.id},
+            empty=True,
+        )
+        rows.append((token, revoke_form))
+    content = await template.render(
+        "system-tokens.html",
+        create_form=create_form,
+        rows=rows,
+        format_datetime=util.format_datetime,
+    )
+    return htm.div[markupsafe.Markup(content)]
 
 
 async def _validate_jwt_page(rendered_form: htm.Element, result: dict[str, Any] | None) -> str:

@@ -147,7 +147,7 @@ def _mint_system_jwt(page: Page) -> str:
     # The asfyaml import is a system operation, so we mint a system PAT from the admin
     # page and exchange it at jwt/create. That endpoint spots the system PAT and hands
     # back a JWT carrying the atr_sys claim - the /tokens UI flow only issues user JWTs.
-    helpers.visit(page, "/admin/system-tokens")
+    helpers.visit(page, "/admin/users?tab=system-tokens")
     page.locator('input[name="label"]').fill("e2e-asfyaml-roundtrip")
     page.get_by_role("button", name="Create system token").click()
     page.wait_for_load_state()

@@ -69,7 +69,7 @@ def test_revoke_shows_error_for_wrong_confirmation(page_revoke_tokens: Page) -> 
 def test_revoke_tokens_nav_link_exists(page_revoke_tokens: Page) -> None:
     """The admin dropdown should contain a 'Revoke user tokens' link."""
     page = page_revoke_tokens
-    nav_link = page.locator('a.dropdown-item:has-text("Revoke user tokens")')
+    nav_link = page.locator('a.nav-link:has-text("Revoke user tokens")')
     expect(nav_link).to_have_count(1)
 
 
@@ -94,7 +94,7 @@ def test_revoke_tokens_page_has_uid_input(page_revoke_tokens: Page) -> None:
 
 
 def test_revoke_tokens_page_loads(page_revoke_tokens: Page) -> None:
-    expect(page_revoke_tokens).to_have_title("Revoke user tokens ~ ATR")
+    expect(page_revoke_tokens).to_have_title("Users ~ ATR")
 
 
 def test_revoke_tokens_page_shows_no_tokens_message_when_empty(

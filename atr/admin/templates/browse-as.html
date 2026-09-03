@@ -1,18 +1,8 @@
-{% extends "layouts/base-admin.html" %}
+<h2>Browse as user</h2>
 
-{% block title %}Browse as user{% endblock title %}
+<p class="mb-4">
+  Enter the ASF UID of the user to browse as.
+  This will allow you to view the site as that user.
+</p>
 
-{% block description %}
-    Enter the ASF UID of the user to browse as.
-{% endblock description %}
-
-{% block content %}
-    <h1>Browse as user</h1>
-
-    <p class="mb-4">
-        Enter the ASF UID of the user to browse as.
-        This will allow you to view the site as that user.
-    </p>
-
-    {{ form }}
-{% endblock %}
+{{ form }}

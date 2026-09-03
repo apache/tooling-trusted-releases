@@ -106,7 +106,7 @@ Committers can obtain PATs from the `/tokens` page on the ATR website. PATs have
 * **Validity**: 180 days from creation, while LDAP account is still active
 * **Format**: New PATs are Noisy Secrets using the `tooling.apache.org` namespace
 * **Storage**: ATR stores only SHA3-256 hashes, never the plaintext PAT
-* **Revocation**: Users can revoke their own PATs at any time; admins can revoke all PATs for any user via the admin "Revoke user tokens" page
+* **Revocation**: Users can revoke their own PATs at any time; admins can revoke all PATs for any user via the "Revoke user tokens" tab of the admin Users dashboard
 * **IP restriction**: A PAT may optionally be bound to a single IP or CIDR. When set, JWT issuance is refused from any other address
 * **Purpose**: PATs are used solely to obtain JWTs; they cannot be used directly for API access
 
