@@ -16,6 +16,7 @@
 # under the License.
 
 import collections
+import dataclasses
 from collections.abc import Callable
 from typing import Literal, NamedTuple
 
@@ -36,6 +37,7 @@ import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
@@ -45,6 +47,11 @@ import atr.storage.datatypes as datatypes
 import atr.template as template
 import atr.util as util
 import atr.web as web
+
+
+@dataclasses.dataclass
+class ChecksQuery(web.PageQuery):
+    limit: int = 250
 
 
 class FileStats(NamedTuple):
@@ -75,12 +82,20 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
 
 @get.typed
 async def selected(
-    session: web.Public, _checks: Literal["checks"], project_key: safe.ProjectKey, version_key: safe.VersionKey
+    session: web.Public,
+    _checks: Literal["checks"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    query_args: ChecksQuery,
 ) -> str:
     """
     URL: /checks/<project_key>/<version_key>
     Show the file checks for a release candidate.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise base.ASFQuartException(str(e), errorcode=400)
     async with db.session() as data:
         release = await data.release(
             project_key=str(project_key),
@@ -103,13 +118,20 @@ async def selected(
         info = await ragp.releases.path_info(release, all_paths)
 
     per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
+    page_paths = all_paths[query_args.offset : (query_args.offset + query_args.limit)]
+    pagination = web.page_nav(query_args.offset, query_args.limit, len(all_paths), len(page_paths))
+    paged = (pagination.previous_offset is not None) or (pagination.next_offset is not None)
 
     page = htm.Block()
     _render_header(page, release)
     _render_summary(page, totals, all_paths, per_file_stats)
     if summary_card := render.render_checks_summary(info, project_key, version_key):
         page.append(summary_card)
-    _render_checks_table(page, release, all_paths, per_file_stats, info)
+    if paged and page_paths:
+        page.p[f"Showing files {pagination.start} to {pagination.end} of {len(all_paths)}."]
+    _render_checks_table(page, release, page_paths, len(all_paths), per_file_stats, info)
+    if paged:
+        _render_page_nav(page, release, query_args.limit, pagination)
 
     return await template.blank(
         f"File checks for {release.project.short_display_name} {release.version}",
@@ -310,6 +332,14 @@ def _issue_count_after(stats: FileStats) -> int:
     return stats.total_after(sql.CheckResultStatus.CONCERN) + stats.total_after(sql.CheckResultStatus.BLOCKER)
 
 
+def _page_url(release: sql.Release, limit: int, offset: int | None) -> str | None:
+    if offset is None:
+        return None
+    return util.as_url(
+        selected, project_key=release.project.key, version_key=release.version, limit=limit, offset=offset
+    )
+
+
 def _path_display(path_str: str, severity: sql.CheckResultStatus | None, has_checks_before: bool) -> htm.Element:
     if (severity is not None) and (severity_class := render.PATH_STYLE_CLASS.get(severity)):
         return htpy.strong[htpy.code(f".{severity_class}")[path_str]]
@@ -322,11 +352,15 @@ def _render_checks_table(
     page: htm.Block,
     release: sql.Release,
     paths: list[safe.RelPath],
+    count: int,
     per_file_stats: dict[safe.RelPath, FileStats],
     info: datatypes.PathInfo | None,
 ) -> None:
-    if not paths:
+    if count == 0:
         page.div(".alert.alert-info")["This release candidate does not have any files."]
+        return
+    if not paths:
+        page.div(".alert.alert-info")[f"No files to show on this page ({count} total)."]
         return
 
     table = htm.Block(htpy.table, classes=".table.table-striped.align-middle.table-sm.mb-0.border")
@@ -424,6 +458,15 @@ def _render_header(page: htm.Block, release: sql.Release) -> None:
         " ",
         htm.em[release.version],
     ]
+
+
+def _render_page_nav(page: htm.Block, release: sql.Release, limit: int, pagination: web.PageNav) -> None:
+    render.html_page_nav(
+        page,
+        aria_label="File checks pages",
+        previous_url=_page_url(release, limit, pagination.previous_offset),
+        next_url=_page_url(release, limit, pagination.next_offset),
+    )
 
 
 def _render_summary(

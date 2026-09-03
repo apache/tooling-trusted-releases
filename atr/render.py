@@ -229,6 +229,14 @@ def html_nav_phase(block: htm.Block, project: str, version: str, staging: bool) 
     )
 
 
+def html_page_nav(container: htm.Block, *, aria_label: str, previous_url: str | None, next_url: str | None) -> None:
+    container.append(
+        htpy.nav(aria_label=aria_label)[
+            htpy.ul(".pagination")[_page_link("Previous", previous_url), _page_link("Next", next_url)]
+        ]
+    )
+
+
 def html_recipients_cc_bcc_table(
     recipients: list[str],
     selected_cc: set[str] | None = None,
@@ -361,6 +369,12 @@ def render_checks_summary(
 
     card.append(body.collect())
     return card.collect()
+
+
+def _page_link(label: str, url: str | None) -> htm.Element:
+    if url is None:
+        return htpy.li(".page-item.disabled")[htpy.span(".page-link")[label]]
+    return htpy.li(".page-item")[htpy.a(".page-link", href=url)[label]]
 
 
 def _render_checker_entry(
