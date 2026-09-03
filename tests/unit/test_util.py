@@ -19,13 +19,27 @@ import json
 import os
 import pathlib
 import stat
+import types
 import unittest.mock as mock
 
 import aiohttp
 import pytest
 
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.util as util
+
+
+def test_announce_recipients_use_users_list_for_maven(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("atr.config.get", lambda: types.SimpleNamespace(ATR_STATUS="PRODUCTION"))
+
+    configurable = util.configurable_recipients(sql.RecipientAction.ANNOUNCE, "maven", is_podling=False)
+    permitted = util.permitted_announce_recipients("testuser", "maven")
+
+    assert "users@maven.apache.org" in configurable
+    assert "users@maven.apache.org" in permitted
+    assert "user@maven.apache.org" not in configurable
+    assert "user@maven.apache.org" not in permitted
 
 
 def test_chmod_files_does_not_change_directory_permissions(tmp_path: pathlib.Path):

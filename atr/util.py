@@ -113,6 +113,75 @@ PRIVATE_KEY_UPLOAD_WARNING: Final[str] = (
     "immediately, remove it anywhere that it grants access, and generate a new key before signing releases."
 )
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
+USERS_LIST_COMMITTEES: Final[frozenset[str]] = frozenset(
+    {
+        "activemq",
+        "age",
+        "airavata",
+        "airflow",
+        "allura",
+        "artemis",
+        "asterixdb",
+        "burr",
+        "camel",
+        "causeway",
+        "cloudstack",
+        "cxf",
+        "daffodil",
+        "datasketches",
+        "deltaspike",
+        "directory",
+        "dolphinscheduler",
+        "druid",
+        "eventmesh",
+        "felix",
+        "flex",
+        "grails",
+        "groovy",
+        "hamilton",
+        "hop",
+        "httpd",
+        "hudi",
+        "jackrabbit",
+        "jena",
+        "kafka",
+        "kie",
+        "libcloud",
+        "linkis",
+        "maven",
+        "mina",
+        "myfaces",
+        "netbeans",
+        "nifi",
+        "openjpa",
+        "opennlp",
+        "openoffice",
+        "pdfbox",
+        "pekko",
+        "pinot",
+        "ponymail",
+        "pulsar",
+        "qpid",
+        "rocketmq",
+        "royale",
+        "seatunnel",
+        "sling",
+        "solr",
+        "spamassassin",
+        "streampipes",
+        "subversion",
+        "tapestry",
+        "tomcat",
+        "tomee",
+        "tooling",
+        "trafficserver",
+        "uniffle",
+        "unomi",
+        "wicket",
+        "ws",
+        "zeppelin",
+    }
+)
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 CAP_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 PROPAGATION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10, connect=5)
@@ -581,11 +650,12 @@ def configurable_recipients(action: sql.RecipientAction, committee_key: str, *, 
     # These don't depend on the sender or on ALPHA test addresses, so a stored
     # default stays valid for whoever later sends the email.
     if action == sql.RecipientAction.ANNOUNCE:
+        user_list_name = "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
         return [
             "announce@apache.org",
             f"announce@{committee_key}.apache.org",
             f"dev@{committee_key}.apache.org",
-            f"user@{committee_key}.apache.org",
+            f"{user_list_name}@{committee_key}.apache.org",
             f"private@{committee_key}.apache.org",
         ]
     if is_podling:
@@ -1248,11 +1318,12 @@ def permitted_announce_recipients(
         return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
     recipients = ["announce@apache.org"]
     if committee_key is not None:
+        user_list_name = "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
         recipients.extend(
             [
                 f"announce@{committee_key}.apache.org",
                 f"dev@{committee_key}.apache.org",
-                f"user@{committee_key}.apache.org",
+                f"{user_list_name}@{committee_key}.apache.org",
                 f"private@{committee_key}.apache.org",
             ]
         )
