@@ -16,6 +16,7 @@
 # under the License.
 
 import collections
+import dataclasses
 import datetime
 from typing import Literal
 
@@ -27,11 +28,17 @@ import atr.blueprints.get as get
 import atr.db as db
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.storage as storage
 import atr.template as template
 import atr.util as util
 import atr.web as web
+
+
+@dataclasses.dataclass
+class ReportQuery(web.PageQuery):
+    limit: int = 250
 
 
 @get.typed
@@ -41,11 +48,16 @@ async def selected_path(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     rel_path: safe.RelPath,
+    query_args: ReportQuery,
 ) -> str:
     """
     URL: /report/<project_key>/<version_key>/<rel_path>
     Show the report for a specific file.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise base.ASFQuartException(str(e), errorcode=400)
     validated_path = rel_path.as_path()
 
     # If the draft is not found, we try to get the release candidate
@@ -91,7 +103,9 @@ async def selected_path(
     # Get all check results for this file
     async with storage.read() as read:
         ragp = read.as_general_public()
-        check_results = await ragp.checks.by_release_path(release, validated_path)
+        check_results = await ragp.checks.by_release_path(release, validated_path, query_args.offset, query_args.limit)
+    shown = sum(len(results) for results in check_results.member_results_list.values())
+    page = web.page_nav(query_args.offset, query_args.limit, check_results.member_count, shown)
 
     file_data = {
         "filename": validated_path.name,
@@ -107,16 +121,21 @@ async def selected_path(
         rel_path=str(rel_path),
         package=file_data,
         release=release,
-        reconciliation=_reconciliation(check_results.primary_results_list, check_results.member_results_list),
+        reconciliation=_reconciliation(check_results.primary_results_list, check_results.member_status_counts),
         primary_results=check_results.primary_results_list,
         member_results=check_results.member_results_list,
+        member_count=check_results.member_count,
+        member_note_count=check_results.member_note_count,
+        limit=query_args.limit,
+        page=page,
         format_file_size=util.format_file_size,
     )
 
 
-def _reconciliation(primary_results: list[sql.CheckResult], member_results: dict[str, list[sql.CheckResult]]) -> str:
+def _reconciliation(
+    primary_results: list[sql.CheckResult], member_counts: collections.Counter[sql.CheckResultStatus]
+) -> str:
     primary_counts = collections.Counter(result.status for result in primary_results)
-    member_counts = collections.Counter(result.status for results in member_results.values() for result in results)
     sentences: list[str] = []
     for status in (
         sql.CheckResultStatus.BLOCKER,

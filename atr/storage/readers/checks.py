@@ -18,7 +18,8 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import collections
+from typing import TYPE_CHECKING, Final
 
 import atr.db as db
 import atr.db.interaction as interaction
@@ -31,6 +32,13 @@ import atr.util as util
 if TYPE_CHECKING:
     import pathlib
     from collections.abc import Callable
+
+MEMBER_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (
+    sql.CheckResultStatus.BLOCKER,
+    sql.CheckResultStatus.CONCERN,
+    sql.CheckResultStatus.EXCEPTION,
+    sql.CheckResultStatus.SUGGESTION,
+)
 
 
 class GeneralPublic:
@@ -46,17 +54,24 @@ class GeneralPublic:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def by_release_path(self, release: sql.Release, rel_path: pathlib.Path) -> datatypes.CheckResults:
+    async def by_release_path(
+        self, release: sql.Release, rel_path: pathlib.Path, offset: int, limit: int
+    ) -> datatypes.CheckResults:
         if release.latest_revision_number is None:
             raise ValueError("Release has no revision - Invalid state")
 
-        all_check_results = await interaction.checks_for(release, rel_path=str(rel_path), caller_data=self.__data)
+        path = str(rel_path)
+        primary_checks = await interaction.checks_for(release, rel_path=path, member=False, caller_data=self.__data)
+        member_checks = await interaction.checks_for(
+            release, rel_path=path, member=True, statuses=MEMBER_STATUSES, caller_data=self.__data
+        )
+        member_note_count = await interaction.member_note_count(release, path, caller_data=self.__data)
 
         # Filter out any results that are ignored
         unignored_checks = []
         ignored_checks = []
         match_ignore = await self.ignores_matcher(release.safe_project_key)
-        for cr in all_check_results:
+        for cr in primary_checks + member_checks:
             if not match_ignore(cr):
                 unignored_checks.append(cr)
             else:
@@ -64,20 +79,29 @@ class GeneralPublic:
 
         # Filter to separate the primary and member results
         primary_results_list = []
-        member_results_list: dict[str, list[sql.CheckResult]] = {}
+        member_results: list[sql.CheckResult] = []
         for result in unignored_checks:
             if result.member_rel_path is None:
                 primary_results_list.append(result)
             else:
-                member_results_list.setdefault(result.member_rel_path, []).append(result)
+                member_results.append(result)
 
         # Order primary results by checker name
         primary_results_list.sort(key=lambda r: r.checker)
 
         # Order member results by relative path and then by checker name
-        for member_rel_path in sorted(member_results_list.keys()):
-            member_results_list[member_rel_path].sort(key=lambda r: r.checker)
-        return datatypes.CheckResults(primary_results_list, member_results_list, ignored_checks)
+        member_results.sort(key=lambda r: (r.member_rel_path or "", r.checker))
+        member_results_list: dict[str, list[sql.CheckResult]] = {}
+        for result in member_results[offset : (offset + limit)]:
+            member_results_list.setdefault(result.member_rel_path or "", []).append(result)
+        return datatypes.CheckResults(
+            primary_results_list,
+            member_results_list,
+            ignored_checks,
+            len(member_results),
+            collections.Counter(result.status for result in member_results),
+            member_note_count,
+        )
 
     async def ignores(self, project_key: safe.ProjectKey) -> list[sql.CheckResultIgnore]:
         results = await self.__data.check_result_ignore(

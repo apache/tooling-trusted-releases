@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
 import datetime
 
 import atr.get.report as report
@@ -23,7 +24,7 @@ import atr.models.sql as sql
 
 def test_reconciliation_empty_without_member_results() -> None:
     primary = [_check_result(sql.CheckResultStatus.CONCERN)]
-    assert report._reconciliation(primary, {}) == ""
+    assert report._reconciliation(primary, collections.Counter()) == ""
 
 
 def test_reconciliation_splits_primary_and_member_counts() -> None:
@@ -32,14 +33,11 @@ def test_reconciliation_splits_primary_and_member_counts() -> None:
         _check_result(sql.CheckResultStatus.SUGGESTION),
         _check_result(sql.CheckResultStatus.NOTE),
     ]
-    members = {
-        "a.txt": [_check_result(sql.CheckResultStatus.CONCERN, member_rel_path="a.txt")],
-        "b.txt": [_check_result(sql.CheckResultStatus.CONCERN, member_rel_path="b.txt")],
-    }
+    members = collections.Counter({sql.CheckResultStatus.CONCERN: 2})
     assert report._reconciliation(primary, members) == "3 concerns: 1 on this file, 2 on files inside this archive."
 
 
-def _check_result(status: sql.CheckResultStatus, member_rel_path: str | None = None) -> sql.CheckResult:
+def _check_result(status: sql.CheckResultStatus) -> sql.CheckResult:
     return sql.CheckResult(
         id=0,
         release_key="test-0.1",
@@ -47,7 +45,7 @@ def _check_result(status: sql.CheckResultStatus, member_rel_path: str | None = N
         checker="atr.tasks.checks.rat.check_licenses",
         checker_version="4",
         primary_rel_path="source.zip",
-        member_rel_path=member_rel_path,
+        member_rel_path=None,
         created=datetime.datetime.now(datetime.UTC),
         status=status,
         message="test",

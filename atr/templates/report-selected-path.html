@@ -269,9 +269,15 @@
       <p>No verification tasks found for this file.</p>
     {% endif %}
 
-    {% if member_results %}
+    {% if member_count or member_note_count %}
       <h2>Member results</h2>
       <p>This file is an archive. We have extracted the contents of the archive and checked each file individually.</p>
+      {% if member_note_count %}
+        <p>{{ member_note_count }} member note results are not shown on this page.</p>
+      {% endif %}
+      {% if member_results %}
+        <p>Showing member results {{ page.start }} to {{ page.end }} of {{ member_count }}.</p>
+      {% endif %}
       {% set member_status_counts = {"note": 0, "concern": 0, "blocker": 0, "suggestion": 0, "exception": 0} %}
       {% for path, m_results in member_results.items() %}
         {% for m_result in m_results %}
@@ -283,6 +289,7 @@
       {% if (member_status_counts.note > 0) or (member_status_counts.concern > 0) or (member_status_counts.blocker > 0) or (member_status_counts.suggestion > 0) or (member_status_counts.exception > 0) %}
         {% set all_member_are_notes = (member_status_counts.concern == 0) and (member_status_counts.blocker == 0) and (member_status_counts.suggestion == 0) and (member_status_counts.exception == 0) %}
         <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+          <span class="text-muted small">On this page:</span>
           {% for status, count in member_status_counts.items() %}
             {% if count > 0 %}
               <button id="btn-toggle-member-{{ status }}"
@@ -304,55 +311,82 @@
           <input type="text"
                  id="member-path-filter"
                  class="form-control form-control-sm ms-auto w-20"
-                 placeholder="Filter paths..."
+                 placeholder="Filter paths on this page..."
                  aria-label="Filter member paths" />
         </div>
       {% endif %}
 
-      <table class="table table-bordered border mb-3">
-        <thead class="table-light">
-          <tr>
-            <th scope="col" class="w-30">Path</th>
-            <th scope="col" class="w-15">Check</th>
-            <th scope="col">Message</th>
-            <th scope="col" class="text-center w-10">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for member_rel_path, member_results_list in member_results.items() %}
-            {% for member_result in member_results_list %}
+      {% if member_results %}
+        <table class="table table-bordered border mb-3">
+          <thead class="table-light">
+            <tr>
+              <th scope="col" class="w-30">Path</th>
+              <th scope="col" class="w-15">Check</th>
+              <th scope="col">Message</th>
+              <th scope="col" class="text-center w-10">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for member_rel_path, member_results_list in member_results.items() %}
+              {% for member_result in member_results_list %}
               {# The striping class here is now technically redundant because of the JS striping #}
               {# But we leave it here for clean initial page rendering #}
-              <tr class="atr-result-member atr-result-status-{{ member_result.status.value }} {% if (member_result.status.value == 'note') and (not all_member_are_notes) %}atr-hide{% endif %} {% if loop.index is odd %}page-member-visible-odd{% endif %} ">
-                <td class="align-middle">{{ member_rel_path }}</td>
-                <th scope="row" class="align-middle fw-bold">
-                  <a class="atr-link-plain"
-                     href="{{ as_url(get.result.data, project_key=project_key, version_key=version_key, check_id=member_result.id) }}">
-                    {{ function_name_from_key(member_result.checker) }}
-                  </a>
-                </th>
-                <td class="align-middle text-break">
-                  {% if member_result.message %}{{ member_result.message }}{% endif %}
-                </td>
-                <td class="align-middle text-center atr-sans">
-                  <div class="d-inline-flex flex-column align-items-center gap-1">
-                    <span class="badge rounded-pill {% if member_result.status.value == "note" %}bg-success {% elif member_result.status.value == "concern" %}atr-bg-concern {% elif member_result.status.value == "blocker" %}atr-bg-blocker {% elif member_result.status.value == "suggestion" %}atr-bg-suggestion {% elif member_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
-                      {{ member_result.status.value|title }}
-                    </span>
-                    {% if member_result.cached %}
-                      <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle small"
-                            title="Cached result"
-                            aria-label="Cached result">
-                        <i class="bi bi-database me-1"></i>Cached
+                <tr class="atr-result-member atr-result-status-{{ member_result.status.value }} {% if (member_result.status.value == 'note') and (not all_member_are_notes) %}atr-hide{% endif %} {% if loop.index is odd %}page-member-visible-odd{% endif %} ">
+                  <td class="align-middle">{{ member_rel_path }}</td>
+                  <th scope="row" class="align-middle fw-bold">
+                    <a class="atr-link-plain"
+                       href="{{ as_url(get.result.data, project_key=project_key, version_key=version_key, check_id=member_result.id) }}">
+                      {{ function_name_from_key(member_result.checker) }}
+                    </a>
+                  </th>
+                  <td class="align-middle text-break">
+                    {% if member_result.message %}{{ member_result.message }}{% endif %}
+                  </td>
+                  <td class="align-middle text-center atr-sans">
+                    <div class="d-inline-flex flex-column align-items-center gap-1">
+                      <span class="badge rounded-pill {% if member_result.status.value == "note" %}bg-success {% elif member_result.status.value == "concern" %}atr-bg-concern {% elif member_result.status.value == "blocker" %}atr-bg-blocker {% elif member_result.status.value == "suggestion" %}atr-bg-suggestion {% elif member_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
+                        {{ member_result.status.value|title }}
                       </span>
-                    {% endif %}
-                  </div>
-                </td>
-              </tr>
+                      {% if member_result.cached %}
+                        <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle small"
+                              title="Cached result"
+                              aria-label="Cached result">
+                          <i class="bi bi-database me-1"></i>Cached
+                        </span>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
             {% endfor %}
-          {% endfor %}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      {% elif member_count %}
+        <p>No member results to show on this page ({{ member_count }} total).</p>
+      {% endif %}
+
+      {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
+        <nav aria-label="Member result pages">
+          <ul class="pagination">
+            {% if page.previous_offset is not none %}
+              <li class="page-item">
+                <a class="page-link"
+                   href="{{ as_url(get.report.selected_path, project_key=project_key, version_key=version_key, rel_path=rel_path, limit=limit, offset=page.previous_offset) }}">Previous</a>
+              </li>
+            {% else %}
+              <li class="page-item disabled"><span class="page-link">Previous</span></li>
+            {% endif %}
+            {% if page.next_offset is not none %}
+              <li class="page-item">
+                <a class="page-link"
+                   href="{{ as_url(get.report.selected_path, project_key=project_key, version_key=version_key, rel_path=rel_path, limit=limit, offset=page.next_offset) }}">Next</a>
+              </li>
+            {% else %}
+              <li class="page-item disabled"><span class="page-link">Next</span></li>
+            {% endif %}
+          </ul>
+        </nav>
+      {% endif %}
     {% endif %}
 
     <h2>Metadata</h2>

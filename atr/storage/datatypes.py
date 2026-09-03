@@ -40,6 +40,9 @@ class CheckResults:
     primary_results_list: list[sql.CheckResult]
     member_results_list: dict[str, list[sql.CheckResult]]
     ignored_checks: list[sql.CheckResult]
+    member_count: int
+    member_status_counts: collections.Counter[sql.CheckResultStatus]
+    member_note_count: int
 
 
 class KeyStatus(enum.Flag):

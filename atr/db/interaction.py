@@ -292,41 +292,23 @@ async def check_results_for_revision(
     *,
     checker: str | None = None,
     include_legacy_revision_results: bool = False,
+    member: bool | None = None,
     rel_path: str | None = None,
+    statuses: Sequence[sql.CheckResultStatus] | None = None,
     caller_data: db.Session | None = None,
 ) -> list[sql.CheckResult]:
-    file_path_checks = await attestable.load_checks(project_key, version_key, revision_number)
-    check_hashes: list[str] = []
-    if file_path_checks:
-        if rel_path is not None:
-            path_keys = ("", str(rel_path))
-        else:
-            path_keys = tuple(file_path_checks.keys())
-        for path_key in path_keys:
-            for checker_key, check_hash in file_path_checks.get(path_key, {}).items():
-                if (checker is None) or (checker_key == checker):
-                    check_hashes.append(check_hash)
-
+    via = sql.validate_instrumented_attribute
     async with db.ensure_session(caller_data) as data:
-        checker_arg = checker if checker is not None else db.NOT_SET
-        if check_hashes:
-            query = data.check_result(
-                inputs_hash_in=check_hashes,
-                checker=checker_arg,
-                primary_rel_path=rel_path or db.NOT_SET,
-            )
-        elif include_legacy_revision_results:
-            release = await data.release(project_key=str(project_key), version=str(version_key)).get()
-            if release is None:
-                return []
-            query = data.check_result(
-                release_key=release.key,
-                revision_number=str(revision_number),
-                checker=checker_arg,
-                primary_rel_path=rel_path or db.NOT_SET,
-            )
-        else:
+        query = await _check_results_query(
+            data, project_key, version_key, revision_number, checker, include_legacy_revision_results, rel_path
+        )
+        if query is None:
             return []
+        if member is not None:
+            member_rel_path = via(sql.CheckResult.member_rel_path)
+            query = query.where(member_rel_path.is_not(None) if member else member_rel_path.is_(None))
+        if statuses is not None:
+            query = query.where(via(sql.CheckResult.status).in_(statuses))
         return list(
             await query.order_by(
                 sql.validate_instrumented_attribute(sql.CheckResult.checker).asc(),
@@ -340,6 +322,8 @@ async def checks_for(
     release: sql.Release,
     revision: safe.RevisionNumber | None = None,
     rel_path: str | None = None,
+    member: bool | None = None,
+    statuses: Sequence[sql.CheckResultStatus] | None = None,
     caller_data: db.Session | None = None,
 ) -> list[sql.CheckResult]:
     """Get the check results for a release, optionally for a specific revision and/or file path."""
@@ -349,7 +333,9 @@ async def checks_for(
         release.safe_project_key,
         release.safe_version_key,
         revision,
+        member=member,
         rel_path=rel_path,
+        statuses=statuses,
         caller_data=caller_data,
     )
 
@@ -497,6 +483,28 @@ async def latest_revision(release: sql.Release, caller_data: db.Session | None =
         return None
     async with db.ensure_session(caller_data) as data:
         return await data.revision(release_key=release.key, number=release.latest_revision_number).get()
+
+
+async def member_note_count(release: sql.Release, rel_path: str, caller_data: db.Session | None = None) -> int:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = await _check_results_query(
+            data,
+            release.safe_project_key,
+            release.safe_version_key,
+            release.safe_latest_revision_number,
+            None,
+            False,
+            rel_path,
+        )
+        if query is None:
+            return 0
+        notes = query.where(
+            via(sql.CheckResult.member_rel_path).is_not(None),
+            via(sql.CheckResult.status) == sql.CheckResultStatus.NOTE,
+        )
+        result = await data.execute(sqlalchemy.select(sqlalchemy.func.count()).select_from(notes.query.subquery()))
+        return result.scalar_one()
 
 
 async def pending_quarantine_count(release_key: str, caller_data: db.Session | None = None) -> int:
@@ -1170,6 +1178,47 @@ async def wait_for_task(
             # Wait 100ms before checking again
             await asyncio.sleep(0.1)
     return False
+
+
+async def _check_results_query(
+    data: db.Session,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+    checker: str | None,
+    include_legacy_revision_results: bool,
+    rel_path: str | None,
+) -> db.Query[sql.CheckResult] | None:
+    file_path_checks = await attestable.load_checks(project_key, version_key, revision_number)
+    check_hashes: list[str] = []
+    if file_path_checks:
+        if rel_path is not None:
+            path_keys = ("", str(rel_path))
+        else:
+            path_keys = tuple(file_path_checks.keys())
+        for path_key in path_keys:
+            for checker_key, check_hash in file_path_checks.get(path_key, {}).items():
+                if (checker is None) or (checker_key == checker):
+                    check_hashes.append(check_hash)
+
+    checker_arg = checker if checker is not None else db.NOT_SET
+    if check_hashes:
+        return data.check_result(
+            inputs_hash_in=check_hashes,
+            checker=checker_arg,
+            primary_rel_path=rel_path or db.NOT_SET,
+        )
+    if not include_legacy_revision_results:
+        return None
+    release = await data.release(project_key=str(project_key), version=str(version_key)).get()
+    if release is None:
+        return None
+    return data.check_result(
+        release_key=release.key,
+        revision_number=str(revision_number),
+        checker=checker_arg,
+        primary_rel_path=rel_path or db.NOT_SET,
+    )
 
 
 def _svn_publish_result(task: sql.Task) -> results.SvnPublish | None:
