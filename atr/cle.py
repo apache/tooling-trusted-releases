@@ -174,7 +174,7 @@ def _identifier(project: sql.Project, release: sql.Release | None = None) -> str
     (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact catalog (#911),
     not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
     """
-    return f"pkg:scid/{_purl_namespace()}/{project.key}" + ("" if release is None else f"@{release.version}")
+    return f"pkg:sid/{_purl_namespace()}/{project.key}" + ("" if release is None else f"@{release.version}")
 
 
 def _purl_namespace() -> str:
