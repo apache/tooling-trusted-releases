@@ -87,6 +87,7 @@ _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 
 type BROWSE_AS = Literal["BROWSE_AS"]
 type LDAP = Literal["LDAP"]
+type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
 type REVOKE_SSH_KEYS = Literal["REVOKE_SSH_KEYS"]
 type REVOKE_TOKENS = Literal["REVOKE_TOKENS"]
 type ROTATE_JWT = Literal["ROTATE_JWT"]
@@ -136,6 +137,11 @@ class ReleaseAgeRow(NamedTuple):
 
 class RestoreBannerForm(form.Form):
     banner_id: form.Int = form.label("Banner ID", widget=form.Widget.HIDDEN)
+
+
+class RevokeAllTokensForm(form.Form):
+    variant: REVOKE_ALL_TOKENS = form.value(REVOKE_ALL_TOKENS)
+    confirm_revoke: Literal["REVOKE ALL TOKENS"] = form.label("Confirmation", "Type REVOKE ALL TOKENS to confirm.")
 
 
 class RevokeUserTokensForm(form.Form):
@@ -233,6 +239,7 @@ type UsersForm = Annotated[
     BrowseAsUserForm
     | LdapLookupForm
     | RevokeUserTokensForm
+    | RevokeAllTokensForm
     | RevokeUserSSHKeysForm
     | RotateJwtKeyForm
     | CreateSystemTokenForm
@@ -2306,6 +2313,8 @@ async def users_post(
             return await _users_page(session, "ldap", ldap_form=users_form)
         case RevokeUserTokensForm():
             return await _users_revoke_tokens(session, users_form)
+        case RevokeAllTokensForm():
+            return await _users_revoke_all_tokens(session)
         case RevokeUserSSHKeysForm():
             return await _users_revoke_ssh_keys(session, users_form)
         case RotateJwtKeyForm():
@@ -2834,8 +2843,9 @@ async def _users_page(session: web.Committer, active_tab: str, ldap_form: LdapLo
     tab_items = [
         htm.Tab("browse-as", "Browse as user", _users_browse_as_tab),
         htm.Tab("ldap", "LDAP lookup", lambda: _users_ldap_tab(ldap_form)),
-        htm.Tab("revoke-tokens", "Revoke user tokens", _users_revoke_tokens_tab),
-        htm.Tab("revoke-ssh-keys", "Revoke user SSH keys", _users_revoke_ssh_keys_tab),
+        htm.Tab("revoke-tokens", "Revoke tokens", _users_revoke_tokens_tab),
+        htm.Tab("revoke-all-tokens", "Revoke all tokens", _users_revoke_all_tokens_tab),
+        htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
         htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session)),
         htm.Tab("rotate-jwt", "Rotate JWT key", _users_rotate_jwt_tab),
     ]
@@ -2843,6 +2853,38 @@ async def _users_page(session: web.Committer, active_tab: str, ldap_form: LdapLo
     page.h1["Users"]
     page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=util.as_url(users_get)))
     return await template.render("admin-blank.html", title="Users", content=page.collect())
+
+
+async def _users_revoke_all_tokens(session: web.Committer) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        count = await wafa.tokens.revoke_all_users_tokens()
+
+    if count > 0:
+        await quart.flash(f"Revoked {util.plural(count, 'token')} across all users.", "success")
+    else:
+        await quart.flash("No user tokens found.", "info")
+
+    return await session.redirect(users_get, tab="revoke-all-tokens")
+
+
+async def _users_revoke_all_tokens_tab() -> htm.Element:
+    rendered_form = await form.render(
+        model_cls=RevokeAllTokensForm,
+        action=util.as_url(users_post, tab="revoke-all-tokens"),
+        submit_label="Revoke all tokens",
+        submit_classes="btn-danger",
+    )
+    block = htm.Block()
+    block.h2["Revoke all tokens"]
+    block.append(
+        htm.div(".alert.alert-danger", role="alert")[
+            "This deletes the Personal Access Tokens of every user at once. Any JWT issued from them stops"
+            " working immediately, and every user must generate new tokens. System tokens are not affected."
+        ]
+    )
+    block.append(rendered_form)
+    return block.collect()
 
 
 async def _users_revoke_ssh_keys(session: web.Committer, revoke_form: RevokeUserSSHKeysForm) -> web.WerkzeugResponse:

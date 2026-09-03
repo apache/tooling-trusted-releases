@@ -19,7 +19,7 @@ from playwright.sync_api import Page, expect
 
 
 def test_revoke_ssh_keys_nav_link_exists(page_revoke_ssh_keys: Page) -> None:
-    nav_link = page_revoke_ssh_keys.locator('a.nav-link:has-text("Revoke user SSH keys")')
+    nav_link = page_revoke_ssh_keys.locator('a.nav-link:has-text("Revoke SSH keys")')
     expect(nav_link).to_have_count(1)
 
 

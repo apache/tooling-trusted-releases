@@ -295,6 +295,17 @@ class FoundationAdmin(FoundationCommitter):
             await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
         return count
 
+    async def revoke_all_users_tokens(self) -> int:
+        via = sql.validate_instrumented_attribute
+        stmt = sqlmodel.delete(sql.PersonalAccessToken).where(via(sql.PersonalAccessToken.is_system).is_(False))
+        result = await self.__data.execute(stmt)
+        await self.__data.commit()
+        count = getattr(result, "rowcount", 0) or 0
+        if count > 0:
+            self.__write_as.append_to_audit_log(tokens_revoked=count)
+            log.auth_event("pat_all_users_revoke", self.__asf_uid, tokens_revoked=count)
+        return count
+
     async def revoke_system_token(self, token_id: int) -> bool:
         pat = await self.__data.personal_access_token(id=token_id, is_system=True).get()
         if pat is None:
