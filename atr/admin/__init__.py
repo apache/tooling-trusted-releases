@@ -86,6 +86,8 @@ _CERTIFICATE_FINDING_RANK: Final[dict[str, int]] = {"signing-keys": 1, "metadata
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 
 
+type BANNER_RESTORE = Literal["BANNER_RESTORE"]
+type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
 type LDAP = Literal["LDAP"]
 type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
@@ -94,6 +96,7 @@ type REVOKE_TOKENS = Literal["REVOKE_TOKENS"]
 type ROTATE_JWT = Literal["ROTATE_JWT"]
 type SYSTEM_TOKEN_CREATE = Literal["SYSTEM_TOKEN_CREATE"]
 type SYSTEM_TOKEN_REVOKE = Literal["SYSTEM_TOKEN_REVOKE"]
+type TEST_MESSAGE = Literal["TEST_MESSAGE"]
 
 
 class BrowseAsUserForm(form.Form):
@@ -111,6 +114,7 @@ class DeleteReleaseConfirmForm(form.Form):
 
 
 class EditBannerForm(form.Form):
+    variant: BANNER_SET = form.value(BANNER_SET)
     banner_markdown: str = form.label(
         "Banner Markdown",
         "Markdown for the banner shown on every page. Raw HTML is stripped. Leave empty for no banner.",
@@ -142,6 +146,7 @@ class SessionsQuery(web.PageQuery):
 
 
 class RestoreBannerForm(form.Form):
+    variant: BANNER_RESTORE = form.value(BANNER_RESTORE)
     banner_id: form.Int = form.label("Banner ID", widget=form.Widget.HIDDEN)
 
 
@@ -165,6 +170,10 @@ class RevokeUserSSHKeysForm(form.Form):
 class RotateJwtKeyForm(form.Form):
     variant: ROTATE_JWT = form.value(ROTATE_JWT)
     confirm_rotate: Literal["ROTATE"] = form.label("Confirmation", "Type ROTATE to confirm.")
+
+
+class SendTestMessageForm(form.Form):
+    variant: TEST_MESSAGE = form.value(TEST_MESSAGE)
 
 
 class ValidateJwtForm(form.Form):
@@ -216,6 +225,12 @@ class RevokeSystemTokenForm(form.Form):
     token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
 
 
+@dataclasses.dataclass
+class SystemQuery:
+    tab: str = "banner"
+    minutes: int = 60
+
+
 type ROSTER_SET = Literal["ROSTER_SET"]
 type ROSTER_REMOVE = Literal["ROSTER_REMOVE"]
 type ROSTER_RESET = Literal["ROSTER_RESET"]
@@ -238,6 +253,9 @@ class TestRosterResetForm(form.Form):
     confirm_reset: Literal["RESET"] = form.label("Confirmation", "Type RESET to confirm.")
 
 
+type SystemForm = Annotated[EditBannerForm | RestoreBannerForm | SendTestMessageForm, form.DISCRIMINATOR]
+
+
 type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestRosterResetForm, form.DISCRIMINATOR]
 
 
@@ -252,68 +270,6 @@ type UsersForm = Annotated[
     | RevokeSystemTokenForm,
     form.DISCRIMINATOR,
 ]
-
-
-@admin.typed
-async def banner_get(session: web.Committer, _banner: Literal["banner"]) -> str:
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        latest, history = await wafa.banner.latest_and_history()
-    current_markdown = latest.markdown if (latest is not None) else ""
-    edit_form = await form.render(
-        model_cls=EditBannerForm,
-        submit_label="Save banner",
-        defaults={"banner_markdown": current_markdown},
-        textarea_rows=4,
-    )
-    restore_rows = []
-    for row in history:
-        restore_form = await form.render(
-            model_cls=RestoreBannerForm,
-            action=util.as_url(banner_restore_post),
-            form_classes=".mb-0",
-            submit_classes="btn-sm btn-outline-secondary",
-            submit_label="Restore",
-            defaults={"banner_id": row.id},
-            empty=True,
-        )
-        restore_rows.append((row, restore_form))
-
-    page = htm.Block()
-    page.h1["Site banner"]
-    page.p["Set the banner shown at the top of every page. The content is Markdown, and raw HTML is stripped."]
-    if not current_markdown.strip():
-        page.p[htpy.em["There is currently no banner."]]
-    page.append(edit_form)
-    if restore_rows:
-        page.h2(".mt-4")["History"]
-        page.append(_banner_history_table(restore_rows))
-    return await template.blank(title="Site banner", content=page.collect())
-
-
-@admin.typed
-async def banner_post(
-    session: web.Committer, _banner: Literal["banner"], edit_form: EditBannerForm
-) -> web.WerkzeugResponse:
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        row = await wafa.banner.set_current(edit_form.banner_markdown)
-    cache.banner_refresh(row.markdown)
-    message = "Updated the banner." if row.markdown else "Cleared the banner."
-    await quart.flash(message, "success")
-    return await session.redirect(banner_get)
-
-
-@admin.typed
-async def banner_restore_post(
-    session: web.Committer, _banner_restore: Literal["banner/restore"], restore_form: RestoreBannerForm
-) -> web.WerkzeugResponse:
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        row = await wafa.banner.restore(restore_form.banner_id)
-    cache.banner_refresh(row.markdown)
-    await quart.flash("Restored the banner.", "success")
-    return await session.redirect(banner_get)
 
 
 def _banner_history_table(restore_rows: list[tuple[sql.Banner, htm.Element]]) -> htpy.Element:
@@ -1390,35 +1346,6 @@ async def catalog_site_rebuild_post(
 
 
 @admin.typed
-async def configuration(_session: web.Committer, _configuration: Literal["configuration"]) -> web.QuartResponse:
-    """
-    URL: GET /configuration
-
-    Display the current application configuration values.
-    """
-
-    sensitive_config_patterns = ("_PASSWORD", "_KEY", "_TOKEN", "_SECRET")
-
-    conf = config.get()
-    values: list[str] = []
-    for name in dir(conf):
-        if name.startswith("_"):
-            continue
-        try:
-            val = getattr(conf, name)
-        except Exception as exc:
-            val = log.python_repr(f"error: {exc}")
-        if any(pattern in name for pattern in sensitive_config_patterns):
-            val = log.python_repr("redacted")
-        if callable(val):
-            continue
-        values.append(f"{name}={val}")
-
-    values.sort()
-    return web.TextResponse("\n".join(values))
-
-
-@admin.typed
 async def consistency(_session: web.Committer, _consistency: Literal["consistency"]) -> web.TextResponse:
     """
     URL: GET /consistency
@@ -1823,91 +1750,6 @@ async def ongoing_tasks_get(
 
 
 @admin.typed
-async def performance(_session: web.Committer, _performance: Literal["performance"]) -> str:
-    """
-    URL: GET /performance
-
-    Display performance statistics for all routes.
-    """
-    app = asfquart.APP
-
-    if app is ...:
-        raise base.ASFQuartException("APP is not set", errorcode=500)
-
-    # Read and parse the performance log file
-    log_path = pathlib.Path(config.get().PERFORMANCE_LOG_FILE)
-    # # Show current working directory and its files
-    # cwd = await asyncio.to_thread(Path.cwd)
-    # await asyncio.to_thread(APP.logger.info, "Current working directory: %s", cwd)
-    # iterable = await asyncio.to_thread(cwd.iterdir)
-    # files = list(iterable)
-    # await asyncio.to_thread(APP.logger.info, "Files in current directory: %s", files)
-    if not await aiofiles.os.path.exists(log_path):
-        await quart.flash("No performance data currently available", "error")
-        return await template.render("performance.html", stats=None)
-
-    # Parse the log file and collect statistics
-    stats = collections.defaultdict(list)
-    async with aiofiles.open(log_path) as f:
-        async for line in f:
-            try:
-                _, _, _, methods, path, func, _, sync_ms, async_ms, total_ms = line.strip().split(" ")
-                stats[path].append(
-                    {
-                        "methods": methods,
-                        "function": func,
-                        "sync_ms": int(sync_ms),
-                        "async_ms": int(async_ms),
-                        "total_ms": int(total_ms),
-                        "timestamp": line.split(" - ")[0],
-                    }
-                )
-            except (ValueError, IndexError):
-                log.error(f"Error parsing line: {line}")
-                continue
-
-    # Calculate summary statistics for each route
-    summary = {}
-    for path, timings in stats.items():
-        total_times = [int(str(t["total_ms"])) for t in timings]
-        sync_times = [int(str(t["sync_ms"])) for t in timings]
-        async_times = [int(str(t["async_ms"])) for t in timings]
-
-        summary[path] = {
-            "count": len(timings),
-            "methods": timings[0]["methods"],
-            "function": timings[0]["function"],
-            "total": {
-                "mean": statistics.mean(total_times),
-                "median": statistics.median(total_times),
-                "min": min(total_times),
-                "max": max(total_times),
-                "stdev": statistics.stdev(total_times) if (len(total_times) > 1) else 0,
-            },
-            "sync": {
-                "mean": statistics.mean(sync_times),
-                "median": statistics.median(sync_times),
-                "min": min(sync_times),
-                "max": max(sync_times),
-            },
-            "async": {
-                "mean": statistics.mean(async_times),
-                "median": statistics.median(async_times),
-                "min": min(async_times),
-                "max": max(async_times),
-            },
-            "last_timestamp": timings[-1]["timestamp"],
-        }
-
-    # Sort routes by average total time, descending
-    def one_total_mean(x: tuple[str, dict]) -> float:
-        return x[1]["total"]["mean"]
-
-    sorted_summary = dict(sorted(summary.items(), key=one_total_mean, reverse=True))
-    return await template.render("performance.html", stats=sorted_summary)
-
-
-@admin.typed
 async def projects_update_get(
     _session: web.Committer, _projects_update: Literal["projects/update"]
 ) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
@@ -1950,6 +1792,24 @@ async def raise_error(_session: web.Committer, _raise_error: Literal["raise-erro
     URL: GET /raise-error
     """
     raise RuntimeError("Admin test route deliberately raised an unhandled error")
+
+
+@admin.typed
+async def system_get(session: web.Committer, _system: Literal["system"], query_args: SystemQuery) -> str:
+    return await _system_page(session, query_args)
+
+
+@admin.typed
+async def system_post(
+    session: web.Committer, _system: Literal["system"], system_form: SystemForm
+) -> web.WerkzeugResponse:
+    match system_form:
+        case EditBannerForm():
+            return await _system_banner_set(session, system_form)
+        case RestoreBannerForm():
+            return await _system_banner_restore(session, system_form)
+        case SendTestMessageForm():
+            return await _system_test_message(session)
 
 
 @admin.typed
@@ -2012,170 +1872,6 @@ async def tasks_list(
         data=paged_tasks,
         count=count,
     ).model_dump(mode="json"), 200
-
-
-@admin.typed
-async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/recent"], minutes: int) -> str:
-    """
-    URL: GET /tasks/recent/<int:minutes>
-
-    Display tasks from the last N minutes.
-    """
-    if minutes < 1:
-        minutes = 1
-    if minutes > 1440:
-        minutes = 1440
-
-    via = sql.validate_instrumented_attribute
-    now = datetime.datetime.now(datetime.UTC)
-    cutoff = now - datetime.timedelta(minutes=minutes)
-
-    async with db.session() as data:
-        statement = (
-            sqlmodel.select(sql.Task)
-            .where(
-                # Always show active tasks since they're running now!
-                sqlalchemy.or_(
-                    via(sql.Task.added) >= cutoff,
-                    via(sql.Task.status) == sql.TaskStatus.ACTIVE,
-                ),
-                sqlalchemy.or_(sqlalchemy.not_(via(sql.Task.scheduled) > now), via(sql.Task.scheduled).is_(None)),
-            )
-            .order_by(via(sql.Task.added).desc())
-        )
-        recent_tasks = (await data.execute(statement)).scalars().all()
-        scheduled_stmt = (
-            sqlmodel.select(sql.Task)
-            .where(via(sql.Task.scheduled) > now, via(sql.Task.status) == sql.TaskStatus.QUEUED)
-            .order_by(via(sql.Task.scheduled).asc())
-        )
-        scheduled_tasks = (await data.execute(scheduled_stmt)).scalars().all()
-
-    page = htm.Block()
-    page.h1[f"Tasks from the last {util.plural(minutes, 'minute')}"]
-    page.p[f"Found {util.plural(len(recent_tasks), 'task')}"]
-
-    if recent_tasks:
-        table = htm.Block(htpy.table, classes=".table.table-sm")
-        table.thead(".table-dark")[
-            htpy.tr[
-                htpy.th["ID"],
-                htpy.th["Type"],
-                htpy.th["Status"],
-                htpy.th["Added"],
-                htpy.th["Took"],
-                htpy.th["Project"],
-                htpy.th["Version"],
-                htpy.th["Revision"],
-                htpy.th["Error"],
-            ]
-        ]
-        tbody = htm.Block(htpy.tbody)
-        for task in recent_tasks:
-            error_text = task.error[:50] + "..." if (task.error and (len(task.error) > 50)) else (task.error or "")
-            status_class = {
-                sql.TaskStatus.QUEUED: ".table-secondary",
-                sql.TaskStatus.ACTIVE: ".table-info",
-                sql.TaskStatus.COMPLETED: ".table-success",
-                sql.TaskStatus.FAILED: ".table-danger",
-                sql.TaskStatus.BROKEN: ".table-warning",
-            }.get(task.status, "")
-            if (task.started is not None) and (task.completed is not None):
-                took_seconds = (task.completed - task.started).total_seconds()
-                took_text = f"{took_seconds:.1f}s"
-            else:
-                took_text = ""
-            tbody.append(
-                htpy.tr(class_=status_class.lstrip(".") if status_class else None)[
-                    htpy.td[str(task.id)],
-                    htpy.td[task.task_type.value],
-                    htpy.td[task.status.value],
-                    htpy.td[task.added.strftime("%H:%M:%S") if task.added else ""],
-                    htpy.td[took_text],
-                    htpy.td[task.project_key or ""],
-                    htpy.td[task.version_key or ""],
-                    htpy.td[task.revision_number or ""],
-                    htpy.td[error_text],
-                ]
-            )
-        table.append(tbody.collect())
-        page.append(table.collect())
-
-    page.h2["Scheduled tasks"]
-    page.p[f"Found {util.plural(len(scheduled_tasks), 'task')}"]
-
-    if scheduled_tasks:
-        table = htm.Block(htpy.table, classes=".table.table-sm")
-        table.thead(".table-dark")[
-            htpy.tr[
-                htpy.th["ID"],
-                htpy.th["Type"],
-                htpy.th["Added"],
-                htpy.th["Scheduled"],
-                htpy.th["Project"],
-                htpy.th["Version"],
-                htpy.th["Revision"],
-            ]
-        ]
-        tbody = htm.Block(htpy.tbody)
-        for task in scheduled_tasks:
-            tbody.append(
-                htpy.tr(".table-secondary")[
-                    htpy.td[str(task.id)],
-                    htpy.td[task.task_type.value],
-                    htpy.td[task.added.strftime("%Y-%m-%d %H:%M:%S") if task.added else ""],
-                    htpy.td[task.scheduled.strftime("%Y-%m-%d %H:%M:%S") if task.scheduled else ""],
-                    htpy.td[task.project_key or ""],
-                    htpy.td[task.version_key or ""],
-                    htpy.td[task.revision_number or ""],
-                ]
-            )
-        table.append(tbody.collect())
-        page.append(table.collect())
-
-    return await template.blank(f"Recent Tasks ({minutes}m)", content=page.collect())
-
-
-@admin.typed
-async def test_message_get(session: web.Committer, _test_message: Literal["test-message"]) -> str:
-    rendered_form = await form.render(
-        model_cls=form.Empty,
-        submit_label="Send test message",
-    )
-    page = htm.Block()
-    page.h1["Send a test message"]
-    page.p[
-        "Send a test email to ",
-        htpy.code["dev@tooling.apache.org"],
-        " from ",
-        htpy.code[f"{session.asf_uid}@apache.org"],
-        " to check that outbound mail works.",
-    ]
-    page.append(rendered_form)
-    return await template.blank(title="Send a test message", content=page.collect())
-
-
-@admin.typed
-async def test_message_post(
-    session: web.Committer, _test_message: Literal["test-message"], _send_form: form.Empty
-) -> web.WerkzeugResponse:
-    timestamp = util.format_datetime(datetime.datetime.now(datetime.UTC))
-    message = mail.Message(
-        email_sender=f"{session.asf_uid}@apache.org",
-        email_to="dev@tooling.apache.org",
-        subject="Test message",
-        body=f"Test sent by {session.asf_uid} at {timestamp}.",
-    )
-    async with storage.write(session) as write:
-        wafc = write.as_foundation_committer()
-        mid, errors = await wafc.mail.send(message, mail.MailFooterCategory.NONE)
-    if errors:
-        await quart.flash(f"Sending failed: {'; '.join(errors)}", "error")
-    elif config.is_dev_environment():
-        await quart.flash("Dev environment, so the message was logged to sent-email-dev.log and not sent.", "success")
-    else:
-        await quart.flash(f"Sent test message {mid} to dev@tooling.apache.org.", "success")
-    return await session.redirect(test_message_get)
 
 
 @admin.typed
@@ -2711,6 +2407,342 @@ def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAge
 def _require_non_production_mode() -> None:
     if config.is_production_mode():
         quart.abort(404)
+
+
+async def _system_banner_restore(session: web.Committer, restore_form: RestoreBannerForm) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        row = await wafa.banner.restore(restore_form.banner_id)
+    cache.banner_refresh(row.markdown)
+    await quart.flash("Restored the banner.", "success")
+    return await session.redirect(system_get, tab="banner")
+
+
+async def _system_banner_set(session: web.Committer, edit_form: EditBannerForm) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        row = await wafa.banner.set_current(edit_form.banner_markdown)
+    cache.banner_refresh(row.markdown)
+    message = "Updated the banner." if row.markdown else "Cleared the banner."
+    await quart.flash(message, "success")
+    return await session.redirect(system_get, tab="banner")
+
+
+async def _system_banner_tab(session: web.Committer) -> htm.Element:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        latest, history = await wafa.banner.latest_and_history()
+    current_markdown = latest.markdown if (latest is not None) else ""
+    action = util.as_url(system_post, tab="banner")
+    edit_form = await form.render(
+        model_cls=EditBannerForm,
+        action=action,
+        submit_label="Save banner",
+        defaults={"banner_markdown": current_markdown},
+        textarea_rows=4,
+    )
+    restore_rows = []
+    for row in history:
+        restore_form = await form.render(
+            model_cls=RestoreBannerForm,
+            action=action,
+            form_classes=".mb-0",
+            submit_classes="btn-sm btn-outline-secondary",
+            submit_label="Restore",
+            defaults={"banner_id": row.id},
+            empty=True,
+        )
+        restore_rows.append((row, restore_form))
+
+    page = htm.Block()
+    page.h2["Site banner"]
+    page.p["Set the banner shown at the top of every page. The content is Markdown, and raw HTML is stripped."]
+    if not current_markdown.strip():
+        page.p[htpy.em["There is currently no banner."]]
+    page.append(edit_form)
+    if restore_rows:
+        page.h3(".mt-4")["History"]
+        page.append(_banner_history_table(restore_rows))
+    return page.collect()
+
+
+async def _system_configuration_tab() -> htm.Element:
+
+    sensitive_config_patterns = ("_PASSWORD", "_KEY", "_TOKEN", "_SECRET")
+
+    conf = config.get()
+    values: list[str] = []
+    for name in dir(conf):
+        if name.startswith("_"):
+            continue
+        try:
+            val = getattr(conf, name)
+        except Exception as exc:
+            val = log.python_repr(f"error: {exc}")
+        if any(pattern in name for pattern in sensitive_config_patterns):
+            val = log.python_repr("redacted")
+        if callable(val):
+            continue
+        values.append(f"{name}={val}")
+
+    values.sort()
+    block = htm.Block()
+    block.h2["Configuration"]
+    block.pre[htm.code["\n".join(values)]]
+    return block.collect()
+
+
+async def _system_page(session: web.Committer, query_args: SystemQuery) -> str:
+    tab_items = [
+        htm.Tab("banner", "Site banner", lambda: _system_banner_tab(session)),
+        htm.Tab("configuration", "Configuration", _system_configuration_tab),
+        htm.Tab("test-message", "Test message", lambda: _system_test_message_tab(session)),
+        htm.Tab("performance", "Performance", _system_performance_tab),
+        htm.Tab("tasks", "Recent tasks", lambda: _system_tasks_tab(query_args.minutes)),
+    ]
+    page = htm.Block()
+    page.h1["System"]
+    page.append(await htm.tabs(tab_items, active_key=query_args.tab, base_url=util.as_url(system_get)))
+    return await template.render("admin-blank.html", title="System", content=page.collect())
+
+
+async def _system_performance_tab() -> htm.Element:
+    app = asfquart.APP
+
+    if app is ...:
+        raise base.ASFQuartException("APP is not set", errorcode=500)
+
+    # Read and parse the performance log file
+    log_path = pathlib.Path(config.get().PERFORMANCE_LOG_FILE)
+    # # Show current working directory and its files
+    # cwd = await asyncio.to_thread(Path.cwd)
+    # await asyncio.to_thread(APP.logger.info, "Current working directory: %s", cwd)
+    # iterable = await asyncio.to_thread(cwd.iterdir)
+    # files = list(iterable)
+    # await asyncio.to_thread(APP.logger.info, "Files in current directory: %s", files)
+    if not await aiofiles.os.path.exists(log_path):
+        content = await template.render("performance.html", stats=None)
+        return htm.div[markupsafe.Markup(content)]
+
+    # Parse the log file and collect statistics
+    stats = collections.defaultdict(list)
+    async with aiofiles.open(log_path) as f:
+        async for line in f:
+            try:
+                _, _, _, methods, path, func, _, sync_ms, async_ms, total_ms = line.strip().split(" ")
+                stats[path].append(
+                    {
+                        "methods": methods,
+                        "function": func,
+                        "sync_ms": int(sync_ms),
+                        "async_ms": int(async_ms),
+                        "total_ms": int(total_ms),
+                        "timestamp": line.split(" - ")[0],
+                    }
+                )
+            except (ValueError, IndexError):
+                log.error(f"Error parsing line: {line}")
+                continue
+
+    # Calculate summary statistics for each route
+    summary = {}
+    for path, timings in stats.items():
+        total_times = [int(str(t["total_ms"])) for t in timings]
+        sync_times = [int(str(t["sync_ms"])) for t in timings]
+        async_times = [int(str(t["async_ms"])) for t in timings]
+
+        summary[path] = {
+            "count": len(timings),
+            "methods": timings[0]["methods"],
+            "function": timings[0]["function"],
+            "total": {
+                "mean": statistics.mean(total_times),
+                "median": statistics.median(total_times),
+                "min": min(total_times),
+                "max": max(total_times),
+                "stdev": statistics.stdev(total_times) if (len(total_times) > 1) else 0,
+            },
+            "sync": {
+                "mean": statistics.mean(sync_times),
+                "median": statistics.median(sync_times),
+                "min": min(sync_times),
+                "max": max(sync_times),
+            },
+            "async": {
+                "mean": statistics.mean(async_times),
+                "median": statistics.median(async_times),
+                "min": min(async_times),
+                "max": max(async_times),
+            },
+            "last_timestamp": timings[-1]["timestamp"],
+        }
+
+    # Sort routes by average total time, descending
+    def one_total_mean(x: tuple[str, dict]) -> float:
+        return x[1]["total"]["mean"]
+
+    sorted_summary = dict(sorted(summary.items(), key=one_total_mean, reverse=True))
+    content = await template.render("performance.html", stats=sorted_summary)
+    return htm.div[markupsafe.Markup(content)]
+
+
+async def _system_tasks_tab(minutes: int) -> htm.Element:
+    if minutes < 1:
+        minutes = 1
+    if minutes > 1440:
+        minutes = 1440
+
+    via = sql.validate_instrumented_attribute
+    now = datetime.datetime.now(datetime.UTC)
+    cutoff = now - datetime.timedelta(minutes=minutes)
+
+    async with db.session() as data:
+        statement = (
+            sqlmodel.select(sql.Task)
+            .where(
+                # Always show active tasks since they're running now!
+                sqlalchemy.or_(
+                    via(sql.Task.added) >= cutoff,
+                    via(sql.Task.status) == sql.TaskStatus.ACTIVE,
+                ),
+                sqlalchemy.or_(sqlalchemy.not_(via(sql.Task.scheduled) > now), via(sql.Task.scheduled).is_(None)),
+            )
+            .order_by(via(sql.Task.added).desc())
+        )
+        recent_tasks = (await data.execute(statement)).scalars().all()
+        scheduled_stmt = (
+            sqlmodel.select(sql.Task)
+            .where(via(sql.Task.scheduled) > now, via(sql.Task.status) == sql.TaskStatus.QUEUED)
+            .order_by(via(sql.Task.scheduled).asc())
+        )
+        scheduled_tasks = (await data.execute(scheduled_stmt)).scalars().all()
+
+    page = htm.Block()
+    page.h2[f"Tasks from the last {util.plural(minutes, 'minute')}"]
+    periods = [(5, "5 minutes"), (60, "1 hour"), (360, "6 hours"), (1440, "24 hours")]
+    links = [htm.a(href=util.as_url(system_get, tab="tasks", minutes=value))[label] for value, label in periods]
+    page.p["Show the last ", links[0], ", ", links[1], ", ", links[2], " or ", links[3], "."]
+    page.p[f"Found {util.plural(len(recent_tasks), 'task')}"]
+
+    if recent_tasks:
+        table = htm.Block(htpy.table, classes=".table.table-sm")
+        table.thead(".table-dark")[
+            htpy.tr[
+                htpy.th["ID"],
+                htpy.th["Type"],
+                htpy.th["Status"],
+                htpy.th["Added"],
+                htpy.th["Took"],
+                htpy.th["Project"],
+                htpy.th["Version"],
+                htpy.th["Revision"],
+                htpy.th["Error"],
+            ]
+        ]
+        tbody = htm.Block(htpy.tbody)
+        for task in recent_tasks:
+            error_text = task.error[:50] + "..." if (task.error and (len(task.error) > 50)) else (task.error or "")
+            status_class = {
+                sql.TaskStatus.QUEUED: ".table-secondary",
+                sql.TaskStatus.ACTIVE: ".table-info",
+                sql.TaskStatus.COMPLETED: ".table-success",
+                sql.TaskStatus.FAILED: ".table-danger",
+                sql.TaskStatus.BROKEN: ".table-warning",
+            }.get(task.status, "")
+            if (task.started is not None) and (task.completed is not None):
+                took_seconds = (task.completed - task.started).total_seconds()
+                took_text = f"{took_seconds:.1f}s"
+            else:
+                took_text = ""
+            tbody.append(
+                htpy.tr(class_=status_class.lstrip(".") if status_class else None)[
+                    htpy.td[str(task.id)],
+                    htpy.td[task.task_type.value],
+                    htpy.td[task.status.value],
+                    htpy.td[task.added.strftime("%H:%M:%S") if task.added else ""],
+                    htpy.td[took_text],
+                    htpy.td[task.project_key or ""],
+                    htpy.td[task.version_key or ""],
+                    htpy.td[task.revision_number or ""],
+                    htpy.td[error_text],
+                ]
+            )
+        table.append(tbody.collect())
+        page.append(table.collect())
+
+    page.h3["Scheduled tasks"]
+    page.p[f"Found {util.plural(len(scheduled_tasks), 'task')}"]
+
+    if scheduled_tasks:
+        table = htm.Block(htpy.table, classes=".table.table-sm")
+        table.thead(".table-dark")[
+            htpy.tr[
+                htpy.th["ID"],
+                htpy.th["Type"],
+                htpy.th["Added"],
+                htpy.th["Scheduled"],
+                htpy.th["Project"],
+                htpy.th["Version"],
+                htpy.th["Revision"],
+            ]
+        ]
+        tbody = htm.Block(htpy.tbody)
+        for task in scheduled_tasks:
+            tbody.append(
+                htpy.tr(".table-secondary")[
+                    htpy.td[str(task.id)],
+                    htpy.td[task.task_type.value],
+                    htpy.td[task.added.strftime("%Y-%m-%d %H:%M:%S") if task.added else ""],
+                    htpy.td[task.scheduled.strftime("%Y-%m-%d %H:%M:%S") if task.scheduled else ""],
+                    htpy.td[task.project_key or ""],
+                    htpy.td[task.version_key or ""],
+                    htpy.td[task.revision_number or ""],
+                ]
+            )
+        table.append(tbody.collect())
+        page.append(table.collect())
+
+    return page.collect()
+
+
+async def _system_test_message(session: web.Committer) -> web.WerkzeugResponse:
+    timestamp = util.format_datetime(datetime.datetime.now(datetime.UTC))
+    message = mail.Message(
+        email_sender=f"{session.asf_uid}@apache.org",
+        email_to="dev@tooling.apache.org",
+        subject="Test message",
+        body=f"Test sent by {session.asf_uid} at {timestamp}.",
+    )
+    async with storage.write(session) as write:
+        wafc = write.as_foundation_committer()
+        mid, errors = await wafc.mail.send(message, mail.MailFooterCategory.NONE)
+    if errors:
+        await quart.flash(f"Sending failed: {'; '.join(errors)}", "error")
+    elif config.is_dev_environment():
+        await quart.flash("Dev environment, so the message was logged to sent-email-dev.log and not sent.", "success")
+    else:
+        await quart.flash(f"Sent test message {mid} to dev@tooling.apache.org.", "success")
+    return await session.redirect(system_get, tab="test-message")
+
+
+async def _system_test_message_tab(session: web.Committer) -> htm.Element:
+    rendered_form = await form.render(
+        model_cls=SendTestMessageForm,
+        action=util.as_url(system_post, tab="test-message"),
+        submit_label="Send test message",
+        empty=True,
+    )
+    page = htm.Block()
+    page.h2["Send a test message"]
+    page.p[
+        "Send a test email to ",
+        htpy.code["dev@tooling.apache.org"],
+        " from ",
+        htpy.code[f"{session.asf_uid}@apache.org"],
+        " to check that outbound mail works.",
+    ]
+    page.append(rendered_form)
+    return page.collect()
 
 
 async def _update_keys(asf_uid: str) -> int:

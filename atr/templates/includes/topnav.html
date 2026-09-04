@@ -219,13 +219,13 @@
               </li>
               <li>
                 <a class="dropdown-item"
-                   href="{{ as_url(admin.toggle_view_get) }}"
-                   {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
+                   href="{{ as_url(admin.system_get) }}"
+                   {% if request.endpoint == 'atr_admin_system_get' %}class="active"{% endif %}><i class="bi bi-gear"></i> System</a>
               </li>
               <li>
                 <a class="dropdown-item"
-                   href="{{ as_url(admin.banner_get) }}"
-                   {% if request.endpoint == 'atr_admin_banner_get' %}class="active"{% endif %}><i class="bi bi-megaphone"></i> Site banner</a>
+                   href="{{ as_url(admin.toggle_view_get) }}"
+                   {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
               </li>
               {% if is_test_mode %}
                 <li>
@@ -287,25 +287,6 @@
                 <a class="dropdown-item"
                    href="{{ as_url(admin.data) }}"
                    {% if request.endpoint == 'atr_admin_data' %}class="active"{% endif %}><i class="bi bi-database"></i> Browse database</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.configuration) }}"
-                   {% if request.endpoint == 'atr_admin_configuration' %}class="active"{% endif %}><i class="bi bi-gear"></i> Configuration</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.performance) }}"
-                   {% if request.endpoint == 'atr_admin_performance' %}class="active"{% endif %}><i class="bi bi-speedometer2"></i> Page performance</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.tasks_recent, minutes=5) }}"><i class="bi bi-list-task"></i> Recent tasks</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.test_message_get) }}"
-                   {% if request.endpoint == 'atr_admin_test_message_get' %}class="active"{% endif %}><i class="bi bi-envelope"></i> Send test message</a>
               </li>
               <li>
                 <a class="dropdown-item"
