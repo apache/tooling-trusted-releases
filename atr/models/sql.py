@@ -291,6 +291,7 @@ class TaskType(enum.StrEnum):
     SIGNATURE_CHECK = "signature_check"
     SVN_IMPORT_FILES = "svn_import_files"
     SVN_PUBLISH = "svn_publish"
+    SVN_UNPUBLISH = "svn_unpublish"
     SYNC_KEYS_FROM_SVN = "sync_keys_from_svn"
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
@@ -360,6 +361,8 @@ class TaskType(enum.StrEnum):
                 return "SVN import"
             case TaskType.SVN_PUBLISH:
                 return "SVN publish"
+            case TaskType.SVN_UNPUBLISH:
+                return "SVN unpublish"
             case TaskType.SYNC_KEYS_FROM_SVN:
                 return "Sync keys from SVN"
             case TaskType.TARGZ_INTEGRITY:
@@ -422,6 +425,14 @@ class LifecycleEventType(enum.StrEnum):
     EOD = "eod"
     EOS = "eos"
     EOL = "eol"
+
+
+class ArchiveSource(enum.StrEnum):
+    MANUAL = "manual"
+    CAP = "cap"
+    AUTO_PRIOR = "auto_prior"
+    DIST_WATCHER = "dist_watcher"
+    CATALOG_ADMIN = "catalog_admin"
 
 
 # Pydantic models
@@ -1522,6 +1533,8 @@ class Release(sqlmodel.SQLModel, table=True):
     # The archived status. The archived date above can be null while this is true,
     # for a catalogued historical release we know is archived but can't date
     is_archived: bool = sqlmodel.Field(default=False)
+    # Why the release was archived, set alongside is_archived.
+    archive_source: ArchiveSource | None = sqlmodel.Field(default=None)
     activity_at: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),

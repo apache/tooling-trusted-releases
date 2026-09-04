@@ -34,9 +34,12 @@ ASF_TOOL: Final[str] = "atr"
 EXPORT_TIMEOUT_SECONDS: Final[float] = 240.0
 INFO_TIMEOUT_SECONDS: Final[float] = 30.0
 KEYS_TIMEOUT_SECONDS: Final[float] = 60.0
-LIST_TIMEOUT_SECONDS: Final[float] = 60.0
+LIST_TIMEOUT_SECONDS: Final[float] = 120.0
 PUBLISH_TIMEOUT_SECONDS: Final[float] = 240.0
 _COMMITTED_REVISION_RE: Final = re.compile(r"^Committed revision (\d+)\.\s*$", re.MULTILINE)
+# svnmucc reports a commit as `r<N> committed by <author> at <date>`, a different
+# shape from the `Committed revision <N>.` line svn import and commit emit.
+_SVNMUCC_REVISION_RE: Final = re.compile(r"^r(\d+) committed by ", re.MULTILINE)
 _CONNECTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
     {"E000110", "E000111", "E120108", "E170013", "E175002", "E175012"}
 )
@@ -52,6 +55,9 @@ _ERROR_CODE_PRIORITY: Final[tuple[str, ...]] = (
     "E170013",
 )
 _ERROR_CODE_RE: Final = re.compile(r"\bE\d{6}\b")
+# Codes svn emits when a path or URL genuinely isn't in the repository, as
+# opposed to a connection or auth failure.
+_MISSING_PATH_CODES: Final[frozenset[str]] = frozenset({"E160013", "E200009", "W160013", "W170000"})
 _ERROR_SUMMARIES: Final[dict[str, str]] = {
     "E000110": "The connection to the SVN server was reset",
     "E000111": "The connection to the SVN server was refused",
@@ -267,6 +273,22 @@ def parse_committed_revision(output: str) -> int | None:
     return int(match.group(1))
 
 
+def parse_svnmucc_revision(output: str) -> int | None:
+    if (match := _SVNMUCC_REVISION_RE.search(output)) is None:
+        return None
+    return int(match.group(1))
+
+
+def path_missing_error(exc: CommandExecutionError) -> bool:
+    """Whether the error says the path or URL simply isn't in the repository.
+
+    Matches only on svn's own error codes, never on free text: a connection or
+    auth failure, or a timeout (which carries no code), reads as False and stays
+    a real failure, since a transient error is no proof that a path has gone.
+    """
+    return any(code in exc.output for code in _MISSING_PATH_CODES)
+
+
 async def publish_file(local_path: pathlib.Path, target_url: str, username: str, message: str) -> None:
     log.debug(f"running svnmucc put for user '{username}'")
     stdin_bytes = _authentication(target_url)
@@ -366,13 +388,13 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
     return tool.strip() == ASF_TOOL
 
 
-async def remove_files(base_url: str, rel_paths: list[str], username: str, message: str) -> None:
+async def remove_files(base_url: str, rel_paths: list[str], username: str, message: str) -> str:
     log.debug(f"running svnmucc rm for user '{username}'")
     stdin_bytes = _authentication(base_url)
     actions: list[str] = []
     for rel_path in rel_paths:
         actions.extend(["rm", f"{base_url}/{rel_path}"])
-    await _run_svnmucc_command(
+    return await _run_svnmucc_command(
         *actions,
         "--username",
         username,
