@@ -488,8 +488,8 @@ a.atr-link-plain:focus-visible {
     color: #0011cc;
 }
 
-.nav-pills .nav-link.active:visited {
-    color: #ffffff;
+.nav-pills .nav-link.active {
+    color: #ffffff !important;
 }
 
 .atr-border-dashed {
