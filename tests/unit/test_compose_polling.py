@@ -53,6 +53,8 @@ def test_compose_template_wires_status_endpoint():
     assert "data-quarantine-pending-count=" in text
 
 
-def test_empty_files_table_html_renders_alert():
-    assert "alert-info" in compose._EMPTY_FILES_TABLE_HTML
-    assert "does not have any files yet" in compose._EMPTY_FILES_TABLE_HTML
+def test_empty_files_template_renders_alert():
+    template_path = pathlib.Path(__file__).resolve().parents[2] / "atr" / "templates" / "check-selected-files.html"
+    text = template_path.read_text(encoding="utf-8")
+    assert "alert-info" in text
+    assert "does not have any files yet" in text

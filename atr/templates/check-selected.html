@@ -104,7 +104,7 @@
   <div id="ongoing-tasks-banner"
        class="alert alert-warning{% if not polling_active %} d-none{% endif %}"
        role="alert"
-       data-status-url="{{ as_url(get.compose.status_selected, project_key=release.project.key, version_key=release.version) }}"
+       data-status-url="{{ as_url(get.compose.status_selected, project_key=release.project.key, version_key=release.version, limit=limit, offset=offset) }}"
        data-polling-active="{{ 'true' if polling_active else 'false' }}"
        data-quarantine-pending-count="{{ quarantined_pending|length }}"
        data-ongoing-count="{{ ongoing_tasks_count }}">

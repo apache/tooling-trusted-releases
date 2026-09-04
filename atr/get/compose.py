@@ -14,10 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import dataclasses
 import datetime
 import pathlib
 from collections.abc import Sequence
-from typing import Any, Final, Literal
+from typing import Any, Literal
 
 import aiofiles.os
 import asfquart.base as base
@@ -36,6 +37,7 @@ import atr.log as log
 import atr.mapping as mapping
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
@@ -48,7 +50,10 @@ import atr.user as user
 import atr.util as util
 import atr.web as web
 
-_EMPTY_FILES_TABLE_HTML: Final[str] = '<div class="alert alert-info">This draft does not have any files yet.</div>'
+
+@dataclasses.dataclass
+class ComposeQuery(web.PageQuery):
+    limit: int = 250
 
 
 @get.typed
@@ -57,11 +62,16 @@ async def selected(
     _compose: Literal["compose"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
+    query_args: ComposeQuery,
 ) -> web.WerkzeugResponse | str:
     """
     URL: /compose/<project_key>/<version_key>
     Show the contents of the release candidate draft.
     """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise base.ASFQuartException(str(e), errorcode=400)
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         release = await data.release(
@@ -80,6 +90,8 @@ async def selected(
     # We could cache it
     all_paths = [path async for path in util.paths_recursive(base_path, include_empty_dirs=True)]
     all_paths.sort()
+    page_paths = all_paths[query_args.offset : (query_args.offset + query_args.limit)]
+    pagination = web.page_nav(query_args.offset, query_args.limit, len(all_paths), len(page_paths))
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
@@ -125,12 +137,15 @@ async def selected(
     )
 
     delete_file_forms: dict[str, htm.Element] = {}
-    for path in all_paths:
+    for path in page_paths:
         delete_file_forms[str(path)] = await _render_delete_file_form(release, path)
 
     files_table_html = await _render_files_table_html(
         release,
-        paths=all_paths,
+        paths=page_paths,
+        count=len(all_paths),
+        limit=query_args.limit,
+        pagination=pagination,
         info=info,
         project_key=release.safe_project_key,
         version_key=release.safe_version_key,
@@ -220,6 +235,8 @@ async def selected(
         release_info_html=release_info_html,
         files_card_header_html=files_card_header_html,
         files_table_html=files_table_html,
+        limit=query_args.limit,
+        offset=query_args.offset,
         quarantined_pending=quarantined_pending,
         quarantined_failed=quarantined_failed,
         clear_quarantine_forms=clear_quarantine_forms,
@@ -251,10 +268,11 @@ async def status_selected(
     _status: Literal["status"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
+    query_args: ComposeQuery,
 ) -> web.QuartResponse:
     """URL: /compose/status/<project_key>/<version_key>. Compose polling state JSON."""
     try:
-        return await _status_selected_impl(session, project_key, version_key)
+        return await _status_selected_impl(session, project_key, version_key, query_args)
     except base.ASFQuartException as exc:
         return _status_error_response(exc, expose_message=True)
     except Exception:
@@ -421,16 +439,20 @@ async def _render_files_table_html(
     release: sql.Release,
     *,
     paths: Sequence[pathlib.Path | safe.RelPath],
+    count: int,
+    limit: int,
+    pagination: web.PageNav,
     info: Any,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     delete_file_forms: dict[str, htm.Element],
 ) -> str:
-    if not paths:
-        return _EMPTY_FILES_TABLE_HTML
     return await template.render(
-        "check-selected-path-table.html",
+        "check-selected-files.html",
         paths=paths,
+        count=count,
+        limit=limit,
+        page=pagination,
         info=info,
         project_key=str(project_key),
         version_key=str(version_key),
@@ -605,7 +627,12 @@ async def _status_selected_impl(
     session: web.Committer,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
+    query_args: ComposeQuery,
 ) -> web.QuartResponse:
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise base.ASFQuartException(str(e), errorcode=400)
     # Polled every few seconds, so do not flash the admin warning
     await session.prevent_confusing_ui_display(project_key, flash_admin_warning=False)
     async with db.session() as data:
@@ -649,8 +676,10 @@ async def _status_selected_impl(
             )
 
     base_path = paths.release_directory(release)
-    all_paths = [path async for path in util.paths_recursive(base_path)]
+    all_paths = [path async for path in util.paths_recursive(base_path, include_empty_dirs=True)]
     all_paths.sort()
+    page_paths = all_paths[query_args.offset : (query_args.offset + query_args.limit)]
+    pagination = web.page_nav(query_args.offset, query_args.limit, len(all_paths), len(page_paths))
     async with storage.read(session) as read:
         ragp = read.as_general_public()
         info = await ragp.releases.path_info(release, all_paths)
@@ -658,11 +687,14 @@ async def _status_selected_impl(
     # Always rebuild the files table fragment
     # Check results can change between polls
     delete_file_forms: dict[str, htm.Element] = {}
-    for path in all_paths:
+    for path in page_paths:
         delete_file_forms[str(path)] = await _render_delete_file_form(release, path)
     files_table_html = await _render_files_table_html(
         release,
-        paths=all_paths,
+        paths=page_paths,
+        count=len(all_paths),
+        limit=query_args.limit,
+        pagination=pagination,
         info=info,
         project_key=release.safe_project_key,
         version_key=release.safe_version_key,
