@@ -281,6 +281,10 @@ async def render_upload_page(
     )
 
 
+def signing_capable_keys(signing_keys: list[sql.SigningKey]) -> list[sql.SigningKey]:
+    return [signing_key for signing_key in signing_keys if signing_key.can_sign]
+
+
 def signing_key_expiry(signing_key: sql.SigningKey) -> str | htm.Element:
     if signing_key.expires is None:
         return "Never"
@@ -323,6 +327,7 @@ def signing_keys_list(signing_keys: list[sql.SigningKey]) -> htm.Element | None:
     # A collapsed breakdown of the certificate's primary and subkeys, so a list can flag a key
     # which has expired or been revoked without a per-key status column of its own. Any link
     # through to the details belongs on the certificate key id above, not on each row
+    signing_keys = signing_capable_keys(signing_keys)
     if not signing_keys:
         return None
     ordered = sorted(signing_keys, key=lambda k: (not k.is_primary, k.created))

@@ -310,6 +310,7 @@ async def upload(_session: web.Committer, _keys_upload: Literal["keys/upload"]) 
 
 
 def _add_signing_keys(page: htm.Block, signing_keys: list[sql.SigningKey]) -> None:
+    signing_keys = shared.keys.signing_capable_keys(signing_keys)
     if not signing_keys:
         return
     page.h2(".h5.mt-4")["Signing keys"]
