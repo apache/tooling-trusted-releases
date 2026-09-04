@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import functools
 from typing import Any
 
 import aiofiles.os
@@ -57,6 +58,53 @@ async def import_files(task_args: args.SvnImport) -> results.Results | None:
         raise
 
 
+async def _export_into(path: safe.StatePath, _old_rev: sql.Revision | None, *, task_args: args.SvnImport) -> None:
+    log.debug(f"Created revision directory: {path}")
+
+    final_target_path = path.path
+    if task_args.target_subdirectory:
+        final_target_path = (path / task_args.target_subdirectory).path
+        # Validate that final_target_path is a subdirectory of new_revision_dir
+        if not final_target_path.is_relative_to(path):
+            raise SvnImportError(f"Target subdirectory {task_args.target_subdirectory} is not a subdirectory of {path}")
+        await aiofiles.os.makedirs(final_target_path, exist_ok=True)
+
+    # We have to use a temporary directory otherwise SVN thinks it's a pegged revision
+    temp_export_dir_name = ".atr-svn-export.tmp"
+    temp_export_path = path / temp_export_dir_name
+
+    # audit_guidance all domains in svn_url are properly checked by the application
+    svn_command = [
+        "svn",
+        "export",
+        "--non-interactive",
+        "--ignore-externals",
+        "--ignore-keywords",
+        "-r",
+        task_args.revision,
+        "--",
+        f"{constants.SVN_DIST_ROOT_URL}/{task_args.svn_url!s}@{task_args.revision}",
+        str(temp_export_path),
+    ]
+
+    await _import_files_core_run_svn_export(svn_command)
+
+    # Move files from temp export path to final target path
+    # We only have to do this to avoid the SVN pegged revision issue
+    log.info(f"Moving exported files from {temp_export_path} to {final_target_path}")
+    for item_name in await aiofiles.os.listdir(temp_export_path):
+        source_item = temp_export_path / item_name
+        destination_item = final_target_path / item_name
+        try:
+            await aioshutil.move(str(source_item), str(destination_item))
+        except FileExistsError:
+            log.warning(f"Item {destination_item} already exists, skipping move for {item_name}")
+        except Exception as move_err:
+            log.error(f"Error moving {source_item} to {destination_item}: {move_err}")
+    await aiofiles.os.rmdir(temp_export_path)
+    log.info(f"Removed temporary export directory: {temp_export_path}")
+
+
 async def _import_files_core(args: args.SvnImport) -> str:
     """Core logic to perform the SVN export."""
 
@@ -64,64 +112,17 @@ async def _import_files_core(args: args.SvnImport) -> str:
     version_str = str(args.version_key)
 
     log.info(f"Starting SVN import for {project_str}-{version_str}")
-    # We have to use a temporary directory otherwise SVN thinks it's a pegged revision
-    temp_export_dir_name = ".svn-export.tmp"
 
     description = "Import of files from subversion"
     async with storage.write(args.asf_uid) as write:
         wacp = await write.as_project_committee_participant(args.project_key)
-
-        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
-            log.debug(f"Created revision directory: {path}")
-
-            final_target_path = path.path
-            if args.target_subdirectory:
-                final_target_path = (path / args.target_subdirectory).path
-                # Validate that final_target_path is a subdirectory of new_revision_dir
-                if not final_target_path.is_relative_to(path):
-                    raise SvnImportError(
-                        f"Target subdirectory {args.target_subdirectory} is not a subdirectory of {path}"
-                    )
-                await aiofiles.os.makedirs(final_target_path, exist_ok=True)
-
-            temp_export_path = path / temp_export_dir_name
-
-            # audit_guidance all domains in svn_url are properly checked by the application
-            svn_command = [
-                "svn",
-                "export",
-                "--non-interactive",
-                "-r",
-                args.revision,
-                "--",
-                f"{constants.SVN_DIST_ROOT_URL}/{args.svn_url!s}@{args.revision}",
-                str(temp_export_path),
-            ]
-
-            await _import_files_core_run_svn_export(svn_command)
-
-            # Move files from temp export path to final target path
-            # We only have to do this to avoid the SVN pegged revision issue
-            log.info(f"Moving exported files from {temp_export_path} to {final_target_path}")
-            for item_name in await aiofiles.os.listdir(temp_export_path):
-                source_item = temp_export_path / item_name
-                destination_item = final_target_path / item_name
-                try:
-                    await aioshutil.move(str(source_item), str(destination_item))
-                except FileExistsError:
-                    log.warning(f"Item {destination_item} already exists, skipping move for {item_name}")
-                except Exception as move_err:
-                    log.error(f"Error moving {source_item} to {destination_item}: {move_err}")
-            await aiofiles.os.rmdir(temp_export_path)
-            log.info(f"Removed temporary export directory: {temp_export_path}")
-
         result = await wacp.revision.create_revision_with_quarantine(
             args.project_key,
             args.version_key,
             args.asf_uid,
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description=description,
-            modify=modify,
+            modify=functools.partial(_export_into, task_args=args),
         )
         if isinstance(result, sql.Quarantined):
             log.info(f"SVN import quarantined for {project_str}-{version_str}")
