@@ -43,7 +43,7 @@ _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "8"
+CHECK_VERSION: Final[str] = "9"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:

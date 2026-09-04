@@ -485,15 +485,24 @@ def sbom_candidates(name: str, suffixes: tuple[str, ...]) -> list[str]:
     # apache-example-1.0.tar.gz.cdx.json, or stands in place of the artifact extension in the style
     # of a Java classifier, e.g. apache-example-1.0-cyclonedx.json. Whole name first, as it names
     # only ever one file, whereas a stem is shared by every format of the same artifact
+    path = pathlib.Path(name)
     candidates = [name + suffix for suffix in suffixes]
-    if (stem := artifact_stem(name)) is not None:
-        candidates.extend(stem + suffix for suffix in suffixes)
-    # Where the artifact carries a Maven classifier, e.g. the source-release in
-    # atr-maven-plugin-1.0.0-source-release.zip, the SBOM tooling names its output off the
-    # version alone, dropping the classifier - so also try the stem with the classifier removed
-    declassified = _classifier_removed(name)
-    if (declassified != name) and ((declassified_stem := artifact_stem(declassified)) is not None):
-        candidates.extend(declassified_stem + suffix for suffix in suffixes)
+
+    stems = []
+    if (stem := artifact_stem(path.name)) is not None:
+        stems.append(stem)
+        # Where the artifact carries a Maven classifier, e.g. the source-release in
+        # atr-maven-plugin-1.0.0-source-release.zip, the SBOM tooling names its output off the
+        # version alone, dropping the classifier - so also try the stem with the classifier removed
+        declassified = _classifier_removed(path.name)
+        if (declassified != path.name) and ((declassified_stem := artifact_stem(declassified)) is not None):
+            stems.append(declassified_stem)
+
+    # Sometimes the candidate file might sit at a higher directory, so build a list of potential paths
+    for directory in _ancestor_directories(path.parent):
+        for stem in stems:
+            base = stem if (str(directory) == ".") else f"{directory}/{stem}"
+            candidates.extend(base + suffix for suffix in suffixes)
     return candidates
 
 
@@ -526,6 +535,15 @@ def version_parse(version: str, elements: dict[str, str | None]) -> str:
     if version.startswith(elements["core"] + "-"):
         return version[len(elements["core"]) + 1 :]
     return version
+
+
+def _ancestor_directories(directory: pathlib.Path) -> list[pathlib.Path]:
+    # The directory and each of its parents, nearest first, ending at the root (".")
+    directories = [directory]
+    while directory != directory.parent:
+        directory = directory.parent
+        directories.append(directory)
+    return directories
 
 
 def _classifier_removed(name: str) -> str:

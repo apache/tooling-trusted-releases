@@ -28,7 +28,7 @@ import atr.tasks.task as task
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
-CHECK_VERSION: Final[str] = "2"
+CHECK_VERSION: Final[str] = "3"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -36,11 +36,13 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     recorder = await args.recorder(CHECK_VERSION)
     if not (primary_abs_path := await recorder.abs_path()):
         return None
+    if args.primary_rel_path is None:
+        return None
 
     log.info(f"Checking SBOM exists for {primary_abs_path}")
 
     try:
-        result_data = await _check_core_logic(artifact_path=str(primary_abs_path))
+        result_data = await _check_core_logic(recorder, str(args.primary_rel_path))
     except OSError as e:
         raise task.CheckRetryableError("Error during SBOM check execution", {"error": str(e)}) from e
 
@@ -55,22 +57,22 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
-async def _check_core_logic(artifact_path: str) -> dict[str, Any]:
+async def _check_core_logic(recorder: checks.Recorder, artifact_rel_path: str) -> dict[str, Any]:
     """Verify an SBOM exists for the specified artifact."""
 
-    sbom_expected_paths = analysis.sbom_candidates(artifact_path, analysis.SBOM_SUFFIXES)
+    # The candidates are relative to the release root, so resolving each through the recorder keeps
+    # the parent-directory search bounded to the revision rather than climbing the filesystem
+    sbom_expected_paths = analysis.sbom_candidates(artifact_rel_path, analysis.SBOM_SUFFIXES)
     log.info(f"Attempting to find one of: '{','.join(sbom_expected_paths)}'")
 
-    return await _check_core_logic_find_sboms(
-        sbom_expected_paths=sbom_expected_paths,
-        artifact_path=artifact_path,
-    )
+    return await _check_core_logic_find_sboms(recorder, sbom_expected_paths)
 
 
-async def _check_core_logic_find_sboms(sbom_expected_paths: list[str], artifact_path: str) -> dict[str, Any]:
+async def _check_core_logic_find_sboms(recorder: checks.Recorder, sbom_expected_paths: list[str]) -> dict[str, Any]:
 
     for sbom in sbom_expected_paths:
-        if await aiofiles.os.path.exists(sbom):
+        abs_path = await recorder.abs_path(sbom)
+        if (abs_path is not None) and await aiofiles.os.path.exists(abs_path.path):
             return {
                 "found": True,
                 "sbom_path": sbom,

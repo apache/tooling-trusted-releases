@@ -58,6 +58,20 @@ def test_sbom_candidates_maven_classifier() -> None:
     assert "atr-maven-plugin-1.0.0-beta-2-SNAPSHOT-cyclonedx.json" in candidates
 
 
+def test_sbom_candidates_module_sbom_at_release_root() -> None:
+    # A module SBOM names itself off the version and may sit at the release root while the artifacts
+    # sit in subdirectories, so a subdirectory artifact must reach the root-level SBOM
+    candidates = analysis.sbom_candidates(
+        "binaries/apache-maven-4.1.0-SNAPSHOT-bin.tar.gz", analysis.CYCLONEDX_JSON_SUFFIXES
+    )
+    assert "binaries/apache-maven-4.1.0-SNAPSHOT-cyclonedx.json" in candidates
+    assert "apache-maven-4.1.0-SNAPSHOT-cyclonedx.json" in candidates
+    # The artifact's own directory is searched before the root, so a co-located SBOM wins
+    own_dir = candidates.index("binaries/apache-maven-4.1.0-SNAPSHOT-cyclonedx.json")
+    root = candidates.index("apache-maven-4.1.0-SNAPSHOT-cyclonedx.json")
+    assert own_dir < root
+
+
 def test_sbom_pairs_artifact() -> None:
     # The inverse of sbom_candidates: an SBOM pairs with an artifact when it is one of the names that
     # artifact would generate, so the whole-name, stem, and dropped-classifier styles all pair
@@ -75,6 +89,12 @@ def test_sbom_pairs_artifact() -> None:
     # An SBOM does not pair with an unrelated artifact
     assert not analysis.sbom_pairs_artifact(
         "apache-example-1.0-cyclonedx.json", "apache-other-2.0.jar", analysis.SBOM_SUFFIXES
+    )
+    # A module SBOM at the release root pairs with an artifact in a subdirectory
+    assert analysis.sbom_pairs_artifact(
+        "apache-maven-4.1.0-SNAPSHOT-cyclonedx.json",
+        "source/apache-maven-4.1.0-SNAPSHOT-src.tar.gz",
+        analysis.SBOM_SUFFIXES,
     )
 
 
