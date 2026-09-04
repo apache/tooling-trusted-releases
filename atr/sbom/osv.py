@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Final
 import aiohttp
 from packageurl import PackageURL
 
+import atr.log as log
 import atr.util as util
 
 from . import models
@@ -35,6 +36,10 @@ if TYPE_CHECKING:
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
 _OSV_API_BASE: Final[str] = "https://api.osv.dev/v1"
 _API_TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
+_MAX_PAGINATION_PAGES: Final = 20
+_MAX_VULNERABILITIES_PER_COMPONENT: Final = 500
+_MAX_VULNERABILITY_DETAILS: Final = 200
+_VULNERABILITY_DETAIL_TIMEOUT: Final = 10
 _RETRY_DELAY_SECONDS: Final = (1, 3)
 _SOURCE_DATABASE_NAMES: Final = {
     "ASB": "Android Security Bulletin",
@@ -174,6 +179,15 @@ def _assemble_vulnerabilities(doc: dict[str, Any], patch_ops: models.patch.Patch
     )
 
 
+def _capped(
+    vulns: list[models.osv.VulnerabilityDetails], collected: int, query: dict[str, Any]
+) -> list[models.osv.VulnerabilityDetails]:
+    remaining = _MAX_VULNERABILITIES_PER_COMPONENT - collected
+    if len(vulns) > remaining:
+        log.warning(f"Truncated OSV results to {_MAX_VULNERABILITIES_PER_COMPONENT} vulnerabilities for {query}")
+    return vulns[:remaining]
+
+
 def _component_purl_with_version(component: Component) -> str | None:
     # If we don't know the purl, we can't help
     if component.purl is None:
@@ -209,10 +223,16 @@ async def _fetch_vulnerabilities_for_batch(
 async def _fetch_vulnerability_details(
     session: aiohttp.ClientSession,
     vuln_id: str,
-) -> models.osv.VulnerabilityDetails:
+) -> models.osv.VulnerabilityDetails | None:
     if _DEBUG:
         print(f"[DEBUG] Fetching details for {vuln_id}")
-    data = await _request_json(session, "GET", f"{_OSV_API_BASE}/vulns/{vuln_id}")
+    try:
+        data = await asyncio.wait_for(
+            _request_json(session, "GET", f"{_OSV_API_BASE}/vulns/{vuln_id}"), _VULNERABILITY_DETAIL_TIMEOUT
+        )
+    except TimeoutError:
+        log.warning(f"Timed out fetching OSV details for {vuln_id}")
+        return None
     return models.osv.VulnerabilityDetails.model_validate(data)
 
 
@@ -232,25 +252,29 @@ async def _paginate_query(
     session: aiohttp.ClientSession,
     query: dict[str, Any],
     page_token: str,
+    collected: int,
 ) -> list[models.osv.VulnerabilityDetails]:
     all_vulns: list[models.osv.VulnerabilityDetails] = []
     current_query = query.copy()
     current_query["page_token"] = page_token
     page = 0
-    while True:
+    while (collected + len(all_vulns)) < _MAX_VULNERABILITIES_PER_COMPONENT:
         page += 1
+        if page > _MAX_PAGINATION_PAGES:
+            log.warning(f"Stopped OSV pagination after {_MAX_PAGINATION_PAGES} pages for {query}")
+            return all_vulns
         if _DEBUG and (page > 1):
             print(f"[DEBUG] Paginating query (page {page})")
         results = await _fetch_vulnerabilities_for_batch(session, [current_query])
         if not results:
-            break
+            return all_vulns
         result = results[0]
-        if result.vulns:
-            all_vulns.extend(result.vulns)
+        all_vulns.extend(_capped(result.vulns or [], collected + len(all_vulns), query))
         next_page_token = result.next_page_token
         if next_page_token is None:
-            break
+            return all_vulns
         current_query["page_token"] = next_page_token
+    log.warning(f"Stopped OSV pagination at {_MAX_VULNERABILITIES_PER_COMPONENT} vulnerabilities for {query}")
     return all_vulns
 
 
@@ -332,14 +356,14 @@ async def _scan_bundle_fetch_vulnerabilities(
             query_result = batch_results[i]
             if query_result.vulns:
                 existing_vulns = component_vulns_map.setdefault(ref, [])
-                existing_vulns.extend(query_result.vulns)
+                existing_vulns.extend(_capped(query_result.vulns, 0, query))
                 if _DEBUG:
                     print(f"[DEBUG] {ref}: {len(query_result.vulns)} vulnerabilities")
             if query_result.next_page_token:
                 if _DEBUG:
                     print(f"[DEBUG] {ref}: has pagination, fetching remaining pages")
                 existing_vulns = component_vulns_map.setdefault(ref, [])
-                paginated = await _paginate_query(session, query, query_result.next_page_token)
+                paginated = await _paginate_query(session, query, query_result.next_page_token, len(existing_vulns))
                 existing_vulns.extend(paginated)
     return component_vulns_map
 
@@ -349,15 +373,25 @@ async def _scan_bundle_populate_vulnerabilities(
     component_vulns_map: dict[str, list[models.osv.VulnerabilityDetails]],
 ) -> None:
     details_cache: dict[str, models.osv.VulnerabilityDetails] = {}
+    attempted: set[str] = set()
+    skipped: set[str] = set()
     for vulns in component_vulns_map.values():
         for i, vuln in enumerate(vulns):
             vuln_id = vuln.id
             if not vuln_id:
                 continue
-            details = details_cache.get(vuln_id)
-            if details is None:
+            if (vuln_id not in attempted) and (len(attempted) < _MAX_VULNERABILITY_DETAILS):
+                attempted.add(vuln_id)
                 details = await _fetch_vulnerability_details(session, vuln_id)
-                details_cache[vuln_id] = details
-            vulns[i] = details
+                if details is not None:
+                    details_cache[vuln_id] = details
+            elif vuln_id not in attempted:
+                skipped.add(vuln_id)
+            if vuln_id in details_cache:
+                vulns[i] = details_cache[vuln_id]
+    if skipped:
+        log.warning(
+            f"Skipped OSV details for {len(skipped)} vulnerabilities beyond the limit of {_MAX_VULNERABILITY_DETAILS}"
+        )
     if _DEBUG:
         print(f"[DEBUG] Fetched details for {len(details_cache)} unique vulnerabilities")

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import unittest.mock as mock
 
 import aiohttp
@@ -22,6 +23,7 @@ import pytest
 
 import atr.models.args as args
 import atr.models.safe as safe
+import atr.sbom.models.osv
 import atr.sbom.osv as osv
 import atr.tasks.sbom as tasks_sbom
 
@@ -72,6 +74,16 @@ def sleeps(monkeypatch):
     return recorded
 
 
+async def test_fetch_vulnerability_details_times_out(monkeypatch):
+    async def slow_request(*_args, **_kwargs):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(osv, "_VULNERABILITY_DETAIL_TIMEOUT", 0.01)
+    monkeypatch.setattr(osv, "_request_json", slow_request)
+
+    assert await osv._fetch_vulnerability_details(mock.Mock(), "GHSA-x") is None
+
+
 async def test_osv_scan_reports_truncated_response_as_unavailable(tmp_path, monkeypatch):
     rel_path = safe.RelPath("artifact.cdx.json")
     (tmp_path / str(rel_path)).write_text("{}", encoding="utf-8")
@@ -96,6 +108,42 @@ async def test_osv_scan_reports_truncated_response_as_unavailable(tmp_path, monk
         match="The OSV service could not be reached; try the scan again later",
     ):
         await tasks_sbom.osv_scan(task_args.model_dump())
+
+
+async def test_paginate_query_respects_component_cap(monkeypatch):
+    page = atr.sbom.models.osv.QueryResult(vulns=[_vuln("A"), _vuln("B"), _vuln("C")], next_page_token="more")
+    fetch = mock.AsyncMock(return_value=[page])
+    monkeypatch.setattr(osv, "_fetch_vulnerabilities_for_batch", fetch)
+    monkeypatch.setattr(osv, "_MAX_VULNERABILITIES_PER_COMPONENT", 3)
+
+    vulns = await osv._paginate_query(mock.Mock(), {"package": {}}, "token", 1)
+
+    assert [v.id for v in vulns] == ["A", "B"]
+    assert fetch.await_count == 1
+
+
+async def test_paginate_query_stops_at_page_limit(monkeypatch):
+    page = atr.sbom.models.osv.QueryResult(vulns=[_vuln("A")], next_page_token="more")
+    fetch = mock.AsyncMock(return_value=[page])
+    monkeypatch.setattr(osv, "_fetch_vulnerabilities_for_batch", fetch)
+    monkeypatch.setattr(osv, "_MAX_PAGINATION_PAGES", 2)
+
+    vulns = await osv._paginate_query(mock.Mock(), {"package": {}}, "token", 0)
+
+    assert len(vulns) == 2
+    assert fetch.await_count == 2
+
+
+async def test_populate_vulnerabilities_caps_detail_fetches(monkeypatch):
+    fetch = mock.AsyncMock(side_effect=lambda _session, vuln_id: _vuln(vuln_id, summary="full"))
+    monkeypatch.setattr(osv, "_fetch_vulnerability_details", fetch)
+    monkeypatch.setattr(osv, "_MAX_VULNERABILITY_DETAILS", 2)
+    component_vulns_map = {"ref": [_vuln("A"), _vuln("B"), _vuln("C"), _vuln("A")]}
+
+    await osv._scan_bundle_populate_vulnerabilities(mock.Mock(), component_vulns_map)
+
+    assert [v.summary for v in component_vulns_map["ref"]] == ["full", "full", None, "full"]
+    assert fetch.await_count == 2
 
 
 async def test_request_json_does_not_retry_client_errors(sleeps):
@@ -140,3 +188,7 @@ async def test_request_json_stops_when_retry_after_exceeds_delay(sleeps):
         await osv._request_json(session, "GET", "https://osv.test/vulns/x")
     assert session.requests == 1
     assert sleeps == []
+
+
+def _vuln(vuln_id: str, summary: str | None = None) -> atr.sbom.models.osv.VulnerabilityDetails:
+    return atr.sbom.models.osv.VulnerabilityDetails(id=vuln_id, modified="2026-01-01T00:00:00Z", summary=summary)
