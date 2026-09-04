@@ -55,17 +55,24 @@ class GeneralPublic:
         self.__asf_uid = read.authorisation.asf_uid
 
     async def by_release_path(
-        self, release: sql.Release, rel_path: pathlib.Path, offset: int, limit: int
+        self,
+        release: sql.Release,
+        rel_path: pathlib.Path,
+        offset: int,
+        limit: int,
+        revision: safe.RevisionNumber | None = None,
     ) -> datatypes.CheckResults:
-        if release.latest_revision_number is None:
-            raise ValueError("Release has no revision - Invalid state")
+        if revision is None:
+            revision = release.safe_latest_revision_number
 
         path = str(rel_path)
-        primary_checks = await interaction.checks_for(release, rel_path=path, member=False, caller_data=self.__data)
-        member_checks = await interaction.checks_for(
-            release, rel_path=path, member=True, statuses=MEMBER_STATUSES, caller_data=self.__data
+        primary_checks = await interaction.checks_for(
+            release, revision, rel_path=path, member=False, caller_data=self.__data
         )
-        member_note_count = await interaction.member_note_count(release, path, caller_data=self.__data)
+        member_checks = await interaction.checks_for(
+            release, revision, rel_path=path, member=True, statuses=MEMBER_STATUSES, caller_data=self.__data
+        )
+        member_note_count = await interaction.member_note_count(release, path, revision, caller_data=self.__data)
 
         # Filter out any results that are ignored
         unignored_checks = []

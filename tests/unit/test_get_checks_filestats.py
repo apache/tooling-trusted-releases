@@ -45,13 +45,18 @@ async def test_compute_stats_counts_by_status_before_and_after(monkeypatch: pyte
     ]
     tally = interaction.ChecksTally(counts, ignorable)
     release = mock.MagicMock()
-    release.latest_revision_number = "00001"
+    revision = safe.RevisionNumber("00001")
+    tally_for = mock.AsyncMock(return_value=tally)
 
     monkeypatch.setattr(checks.db, "session", _mock_db_session)
-    monkeypatch.setattr(checks.interaction, "checks_tally_for", mock.AsyncMock(return_value=tally))
+    monkeypatch.setattr(checks.interaction, "checks_tally_for", tally_for)
 
-    per_file, totals = await checks._compute_stats(release, [path], _match_ignore)
+    per_file, totals = await checks._compute_stats(release, [path], _match_ignore, revision)
     stats = per_file[path]
+
+    tally_for.assert_awaited_once_with(
+        release, revision, statuses=sql.CHECK_RESULT_IGNORABLE_STATUSES, caller_data=mock.ANY
+    )
 
     assert stats.file_before == collections.Counter(
         {

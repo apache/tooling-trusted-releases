@@ -25,12 +25,14 @@ import htpy
 import quart
 
 import atr.analysis as analysis
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.download as download
+import atr.get.release
 import atr.get.report as report
 import atr.get.sbom as sbom
 import atr.get.vote as vote
@@ -76,7 +78,7 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
         ragp = read.as_general_public()
         match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
 
-    _, totals = await _compute_stats(release, all_paths, match_ignore)
+    _, totals = await _compute_stats(release, all_paths, match_ignore, release.safe_latest_revision_number)
     return totals
 
 
@@ -100,24 +102,30 @@ async def selected(
         release = await data.release(
             project_key=str(project_key),
             version=str(version_key),
-            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+    if release.phase not in (sql.ReleasePhase.RELEASE_CANDIDATE, sql.ReleasePhase.RELEASE):
+        raise base.ASFQuartException("Release does not exist", errorcode=404)
 
     if release.committee is None:
         raise ValueError("Release has no committee")
 
-    base_path = paths.release_directory(release)
-    all_paths = [path async for path in util.paths_recursive(base_path)]
-    all_paths.sort()
+    if release.phase == sql.ReleasePhase.RELEASE:
+        revision, all_paths, file_types = await _published_paths(project_key, version_key)
+    else:
+        revision = release.safe_latest_revision_number
+        base_path = paths.release_directory(release)
+        all_paths = [path async for path in util.paths_recursive(base_path)]
+        all_paths.sort()
+        file_types = None
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
         match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
-        info = await ragp.releases.path_info(release, all_paths)
+        info = await ragp.releases.path_info(release, all_paths, revision, file_types)
 
-    per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
+    per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore, revision)
     page_paths = all_paths[query_args.offset : (query_args.offset + query_args.limit)]
     pagination = web.page_nav(query_args.offset, query_args.limit, len(all_paths), len(page_paths))
     paged = (pagination.previous_offset is not None) or (pagination.next_offset is not None)
@@ -246,15 +254,16 @@ async def _compute_stats(
     release: sql.Release,
     paths: list[safe.RelPath],
     match_ignore: Callable[[sql.CheckResult], bool],
+    revision: safe.RevisionNumber | None,
 ) -> tuple[dict[safe.RelPath, FileStats], FileStats]:
     per_file = {path: _file_stats_empty() for path in paths}
 
-    if release.latest_revision_number is None:
+    if revision is None:
         return per_file, _file_stats_empty()
 
     async with db.session() as data:
         tally = await interaction.checks_tally_for(
-            release, statuses=sql.CHECK_RESULT_IGNORABLE_STATUSES, caller_data=data
+            release, revision, statuses=sql.CHECK_RESULT_IGNORABLE_STATUSES, caller_data=data
         )
 
     for count in tally.counts:
@@ -348,6 +357,22 @@ def _path_display(path_str: str, severity: sql.CheckResultStatus | None, has_che
     return htpy.code[path_str]
 
 
+async def _published_paths(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey
+) -> tuple[safe.RevisionNumber | None, list[safe.RelPath], dict[safe.RelPath, classify.FileType]]:
+    revision = await attestable.latest_checked_revision_number(project_key, version_key)
+    attested = await attestable.load(project_key, version_key, revision) if (revision is not None) else None
+    if attested is None:
+        return revision, [], {}
+    all_paths = sorted(safe.RelPath(path) for path in attestable.path_hashes(attested))
+    file_types = {
+        path: classify.FileType(classification)
+        for path in all_paths
+        if (classification := attestable.path_classification(attested, str(path))) is not None
+    }
+    return revision, all_paths, file_types
+
+
 def _render_checks_table(
     page: htm.Block,
     release: sql.Release,
@@ -357,7 +382,7 @@ def _render_checks_table(
     info: datatypes.PathInfo | None,
 ) -> None:
     if count == 0:
-        page.div(".alert.alert-info")["This release candidate does not have any files."]
+        page.div(".alert.alert-info")["No checked files are recorded for this release."]
         return
     if not paths:
         page.div(".alert.alert-info")[f"No files to show on this page ({count} total)."]
@@ -425,7 +450,7 @@ def _render_file_row(
         count_cells.append(_count_cell(counts_after[status], status, has_checks_before, num_style))
 
     sbom_btn = None
-    if analysis.is_cyclonedx_json(path.as_path().name):
+    if analysis.is_cyclonedx_json(path.as_path().name) and (release.phase != sql.ReleasePhase.RELEASE):
         sbom_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=quality_url)["View SBOM"]
 
     download_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=download_url)["Download"]
@@ -445,12 +470,16 @@ def _render_file_row(
 
 
 def _render_header(page: htm.Block, release: sql.Release) -> None:
-    render.html_nav(
-        page,
-        back_url=util.as_url(vote.selected, project_key=release.project.key, version_key=release.version),
-        back_anchor=f"Vote on {release.project.short_display_name} {release.version}",
-        phase="VOTE",
-    )
+    if release.phase == sql.ReleasePhase.RELEASE:
+        back_url = util.as_url(atr.get.release.finished, project_key=release.project.key)
+        page.a(".atr-back-link", href=back_url)[f"← Back to Releases of {release.project.display_name}"]
+    else:
+        render.html_nav(
+            page,
+            back_url=util.as_url(vote.selected, project_key=release.project.key, version_key=release.version),
+            back_anchor=f"Vote on {release.project.short_display_name} {release.version}",
+            phase="VOTE",
+        )
 
     page.h1[
         "File checks for ",

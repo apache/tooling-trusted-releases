@@ -36,6 +36,10 @@
                    class="btn btn-outline-primary w-100">
                   View details
                 </a>
+                <a href="{{ as_url(get.checks.selected, project_key=release.project.key, version_key=release.version) }}"
+                   class="btn btn-outline-secondary w-100 mt-2">
+                  View check results
+                </a>
               </div>
             </div>
           </div>

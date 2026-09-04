@@ -537,14 +537,21 @@ async def latest_revision(release: sql.Release, caller_data: db.Session | None =
         return await data.revision(release_key=release.key, number=release.latest_revision_number).get()
 
 
-async def member_note_count(release: sql.Release, rel_path: str, caller_data: db.Session | None = None) -> int:
+async def member_note_count(
+    release: sql.Release,
+    rel_path: str,
+    revision: safe.RevisionNumber | None = None,
+    caller_data: db.Session | None = None,
+) -> int:
+    if revision is None:
+        revision = release.safe_latest_revision_number
     via = sql.validate_instrumented_attribute
     async with db.ensure_session(caller_data) as data:
         query = await _check_results_query(
             data,
             release.safe_project_key,
             release.safe_version_key,
-            release.safe_latest_revision_number,
+            revision,
             None,
             False,
             rel_path,

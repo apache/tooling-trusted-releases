@@ -23,7 +23,6 @@ import asfquart.base as base
 import atr.blueprints.get as get
 import atr.db as db
 import atr.models.safe as safe
-import atr.models.sql as sql
 import atr.web as web
 
 
@@ -43,22 +42,11 @@ async def data(
         release = await data.release(
             project_key=str(project_key),
             version=str(version_key),
-            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
-        ).get()
-
-        if release is None:
-            release = await data.release(
-                project_key=str(project_key),
-                version=str(version_key),
-                phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-                _committee=True,
-            ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
 
         if release.committee is None:
             raise base.ASFQuartException("Release has no committee", errorcode=500)
-        if release.latest_revision_number is None:
-            raise base.ASFQuartException("Release has no revision", errorcode=500)
 
         check_result = await data.check_result(
             id=check_id,

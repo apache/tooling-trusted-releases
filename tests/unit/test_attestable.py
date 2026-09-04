@@ -300,6 +300,19 @@ def test_parse_attestable_v1():
     assert result.paths == {"a.tar.gz": "h1"}
 
 
+async def test_latest_checked_revision_number(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / "proj" / "1.0"
+    write_sidecar_names(directory, ["00001.checks.json", "00002.checks.json", "00003.checks.json"])
+    checks = models.AttestableChecksV2(checks={"a.tgz": {"rat": "blake3:r"}}).model_dump_json()
+    (directory / "00002.checks.json").write_text(checks, encoding="utf-8")
+    monkeypatch.setattr(attestable.paths, "get_attestable_dir", lambda: safe.StatePath(tmp_path))
+
+    checked = await attestable.latest_checked_revision_number(safe.ProjectKey("proj"), safe.VersionKey("1.0"))
+
+    assert checked == safe.RevisionNumber("00002")
+    assert await attestable.latest_checked_revision_number(safe.ProjectKey("proj"), safe.VersionKey("2.0")) is None
+
+
 async def test_latest_revision_number(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     names = [
         "00001.json",

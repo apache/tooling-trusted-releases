@@ -51,40 +51,28 @@ class GeneralPublic:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def path_info(self, release: sql.Release, all_paths: list[safe.RelPath]) -> datatypes.PathInfo | None:
+    async def path_info(
+        self,
+        release: sql.Release,
+        all_paths: list[safe.RelPath],
+        revision: safe.RevisionNumber | None = None,
+        file_types: dict[safe.RelPath, classify.FileType] | None = None,
+    ) -> datatypes.PathInfo | None:
         info = datatypes.PathInfo()
-        latest_revision_number = release.latest_revision_number
-        if latest_revision_number is None:
+        if (revision is None) and (release.latest_revision_number is None):
             return None
+        revision = revision or release.safe_latest_revision_number
         tally = await interaction.checks_tally_for(
             release,
-            revision=release.safe_latest_revision_number,
+            revision=revision,
             statuses=sql.CHECK_RESULT_NON_NOTE_STATUSES,
             caller_data=self.__data,
         )
         await self.__suggestions_concerns(release, info, tally.results)
         self.__note_counts(info, tally.counts)
-        base_path = paths.release_directory(release)
-        revision_seq = int(str(release.safe_latest_revision_number))
-        db_classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
-        # TODO: This should get the matchers from attestable data policy
-        # But this branch is only a fallback for pre-AttestableV2 releases
-        source_matcher, binary_matcher = classify.matchers_from_policy(
-            release.project.policy_source_artifact_paths,
-            release.project.policy_binary_artifact_paths,
-            base_path,
-        )
-        for path in all_paths:
-            if isinstance(path, safe.RelDirPath):
-                info.file_types[path] = classify.FileType.DIRECTORY
-            else:
-                db_value = db_classifications.get(str(path))
-                if db_value is not None:
-                    info.file_types[path] = classify.FileType(db_value)
-                else:
-                    info.file_types[path] = await classify.classify(
-                        path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
-                    )
+        if file_types is None:
+            file_types = await self.__file_types(release, revision, all_paths)
+        info.file_types.update(file_types)
         self.__pair_sboms(info, all_paths)
         self.__compute_checker_stats(info, all_paths, tally.counts)
         return info
@@ -135,6 +123,33 @@ class GeneralPublic:
                     files=acc.files,
                 )
             )
+
+    async def __file_types(
+        self, release: sql.Release, revision: safe.RevisionNumber, all_paths: list[safe.RelPath]
+    ) -> dict[safe.RelPath, classify.FileType]:
+        base_path = paths.release_directory(release)
+        revision_seq = int(str(revision))
+        db_classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
+        # TODO: This should get the matchers from attestable data policy
+        # But this branch is only a fallback for pre-AttestableV2 releases
+        source_matcher, binary_matcher = classify.matchers_from_policy(
+            release.project.policy_source_artifact_paths,
+            release.project.policy_binary_artifact_paths,
+            base_path,
+        )
+        file_types: dict[safe.RelPath, classify.FileType] = {}
+        for path in all_paths:
+            if isinstance(path, safe.RelDirPath):
+                file_types[path] = classify.FileType.DIRECTORY
+            else:
+                db_value = db_classifications.get(str(path))
+                if db_value is not None:
+                    file_types[path] = classify.FileType(db_value)
+                else:
+                    file_types[path] = await classify.classify(
+                        path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                    )
+        return file_types
 
     def __pair_sboms(self, info: datatypes.PathInfo, paths: list[safe.RelPath]) -> None:
         # Only the JSON suffixes pair here, because the SBOM tooling reads JSON alone
