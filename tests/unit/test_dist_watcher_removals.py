@@ -22,6 +22,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.svn.catalog as catalog
+import atr.svn.dist_rules as dist_rules
 
 
 def _changed(**paths: str) -> dict[str, dict[str, str]]:
@@ -49,30 +50,38 @@ def _data_returning(artifact: object) -> mock.MagicMock:
 
 
 def test_a_deleted_artifact_file_is_collected_by_directory_and_name() -> None:
-    changes = catalog._structural_changes(_changed(**{"release__tomcat__apache-tomcat-1.4.3.tar.gz": "D "}))
+    changes = catalog._structural_changes(
+        dist_rules.empty(), _changed(**{"release__tomcat__apache-tomcat-1.4.3.tar.gz": "D "})
+    )
     assert ("tomcat", "apache-tomcat-1.4.3.tar.gz") in changes.removed_files
 
 
 def test_a_deleted_nested_artifact_file_keeps_its_full_directory() -> None:
-    changes = catalog._structural_changes(_changed(**{"release__httpd__2.4.63__httpd-2.4.63.tar.gz": "D "}))
+    changes = catalog._structural_changes(
+        dist_rules.empty(), _changed(**{"release__httpd__2.4.63__httpd-2.4.63.tar.gz": "D "})
+    )
     assert ("httpd/2.4.63", "httpd-2.4.63.tar.gz") in changes.removed_files
 
 
 def test_a_deleted_companion_is_not_collected() -> None:
     # A signature or checksum has no artifacts-table row of its own, so it never resolves
-    changes = catalog._structural_changes(_changed(**{"release__tomcat__apache-tomcat-1.4.3.tar.gz.asc": "D "}))
+    changes = catalog._structural_changes(
+        dist_rules.empty(), _changed(**{"release__tomcat__apache-tomcat-1.4.3.tar.gz.asc": "D "})
+    )
     assert changes.removed_files == []
 
 
 def test_a_deleted_binary_is_collected_and_filtered_later() -> None:
     # A binary is a real artifact file, so the structural pass keeps it; whether it retires the
     # release is decided at resolve time from its stored classification
-    changes = catalog._structural_changes(_changed(**{"release__tomcat__apache-tomcat-1.4.3-bin.zip": "D "}))
+    changes = catalog._structural_changes(
+        dist_rules.empty(), _changed(**{"release__tomcat__apache-tomcat-1.4.3-bin.zip": "D "})
+    )
     assert ("tomcat", "apache-tomcat-1.4.3-bin.zip") in changes.removed_files
 
 
 def test_a_whole_version_directory_deletion_is_a_keyed_removal_not_a_file() -> None:
-    changes = catalog._structural_changes(_changed(**{"release__httpd__2.4.63__": "D "}))
+    changes = catalog._structural_changes(dist_rules.empty(), _changed(**{"release__httpd__2.4.63__": "D "}))
     assert ("httpd", None, "2.4.63") in changes.removed
     assert changes.removed_files == []
 
@@ -113,7 +122,7 @@ async def test_a_source_deleted_for_a_release_republished_in_the_same_commit_is_
     )
     monkeypatch.setattr(catalog, "_published_release_keys", mock.AsyncMock(return_value={"foo-1.2.0"}))
     _releases, archives = await catalog._resolve_changes(
-        mock.MagicMock(), added={}, removed=set(), removed_files=[("foo/1.2.0", "foo-1.2.0.tar.gz")]
+        dist_rules.empty(), mock.MagicMock(), added={}, removed=set(), removed_files=[("foo/1.2.0", "foo-1.2.0.tar.gz")]
     )
     assert archives == []
 
@@ -127,7 +136,7 @@ async def test_a_source_deleted_for_a_release_not_republished_is_archived(monkey
     )
     monkeypatch.setattr(catalog, "_published_release_keys", mock.AsyncMock(return_value=set()))
     _releases, archives = await catalog._resolve_changes(
-        mock.MagicMock(), added={}, removed=set(), removed_files=[("foo/1.2.0", "foo-1.2.0.tar.gz")]
+        dist_rules.empty(), mock.MagicMock(), added={}, removed=set(), removed_files=[("foo/1.2.0", "foo-1.2.0.tar.gz")]
     )
     assert [(str(p), str(v)) for p, v in archives] == [("foo", "1.2.0")]
 
@@ -141,6 +150,7 @@ async def test_the_same_release_is_only_archived_once_across_several_deleted_sou
     )
     monkeypatch.setattr(catalog, "_published_release_keys", mock.AsyncMock(return_value=set()))
     _releases, archives = await catalog._resolve_changes(
+        dist_rules.empty(),
         mock.MagicMock(),
         added={},
         removed=set(),

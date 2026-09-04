@@ -17,6 +17,12 @@
 
 """
 Decompose dist.apache.org paths into a project subproject and version.
+
+The layout quirks the decomposer needs - which dirs are buckets, which names remap to a
+different project key, and so on - used to live here as frozensets and dicts. They're now
+rows in the dist_rule table, loaded into a DistRules snapshot (see atr/svn/dist_rules.py)
+and handed in, so an admin can tune them without a code change. This module stays a pure
+decomposer with no first-party imports, so it's still cheap to unit test.
 """
 
 import dataclasses
@@ -26,38 +32,6 @@ from typing import Final, Literal
 # Published releases live under this prefix in the dist repo; a commit's changed paths are relative
 # to the repo root, so both the cataloguer and the KEYS reflector strip it to read the layout.
 RELEASE_PREFIX: Final[str] = "release/"
-
-# dist-path -> projects.json key remaps the bare-name match can't reach; subproject None is a
-# committee-level layout. Per-entry only - a blanket rule mis-hits (camel-karaf is Camel's)
-PROJECT_REMAPS: Final[dict[tuple[str, str | None], str]] = {
-    ("activemq", "activemq-artemis"): "artemis",  # Artemis graduated from ActiveMQ, dist still splits it
-    ("apr", None): "apr-portable-runtime",  # the committee's top level is the Portable Runtime itself
-    ("httpd", None): "httpd-http-server",  # the committee's top level is the HTTP Server
-    ("sis", None): "sis-spatial-information-system",
-    ("trafficcontrol", None): "traffic-control",
-    ("trafficserver", None): "trafficserver-traffic-server",
-    ("xmlgraphics", "commons"): "xmlgraphics-xml-graphics-commons",
-}
-
-# Lead dirs that name a distribution bucket, not a subproject
-_GROUPING_BUCKETS: Final[frozenset[str]] = frozenset(
-    {"providers", "source", "sources", "binaries", "bin", "src", "releases"}
-)
-
-# Buckets scoped to one committee, where the name is a real subproject elsewhere. Eg. cordova ships each
-# platform repo under platforms/ (cordova-android-13.0.0.tgz) and its tooling under tools/, so the
-# name comes from the file rather than the bucket dir
-_COMMITTEE_BUCKETS: Final[frozenset[tuple[str, str]]] = frozenset(
-    {("maven", "plugins"), ("cordova", "platforms"), ("cordova", "tools")}
-)
-
-# Dirs of bundled third-party packages, never a release
-_EXCLUDED_PARTS: Final[frozenset[str]] = frozenset({"repos"})
-
-# Build/status tokens dropped from a filename-derived name
-_NAME_BUILD_SUFFIXES: Final[frozenset[str]] = frozenset(
-    {"src", "source", "sources", "bin", "binaries", "incubating", "v"}
-)
 
 # A version-ish component
 _VERSION_RE: Final[re.Pattern[str]] = re.compile(r"^v?\d+(?:\.\d+)*(?:[.\-_][A-Za-z0-9]+)*$")
@@ -78,37 +52,13 @@ _SEMVER_FILE_RE: Final[re.Pattern[str]] = re.compile(
 _CALVER_FILE_RE: Final[re.Pattern[str]] = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2}|(?:19|20)\d{6})(?!\d)")
 
 # Airflow ships its providers as flat calver batches: a dated source alongside every provider
-# package, in one dir with no version subdir. These spot the drop area and the batch source so the
-# watcher and cataloguer can collapse the per-provider subprojects into one project keyed by calver
-AIRFLOW_PROVIDER_AREAS: Final[frozenset[str]] = frozenset({"providers", "backport-providers"})
+# package, in one dir with no version subdir. These spot the batch source and the per-provider
+# packages so the watcher and cataloguer can collapse them into one project keyed by calver. The
+# provider *areas* (the drop dirs) are a tunable, so they live in the dist_rule table instead
 _AIRFLOW_CALVER_SOURCE_RE: Final[re.Pattern[str]] = re.compile(
     r"^apache[-_]airflow[-_](?:backport[-_])?providers-(\d{4})[-.](\d{1,2})[-.](\d{1,2})-source\.tar\.gz$"
 )
 _AIRFLOW_PROVIDER_FILE_RE: Final[re.Pattern[str]] = re.compile(r"^apache[-_]airflow[-_](?:backport[-_])?providers[-_]")
-
-
-def airflow_provider_area(committee: str, parts: tuple[str, ...]) -> str | None:
-    # The airflow provider area a file sits under (airflow/<area>/), or None
-    if committee != "airflow":
-        return None
-    if parts and (parts[0] in AIRFLOW_PROVIDER_AREAS):
-        return parts[0]
-    return None
-
-
-def is_airflow_provider_filename(filename: str) -> bool:
-    # A provider package or its batch source, by name - used to skip the stray copies of these that
-    # sit directly under airflow/ (duplicates of the ones under airflow/providers/)
-    return _AIRFLOW_PROVIDER_FILE_RE.match(filename) is not None
-
-
-def airflow_calver_date(filename: str) -> str | None:
-    # The calver date of a providers batch source, normalised to YYYY-MM-DD, or None
-    match = _AIRFLOW_CALVER_SOURCE_RE.match(filename)
-    if match is None:
-        return None
-    year, month, day = match.groups()
-    return f"{year}-{int(month):02d}-{int(day):02d}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -118,17 +68,100 @@ class Decomposed:
     source: Literal["dir", "combined", "filename", "unknown"]
 
 
-def module_component(committee: str, subproject: str | None) -> str | None:
-    # aries, sling and felix ship each maven module as its own release named committee.component.submodule
-    # (aries.blueprint.core, sling.auth.core), so hundreds of modules would key as separate projects.
-    # Return the component - the segment after the committee - to collapse them, or None when the
-    # subproject isn't that shape (a plain name, or a re-published spec jar like org.osgi.core)
-    if subproject is None:
+@dataclasses.dataclass(frozen=True)
+class DistRules:
+    # A snapshot of the decomposer's tunables, loaded once per operation from the dist_rule
+    # table. Kept immutable so a commit or a backfill pass decomposes against one consistent
+    # set of rules. dist_rules.load builds it; the decomposer only ever reads it
+    project_remaps: dict[tuple[str, str | None], str]
+    grouping_buckets: frozenset[str]
+    committee_buckets: frozenset[tuple[str, str]]
+    excluded_parts: frozenset[str]
+    name_build_suffixes: frozenset[str]
+    airflow_provider_areas: frozenset[str]
+
+    def airflow_provider_area(self, committee: str, parts: tuple[str, ...]) -> str | None:
+        # The airflow provider area a file sits under (airflow/<area>/), or None
+        if committee != "airflow":
+            return None
+        if parts and (parts[0] in self.airflow_provider_areas):
+            return parts[0]
         return None
-    bare = subproject.removeprefix("org.apache.")
-    if not bare.startswith(f"{committee}."):
+
+    def decompose(self, committee: str, parts: tuple[str, ...], filename: str | None = None) -> Decomposed | None:
+        # The version key is lowercased so a case split (turbine 2.2-RC1 vs 2.2-rc1) is one release
+        decomposed = self._decompose(committee, parts, filename)
+        if (decomposed is None) or (decomposed.version is None):
+            return decomposed
+        return dataclasses.replace(decomposed, version=decomposed.version.lower())
+
+    def project_remap(self, committee: str, subproject: str | None) -> str | None:
+        # The project key a dist-path remaps to when the bare-name match can't reach it, or None.
+        # Per-entry only - a blanket rule mis-hits (camel-karaf is Camel's)
+        return self.project_remaps.get((committee, subproject))
+
+    def _decompose(self, committee: str, parts: tuple[str, ...], filename: str | None) -> Decomposed | None:
+        # parts are the dirs below the committee, filename the release file if any. A grouping bucket
+        # aside, the subproject comes from the first dir and the version from the filename when it has
+        # one (a .../4.5/ series dir covers 4.5.x; the file pins 4.5.13), with the dir as the fallback
+        if any(part.lower() in self.excluded_parts for part in parts):
+            # A path through a bundled-package dir (bigtop's repos/) identifies no release
+            return None
+        parts = _strip_self_prefix(committee, parts)
+        if not parts:
+            return self._filename_only(committee, filename)
+        if self._is_grouping_bucket(committee, parts, filename):
+            # The dirs are just a distribution bucket (airflow's providers/<series>), so the
+            # subproject and version both live in the filename, as in the flat layout
+            return self._filename_only(committee, filename)
+        subproject, dir_version, dir_source = _subproject_and_dir_version(committee, parts)
+        version, source = _choose_version(dir_version, dir_source, filename)
+        return Decomposed(subproject=subproject, version=version, source=source)
+
+    def _filename_only(self, committee: str, filename: str | None) -> Decomposed | None:
+        # A file directly under the committee has no dir to name the subproject, so it comes from
+        # the filename before the version (sling does this); a name == committee is a TLP release
+        if not filename:
+            return None
+        version = version_from_filename(filename)
+        if version is None:
+            return None
+        name = self._strip_name_suffixes(filename[: filename.find(version)].rstrip("-._"))
+        if (not name) or (name.removeprefix("apache-") == committee):
+            return Decomposed(subproject=None, version=version, source="filename")
+        return Decomposed(subproject=name, version=version, source="filename")
+
+    def _is_grouping_bucket(self, committee: str, parts: tuple[str, ...], filename: str | None) -> bool:
+        # A leading dir that's a bucket holds a project's sub-packages or builds rather than
+        # naming a subproject, so the subproject and version come from the filename. The
+        # subproject may be null (a flat TLP release like myfaces/source/myfaces-1.0.9-src.tgz)
+        # or named (airflow/providers/apache_airflow_providers_<name>); either way the filename
+        # must carry a version, or there's nothing for the bucket to key on. A committee bucket is
+        # scoped, where the name is a real subproject elsewhere (cordova ships platform repos under
+        # platforms/ and its tooling under tools/, so the name comes from the file, not the bucket)
+        if filename is None:
+            return False
+        lead = parts[0].lower()
+        if (lead not in self.grouping_buckets) and ((committee, lead) not in self.committee_buckets):
+            return False
+        return self._filename_only(committee, filename) is not None
+
+    def _strip_name_suffixes(self, name: str) -> str:
+        # Drop trailing build/status tokens (chukwa-incubating-src -> chukwa); keep at least one
+        # token so a name that is only a suffix word survives
+        tokens = name.split("-")
+        while (len(tokens) > 1) and (tokens[-1].lower() in self.name_build_suffixes):
+            tokens.pop()
+        return "-".join(tokens)
+
+
+def airflow_calver_date(filename: str) -> str | None:
+    # The calver date of a providers batch source, normalised to YYYY-MM-DD, or None
+    match = _AIRFLOW_CALVER_SOURCE_RE.match(filename)
+    if match is None:
         return None
-    return bare[len(committee) + 1 :].split(".")[0] or None
+    year, month, day = match.groups()
+    return f"{year}-{int(month):02d}-{int(day):02d}"
 
 
 def candidate_keys(committee: str, subproject: str | None) -> list[str]:
@@ -145,12 +178,23 @@ def candidate_keys(committee: str, subproject: str | None) -> list[str]:
     return keys
 
 
-def decompose(committee: str, parts: tuple[str, ...], filename: str | None = None) -> Decomposed | None:
-    # The version key is lowercased so a case split (turbine 2.2-RC1 vs 2.2-rc1) is one release
-    decomposed = _decompose(committee, parts, filename)
-    if (decomposed is None) or (decomposed.version is None):
-        return decomposed
-    return dataclasses.replace(decomposed, version=decomposed.version.lower())
+def is_airflow_provider_filename(filename: str) -> bool:
+    # A provider package or its batch source, by name - used to skip the stray copies of these that
+    # sit directly under airflow/ (duplicates of the ones under airflow/providers/)
+    return _AIRFLOW_PROVIDER_FILE_RE.match(filename) is not None
+
+
+def module_component(committee: str, subproject: str | None) -> str | None:
+    # aries, sling and felix ship each maven module as its own release named committee.component.submodule
+    # (aries.blueprint.core, sling.auth.core), so hundreds of modules would key as separate projects.
+    # Return the component - the segment after the committee - to collapse them, or None when the
+    # subproject isn't that shape (a plain name, or a re-published spec jar like org.osgi.core)
+    if subproject is None:
+        return None
+    bare = subproject.removeprefix("org.apache.")
+    if not bare.startswith(f"{committee}."):
+        return None
+    return bare[len(committee) + 1 :].split(".")[0] or None
 
 
 def version_from_filename(filename: str) -> str | None:
@@ -184,53 +228,6 @@ def _choose_version(
     return name_version, "filename"
 
 
-def _decompose(committee: str, parts: tuple[str, ...], filename: str | None) -> Decomposed | None:
-    # parts are the dirs below the committee, filename the release file if any. A grouping bucket
-    # aside, the subproject comes from the first dir and the version from the filename when it has
-    # one (a .../4.5/ series dir covers 4.5.x; the file pins 4.5.13), with the dir as the fallback
-    if any(part.lower() in _EXCLUDED_PARTS for part in parts):
-        # A path through a bundled-package dir (bigtop's repos/) identifies no release
-        return None
-    parts = _strip_self_prefix(committee, parts)
-    if not parts:
-        return _filename_only(committee, filename)
-    if _is_grouping_bucket(committee, parts, filename):
-        # The dirs are just a distribution bucket (airflow's providers/<series>), so the
-        # subproject and version both live in the filename, as in the flat layout
-        return _filename_only(committee, filename)
-    subproject, dir_version, dir_source = _subproject_and_dir_version(committee, parts)
-    version, source = _choose_version(dir_version, dir_source, filename)
-    return Decomposed(subproject=subproject, version=version, source=source)
-
-
-def _filename_only(committee: str, filename: str | None) -> Decomposed | None:
-    # A file directly under the committee has no dir to name the subproject, so it comes from
-    # the filename before the version (sling does this); a name == committee is a TLP release
-    if not filename:
-        return None
-    version = version_from_filename(filename)
-    if version is None:
-        return None
-    name = _strip_name_suffixes(filename[: filename.find(version)].rstrip("-._"))
-    if (not name) or (name.removeprefix("apache-") == committee):
-        return Decomposed(subproject=None, version=version, source="filename")
-    return Decomposed(subproject=name, version=version, source="filename")
-
-
-def _is_grouping_bucket(committee: str, parts: tuple[str, ...], filename: str | None) -> bool:
-    # A leading dir that's a bucket holds a project's sub-packages or builds rather than
-    # naming a subproject, so the subproject and version come from the filename. The
-    # subproject may be null (a flat TLP release like myfaces/source/myfaces-1.0.9-src.tgz)
-    # or named (airflow/providers/apache_airflow_providers_<name>); either way the filename
-    # must carry a version, or there's nothing for the bucket to key on
-    if filename is None:
-        return False
-    lead = parts[0].lower()
-    if (lead not in _GROUPING_BUCKETS) and ((committee, lead) not in _COMMITTEE_BUCKETS):
-        return False
-    return _filename_only(committee, filename) is not None
-
-
 def _is_version_dir(component: str) -> bool:
     if _BARE_DIGIT_RE.match(component):
         return False
@@ -248,15 +245,6 @@ def _split_combined(component: str) -> tuple[str, str] | None:
     if match is None:
         return None
     return match.group("name"), match.group("version")
-
-
-def _strip_name_suffixes(name: str) -> str:
-    # Drop trailing build/status tokens (chukwa-incubating-src -> chukwa); keep at least one
-    # token so a name that is only a suffix word survives
-    tokens = name.split("-")
-    while (len(tokens) > 1) and (tokens[-1].lower() in _NAME_BUILD_SUFFIXES):
-        tokens.pop()
-    return "-".join(tokens)
 
 
 def _strip_self_prefix(committee: str, parts: tuple[str, ...]) -> tuple[str, ...]:

@@ -272,6 +272,218 @@ type UsersForm = Annotated[
 ]
 
 
+class AddDistRuleForm(form.Form):
+    kind: sql.DistRuleKind = form.label("Kind", "What the rule does.", widget=form.Widget.SELECT)
+    committee: str = form.label("Committee", "Leave blank for a rule that applies to every committee.", default="")
+    subproject: str = form.label(
+        "Subproject", "The remap's match subproject; blank matches a committee-level layout.", default=""
+    )
+    pattern: str = form.label(
+        "Pattern", "The directory or token to match, for the bucket, excluded-part and suffix kinds.", default=""
+    )
+    target: str = form.label("Target", "The project key to remap to, for a project remap.", default="")
+    note: str = form.label("Note", "Why the rule exists.", default="", widget=form.Widget.TEXTAREA)
+
+
+class DistRuleActionForm(form.Form):
+    rule_id: form.Int = form.label("Rule ID", widget=form.Widget.HIDDEN)
+
+
+@admin.typed
+async def dist_rule_delete_post(
+    session: web.Committer,
+    _dist_rules: Literal["dist-rules"],
+    _delete: Literal["delete"],
+    action_form: DistRuleActionForm,
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        await write.as_foundation_admin().dist_rule.delete(action_form.rule_id)
+    await quart.flash("Deleted the rule.", "success")
+    return await session.redirect(dist_rules_get)
+
+
+@admin.typed
+async def dist_rule_disable_post(
+    session: web.Committer,
+    _dist_rules: Literal["dist-rules"],
+    _disable: Literal["disable"],
+    action_form: DistRuleActionForm,
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        await write.as_foundation_admin().dist_rule.set_enabled(action_form.rule_id, False)
+    await quart.flash("Disabled the rule.", "success")
+    return await session.redirect(dist_rules_get)
+
+
+@admin.typed
+async def dist_rule_enable_post(
+    session: web.Committer,
+    _dist_rules: Literal["dist-rules"],
+    _enable: Literal["enable"],
+    action_form: DistRuleActionForm,
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        await write.as_foundation_admin().dist_rule.set_enabled(action_form.rule_id, True)
+    await quart.flash("Enabled the rule.", "success")
+    return await session.redirect(dist_rules_get)
+
+
+@admin.typed
+async def dist_rules_add_post(
+    session: web.Committer, _dist_rules: Literal["dist-rules"], add_form: AddDistRuleForm
+) -> web.WerkzeugResponse:
+    error = _dist_rule_validation_error(add_form)
+    if error is not None:
+        await quart.flash(error, "error")
+        return await session.redirect(dist_rules_get)
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.dist_rule.add(
+            kind=add_form.kind,
+            committee=_blank_to_none(add_form.committee),
+            subproject=_blank_to_none(add_form.subproject),
+            pattern=_blank_to_none(add_form.pattern),
+            target=_blank_to_none(add_form.target),
+            note=_blank_to_none(add_form.note),
+        )
+    await quart.flash("Added the rule.", "success")
+    return await session.redirect(dist_rules_get)
+
+
+@admin.typed
+async def dist_rules_get(session: web.Committer, _dist_rules: Literal["dist-rules"]) -> str:
+    """
+    URL: GET /dist-rules
+
+    List the dist watcher's decomposition rules and add, disable or delete them.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        rules = await wafa.dist_rule.all_rules()
+
+    action_rows = []
+    for rule in rules:
+        if rule.enabled:
+            toggle = await form.render(
+                model_cls=DistRuleActionForm,
+                action=util.as_url(dist_rule_disable_post),
+                form_classes=".mb-0.d-inline",
+                submit_classes="btn-sm btn-outline-secondary",
+                submit_label="Disable",
+                defaults={"rule_id": rule.id},
+                empty=True,
+            )
+        else:
+            toggle = await form.render(
+                model_cls=DistRuleActionForm,
+                action=util.as_url(dist_rule_enable_post),
+                form_classes=".mb-0.d-inline",
+                submit_classes="btn-sm btn-outline-secondary",
+                submit_label="Enable",
+                defaults={"rule_id": rule.id},
+                empty=True,
+            )
+        delete = await form.render(
+            model_cls=DistRuleActionForm,
+            action=util.as_url(dist_rule_delete_post),
+            form_classes=".mb-0.d-inline.ms-1",
+            submit_classes="btn-sm btn-outline-danger",
+            submit_label="Delete",
+            defaults={"rule_id": rule.id},
+            empty=True,
+            confirm="Delete this rule?",
+        )
+        action_rows.append((rule, toggle, delete))
+
+    add_form = await form.render(
+        model_cls=AddDistRuleForm,
+        action=util.as_url(dist_rules_add_post),
+        submit_label="Add rule",
+    )
+
+    page = htm.Block()
+    page.h1["Dist watcher rules"]
+    page.p[
+        "The dist watcher reads these when it decomposes a dist.apache.org path into a project and version. "
+        "Disable a rule to park it without losing its note; delete removes it for good."
+    ]
+    page.append(_dist_rules_table(action_rows))
+    page.h2(".mt-4")["Add a rule"]
+    page.append(add_form)
+    return await template.blank(title="Dist watcher rules", content=page.collect())
+
+
+def _blank_to_none(value: str) -> str | None:
+    value = value.strip()
+    return value or None
+
+
+def _dist_rule_cell(value: str | None) -> htm.Element:
+    if value:
+        return htpy.span[value]
+    return htpy.span(".text-muted")["—"]
+
+
+def _dist_rule_validation_error(add_form: AddDistRuleForm) -> str | None:
+    # A project remap rewrites a committee/subproject to a target; the rest key on a pattern. A
+    # committee bucket also names the committee it's scoped to
+    if add_form.kind is sql.DistRuleKind.PROJECT_REMAP:
+        if not add_form.committee.strip():
+            return "A project remap needs a committee."
+        if not add_form.target.strip():
+            return "A project remap needs a target project key."
+        return None
+    if add_form.kind is sql.DistRuleKind.COMMITTEE_BUCKET:
+        if not add_form.committee.strip():
+            return "A committee bucket needs a committee."
+        if not add_form.pattern.strip():
+            return "A committee bucket needs a pattern."
+        return None
+    if not add_form.pattern.strip():
+        return "This rule kind needs a pattern."
+    return None
+
+
+def _dist_rules_table(action_rows: list[tuple[sql.DistRule, htm.Element, htm.Element]]) -> htpy.Element:
+    by_kind: dict[str, list[tuple[sql.DistRule, htm.Element, htm.Element]]] = {}
+    for rule, toggle, delete in action_rows:
+        by_kind.setdefault(str(rule.kind), []).append((rule, toggle, delete))
+
+    sections: list[htm.Element] = []
+    for kind in sorted(by_kind):
+        sections.append(htpy.h3(".mt-4.h5")[kind])
+        sections.append(
+            htpy.table(".table.table-sm")[
+                htpy.thead[
+                    htpy.tr[
+                        htpy.th["Committee"],
+                        htpy.th["Subproject"],
+                        htpy.th["Pattern"],
+                        htpy.th["Target"],
+                        htpy.th["Note"],
+                        htpy.th["Enabled"],
+                        htpy.th["Actions"],
+                    ]
+                ],
+                htpy.tbody[
+                    [
+                        htpy.tr[
+                            htpy.td[_dist_rule_cell(rule.committee)],
+                            htpy.td[_dist_rule_cell(rule.subproject)],
+                            htpy.td[_dist_rule_cell(rule.pattern)],
+                            htpy.td[_dist_rule_cell(rule.target)],
+                            htpy.td[_dist_rule_cell(rule.note)],
+                            htpy.td["Yes" if rule.enabled else "No"],
+                            htpy.td[toggle, delete],
+                        ]
+                        for rule, toggle, delete in by_kind[kind]
+                    ]
+                ],
+            ]
+        )
+    return htpy.div[sections]
+
+
 def _banner_history_table(restore_rows: list[tuple[sql.Banner, htm.Element]]) -> htpy.Element:
     return htpy.table(".table")[
         htpy.thead[

@@ -22,6 +22,7 @@ import sys
 
 import atr.models.sql as sql
 import atr.pgp as pgp
+import atr.svn.dist_rules as dist_rules
 import tests.unit.pgp_fixtures as pgp_fixtures
 
 spec = importlib.util.spec_from_file_location(
@@ -86,13 +87,21 @@ def test_backfill_reports_missing_chains_and_actors() -> None:
 def test_resolve_follows_the_rehoming_rule() -> None:
     committees = frozenset({"accumulo", "activemq", "oltu"})
     projects = {"accumulo": "accumulo", "activemq-apollo": "activemq", "amber": "oltu"}
-    assert keys_backfill._resolve("/release/accumulo/KEYS", committees, projects) == ("accumulo", "committee")
-    assert keys_backfill._resolve("/release/activemq/activemq-apollo/KEYS", committees, projects) == (
+    assert keys_backfill._resolve("/release/accumulo/KEYS", committees, projects, dist_rules.empty()) == (
+        "accumulo",
+        "committee",
+    )
+    assert keys_backfill._resolve(
+        "/release/activemq/activemq-apollo/KEYS", committees, projects, dist_rules.empty()
+    ) == (
         "activemq",
         "subproject activemq-apollo",
     )
-    assert keys_backfill._resolve("/release/incubator/amber/KEYS", committees, projects) == ("oltu", "project amber")
-    assert keys_backfill._resolve("/release/any23/KEYS", committees, {}) == (None, "none")
+    assert keys_backfill._resolve("/release/incubator/amber/KEYS", committees, projects, dist_rules.empty()) == (
+        "oltu",
+        "project amber",
+    )
+    assert keys_backfill._resolve("/release/any23/KEYS", committees, {}, dist_rules.empty()) == (None, "none")
 
 
 def test_switchover_digest_separates_categories() -> None:
@@ -114,7 +123,7 @@ def test_listed_rejects_bad_blocks_without_losing_good_ones(tmp_path: pathlib.Pa
         entries.append({"path": f"/release/{name}/KEYS", "rev": 1, "date": "2020-01-01T00:00:00", "sha256": digest})
     listing = {"revision": 5, "paths": entries}
     listed = keys_backfill._listed(
-        listing, tmp_path, 5, frozenset({"a", "b"}), {}, {}, keys_backfill.collections.Counter()
+        listing, tmp_path, 5, frozenset({"a", "b"}), {}, dist_rules.empty(), {}, keys_backfill.collections.Counter()
     )
     assert sorted(listed.rejected) == ["/release/a/KEYS", "/release/b/KEYS"]
     assert set(listed.coverage) == {pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT}
