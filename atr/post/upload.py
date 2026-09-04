@@ -134,14 +134,6 @@ async def _add_files(
         )
 
 
-def _construct_svn_url(
-    committee_key: str, area: shared.upload.SvnArea, path: safe.RelPath, *, is_podling: bool
-) -> safe.RelPath:
-    if is_podling:
-        return path.prepend(f"{area.value}/incubator/{committee_key}")
-    return path.prepend(f"{area.value}/{committee_key}")
-
-
 def _log_access_error(error: storage.AccessError, status: int) -> None:
     if status >= 500:
         log.error("Upload storage access server error", exc_info=(type(error), error, error.__traceback__))
@@ -163,15 +155,8 @@ async def _svn_import(
 
         async with db.session() as data:
             release = await session.release(project_key, version_key, data=data)
-            is_podling = (release.project.committee is not None) and release.project.committee.is_podling
-            committee_key = release.project.committee_key or str(project_key)
+            svn_url = svn_path.prepend(str(shared.upload.svn_import_base_path(release.project, svn_area)))
 
-        svn_url = _construct_svn_url(
-            committee_key,
-            svn_area,  # pyright: ignore[reportArgumentType]
-            svn_path,
-            is_podling=is_podling,
-        )
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
             await wacp.release.import_from_svn(

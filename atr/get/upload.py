@@ -21,6 +21,7 @@ from typing import Literal
 import htpy
 
 import atr.blueprints.get as get
+import atr.constants as constants
 import atr.db as db
 import atr.form as form
 import atr.get.compose as compose
@@ -49,6 +50,7 @@ async def selected(
     async with db.session() as data:
         release = await session.release(project_key, version_key, data=data)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
+        svn_base_path = shared.upload.svn_import_base_path(release.project, shared.upload.SvnArea.DEV)
 
     block = htm.Block()
 
@@ -97,6 +99,12 @@ async def selected(
         " command. You can monitor progress on the ",
         htm.em["Evaluate files"],
         " page for this draft once the task is queued.",
+    ]
+    svn_base_url = f"{constants.SVN_DIST_ROOT_URL}/{svn_base_path!s}/"
+    block.p[
+        "The SVN path is relative to ",
+        htm.a(href=svn_base_url)[htm.code[svn_base_url]],
+        ".",
     ]
 
     await form.render_block(

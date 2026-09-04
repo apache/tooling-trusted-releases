@@ -20,6 +20,7 @@ from typing import Annotated, Literal
 
 import atr.form as form
 import atr.models.safe as safe
+import atr.models.sql as sql
 
 type ADD_FILES = Literal["add_files"]
 type SVN_IMPORT = Literal["svn_import"]
@@ -44,7 +45,7 @@ class SvnImportForm(form.Form):
     # )
     svn_path: safe.RelPath = form.label(
         "SVN path",
-        "Path within the committee's svn:dist directory, e.g. 'java-library/4_0_4' or '3.1.5rc1'.",
+        "The part after the base URL shown above, for example '0.7.2-rc.1' or 'java-library/4_0_4'.",
         required=True,
     )
     revision: str = form.label(
@@ -62,3 +63,10 @@ type UploadForm = Annotated[
     AddFilesForm | SvnImportForm,
     form.DISCRIMINATOR,
 ]
+
+
+def svn_import_base_path(project: sql.Project, area: SvnArea) -> safe.RelPath:
+    committee_key = project.committee_key or project.key
+    if (project.committee is not None) and project.committee.is_podling:
+        return safe.RelPath(f"{area.value}/incubator/{committee_key}")
+    return safe.RelPath(f"{area.value}/{committee_key}")
