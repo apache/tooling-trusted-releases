@@ -67,6 +67,7 @@ import atr.noisy as noisy
 import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
+import atr.render as render
 import atr.shared as shared
 import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
@@ -133,6 +134,11 @@ class ReleaseAgeRow(NamedTuple):
     age_bold: bool
     inactive_label: str
     inactive_bold: bool
+
+
+@dataclasses.dataclass
+class SessionsQuery(web.PageQuery):
+    limit: int = 250
 
 
 class RestoreBannerForm(form.Form):
@@ -2298,8 +2304,12 @@ async def toggle_view_post(
 
 
 @admin.typed
-async def users_get(session: web.Committer, _users: Literal["users"]) -> str:
-    return await _users_page(session, quart.request.args.get("tab", "browse-as"))
+async def users_get(session: web.Committer, _users: Literal["users"], query_args: SessionsQuery) -> str:
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+    return await _users_page(session, quart.request.args.get("tab", "browse-as"), query_args)
 
 
 @admin.typed
@@ -2310,7 +2320,7 @@ async def users_post(
         case BrowseAsUserForm():
             return await _users_browse_as(session, users_form)
         case LdapLookupForm():
-            return await _users_page(session, "ldap", ldap_form=users_form)
+            return await _users_page(session, "ldap", SessionsQuery(), ldap_form=users_form)
         case RevokeUserTokensForm():
             return await _users_revoke_tokens(session, users_form)
         case RevokeAllTokensForm():
@@ -2839,11 +2849,13 @@ async def _users_ldap_tab(lookup_form: LdapLookupForm | None) -> htm.Element:
     return htm.div[markupsafe.Markup(content)]
 
 
-async def _users_page(session: web.Committer, active_tab: str, ldap_form: LdapLookupForm | None = None) -> str:
+async def _users_page(
+    session: web.Committer, active_tab: str, query_args: SessionsQuery, ldap_form: LdapLookupForm | None = None
+) -> str:
     tab_items = [
         htm.Tab("browse-as", "Browse as user", _users_browse_as_tab),
         htm.Tab("ldap", "LDAP lookup", lambda: _users_ldap_tab(ldap_form)),
-        htm.Tab("sessions", "Sessions", _users_sessions_tab),
+        htm.Tab("sessions", "Sessions", lambda: _users_sessions_tab(query_args)),
         htm.Tab("revoke-tokens", "Revoke tokens", _users_revoke_tokens_tab),
         htm.Tab("revoke-all-tokens", "Revoke all tokens", _users_revoke_all_tokens_tab),
         htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
@@ -3028,9 +3040,19 @@ async def _users_rotate_jwt_tab() -> htm.Element:
     return block.collect()
 
 
-async def _users_sessions_tab() -> htm.Element:
+def _users_sessions_page_url(limit: int, offset: int | None) -> str | None:
+    if offset is None:
+        return None
+    return util.as_url(users_get, tab="sessions", limit=limit, offset=offset)
+
+
+async def _users_sessions_tab(query_args: SessionsQuery) -> htm.Element:
+    sessions = await asfquart.APP.sessions.current()
+    page_sessions = sessions[query_args.offset : (query_args.offset + query_args.limit)]
+    pagination = web.page_nav(query_args.offset, query_args.limit, len(sessions), len(page_sessions))
+    paged = (pagination.previous_offset is not None) or (pagination.next_offset is not None)
     tbody = htm.Block(htm.tbody)
-    for user_session in await asfquart.APP.sessions.current():
+    for user_session in page_sessions:
         tbody.tr[
             htm.td[htm.code[user_session.uid]],
             htm.td[htm.code[user_session.admin_uid] if user_session.admin_uid else ""],
@@ -3041,20 +3063,32 @@ async def _users_sessions_tab() -> htm.Element:
     block = htm.Block()
     block.h2["Sessions"]
     block.p["Every recorded session, most recently active first."]
-    block.append(
-        htm.table(".table.table-sm.table-striped.table-bordered")[
-            htm.thead[
-                htm.tr[
-                    htm.th["User ID"],
-                    htm.th["Admin"],
-                    htm.th["Created"],
-                    htm.th["Last active"],
-                    htm.th["IP address"],
-                ]
-            ],
-            tbody.collect(),
-        ]
-    )
+    if paged and page_sessions:
+        block.p[f"Showing sessions {pagination.start} to {pagination.end} of {len(sessions)}."]
+    if sessions and (not page_sessions):
+        block.div(".alert.alert-info")[f"No sessions to show on this page ({len(sessions)} total)."]
+    else:
+        block.append(
+            htm.table(".table.table-sm.table-striped.table-bordered")[
+                htm.thead[
+                    htm.tr[
+                        htm.th["User ID"],
+                        htm.th["Admin"],
+                        htm.th["Created"],
+                        htm.th["Last active"],
+                        htm.th["IP address"],
+                    ]
+                ],
+                tbody.collect(),
+            ]
+        )
+    if paged:
+        render.html_page_nav(
+            block,
+            aria_label="Session pages",
+            previous_url=_users_sessions_page_url(query_args.limit, pagination.previous_offset),
+            next_url=_users_sessions_page_url(query_args.limit, pagination.next_offset),
+        )
     return block.collect()
 
 

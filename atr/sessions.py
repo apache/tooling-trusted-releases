@@ -189,7 +189,9 @@ class Store:
         if max_session_age > 0:
             statement = statement.where(sql.UserSession.cts >= (now - max_session_age))
         async with db.session() as data:
-            result = await data.execute(statement.order_by(via(sql.UserSession.uts).desc()))
+            result = await data.execute(
+                statement.order_by(via(sql.UserSession.uts).desc(), via(sql.UserSession.sid_hash))
+            )
             return list(result.scalars().all())
 
     async def destroy(self, hsid: str) -> None:
