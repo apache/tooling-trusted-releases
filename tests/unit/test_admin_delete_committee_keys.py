@@ -51,10 +51,10 @@ async def test_delete_committee_keys_post_surfaces_storage_error(monkeypatch):
     monkeypatch.setattr(admin_routes.quart, "flash", flash)
     monkeypatch.setattr(admin_blueprint.common, "authenticate", mock.AsyncMock(return_value=session))
 
-    result = await admin_routes.delete_committee_keys_post()
+    result = await admin_routes.catalog_post()
 
     assert result == "redirected"
     write.as_committee_admin.assert_called_once_with("alpha")
     keys.delete_committee_keys.assert_awaited_once()
     flash.assert_awaited_once_with(str(delete_error), "error")
-    session.redirect.assert_awaited_once_with(admin_routes.delete_committee_keys_get)
+    session.redirect.assert_awaited_once_with(admin_routes.catalog_get, tab="committee-keys")

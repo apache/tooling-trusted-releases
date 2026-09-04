@@ -89,7 +89,10 @@ _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 type BANNER_RESTORE = Literal["BANNER_RESTORE"]
 type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
+type CATALOG_SITE_REBUILD = Literal["CATALOG_SITE_REBUILD"]
+type DELETE_COMMITTEE_KEYS = Literal["DELETE_COMMITTEE_KEYS"]
 type LDAP = Literal["LDAP"]
+type PROJECTS_UPDATE = Literal["PROJECTS_UPDATE"]
 type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
 type REVOKE_SSH_KEYS = Literal["REVOKE_SSH_KEYS"]
 type REVOKE_TOKENS = Literal["REVOKE_TOKENS"]
@@ -104,7 +107,12 @@ class BrowseAsUserForm(form.Form):
     uid: str = form.label("ASF UID", "Enter the ASF UID to browse as.")
 
 
+class CatalogSiteRebuildForm(form.Form):
+    variant: CATALOG_SITE_REBUILD = form.value(CATALOG_SITE_REBUILD)
+
+
 class DeleteCommitteeKeysForm(form.Form):
+    variant: DELETE_COMMITTEE_KEYS = form.value(DELETE_COMMITTEE_KEYS)
     committee_key: str = form.label("Committee", widget=form.Widget.SELECT)
     confirm_delete: Literal["DELETE KEYS"] = form.label("Confirmation", "Type DELETE KEYS to confirm.")
 
@@ -130,6 +138,10 @@ class LdapLookupForm(form.Form):
     email: form.OptionalEmail = form.label(
         "Email address (optional)", "Enter email address, e.g. user@example.org", widget=form.Widget.EMAIL
     )
+
+
+class ProjectsUpdateForm(form.Form):
+    variant: PROJECTS_UPDATE = form.value(PROJECTS_UPDATE)
 
 
 class ReleaseAgeRow(NamedTuple):
@@ -253,6 +265,9 @@ class TestRosterResetForm(form.Form):
     confirm_reset: Literal["RESET"] = form.label("Confirmation", "Type RESET to confirm.")
 
 
+type CatalogForm = Annotated[DeleteCommitteeKeysForm | ProjectsUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
+
+
 type SystemForm = Annotated[EditBannerForm | RestoreBannerForm | SendTestMessageForm, form.DISCRIMINATOR]
 
 
@@ -297,22 +312,30 @@ def _banner_history_table(restore_rows: list[tuple[sql.Banner, htm.Element]]) ->
 
 
 @admin.typed
-async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"]) -> str:
+async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"], query_args: web.PageQuery) -> str:
     """
     URL: GET /catalog
 
     Pick a committee to correct.
     """
-    async with db.session() as data:
-        committees = await data.committee().order_by(sql.Committee.key).all()
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+    return await _catalog_page(quart.request.args.get("tab", "catalog"), query_args)
 
-    listing = htpy.ul(".list-group")[
-        [
-            htpy.li(".list-group-item")[htpy.a(href=f"/admin/catalog/{committee.key}")[committee.name or committee.key]]
-            for committee in committees
-        ]
-    ]
-    return await template.render("admin-catalog.html", committees=listing)
+
+@admin.typed
+async def catalog_post(
+    session: web.Committer, _catalog: Literal["catalog"], catalog_form: CatalogForm
+) -> web.WerkzeugResponse:
+    match catalog_form:
+        case DeleteCommitteeKeysForm():
+            return await _catalog_delete_committee_keys(session, catalog_form)
+        case ProjectsUpdateForm():
+            return await _catalog_projects_update(session)
+        case CatalogSiteRebuildForm():
+            return await _catalog_site_rebuild(session)
 
 
 @admin.typed
@@ -1309,43 +1332,6 @@ def _catalog_import_preview(diff: catalogue_diff.CatalogueDiff) -> htm.Element:
 
 
 @admin.typed
-async def catalog_site_rebuild_get(
-    _session: web.Committer, _catalog_site_rebuild: Literal["catalog-site/rebuild"]
-) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """
-    URL: GET /catalog-site/rebuild
-
-    Rebuild the whole static release catalog site.
-    """
-    rendered_form = await form.render(
-        model_cls=form.Empty,
-        submit_label="Rebuild catalog site",
-        empty=True,
-        form_classes="",
-    )
-    return await template.render("update-catalog-site.html", empty_form=rendered_form)
-
-
-@admin.typed
-async def catalog_site_rebuild_post(
-    session: web.Committer, _catalog_site_rebuild: Literal["catalog-site/rebuild"], _form: form.Empty
-) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """Rebuild the whole static release catalog site."""
-    try:
-        task = await tasks.catalog_site_generate_all(session.asf_uid)
-        return {
-            "message": f"Catalog site rebuild task has been queued with ID {task.id}.",
-            "category": "success",
-        }, 200
-    except Exception as e:
-        log.exception("Failed to queue catalog site rebuild task")
-        return {
-            "message": f"Failed to queue catalog site rebuild: {e!s}",
-            "category": "error",
-        }, 200
-
-
-@admin.typed
 async def consistency(_session: web.Committer, _consistency: Literal["consistency"]) -> web.TextResponse:
     """
     URL: GET /consistency
@@ -1435,50 +1421,7 @@ async def current_release_delete_post(
     """
     release_key = sql.release_key(str(project_key), str(version_key))
     await _delete_releases(session, [release_key])
-    return await session.redirect(current_releases)
-
-
-@admin.typed
-async def current_releases(
-    _session: web.Committer, _current_releases: Literal["current/releases"], query_args: web.PageQuery
-) -> str:
-    """
-    URL: GET /current/releases
-
-    Display live release-workflow releases across all phases. Catalogued releases
-    (those with no workflow revisions) live in the catalog admin pages instead.
-    """
-    try:
-        validation.pagination_args_validate(query_args)
-    except ValueError as e:
-        raise exceptions.BadRequest(str(e))
-    # A release is "current" when it has at least one workflow revision; the
-    # imported catalogue has none, so this is the line between the two surfaces
-    has_revisions = sql.latest_revision_number_query().is_not(None)
-    async with db.session() as data:
-        count_result = await data.execute(
-            sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release).where(has_revisions)
-        )
-        count = count_result.scalar_one()
-        releases = await (
-            data.release(_project=True, _committee=True, _revisions=True)
-            .where(has_revisions)
-            .order_by(sql.Release.key)
-            .limit(query_args.limit)
-            .offset(query_args.offset)
-            .all()
-        )
-    now = datetime.datetime.now(datetime.UTC)
-    release_rows = [_release_age_row(release, now) for release in releases]
-    page = web.page_nav(query_args.offset, query_args.limit, count, len(releases))
-    return await template.render(
-        "current-releases.html",
-        release_rows=release_rows,
-        release_as_url=mapping.release_as_url,
-        count=count,
-        limit=query_args.limit,
-        page=page,
-    )
+    return await session.redirect(catalog_get, tab="releases")
 
 
 @admin.typed
@@ -1498,77 +1441,6 @@ async def data_model(
     """
 
     return await _data_browse(session, str(model), query_args)
-
-
-@admin.typed
-async def delete_committee_keys_get(
-    _session: web.Committer, _delete_committee_keys: Literal["delete-committee-keys"]
-) -> str | web.WerkzeugResponse:
-    """
-    URL: GET /delete-committee-keys
-
-    Display the form to delete committee keys.
-    """
-    async with db.session() as data:
-        all_committees = await data.committee(_signing_certificates=True).order_by(sql.Committee.key).all()
-        committees_with_keys = [c for c in all_committees if c.signing_certificates]
-
-    committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
-
-    rendered_form = await form.render(
-        model_cls=DeleteCommitteeKeysForm,
-        submit_label="Delete all keys for selected committee",
-        defaults={"committee_key": committee_choices},
-    )
-    return await template.render(
-        "admin-form.html",
-        title="Delete committee keys",
-        description="Delete committee keys",
-        header="Delete all keys for a committee",
-        form=rendered_form,
-    )
-
-
-@admin.typed
-async def delete_committee_keys_post(
-    session: web.Committer,
-    _delete_committee_keys: Literal["delete-committee-keys"],
-    delete_form: DeleteCommitteeKeysForm,
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /delete-committee-keys
-
-    Delete all keys for selected committee.
-    """
-    committee_key = delete_form.committee_key
-
-    try:
-        async with storage.write(session) as write:
-            waca = write.as_committee_admin(committee_key)
-            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(datatypes.KeySource.WEB)
-    except storage.AccessError as e:
-        await quart.flash(str(e), "error")
-        return await session.redirect(delete_committee_keys_get)
-
-    if num_unlinked == 0:
-        await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
-    else:
-        await quart.flash(
-            f"Removed {util.plural(num_unlinked, 'key link')} for '{committee_key}'. "
-            f"Deleted {util.plural(num_deleted, 'unused key')}.",
-            "success",
-        )
-        publications = {committee_key: publication} if (publication is not None) else {}
-        if shared.keys.publication_disabled(publications):
-            await quart.flash(
-                f"The published KEYS file for '{committee_key}' was not updated"
-                " because automated publication is disabled.",
-                "warning",
-            )
-        if failure := shared.keys.publication_failed_warning(publications):
-            await quart.flash(failure, "error")
-
-    return await session.redirect(delete_committee_keys_get)
 
 
 @admin.typed
@@ -1747,43 +1619,6 @@ async def ongoing_tasks_get(
     URL: GET /ongoing-tasks
     """
     return await _fetch_ongoing_tasks(session, project_key, version_key, revision)
-
-
-@admin.typed
-async def projects_update_get(
-    _session: web.Committer, _projects_update: Literal["projects/update"]
-) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """
-    URL: GET /projects/update
-
-    Update projects from remote data.
-    """
-    rendered_form = await form.render(
-        model_cls=form.Empty,
-        submit_label="Update projects",
-        empty=True,
-        form_classes="",
-    )
-    return await template.render("update-projects.html", empty_form=rendered_form)
-
-
-@admin.typed
-async def projects_update_post(
-    session: web.Committer, _projects_update: Literal["projects/update"], _form: form.Empty
-) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """Update projects from remote data."""
-    try:
-        task = await tasks.metadata_update(session.asf_uid, include_projects=True)
-        return {
-            "message": f"Metadata update task has been queued with ID {task.id}.",
-            "category": "success",
-        }, 200
-    except Exception as e:
-        log.exception("Failed to queue metadata update task")
-        return {
-            "message": f"Failed to queue metadata update: {e!s}",
-            "category": "error",
-        }, 200
 
 
 @admin.typed
@@ -2099,6 +1934,180 @@ async def validate_jwt_post(
         defaults={"token": token},
     )
     return await _validate_jwt_page(rendered_form, result=result)
+
+
+async def _catalog_delete_committee_keys(
+    session: web.Committer, delete_form: DeleteCommitteeKeysForm
+) -> web.WerkzeugResponse:
+    committee_key = delete_form.committee_key
+
+    try:
+        async with storage.write(session) as write:
+            waca = write.as_committee_admin(committee_key)
+            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(datatypes.KeySource.WEB)
+    except storage.AccessError as e:
+        await quart.flash(str(e), "error")
+        return await session.redirect(catalog_get, tab="committee-keys")
+
+    if num_unlinked == 0:
+        await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
+    else:
+        await quart.flash(
+            f"Removed {util.plural(num_unlinked, 'key link')} for '{committee_key}'. "
+            f"Deleted {util.plural(num_deleted, 'unused key')}.",
+            "success",
+        )
+        publications = {committee_key: publication} if (publication is not None) else {}
+        if shared.keys.publication_disabled(publications):
+            await quart.flash(
+                f"The published KEYS file for '{committee_key}' was not updated"
+                " because automated publication is disabled.",
+                "warning",
+            )
+        if failure := shared.keys.publication_failed_warning(publications):
+            await quart.flash(failure, "error")
+
+    return await session.redirect(catalog_get, tab="committee-keys")
+
+
+async def _catalog_delete_committee_keys_tab() -> htm.Element:
+    async with db.session() as data:
+        all_committees = await data.committee(_signing_certificates=True).order_by(sql.Committee.key).all()
+        committees_with_keys = [c for c in all_committees if c.signing_certificates]
+
+    committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
+
+    rendered_form = await form.render(
+        model_cls=DeleteCommitteeKeysForm,
+        action=util.as_url(catalog_post, tab="committee-keys"),
+        submit_label="Delete all keys for selected committee",
+        defaults={"committee_key": committee_choices},
+    )
+    block = htm.Block()
+    block.h2["Delete all keys for a committee"]
+    block.append(rendered_form)
+    return block.collect()
+
+
+async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
+    tab_items = [
+        htm.Tab("catalog", "Catalog", _catalog_tab),
+        htm.Tab("releases", "Releases", lambda: _catalog_releases_tab(query_args)),
+        htm.Tab("update-projects", "Update projects", _catalog_projects_update_tab),
+        htm.Tab("committee-keys", "Delete committee keys", _catalog_delete_committee_keys_tab),
+    ]
+    page = htm.Block()
+    page.h1["Catalog"]
+    page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=util.as_url(catalog_get)))
+    return await template.render("admin-blank.html", title="Catalog", content=page.collect())
+
+
+async def _catalog_projects_update(session: web.Committer) -> web.WerkzeugResponse:
+    try:
+        task = await tasks.metadata_update(session.asf_uid, include_projects=True)
+        await quart.flash(f"Metadata update task has been queued with ID {task.id}.", "success")
+    except Exception as e:
+        log.exception("Failed to queue metadata update task")
+        await quart.flash(f"Failed to queue metadata update: {e!s}", "error")
+    return await session.redirect(catalog_get, tab="update-projects")
+
+
+async def _catalog_projects_update_tab() -> htm.Element:
+    rendered_form = await form.render(
+        model_cls=ProjectsUpdateForm,
+        action=util.as_url(catalog_post, tab="update-projects"),
+        submit_label="Update projects",
+        empty=True,
+        form_classes="",
+    )
+    block = htm.Block()
+    block.h2["Update projects"]
+    block.p["Update PMC and podling information in the database from remote data sources."]
+    block.append(
+        htm.div(".alert.alert-warning", role="alert")[
+            htm.p[htm.strong["Note:"], " This operation will update all project information, including:"],
+            htm.ul(".mb-0")[
+                htm.li["PMC member lists and release manager assignments"],
+                htm.li["Podling status and basic information"],
+                htm.li["Project metadata and relationships"],
+            ],
+        ]
+    )
+    block.append(rendered_form)
+    return block.collect()
+
+
+async def _catalog_releases_tab(query_args: web.PageQuery) -> htm.Element:
+    # A release is "current" when it has at least one workflow revision; the
+    # imported catalogue has none, so this is the line between the two surfaces
+    has_revisions = sql.latest_revision_number_query().is_not(None)
+    async with db.session() as data:
+        count_result = await data.execute(
+            sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release).where(has_revisions)
+        )
+        count = count_result.scalar_one()
+        releases = await (
+            data.release(_project=True, _committee=True, _revisions=True)
+            .where(has_revisions)
+            .order_by(sql.Release.key)
+            .limit(query_args.limit)
+            .offset(query_args.offset)
+            .all()
+        )
+    now = datetime.datetime.now(datetime.UTC)
+    release_rows = [_release_age_row(release, now) for release in releases]
+    page = web.page_nav(query_args.offset, query_args.limit, count, len(releases))
+    content = await template.render(
+        "current-releases.html",
+        release_rows=release_rows,
+        release_as_url=mapping.release_as_url,
+        count=count,
+        limit=query_args.limit,
+        page=page,
+    )
+    return htm.div[markupsafe.Markup(content)]
+
+
+async def _catalog_site_rebuild(session: web.Committer) -> web.WerkzeugResponse:
+    try:
+        task = await tasks.catalog_site_generate_all(session.asf_uid)
+        await quart.flash(f"Catalog site rebuild task has been queued with ID {task.id}.", "success")
+    except Exception as e:
+        log.exception("Failed to queue catalog site rebuild task")
+        await quart.flash(f"Failed to queue catalog site rebuild: {e!s}", "error")
+    return await session.redirect(catalog_get, tab="catalog")
+
+
+async def _catalog_tab() -> htm.Element:
+    async with db.session() as data:
+        committees = await data.committee().order_by(sql.Committee.key).all()
+
+    listing = htpy.ul(".list-group")[
+        [
+            htpy.li(".list-group-item")[htpy.a(href=f"/admin/catalog/{committee.key}")[committee.name or committee.key]]
+            for committee in committees
+        ]
+    ]
+    rendered_form = await form.render(
+        model_cls=CatalogSiteRebuildForm,
+        action=util.as_url(catalog_post, tab="catalog"),
+        submit_label="Rebuild catalog site",
+        empty=True,
+        form_classes="",
+    )
+    block = htm.Block()
+    block.h2["Catalogue corrections"]
+    block.p[htm.a(href="/admin/catalog/dump")["Dump full catalog contents"]]
+    block.h3["Rebuild catalog site"]
+    block.p[
+        "Catalogue changes refresh the affected pages on their own, so a full rebuild is only needed to"
+        " populate a fresh deployment or to clear up after project renames, moves or deletions."
+    ]
+    block.append(rendered_form)
+    block.h3(".mt-4")["Committees"]
+    block.p["Choose a committee to review and correct its catalogued projects."]
+    block.append(listing)
+    return block.collect()
 
 
 def _certificate_block_lines(

@@ -6,7 +6,7 @@
 
 {% block content %}
   <h1>Delete release</h1>
-  <p><a href="{{ as_url(admin.current_releases) }}">Back to current releases</a></p>
+  <p><a href="{{ as_url(admin.catalog_get, tab="releases") }}">Back to current releases</a></p>
 
   <div class="alert alert-danger" role="alert">
     <p class="mb-1"><strong>This permanently deletes {{ release.key }}.</strong></p>

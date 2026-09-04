@@ -224,6 +224,11 @@
               </li>
               <li>
                 <a class="dropdown-item"
+                   href="{{ as_url(admin.catalog_get) }}"
+                   {% if request.endpoint == 'atr_admin_catalog_get' %}class="active"{% endif %}><i class="bi bi-diagram-3"></i> Catalog</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
                    href="{{ as_url(admin.toggle_view_get) }}"
                    {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
               </li>
@@ -236,34 +241,6 @@
               {% endif %}
               <li>
                 <hr class="dropdown-divider" />
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.current_releases) }}"
-                   {% if request.endpoint == 'atr_admin_current_releases' %}class="active"{% endif %}><i class="bi bi-list-ul"></i> Current releases</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.projects_update_get) }}"
-                   {% if request.endpoint == 'atr_admin_projects_update_get' %}class="active"{% endif %}><i class="bi bi-arrow-repeat"></i> Update projects</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.catalog_get) }}"
-                   {% if request.endpoint == 'atr_admin_catalog_get' %}class="active"{% endif %}><i class="bi bi-diagram-3"></i> Catalog admin</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.catalog_site_rebuild_get) }}"
-                   {% if request.endpoint == 'atr_admin_catalog_site_rebuild_get' %}class="active"{% endif %}><i class="bi bi-globe"></i> Rebuild catalog site</a>
-              </li>
-              <li>
-                <hr class="dropdown-divider" />
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.delete_committee_keys_get) }}"
-                   {% if request.endpoint == 'atr_admin_delete_committee_keys_get' %}class="active"{% endif %}><i class="bi bi-trash"></i> Delete committee keys</a>
               </li>
               <li>
                 <a class="dropdown-item"
