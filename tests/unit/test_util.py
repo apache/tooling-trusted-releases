@@ -42,6 +42,75 @@ def test_announce_recipients_use_users_list_for_maven(monkeypatch: pytest.Monkey
     assert "user@maven.apache.org" not in permitted
 
 
+def test_committee_user_list_name_cached(monkeypatch: pytest.MonkeyPatch):
+    fake_cache = {
+        "custom.apache.org": frozenset({"users", "dev", "announce"}),
+        "singular.apache.org": frozenset({"user", "dev", "announce"}),
+        "both.apache.org": frozenset({"users", "user", "dev"}),
+        "empty.apache.org": frozenset({"dev"}),
+    }
+    monkeypatch.setattr(util, "_MAILING_LISTS_CACHE", fake_cache)
+
+    assert util.committee_user_list_name("custom") == "users"
+    assert util.committee_user_list_name("singular") == "user"
+    assert util.committee_user_list_name("both") == "users"
+    assert util.committee_user_list_name("empty") == "user"
+
+
+def test_committee_user_list_name_static_fallback(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(util, "_MAILING_LISTS_CACHE", None)
+
+    assert util.committee_user_list_name("maven") == "users"
+    assert util.committee_user_list_name("airflow") == "users"
+    assert util.committee_user_list_name("unknown-committee") == "user"
+
+
+@pytest.mark.asyncio
+async def test_fetch_apache_mailing_lists_mocked(monkeypatch: pytest.MonkeyPatch):
+    class FakeResponse:
+        def __init__(self, data: dict[str, object]):
+            self._data = data
+
+        def raise_for_status(self) -> None:
+            pass
+
+        async def json(self, content_type: object = None) -> dict[str, object]:
+            return self._data
+
+        async def __aenter__(self) -> "FakeResponse":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    class FakeSession:
+        def __init__(self, response: FakeResponse):
+            self._response = response
+
+        def get(self, url: str, **kwargs: object) -> FakeResponse:
+            return self._response
+
+        async def __aenter__(self) -> "FakeSession":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    mock_data: dict[str, object] = {
+        "lists": {
+            "foo.apache.org": {"users": {}, "dev": {}},
+            "bar.apache.org": {"user": {}, "dev": {}},
+        }
+    }
+    monkeypatch.setattr(util, "create_secure_session", lambda **kwargs: FakeSession(FakeResponse(mock_data)))
+
+    cache = await util.fetch_apache_mailing_lists()
+    assert "foo.apache.org" in cache
+    assert "users" in cache["foo.apache.org"]
+    assert util.committee_user_list_name("foo") == "users"
+    assert util.committee_user_list_name("bar") == "user"
+
+
 def test_chmod_files_does_not_change_directory_permissions(tmp_path: pathlib.Path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()
