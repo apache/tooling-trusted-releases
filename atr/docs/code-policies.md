@@ -1,10 +1,10 @@
-# 3.10. Code policies
+# 3.4. Code policies
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.9.` [Code conventions](code-conventions)
+**Prev**: `3.3.` [Code conventions](code-conventions)
 
-**Next**: `3.11.` [How to contribute](how-to-contribute)
+**Next**: `3.5.` [Build processes](build-processes)
 
 **Sections**:
 

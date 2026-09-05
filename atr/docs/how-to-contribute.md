@@ -1,10 +1,10 @@
-# 3.11. How to contribute
+# 3.2. How to contribute
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.10.` [Code policies](code-policies)
+**Prev**: `3.1.` [Overview of the code](overview-of-the-code)
 
-**Next**: `3.12.` [Authentication security](authentication-security)
+**Next**: `3.3.` [Code conventions](code-conventions)
 
 **Sections**:
 
