@@ -1,10 +1,10 @@
-# 3.4. Storage interface
+# 3.9. Storage interface
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.3.` [Database](database)
+**Prev**: `3.8.` [Database](database)
 
-**Next**: `3.5.` [User interface](user-interface)
+**Next**: `3.10.` [User interface](user-interface)
 
 **Sections**:
 
