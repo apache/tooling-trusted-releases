@@ -253,6 +253,11 @@
                    {% if request.endpoint == 'atr_admin_keys_update_get' %}class="active"{% endif %}><i class="bi bi-key"></i> Update keys</a>
               </li>
               <li>
+                <a class="dropdown-item"
+                   href="{{ as_url(admin.committee_keys_get) }}"
+                   {% if request.endpoint == 'atr_admin_committee_keys_get' %}class="active"{% endif %}><i class="bi bi-trash"></i> Delete committee keys</a>
+              </li>
+              <li>
                 <hr class="dropdown-divider" />
               </li>
               <li>

@@ -1,9 +1,9 @@
 <h2>Current releases</h2>
 
 <div class="alert alert-info" role="alert">
-  These are live release-workflow releases, across all phases. Historical
-  catalogued releases (those with no workflow revisions) are managed in
-  <a href="{{ as_url(admin.catalog_get) }}" class="alert-link">Catalog admin</a>.
+  These are in-progress release-workflow releases: drafts, candidates, and
+  previews. Once finished, a release moves to the published catalogue, managed in
+  <a href="{{ as_url(admin.catalog_get, tab="admin") }}" class="alert-link">Catalog admin</a>.
 </div>
 
 {% if release_rows %}

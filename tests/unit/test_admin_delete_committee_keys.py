@@ -57,4 +57,4 @@ async def test_delete_committee_keys_post_surfaces_storage_error(monkeypatch):
     write.as_committee_admin.assert_called_once_with("alpha")
     keys.delete_committee_keys.assert_awaited_once()
     flash.assert_awaited_once_with(str(delete_error), "error")
-    session.redirect.assert_awaited_once_with(admin_routes.catalog_get, tab="committee-keys")
+    session.redirect.assert_awaited_once_with(admin_routes.committee_keys_get)
