@@ -34,15 +34,19 @@ from typing import Any, Final
 
 import netifaces
 import rich.logging
-from playwright.sync_api import BrowserContext, Dialog, Page, Request, Response, expect, sync_playwright
+from playwright.sync_api import BrowserContext, Dialog, Error, Page, Request, Response, Route, expect, sync_playwright
 
 ATR_BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache.org:8080")
+LOGO_TIMEOUT_MS: Final[int] = 3000
+LOGO_URL_PATTERN: Final[str] = "https://www.apache.org/logos/**"
 OPENPGP_TEST_UID: Final[str] = "<apache-tooling@example.invalid>"
 SSH_KEY_COMMENT: Final[str] = "atr-playwright-test@127.0.0.1"
 SSH_KEY_PATH: Final[str] = "/root/.ssh/id_ed25519"
 TEST_PROJECT: Final[str] = "test"
 TEST_SOURCE_ARTIFACT_DIR: Final[str] = "apache-test-0.2"
 TEST_SOURCE_ARTIFACT_NAME: Final[str] = "apache-test-0.2.tar.gz"
+
+logo_stalled = False
 
 
 @dataclasses.dataclass
@@ -568,6 +572,20 @@ def release_remove(page: Page, project_key: str, version_key: str) -> None:
     logging.info(f"Deletion successful for {release_key}")
 
 
+def route_logo(route: Route) -> None:
+    global logo_stalled
+    if logo_stalled:
+        route.abort()
+        return
+    try:
+        response = route.fetch(timeout=LOGO_TIMEOUT_MS)
+    except Error:
+        logo_stalled = True
+        route.abort()
+        return
+    route.fulfill(response=response)
+
+
 def run_tests(skip_slow: bool, tidy_after: bool) -> None:
     if (credentials := get_credentials()) is None:
         logging.error("Cannot run tests: no credentials provided")
@@ -579,6 +597,7 @@ def run_tests(skip_slow: bool, tidy_after: bool) -> None:
         try:
             browser = p.chromium.launch()
             context = browser.new_context(ignore_https_errors=True)
+            context.route(LOGO_URL_PATTERN, route_logo)
             run_tests_in_context(context, credentials, skip_slow, tidy_after)
 
         except Exception as e:
