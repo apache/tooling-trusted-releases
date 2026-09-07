@@ -1156,23 +1156,19 @@ def test_logging_debug(page: Page, credentials: Credentials) -> Callable[[], Non
 
 @slow
 def test_projects_01_update(page: Page, credentials: Credentials) -> None:
-    logging.info("Navigating to the admin update projects page")
-    go_to_path(page, "/admin/projects/update")
-    logging.info("Admin update projects page loaded")
+    logging.info("Navigating to the catalog update projects tab")
+    go_to_path(page, "/admin/catalog?tab=update-projects", wait=False)
+    logging.info("Catalog update projects tab loaded")
 
     logging.info("Locating and activating the button to update projects")
     update_button_locator = page.get_by_role("button", name="Update projects")
     expect(update_button_locator).to_be_enabled()
     update_button_locator.click()
 
-    logging.info("Waiting for project update completion message")
-    success_message_locator = page.locator("div.status-message.success")
-    expect(success_message_locator).to_contain_text(
-        re.compile(
-            r"Successfully added \d+ and updated \d+ committees and projects \(PMCs and PPMCs\) with membership data"
-        )
-    )
-    logging.info("Project update completed successfully")
+    logging.info("Waiting for the queued task confirmation")
+    success_message_locator = page.locator("div.flash-message.flash-success")
+    expect(success_message_locator).to_contain_text(re.compile(r"Metadata update task has been queued with ID \d+"))
+    logging.info("Project update task queued successfully")
 
 
 def test_projects_02_check_directory(page: Page, credentials: Credentials) -> None:
