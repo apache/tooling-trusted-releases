@@ -27,7 +27,7 @@ import pathlib
 import statistics
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
@@ -72,7 +72,6 @@ import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage as storage
-import atr.storage.datatypes as datatypes
 import atr.tasks as tasks
 import atr.template as template
 import atr.util as util
@@ -89,7 +88,6 @@ type BANNER_RESTORE = Literal["BANNER_RESTORE"]
 type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
 type CATALOG_SITE_REBUILD = Literal["CATALOG_SITE_REBUILD"]
-type DELETE_COMMITTEE_KEYS = Literal["DELETE_COMMITTEE_KEYS"]
 type LDAP = Literal["LDAP"]
 type PROJECTS_UPDATE = Literal["PROJECTS_UPDATE"]
 type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
@@ -108,12 +106,6 @@ class BrowseAsUserForm(form.Form):
 
 class CatalogSiteRebuildForm(form.Form):
     variant: CATALOG_SITE_REBUILD = form.value(CATALOG_SITE_REBUILD)
-
-
-class DeleteCommitteeKeysForm(form.Form):
-    variant: DELETE_COMMITTEE_KEYS = form.value(DELETE_COMMITTEE_KEYS)
-    committee_key: str = form.label("Committee", widget=form.Widget.SELECT)
-    confirm_delete: Literal["DELETE KEYS"] = form.label("Confirmation", "Type DELETE KEYS to confirm.")
 
 
 class DeleteReleaseConfirmForm(form.Form):
@@ -264,7 +256,7 @@ class TestRosterResetForm(form.Form):
     confirm_reset: Literal["RESET"] = form.label("Confirmation", "Type RESET to confirm.")
 
 
-type CatalogForm = Annotated[DeleteCommitteeKeysForm | ProjectsUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
+type CatalogForm = Annotated[ProjectsUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
 
 
 type SystemForm = Annotated[EditBannerForm | RestoreBannerForm | SendTestMessageForm, form.DISCRIMINATOR]
@@ -329,25 +321,10 @@ async def catalog_post(
     session: web.Committer, _catalog: Literal["catalog"], catalog_form: CatalogForm
 ) -> web.WerkzeugResponse:
     match catalog_form:
-        case DeleteCommitteeKeysForm():
-            return await _catalog_delete_committee_keys(session, catalog_form)
         case ProjectsUpdateForm():
             return await _catalog_projects_update(session)
         case CatalogSiteRebuildForm():
             return await _catalog_site_rebuild(session)
-
-
-@admin.typed
-async def committee_keys_get(_session: web.Committer, _committee_keys: Literal["committee-keys"]) -> str:
-    """
-    URL: GET /committee-keys
-
-    Delete all the signing keys held for a committee.
-    """
-    page = htm.Block()
-    page.h1["Delete committee keys"]
-    page.append(await _catalog_delete_committee_keys_tab())
-    return await template.render("admin-blank.html", title="Delete committee keys", content=page.collect())
 
 
 @admin.typed
@@ -1404,6 +1381,22 @@ async def data(_session: web.Committer, _data: Literal["data"], query_args: web.
 
 
 @admin.typed
+async def data_post(session: web.Committer, _data: Literal["data"], _form: form.Empty) -> web.WerkzeugResponse:
+    if _keys_update_gated():
+        await quart.flash("Updating keys is unavailable while ATR publishes to the release area.", "error")
+        return await session.redirect(data, tab="update-keys")
+    try:
+        pid = await _update_keys(session.asf_uid)
+        log.info(f"Keys update process started with PID {pid}")
+        await quart.flash(f"Successfully started key update process with PID {pid}", "success")
+    except Exception as e:
+        detail = _format_exception_location(e)
+        log.exception(f"Failed to start key update process: {detail}")
+        await quart.flash(f"Failed to update keys: {detail}", "error")
+    return await session.redirect(data, tab="update-keys")
+
+
+@admin.typed
 async def delete_test_openpgp_keys_get(
     _session: web.Committer, _delete_test_openpgp_keys: Literal["delete-test-openpgp-keys"]
 ) -> web.Response:
@@ -1453,106 +1446,6 @@ async def delete_test_openpgp_keys_post(
         await quart.flash(f"Error deleting test user keys: {e!s}", "error")
 
     return await session.redirect(get.keys.keys)
-
-
-@admin.typed
-async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/check"]) -> str | web.WerkzeugResponse:
-    """
-    URL: GET /keys/check
-
-    Check public signing key details.
-    """
-    rendered_form = await form.render(
-        model_cls=form.Empty,
-        submit_label="Check",
-        empty=True,
-    )
-    return await template.render(
-        "admin-form.html",
-        title="Check public signing key details",
-        description="Check public signing key details",
-        header="Check public signing key details",
-        form=rendered_form,
-    )
-
-
-@admin.typed
-async def keys_check_post(
-    _session: web.Committer, _keys_check: Literal["keys/check"], _form: form.Empty
-) -> str | web.WerkzeugResponse:
-    """Check public signing key details."""
-    page = htm.Block()
-    page.h1["Public signing key check results"]
-    for check in (_check_keys, _check_certificate_blocks):
-        try:
-            result = await check()
-            page.div[[htm.p[line] for line in result.split("\n")]]
-        except Exception as e:
-            log.exception("Exception during key check:")
-            page.p[f"Exception during key check: {e!s}"]
-    return await template.render(
-        "blank.html",
-        title="Check public signing key details",
-        description="Check public signing key details",
-        content=page.collect(),
-    )
-
-
-@admin.typed
-async def keys_update_get(
-    _session: web.Committer, _keys_update: Literal["keys/update"]
-) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """
-    URL: GET /keys/update
-
-    Update keys from remote data.
-    """
-    rendered_form = await form.render(
-        model_cls=form.Empty,
-        submit_label="Update keys",
-        empty=True,
-        form_classes="",
-    )
-    # TODO: All known file paths should be constants
-    log_path = pathlib.Path(config.get().STATE_DIR) / "logs" / "keys-import.log"
-    if not await aiofiles.os.path.exists(log_path):
-        previous_output = None
-    else:
-        async with aiofiles.open(log_path) as f:
-            previous_output = await f.read()
-    return await template.render(
-        "update-keys.html",
-        empty_form=rendered_form,
-        previous_output=previous_output,
-        publish_gate=_keys_update_gated(),
-        publish_area=config.get().SVN_DIST_PUBLIC_URL,
-    )
-
-
-@admin.typed
-async def keys_update_post(
-    session: web.Committer, _keys_update: Literal["keys/update"], _form: form.Empty
-) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """Update keys from remote data."""
-    if _keys_update_gated():
-        return {
-            "message": "Updating keys is unavailable while ATR publishes to the release area.",
-            "category": "error",
-        }, 200
-    try:
-        pid = await _update_keys(session.asf_uid)
-        log.info(f"Keys update process started with PID {pid}")
-        return {
-            "message": f"Successfully started key update process with PID {pid}",
-            "category": "success",
-        }, 200
-    except Exception as e:
-        detail = _format_exception_location(e)
-        log.exception(f"Failed to start key update process: {detail}")
-        return {
-            "message": f"Failed to update keys: {detail}",
-            "category": "error",
-        }, 200
 
 
 @admin.typed
@@ -1877,59 +1770,6 @@ async def validate_jwt_post(
         defaults={"token": token},
     )
     return await _validate_jwt_page(rendered_form, result=result)
-
-
-async def _catalog_delete_committee_keys(
-    session: web.Committer, delete_form: DeleteCommitteeKeysForm
-) -> web.WerkzeugResponse:
-    committee_key = delete_form.committee_key
-
-    try:
-        async with storage.write(session) as write:
-            waca = write.as_committee_admin(committee_key)
-            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(datatypes.KeySource.WEB)
-    except storage.AccessError as e:
-        await quart.flash(str(e), "error")
-        return await session.redirect(committee_keys_get)
-
-    if num_unlinked == 0:
-        await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
-    else:
-        await quart.flash(
-            f"Removed {util.plural(num_unlinked, 'key link')} for '{committee_key}'. "
-            f"Deleted {util.plural(num_deleted, 'unused key')}.",
-            "success",
-        )
-        publications = {committee_key: publication} if (publication is not None) else {}
-        if shared.keys.publication_disabled(publications):
-            await quart.flash(
-                f"The published KEYS file for '{committee_key}' was not updated"
-                " because automated publication is disabled.",
-                "warning",
-            )
-        if failure := shared.keys.publication_failed_warning(publications):
-            await quart.flash(failure, "error")
-
-    return await session.redirect(committee_keys_get)
-
-
-async def _catalog_delete_committee_keys_tab() -> htm.Element:
-    async with db.session() as data:
-        all_committees = await data.committee(_signing_certificates=True).order_by(sql.Committee.key).all()
-        committees_with_keys = [c for c in all_committees if c.signing_certificates]
-
-    committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
-
-    rendered_form = await form.render(
-        model_cls=DeleteCommitteeKeysForm,
-        action=util.as_url(catalog_post),
-        submit_label="Delete all keys for selected committee",
-        defaults={"committee_key": committee_choices},
-    )
-    block = htm.Block()
-    block.h2["Delete all keys for a committee"]
-    block.append(rendered_form)
-    return block.collect()
 
 
 async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
@@ -2333,16 +2173,74 @@ async def _database_data_tab(model: str, query_args: web.PageQuery) -> htm.Eleme
         return htm.div[markupsafe.Markup(content)]
 
 
+async def _database_keys_check_tab() -> htm.Element:
+    block = htm.Block()
+    block.h2["Keys check"]
+    for check in (_check_keys, _check_certificate_blocks):
+        try:
+            result = await check()
+            block.div[[htm.p[line] for line in result.split("\n")]]
+        except Exception as e:
+            log.exception("Exception during key check:")
+            block.p[f"Exception during key check: {e!s}"]
+    return block.collect()
+
+
 async def _database_page(active_tab: str, model: str, query_args: web.PageQuery) -> str:
     tab_items = [
         htm.Tab("data", "Data browser", lambda: _database_data_tab(model, query_args)),
         htm.Tab("consistency", "Consistency", _database_consistency_tab),
         htm.Tab("validation", "Validation", _database_validation_tab),
+        htm.Tab("keys-check", "Keys check", _database_keys_check_tab),
+        htm.Tab("update-keys", "Update keys", _database_update_keys_tab),
     ]
     page = htm.Block()
     page.h1["Database"]
     page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=util.as_url(data)))
     return await template.render("admin-blank.html", title="Database", content=page.collect())
+
+
+async def _database_update_keys_tab() -> htm.Element:
+    # TODO: All known file paths should be constants
+    log_path = pathlib.Path(config.get().STATE_DIR) / "logs" / "keys-import.log"
+    if not await aiofiles.os.path.exists(log_path):
+        previous_output = None
+    else:
+        async with aiofiles.open(log_path) as f:
+            previous_output = await f.read()
+    block = htm.Block()
+    block.h2["Update keys"]
+    block.p["Update keys in the database from remote data sources."]
+    block.append(
+        htm.div(".alert.alert-warning", role="alert")[
+            htm.strong["Note:"], " This operation will update all keys from remote KEYS files."
+        ]
+    )
+    if _keys_update_gated():
+        block.append(
+            htm.div(".alert.alert-warning", role="alert")[
+                htm.strong["Unavailable:"],
+                " ATR publishes to the release area, ",
+                htm.code[config.get().SVN_DIST_PUBLIC_URL],
+                ". Updating keys re-imports every committee's canonical KEYS file and republishes it, which"
+                " would overwrite every committee's own file there, so this operation is disabled on this"
+                " instance.",
+            ]
+        )
+    else:
+        block.append(
+            await form.render(
+                model_cls=form.Empty,
+                action=util.as_url(data_post, tab="update-keys"),
+                submit_label="Update keys",
+                empty=True,
+                form_classes="",
+            )
+        )
+    if previous_output:
+        block.h3["Previous output"]
+        block.pre[previous_output]
+    return block.collect()
 
 
 async def _database_validation_tab() -> htm.Element:

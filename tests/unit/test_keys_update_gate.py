@@ -31,16 +31,21 @@ import atr.util as util
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "keys_import.py"
 
 
-async def _post(target: util.SvnPublishTarget, update_keys: mock.AsyncMock) -> object:
+async def _post(target: util.SvnPublishTarget, update_keys: mock.AsyncMock) -> tuple[mock.AsyncMock, object]:
     session = types.SimpleNamespace(
-        asf_uid="alice", form_validate=mock.AsyncMock(return_value=form.Empty(csrf_token="csrf"))
+        asf_uid="alice",
+        form_validate=mock.AsyncMock(return_value=form.Empty(csrf_token="csrf")),
+        redirect=mock.AsyncMock(return_value="redirected"),
     )
+    flash = mock.AsyncMock()
     with (
         mock.patch.object(admin_blueprint.common, "authenticate", mock.AsyncMock(return_value=session)),
         mock.patch.object(admin.util, "svn_publish_target", return_value=target),
         mock.patch.object(admin, "_update_keys", update_keys),
+        mock.patch.object(admin.quart, "flash", flash),
     ):
-        return await admin.keys_update_post()
+        result = await admin.data_post()
+    return flash, result
 
 
 def _script():
@@ -80,9 +85,10 @@ def test_keys_import_refuses_only_the_release_target() -> None:
 async def test_keys_update_post_refuses_the_release_target() -> None:
     update_keys = mock.AsyncMock(return_value=123)
 
-    refused, status = await _post(util.SvnPublishTarget.RELEASE, update_keys)
+    flash, result = await _post(util.SvnPublishTarget.RELEASE, update_keys)
 
-    assert (status == 200) and (refused["category"] == "error") and ("release area" in refused["message"])
+    message, category = flash.await_args.args
+    assert (result == "redirected") and (category == "error") and ("release area" in message)
     update_keys.assert_not_awaited()
 
 
@@ -90,9 +96,9 @@ async def test_keys_update_post_refuses_the_release_target() -> None:
 async def test_keys_update_post_runs_for_the_atr_target() -> None:
     update_keys = mock.AsyncMock(return_value=123)
 
-    started, _ = await _post(util.SvnPublishTarget.ATR, update_keys)
+    flash, _ = await _post(util.SvnPublishTarget.ATR, update_keys)
 
-    assert started["category"] == "success"
+    assert flash.await_args.args[1] == "success"
     update_keys.assert_awaited_once_with("alice")
 
 
