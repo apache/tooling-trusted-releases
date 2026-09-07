@@ -1,36 +1,28 @@
-{% extends "layouts/base-admin.html" %}
+<h2>Validation</h2>
 
-{%- block title -%}Validation ~ ATR Admin{%- endblock title -%}
-
-{%- block description -%}Results of running server data validators.{%- endblock description -%}
-
-{% block content %}
-  <h1>Validation</h1>
-
-  {% if divergences|length == 0 %}
-    <p>No validation errors were found.</p>
-  {% else %}
-    <table class="table table-striped">
-      <thead>
+{% if divergences|length == 0 %}
+  <p>No validation errors were found.</p>
+{% else %}
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Components</th>
+        <th>Validator</th>
+        <th>Source</th>
+        <th>Expected</th>
+        <th>Actual</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in divergences %}
         <tr>
-          <th>Components</th>
-          <th>Validator</th>
-          <th>Source</th>
-          <th>Expected</th>
-          <th>Actual</th>
+          <td>{{ d.components | join(', ') }}</td>
+          <td><code>{{ d.validator }}</code></td>
+          <td>{{ d.source }}</td>
+          <td><code>{{ d.divergence.expected }}</code></td>
+          <td><code>{{ d.divergence.actual }}</code></td>
         </tr>
-      </thead>
-      <tbody>
-        {% for d in divergences %}
-          <tr>
-            <td>{{ d.components | join(', ') }}</td>
-            <td><code>{{ d.validator }}</code></td>
-            <td>{{ d.source }}</td>
-            <td><code>{{ d.divergence.expected }}</code></td>
-            <td><code>{{ d.divergence.actual }}</code></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-{% endblock content %}
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}

@@ -61,7 +61,6 @@ import atr.mapping as mapping
 import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.models.validation as validation
 import atr.noisy as noisy
 import atr.paths as paths
@@ -1345,52 +1344,6 @@ def _catalog_import_preview(diff: catalogue_diff.CatalogueDiff) -> htm.Element:
 
 
 @admin.typed
-async def consistency(_session: web.Committer, _consistency: Literal["consistency"]) -> web.TextResponse:
-    """
-    URL: GET /consistency
-
-    Check for consistency between the database and the filesystem.
-    """
-    # Get all releases from the database
-    async with db.session() as data:
-        releases = await data.release().all()
-    database_dirs = await _consistency_database_dirs(releases)
-    if len(set(database_dirs)) != len(database_dirs):
-        raise base.ASFQuartException("Duplicate release directories in database", errorcode=500)
-
-    # Get all releases from the filesystem
-    filesystem_dirs = await _get_filesystem_dirs()
-
-    # Pair them up where possible
-    paired_dirs = []
-    for database_dir in database_dirs[:]:
-        for filesystem_dir in filesystem_dirs[:]:
-            if database_dir == filesystem_dir:
-                paired_dirs.append(database_dir)
-                database_dirs.remove(database_dir)
-                filesystem_dirs.remove(filesystem_dir)
-                break
-    return web.TextResponse(
-        "=== BROKEN ===\n"
-        "\n"
-        "DATABASE ONLY:\n"
-        "\n"
-        f"{chr(10).join(sorted(database_dirs or ['-']))}\n"
-        "\n"
-        "FILESYSTEM ONLY:\n"
-        "\n"
-        f"{chr(10).join(sorted(filesystem_dirs or ['-']))}\n"
-        "\n"
-        "\n"
-        "== Okay ==\n"
-        "\n"
-        "Paired correctly:\n"
-        "\n"
-        f"{chr(10).join(sorted(paired_dirs or ['-']))}\n"
-    )
-
-
-@admin.typed
 async def current_release_delete_get(
     _session: web.Committer,
     _current_releases: Literal["current/releases"],
@@ -1438,22 +1391,16 @@ async def current_release_delete_post(
 
 
 @admin.typed
-async def data(session: web.Committer, _data: Literal["data"], query_args: web.PageQuery) -> str:
+async def data(_session: web.Committer, _data: Literal["data"], query_args: web.PageQuery) -> str:
     """
     URL: GET /data
     """
-    return await _data_browse(session, "Committee", query_args)
-
-
-@admin.typed
-async def data_model(
-    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr, query_args: web.PageQuery
-) -> str:
-    """
-    URL: GET /data/<model>
-    """
-
-    return await _data_browse(session, str(model), query_args)
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+    args = quart.request.args
+    return await _database_page(args.get("tab", "data"), args.get("model", "Committee"), query_args)
 
 
 @admin.typed
@@ -1880,23 +1827,6 @@ async def users_post(
 
 
 @admin.typed
-async def validate_(_session: web.Committer, _validate: Literal["validate"]) -> str:
-    """
-    URL: GET /validate
-
-    Run validators and display any divergences.
-    """
-
-    async with db.session() as data:
-        divergences = [d async for d in validate.everything(data)]
-
-    return await template.render(
-        "validation.html",
-        divergences=divergences,
-    )
-
-
-@admin.typed
 async def validate_jwt_get(_session: web.Committer, _validate_jwt: Literal["validate-jwt"]) -> str:
     """
     URL: GET /validate-jwt
@@ -2293,12 +2223,57 @@ async def _check_keys(fix: bool = False) -> str:
     return message
 
 
-async def _data_browse(_session: web.Committer, model: str, query_args: web.PageQuery) -> str:
+async def _database_consistency_tab() -> htm.Element:
+    # Get all releases from the database
+    async with db.session() as data:
+        releases = await data.release().all()
+    database_dirs = await _consistency_database_dirs(releases)
+    if len(set(database_dirs)) != len(database_dirs):
+        raise base.ASFQuartException("Duplicate release directories in database", errorcode=500)
+
+    # Get all releases from the filesystem
+    filesystem_dirs = await _get_filesystem_dirs()
+
+    # Pair them up where possible
+    paired_dirs = []
+    for database_dir in database_dirs[:]:
+        for filesystem_dir in filesystem_dirs[:]:
+            if database_dir == filesystem_dir:
+                paired_dirs.append(database_dir)
+                database_dirs.remove(database_dir)
+                filesystem_dirs.remove(filesystem_dir)
+                break
+    text = (
+        "=== BROKEN ===\n"
+        "\n"
+        "DATABASE ONLY:\n"
+        "\n"
+        f"{chr(10).join(sorted(database_dirs or ['-']))}\n"
+        "\n"
+        "FILESYSTEM ONLY:\n"
+        "\n"
+        f"{chr(10).join(sorted(filesystem_dirs or ['-']))}\n"
+        "\n"
+        "\n"
+        "== Okay ==\n"
+        "\n"
+        "Paired correctly:\n"
+        "\n"
+        f"{chr(10).join(sorted(paired_dirs or ['-']))}\n"
+    )
+    block = htm.Block()
+    block.h2["Consistency"]
+    block.p[
+        "Compares the release directories recorded in the database with those on disk. Investigate the"
+        " DATABASE ONLY and FILESYSTEM ONLY entries under BROKEN and repair them by hand. Okay lists the"
+        " matched pairs, and a dash means none."
+    ]
+    block.pre[htm.code[text]]
+    return block.collect()
+
+
+async def _database_data_tab(model: str, query_args: web.PageQuery) -> htm.Element:
     """Browse all records in the database."""
-    try:
-        validation.pagination_args_validate(query_args)
-    except ValueError as e:
-        raise exceptions.BadRequest(str(e))
     async with db.session() as data:
         # Map of model names to their classes
         # TODO: Add distribution channel, key link, and any others
@@ -2346,7 +2321,7 @@ async def _data_browse(_session: web.Committer, model: str, query_args: web.Page
             records_dict.append(record_dict)
 
         page = web.page_nav(query_args.offset, query_args.limit, count, len(records))
-        return await template.render(
+        content = await template.render(
             "data-browser.html",
             models=list(model_methods.keys()),
             model=model,
@@ -2355,6 +2330,27 @@ async def _data_browse(_session: web.Committer, model: str, query_args: web.Page
             limit=query_args.limit,
             page=page,
         )
+        return htm.div[markupsafe.Markup(content)]
+
+
+async def _database_page(active_tab: str, model: str, query_args: web.PageQuery) -> str:
+    tab_items = [
+        htm.Tab("data", "Data browser", lambda: _database_data_tab(model, query_args)),
+        htm.Tab("consistency", "Consistency", _database_consistency_tab),
+        htm.Tab("validation", "Validation", _database_validation_tab),
+    ]
+    page = htm.Block()
+    page.h1["Database"]
+    page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=util.as_url(data)))
+    return await template.render("admin-blank.html", title="Database", content=page.collect())
+
+
+async def _database_validation_tab() -> htm.Element:
+    async with db.session() as data:
+        divergences = [d async for d in validate.everything(data)]
+
+    content = await template.render("validation.html", divergences=divergences)
+    return htm.div[markupsafe.Markup(content)]
 
 
 async def _delete_releases(session: web.Committer, releases_to_delete: list[str]) -> None:
