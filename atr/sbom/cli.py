@@ -16,14 +16,19 @@
 # under the License.
 
 import asyncio
+import logging
 import pathlib
 import sys
 
 import orjson
+import structlog
 from cyclonedx.model.bom import Bom
 from cyclonedx.output import make_outputter
 from cyclonedx.schema import OutputFormat
 from cyclonedx.schema.schema import SCHEMA_VERSIONS
+
+import atr.log as log
+import atr.loggers as loggers
 
 from . import models, osv
 from .conformance import ntia_2021_issues
@@ -69,7 +74,7 @@ def command_merge(bundle: models.bundle.Bundle) -> None:
     else:
         bom: Bom | None = Bom.from_json(data=output)
         if bom is None:
-            print("Could not generate patched Bom")
+            log.error("Could not generate patched Bom")
             return
         print(make_outputter(bom, OutputFormat.XML, bundle.spec_version).output_as_string(indent=2))
 
@@ -84,7 +89,7 @@ def command_osv(bundle: models.bundle.Bundle) -> None:
     results, ignored = asyncio.run(osv.scan_bundle(bundle))
     ignored_count = len(ignored)
     if ignored_count > 0:
-        print(f"Warning: {ignored_count} components ignored (missing purl or version)")
+        log.warning("Components ignored (missing purl or version)", count=ignored_count)
     for component_result in results:
         print(component_result.ref)
         for vuln in component_result.vulnerabilities:
@@ -180,10 +185,15 @@ def main() -> None:  # noqa: C901
             "outdated, patch-ntia, patch-vuln, scores, validate-cli, validate-py, where"
         )
         sys.exit(1)
+    setup_cli_logging()
     path = pathlib.Path(sys.argv[2])
-    bundle = path_to_bundle(path)
-    if not bundle:
-        raise RuntimeError("Could not load bundle")
+    try:
+        bundle = path_to_bundle(path)
+    except Exception:
+        # path_to_bundle raises on a missing or malformed file - route that
+        # through logging rather than dumping a raw traceback at the user
+        log.exception("Could not load bundle", path=str(path))
+        sys.exit(1)
     match sys.argv[1]:
         case "license":
             command_license(bundle)
@@ -208,5 +218,24 @@ def main() -> None:  # noqa: C901
         case "where":
             command_where(bundle)
         case _:
-            print(f"unknown command: {sys.argv[1]}")
+            log.error("Unknown command", command=sys.argv[1])
             sys.exit(1)
+
+
+def setup_cli_logging(level: int = logging.INFO) -> None:
+    """Wire up console logging for a standalone CLI run.
+
+    Under the ATR server these SBOM functions already get structlog configured
+    at startup, so any log.* calls route to the usual log files. This does the
+    equivalent for a bare `python -m atr.sbom` invocation - the same log.* calls,
+    only rendered to stderr - so diagnostics behave sensibly whichever way in we
+    came.
+    """
+    shared = loggers.shared_processors()
+    loggers.configure_structlog(shared)
+
+    # Diagnostics go to stderr so command output on stdout stays pipeable
+    handler = logging.StreamHandler(sys.stderr)
+    renderer: structlog.types.Processor = structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty())
+    handler.setFormatter(loggers.create_output_formatter(shared, renderer))
+    logging.basicConfig(level=level, handlers=[handler], force=True)
