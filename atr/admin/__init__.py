@@ -27,7 +27,7 @@ import pathlib
 import statistics
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
@@ -83,6 +83,61 @@ ROUTES_MODULE: Final[Literal[True]] = True
 
 _CERTIFICATE_FINDING_RANK: Final[dict[str, int]] = {"signing-keys": 1, "metadata": 2}
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
+
+# Every table the data browser will show. This is the whole set on purpose - the
+# _browsable_models_are_complete test fails if a new table=True model is added
+# without landing here, so the browser can't silently fall behind the schema.
+_BROWSABLE_MODELS: Final[tuple[type[sqlmodel.SQLModel], ...]] = (
+    sql.ApprovalRequest,
+    sql.Artifact,
+    sql.BallotPaper,
+    sql.Banner,
+    sql.CheckResult,
+    sql.CheckResultIgnore,
+    sql.Committee,
+    sql.Distribution,
+    sql.KeyAttestable,
+    sql.KeyLink,
+    sql.LifecycleEvent,
+    sql.Notification,
+    sql.PersonalAccessToken,
+    sql.Project,
+    sql.ProjectCycle,
+    sql.PubSubFailure,
+    sql.Quarantined,
+    sql.Release,
+    sql.ReleaseFileState,
+    sql.ReleasePolicy,
+    sql.Revision,
+    sql.RevisionCounter,
+    sql.SessionFormError,
+    sql.SignatureHint,
+    sql.SigningCertificate,
+    sql.SigningKey,
+    sql.SSHKey,
+    sql.Task,
+    sql.TextValue,
+    sql.User,
+    sql.UserSession,
+    sql.VoteCounter,
+    sql.WorkflowJti,
+    sql.WorkflowSSHKey,
+    sql.WorkflowStatus,
+)
+
+# Columns holding a secret we mustn't dump in full. The browser shows a short
+# prefix of each value and ellipsises the rest - enough to recognise the row,
+# never enough to reuse the secret. Public hashes (content, commit, dedup) are
+# left out on purpose, since they give nothing away.
+_SENSITIVE_COLUMNS: Final[dict[str, frozenset[str]]] = {
+    "PersonalAccessToken": frozenset({"token_hash"}),
+    "Quarantined": frozenset({"token"}),
+    "SessionFormError": frozenset({"sid_hash"}),
+    "UserSession": frozenset({"sid_hash"}),
+}
+
+# How much of a redacted value we reveal before the ellipsis.
+_REDACTION_VISIBLE_PREFIX: Final = 12
 
 
 type BANNER_RESTORE = Literal["BANNER_RESTORE"]
@@ -2274,56 +2329,27 @@ async def _database_consistency_tab() -> htm.Element:
 
 async def _database_data_tab(model: str, query_args: web.PageQuery) -> htm.Element:
     """Browse all records in the database."""
+    models_by_name = {model_class.__name__: model_class for model_class in _BROWSABLE_MODELS}
+    if model not in models_by_name:
+        raise base.ASFQuartException(f"Model type '{model}' not found", 404)
+    model_class = models_by_name[model]
+
     async with db.session() as data:
-        # Map of model names to their classes
-        # TODO: Add distribution channel, key link, and any others
-        model_methods: dict[str, Callable[[], db.Query[Any]]] = {
-            "CheckResult": data.check_result,
-            "CheckResultIgnore": data.check_result_ignore,
-            "Committee": data.committee,
-            "Project": data.project,
-            "PubSubFailure": data.pub_sub_failure,
-            "SigningCertificate": lambda: data.signing_certificate(deleted=db.NOT_SET),
-            "Release": data.release,
-            "ReleasePolicy": data.release_policy,
-            "Revision": data.revision,
-            "SSHKey": data.ssh_key,
-            "Task": data.task,
-            "TextValue": data.text_value,
-        }
-
-        if model not in model_methods:
-            raise base.ASFQuartException(f"Model type '{model}' not found", 404)
-
-        # Get all records for the selected model
-        query = model_methods[model]()
-        model_class = query.query.column_descriptions[0]["type"]
+        # A plain select over the class, so every table can be browsed without its own
+        # accessor. Rows aren't filtered here, so soft-deleted ones show up too, which is
+        # what an admin wants when eyeballing the raw database.
         count_result = await data.execute(sqlalchemy.select(sqlalchemy.func.count()).select_from(model_class))
         count = count_result.scalar_one()
-        query = query.order_by(*sqlalchemy.inspect(model_class).primary_key)
+        query = db.Query(data, sqlmodel.select(model_class)).order_by(*sqlalchemy.inspect(model_class).primary_key)
         records = await query.limit(query_args.limit).offset(query_args.offset).all()
 
-        # Convert records to dictionaries for JSON serialization
-        records_dict = []
-        for record in records:
-            if hasattr(record, "dict"):
-                record_dict = record.dict()
-            else:
-                # Fallback for models without dict() method
-                record_dict = {}
-                # record_dict = {
-                #     "id": getattr(record, "id", None),
-                #     "name": getattr(record, "name", None),
-                # }
-                for key in record.__dict__:
-                    if not key.startswith("_"):
-                        record_dict[key] = getattr(record, key)
-            records_dict.append(record_dict)
+        sensitive = _SENSITIVE_COLUMNS.get(model, frozenset())
+        records_dict = [_record_to_dict(record, sensitive) for record in records]
 
         page = web.page_nav(query_args.offset, query_args.limit, count, len(records))
         content = await template.render(
             "data-browser.html",
-            models=list(model_methods.keys()),
+            models=list(models_by_name.keys()),
             model=model,
             records=records_dict,
             count=count,
@@ -2475,6 +2501,27 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 def _keys_update_gated() -> bool:
     return util.svn_publish_target() is util.SvnPublishTarget.RELEASE
+
+
+def _record_to_dict(record: Any, sensitive: frozenset[str]) -> dict[str, Any]:
+    if hasattr(record, "dict"):
+        record_dict = record.dict()
+    else:
+        # Fallback for anything without a dict() method, keeping public columns only
+        record_dict = {key: getattr(record, key) for key in record.__dict__ if not key.startswith("_")}
+    for column in sensitive:
+        if column in record_dict:
+            record_dict[column] = _redact(record_dict[column])
+    return record_dict
+
+
+def _redact(value: Any) -> Any:
+    # Non-strings and short values give nothing away as a prefix, so hide them whole
+    if not isinstance(value, str):
+        return value
+    if len(value) <= _REDACTION_VISIBLE_PREFIX:
+        return "…"
+    return f"{value[:_REDACTION_VISIBLE_PREFIX]}…"
 
 
 def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAgeRow:
