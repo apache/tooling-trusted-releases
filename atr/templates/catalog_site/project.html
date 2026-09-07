@@ -20,15 +20,12 @@
   {% include "_project_back_link.html" %}
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <h1 class="mb-0">{{ heading }}</h1>
-    <span>
-      <a class="btn btn-sm btn-outline-secondary" href="{{ keys_url }}">Public KEYS</a>
+    <span class="d-flex align-items-center flex-wrap gap-2">
       {% if project %}
-        <a class="btn btn-sm btn-outline-secondary ms-2" href="cle.json">Project CLE</a>
-        {# A retired project has nothing current, so the archive is always the way on #}
-        {% if has_archive or retired %}
-          <a class="btn btn-sm btn-outline-secondary ms-2" href="archive.html">Archived releases</a>
-        {% endif %}
+        <a class="btn btn-sm btn-outline-secondary" href="cle.json">Project CLE</a>
       {% endif %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ keys_url }}">Public KEYS</a>
+      <span>(<a href="https://www.apache.org/info/verification.html" target="_blank" rel="noopener">Verification</a>)</span>
     </span>
   </div>
   {% include "_unreviewed.html" %}
@@ -44,7 +41,13 @@
     </div>
   {% endif %}
   {% if project %}
-    <h2 class="fs-4 border-bottom pb-1">Releases</h2>
+    <div class="d-flex justify-content-between align-items-center border-bottom pb-1 mb-2">
+      <h2 class="fs-4 mb-0 border-bottom-0">Releases</h2>
+      {# A retired project has nothing current, so the archive is always the way on #}
+      {% if has_archive or retired %}
+        <a class="btn btn-sm btn-outline-secondary" href="archive.html">Archived releases</a>
+      {% endif %}
+    </div>
     {# A retired project can still hold releases that were never archived themselves.
        They belong to nothing else, so list them here rather than drop them #}
     {% if versions %}

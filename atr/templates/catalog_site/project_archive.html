@@ -7,14 +7,18 @@
 {% block content %}
   {% include "_project_back_link.html" %}
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <h1 class="mb-0">{{ project.display_name }} &ndash; archived releases</h1>
-    <span>
+    <h1 class="mb-0">{{ project.display_name }}</h1>
+    <span class="d-flex align-items-center flex-wrap gap-2">
+      <a class="btn btn-sm btn-outline-secondary" href="cle.json">Project CLE</a>
       <a class="btn btn-sm btn-outline-secondary" href="{{ keys_url }}">Public KEYS</a>
-      <a class="btn btn-sm btn-outline-secondary ms-2" href="cle.json">Project CLE</a>
-      <a class="btn btn-sm btn-outline-secondary ms-2" href="index.html">Current releases</a>
+      <span>(<a href="https://www.apache.org/info/verification.html" target="_blank" rel="noopener">Verification</a>)</span>
     </span>
   </div>
   {% include "_unreviewed.html" %}
+  <div class="d-flex justify-content-between align-items-center border-bottom pb-1 mb-2">
+    <h2 class="fs-4 mb-0 border-bottom-0">Archived releases</h2>
+    <a class="btn btn-sm btn-outline-secondary" href="index.html">Current releases</a>
+  </div>
   {% if versions %}
     {% include "_release_list.html" %}
   {% else %}
