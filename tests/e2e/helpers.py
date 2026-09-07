@@ -20,15 +20,19 @@ import pathlib
 import time
 from typing import Any, Final
 
-from playwright.sync_api import APIRequestContext, Page
+from playwright.sync_api import APIRequestContext, Error, Page, Route
 
 _ATR_BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache.org:8080")
+_LOGO_TIMEOUT_MS: Final[int] = 3000
+_LOGO_URL_PATTERN: Final[str] = "https://www.apache.org/logos/**"
 
 _TEST_KEY_FILE: Final[pathlib.Path] = (
     pathlib.Path(__file__).parent.resolve() / "test_files" / "ATR_Test_0x1913BD07F118B758_public.asc"
 )
 _TEST_KEY_ID: Final[str] = "1913BD07F118B758"
 _TEST_KEY_COMMITTEE: Final[str] = "test"
+
+_logo_stalled = False
 
 
 def api_get(request: APIRequestContext, path: str) -> dict[str, Any]:
@@ -72,9 +76,24 @@ def ensure_test_user_key(page: Page) -> None:
 
 
 def log_in(page: Page) -> None:
+    page.context.route(_LOGO_URL_PATTERN, route_logo)
     page.goto(f"{_ATR_BASE_URL}/test/login")
     page.wait_for_load_state()
     ensure_test_user_key(page)
+
+
+def route_logo(route: Route) -> None:
+    global _logo_stalled
+    if _logo_stalled:
+        route.abort()
+        return
+    try:
+        response = route.fetch(timeout=_LOGO_TIMEOUT_MS)
+    except Error:
+        _logo_stalled = True
+        route.abort()
+        return
+    route.fulfill(response=response)
 
 
 def visit(page: Page, path: str) -> None:
