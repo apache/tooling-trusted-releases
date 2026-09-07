@@ -1,127 +1,116 @@
-{% extends "layouts/base-admin.html" %}
+<style>
+  .page-model-nav {
+    margin: 1rem 0;
+    padding: 0.5rem;
+    background: #f5f5f5;
+    border-radius: 4px;
+  }
 
-{%- block title -%}Data browser ~ ATR{%- endblock title -%}
+  .page-model-nav a {
+    margin-right: 1rem;
+    padding: 0.25rem 0.5rem;
+    text-decoration: none;
+    color: #333;
+  }
 
-{%- block description -%}Browse all records in the database.{%- endblock description -%}
+  .page-model-nav a.active {
+    background: #333;
+    color: white;
+    border-radius: 2px;
+  }
 
-{% block stylesheets %}
-  {{ super() }}
-  <style>
-    .page-model-nav {
-      margin: 1rem 0;
-      padding: 0.5rem;
-      background: #f5f5f5;
-      border-radius: 4px;
-    }
+  .page-record {
+    border: 1px solid #ddd;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 4px;
+  }
 
-    .page-model-nav a {
-      margin-right: 1rem;
-      padding: 0.25rem 0.5rem;
-      text-decoration: none;
-      color: #333;
-    }
+  .page-record pre {
+    background: #f5f5f5;
+    padding: 0.5rem;
+    border-radius: 2px;
+    overflow-x: auto;
+  }
 
-    .page-model-nav a.active {
-      background: #333;
-      color: white;
-      border-radius: 2px;
-    }
+  .page-record-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
 
-    .page-record {
-      border: 1px solid #ddd;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      border-radius: 4px;
-    }
+  .page-record-meta {
+    color: #666;
+    font-size: 0.9em;
+  }
 
-    .page-record pre {
-      background: #f5f5f5;
-      padding: 0.5rem;
-      border-radius: 2px;
-      overflow-x: auto;
-    }
+  .page-no-records {
+    color: #666;
+    font-style: italic;
+  }
+</style>
 
-    .page-record-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 0.5rem;
-    }
+<h2>Data browser</h2>
+<p>Browse all records in the database.</p>
 
-    .page-record-meta {
-      color: #666;
-      font-size: 0.9em;
-    }
+<div class="page-model-nav">
+  {% for model_name in models %}
+    <a href="{{ as_url(admin.data, tab="data", model=model_name) }}"
+       {% if model == model_name %}class="active"{% endif %}>{{ model_name }}</a>
+  {% endfor %}
+</div>
 
-    .page-no-records {
-      color: #666;
-      font-style: italic;
-    }
-  </style>
-{% endblock stylesheets %}
-
-{% block content %}
-  <h1>Data browser</h1>
-  <p>Browse all records in the database.</p>
-
-  <div class="page-model-nav">
-    {% for model_name in models %}
-      <a href="{{ as_url(admin.data_model, model=model_name) }}"
-         {% if model == model_name %}class="active"{% endif %}>{{ model_name }}</a>
+{% if records %}
+  <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} records.</p>
+  <div>
+    {% for record in records %}
+      <div class="page-record">
+        <div class="page-record-header">
+          {% set primary_key = "Unknown primary key" %}
+          {% if "id" in record %}
+            {% set primary_key = record["id"] %}
+          {% elif "name" in record %}
+            {% set primary_key = record["name"] %}
+          {% elif "fingerprint" in record %}
+            {% set primary_key = record["fingerprint"] %}
+          {% elif "key" in record %}
+            {% set primary_key = record["key"] %}
+          {% endif %}
+          <h3>{{ primary_key }}</h3>
+          <span class="page-record-meta">{{ model }}</span>
+        </div>
+        <pre>{{ record | tojson(indent=2) }}</pre>
+      </div>
     {% endfor %}
   </div>
-
-  {% if records %}
-    <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} records.</p>
-    <div>
-      {% for record in records %}
-        <div class="page-record">
-          <div class="page-record-header">
-            {% set primary_key = "Unknown primary key" %}
-            {% if "id" in record %}
-              {% set primary_key = record["id"] %}
-            {% elif "name" in record %}
-              {% set primary_key = record["name"] %}
-            {% elif "fingerprint" in record %}
-              {% set primary_key = record["fingerprint"] %}
-            {% elif "key" in record %}
-              {% set primary_key = record["key"] %}
-            {% endif %}
-            <h3>{{ primary_key }}</h3>
-            <span class="page-record-meta">{{ model }}</span>
-          </div>
-          <pre>{{ record | tojson(indent=2) }}</pre>
-        </div>
-      {% endfor %}
-    </div>
+{% else %}
+  {% if count %}
+    <p class="page-no-records">No records to show on this page ({{ count }} in {{ model }}).</p>
   {% else %}
-    {% if count %}
-      <p class="page-no-records">No records to show on this page ({{ count }} in {{ model }}).</p>
-    {% else %}
-      <p class="page-no-records">No records found for {{ model }}.</p>
-    {% endif %}
+    <p class="page-no-records">No records found for {{ model }}.</p>
   {% endif %}
+{% endif %}
 
-  {% if (page.previous_offset is not none) or (page.next_offset is not none) %}
-    <nav aria-label="Data browser pages">
-      <ul class="pagination">
-        {% if page.previous_offset is not none %}
-          <li class="page-item">
-            <a class="page-link"
-               href="{{ as_url(admin.data_model, model=model, limit=limit, offset=page.previous_offset) }}">Previous</a>
-          </li>
-        {% else %}
-          <li class="page-item disabled"><span class="page-link">Previous</span></li>
-        {% endif %}
-        {% if page.next_offset is not none %}
-          <li class="page-item">
-            <a class="page-link"
-               href="{{ as_url(admin.data_model, model=model, limit=limit, offset=page.next_offset) }}">Next</a>
-          </li>
-        {% else %}
-          <li class="page-item disabled"><span class="page-link">Next</span></li>
-        {% endif %}
-      </ul>
-    </nav>
-  {% endif %}
-{% endblock content %}
+{% if (page.previous_offset is not none) or (page.next_offset is not none) %}
+  <nav aria-label="Data browser pages">
+    <ul class="pagination">
+      {% if page.previous_offset is not none %}
+        <li class="page-item">
+          <a class="page-link"
+             href="{{ as_url(admin.data, tab="data", model=model, limit=limit, offset=page.previous_offset) }}">Previous</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+      {% endif %}
+      {% if page.next_offset is not none %}
+        <li class="page-item">
+          <a class="page-link"
+             href="{{ as_url(admin.data, tab="data", model=model, limit=limit, offset=page.next_offset) }}">Next</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Next</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+{% endif %}
