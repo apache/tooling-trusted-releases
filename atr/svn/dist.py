@@ -33,6 +33,7 @@ PROJECT_REMAPS: Final[dict[tuple[str, str | None], str]] = {
     ("activemq", "activemq-artemis"): "artemis",  # Artemis graduated from ActiveMQ, dist still splits it
     ("apr", None): "apr-portable-runtime",  # the committee's top level is the Portable Runtime itself
     ("httpd", None): "httpd-http-server",  # the committee's top level is the HTTP Server
+    ("lucenenet", None): "lucenenet-lucenedotnet",
     ("sis", None): "sis-spatial-information-system",
     ("trafficcontrol", None): "traffic-control",
     ("trafficserver", None): "trafficserver-traffic-server",
@@ -212,7 +213,7 @@ def _filename_only(committee: str, filename: str | None) -> Decomposed | None:
     if version is None:
         return None
     name = _strip_name_suffixes(filename[: filename.find(version)].rstrip("-._"))
-    if (not name) or (name.removeprefix("apache-") == committee):
+    if (not name) or (name.lower().removeprefix("apache-") == committee):
         return Decomposed(subproject=None, version=version, source="filename")
     return Decomposed(subproject=name, version=version, source="filename")
 

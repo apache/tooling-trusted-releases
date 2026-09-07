@@ -84,6 +84,7 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     ),
     # The airflow core itself is a TLP release: the name is just the committee
     ("airflow", (), "apache-airflow-2.5.0.tar.gz", None, "2.5.0", _SOURCE),
+    ("openwhisk", (), "OpenWhisk-2.0.0-sources.tar.gz", None, "2.0.0", _SOURCE),
     # AGE keeps its version in the dir and the filename name is the committee, so it
     # stays a TLP release - the dir is not echoed in the filename, so not a bucket
     ("age", ("1.0.0",), "apache-age-1.0.0-incubating-src.tar.gz", None, "1.0.0-incubating", _SOURCE),
