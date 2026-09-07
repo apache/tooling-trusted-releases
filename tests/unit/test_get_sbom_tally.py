@@ -29,8 +29,17 @@ def test_license_tally_counts_new_and_changed_within_each_category() -> None:
     tally = {row[0]: row for row in sbom._license_tally(items, old)}
 
     # Category, count, new, changed
-    assert tally[models.licenses.Category.X][:4] == (models.licenses.Category.X, 1, 1, 0)
-    assert tally[models.licenses.Category.B][:4] == (models.licenses.Category.B, 1, 0, 1)
+    assert tally["Category X"][:4] == ("Category X", 1, 1, 0)
+    assert tally["Category B"][:4] == ("Category B", 1, 0, 1)
+
+
+def test_license_tally_keeps_the_declared_license_string_as_written() -> None:
+    items = [_issue("fresh", "EPLv2", models.licenses.Category.X, any_unknown=True)]
+
+    (row,) = sbom._license_tally(items, None)
+
+    assert row[0] == "Category X (unrecognised license)"
+    assert row[4] == ["Component fresh@1.0 declares license EPLv2"]
 
 
 def test_license_tally_omits_comparison_counts_without_a_previous_release() -> None:
@@ -42,10 +51,13 @@ def test_license_tally_omits_comparison_counts_without_a_previous_release() -> N
     assert row[3] is None
 
 
-def _issue(name: str, expression: str, category: models.licenses.Category) -> models.licenses.Issue:
+def _issue(
+    name: str, expression: str, category: models.licenses.Category, any_unknown: bool = False
+) -> models.licenses.Issue:
     return models.licenses.Issue(
         component_name=name,
         component_version="1.0",
         license_expression=expression,
         category=category,
+        any_unknown=any_unknown,
     )

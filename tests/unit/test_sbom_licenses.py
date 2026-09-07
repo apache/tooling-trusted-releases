@@ -30,6 +30,12 @@ def test_expression() -> None:
     assert licenses.expression(cdx_license.DisjunctiveLicense(name="Some bespoke licence")) == "Some bespoke licence"
 
 
+def test_assess_chooses_within_a_disjunction_whose_operand_carries_an_exception() -> None:
+    reading = licenses.assess("MIT OR GPL-2.0-only WITH Classpath-exception-2.0", is_expression=True)
+
+    assert (reading.category, reading.chosen) == (models.licenses.Category.A, "MIT")
+
+
 def test_assess_picks_the_friendliest_half_of_a_disjunction_and_sets_the_rest_aside() -> None:
     reading = licenses.assess("Apache-2.0 OR GPL-3.0-only", is_expression=True)
 
@@ -45,6 +51,23 @@ def test_assess_offers_no_choice_for_a_single_licence_or_a_conjunction() -> None
     # A single licence, or an AND that all applies, carries the whole expression with no half to pick
     assert (single.chosen, single.alternatives) == (None, [])
     assert (conjunction.chosen, conjunction.category) == (None, models.licenses.Category.X)
+
+
+def test_assess_offers_no_choice_where_a_conjunction_sits_inside_a_disjunction() -> None:
+    nested = licenses.assess("Apache-2.0 OR (MIT AND GPL-3.0-only)", is_expression=True)
+    leading = licenses.assess("(Apache-2.0 AND MIT) OR GPL-3.0-only", is_expression=True)
+
+    assert (nested.chosen, nested.category) == (None, models.licenses.Category.X)
+    assert (leading.chosen, leading.category) == (None, models.licenses.Category.X)
+
+
+def test_assess_unwraps_outer_parentheses_around_a_disjunction() -> None:
+    maven = licenses.assess("(CDDL-1.0 OR GPL-2.0-with-classpath-exception)", is_expression=True)
+    doubled = licenses.assess("((MIT OR GPL-3.0-only))", is_expression=True)
+
+    assert (maven.category, maven.chosen) == (models.licenses.Category.B, "CDDL-1.0")
+    assert maven.alternatives == [("GPL-2.0-with-classpath-exception", models.licenses.Category.X)]
+    assert (doubled.category, doubled.chosen) == (models.licenses.Category.A, "MIT")
 
 
 def test_check() -> None:
@@ -112,6 +135,22 @@ def test_check_categorises_a_public_domain_declaration_as_category_a() -> None:
     assert sorted(issue.component_name for issue in good) == ["dedicated", "definite", "hyphenated", "named"]
     assert warnings == []
     assert errors == []
+
+
+def test_check_categorises_an_aliased_spelling() -> None:
+    _good, warnings, errors = licenses.check(
+        sboms.with_components(
+            {"type": "library", "name": "compact", "licenses": [{"license": {"name": "EPLv2"}}]},
+            {"type": "library", "name": "deprecated", "licenses": [{"expression": "GPL-2.0-with-classpath-exception"}]},
+        ),
+    )
+
+    assert [(issue.component_name, issue.category, issue.any_unknown) for issue in warnings] == [
+        ("compact", models.licenses.Category.B, False),
+    ]
+    assert [(issue.component_name, issue.category, issue.any_unknown) for issue in errors] == [
+        ("deprecated", models.licenses.Category.X, False),
+    ]
 
 
 def test_check_a_disjunction_settles_on_the_friendliest_category() -> None:

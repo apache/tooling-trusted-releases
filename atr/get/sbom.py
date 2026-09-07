@@ -269,11 +269,14 @@ def _choice_badges(choice: sbom.models.licenses.Choice) -> list[htm.Element]:
     # A single licence, or an AND that all applies, shows one badge for the whole expression. An OR
     # ATR resolved shows the chosen half in its category colour and the halves it set aside drained
     # of colour, so a reader sees what was on offer without the alternatives reading as a verdict
+    name = choice.expression if (choice.chosen is None) else choice.chosen
+    if choice.any_unknown:
+        name = f"{name} (unrecognised license)"
     if choice.chosen is None:
-        return [_license_badge(choice.expression, choice.category)]
+        return [_license_badge(name, choice.category)]
     return [
-        _license_badge(choice.chosen, choice.category),
-        *(_license_alternative_badge(name, category) for name, category in choice.alternatives),
+        _license_badge(name, choice.category),
+        *(_license_alternative_badge(other, category) for other, category in choice.alternatives),
     ]
 
 
@@ -303,6 +306,10 @@ def _license_category_style(category: sbom.models.licenses.Category) -> str:
             return ".bg-danger"
 
 
+def _license_group_label(category: sbom.models.licenses.Category, any_unknown: bool) -> str:
+    return f"Category {category!s} (unrecognised license)" if any_unknown else f"Category {category!s}"
+
+
 def _license_section(block: htm.Block, task: sql.Task | None) -> None:
     block.h3["Licenses"]
     # The licence issues come from the score, so without one there is nothing to list
@@ -310,6 +317,17 @@ def _license_section(block: htm.Block, task: sql.Task | None) -> None:
     if task_result is None:
         block.p[_score_unavailable(task)]
         return
+    block.p[
+        "Categories follow the ",
+        htm.a(href="https://www.apache.org/legal/resolved.html")["ASF third party license policy"],
+        " and are read from the license strings that the SBOM tool wrote into this file. A project can declare"
+        " its license wrongly in its build file, and an SBOM tool can map a license name to the wrong"
+        " identifier. A license that ATR does not recognise is treated as Category X. Check anything unexpected"
+        " against the upstream project, and report a wrong declaration to that project, a wrong mapping to the"
+        " SBOM tool, and a correctly spelled license that ATR fails to place, or places wrongly, to ",
+        htm.a(href="https://github.com/apache/tooling-trusted-release/issues")["ATR"],
+        ".",
+    ]
     warnings = []
     errors = []
     prev_licenses = None
@@ -340,13 +358,11 @@ def _license_table(
     warning_rows = [
         htm.tr[
             htm.td[
-                f"Category {category!s}"
-                if (len(components) == 0)
-                else htm.details[htm.summary[f"Category {category!s}"], htm.div[_detail_table(components)]]
+                label if (len(components) == 0) else htm.details[htm.summary[label], htm.div[_detail_table(components)]]
             ],
             htm.td[f"{count!s} {f'({new!s} new, {updated!s} changed)' if (new or updated) else ''}"],
         ]
-        for category, count, new, updated, components in _license_tally(items, prev)
+        for label, count, new, updated, components in _license_tally(items, prev)
     ]
     block.table(".table.table-sm.table-bordered.table-striped")[
         htm.thead[htm.tr[htm.th["License Category"], htm.th["Count"]]],
@@ -358,16 +374,17 @@ def _license_table(
 def _license_tally(
     items: list[sbom.models.licenses.Issue],
     old_issues: list[sbom.models.licenses.Issue] | None,
-) -> list[tuple[sbom.models.licenses.Category, int, int | None, int | None, list[str | None]]]:
-    counts: dict[sbom.models.licenses.Category, int] = {}
-    components: dict[sbom.models.licenses.Category, list[str | None]] = {}
-    new_counts: dict[sbom.models.licenses.Category, int] = {}
-    updated_counts: dict[sbom.models.licenses.Category, int] = {}
+) -> list[tuple[str, int, int | None, int | None, list[str | None]]]:
+    counts: dict[tuple[sbom.models.licenses.Category, bool], int] = {}
+    components: dict[tuple[sbom.models.licenses.Category, bool], list[str | None]] = {}
+    new_counts: dict[tuple[sbom.models.licenses.Category, bool], int] = {}
+    updated_counts: dict[tuple[sbom.models.licenses.Category, bool], int] = {}
     old_map = {lic.component_name: (lic.license_expression, lic.category) for lic in old_issues} if old_issues else None
     for item in items:
-        key = item.category
+        key = (item.category, item.any_unknown)
         counts[key] = counts.get(key, 0) + 1
-        name = str(item).capitalize()
+        text = str(item)
+        name = text[0].upper() + text[1:]
         if old_map is not None:
             if item.component_name not in old_map:
                 new_counts[key] = new_counts.get(key, 0) + 1
@@ -381,19 +398,16 @@ def _license_tally(
             components[key] = [name]
         else:
             components[key].append(name)
-    return sorted(
-        [
-            (
-                category,
-                count,
-                new_counts.get(category, 0) if (old_issues is not None) else None,
-                updated_counts.get(category, 0) if (old_issues is not None) else None,
-                components.get(category, []),
-            )
-            for category, count in counts.items()
-        ],
-        key=lambda kv: kv[0].value,
-    )
+    return [
+        (
+            _license_group_label(*key),
+            count,
+            new_counts.get(key, 0) if (old_issues is not None) else None,
+            updated_counts.get(key, 0) if (old_issues is not None) else None,
+            components.get(key, []),
+        )
+        for key, count in sorted(counts.items(), key=lambda kv: (kv[0][0].value, kv[0][1]))
+    ]
 
 
 def _licenses_cell(choices: list[sbom.models.licenses.Choice]) -> htm.Element | str:

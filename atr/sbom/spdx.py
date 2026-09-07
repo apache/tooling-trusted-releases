@@ -25,12 +25,18 @@ class LicenseExpressionParser:
         self.items = items
         self.text = text
         self.position = 0
+        self.depth = 0
+        self.disjunctive = False
+        self.plain = True
 
-    def parse(self) -> set[str]:
+    def enclosing(self, start: int) -> bool:
+        return (start == self.depth) and (self.position == (len(self.items) - self.depth))
+
+    def parse(self) -> tuple[set[str], bool]:
         atoms, _ = self.parse_expression()
         if self.position != len(self.items):
             raise ValueError(self.text)
-        return atoms
+        return atoms, (self.disjunctive and self.plain)
 
     def parse_conjunction(self) -> tuple[set[str], bool]:
         atoms, simple = self.parse_with()
@@ -38,6 +44,7 @@ class LicenseExpressionParser:
             self.position += 1
             atoms |= self.parse_with()[0]
             simple = False
+            self.plain = False
         return atoms, simple
 
     def parse_expression(self) -> tuple[set[str], bool]:
@@ -46,6 +53,7 @@ class LicenseExpressionParser:
             self.position += 1
             atoms |= self.parse_conjunction()[0]
             simple = False
+            self.disjunctive = True
         return atoms, simple
 
     def parse_primary(self, for_addition: bool) -> tuple[set[str], bool]:
@@ -53,11 +61,16 @@ class LicenseExpressionParser:
             raise ValueError(self.text)
         kind, value = self.items[self.position]
         if kind == "LPAREN":
+            start = self.position
             self.position += 1
+            self.depth += 1
             atoms, _ = self.parse_expression()
             if not self.peek("RPAREN"):
                 raise ValueError(self.text)
             self.position += 1
+            self.depth -= 1
+            if not self.enclosing(start):
+                self.plain = False
             return atoms, False
         if (not for_addition) and (kind in {"ID", "LICREF", "DOCREF"}):
             self.position += 1
@@ -86,7 +99,7 @@ class LicenseExpressionParser:
         return (self.position < len(self.items)) and (self.items[self.position][0] == kind)
 
 
-def license_expression_atoms(expr: str) -> set[str]:
+def license_expression_atoms(expr: str) -> tuple[set[str], bool]:
     pos = 0
     tokens: list[tuple[str, str]] = []
     for match in constants.spdx.TOKEN.finditer(expr):

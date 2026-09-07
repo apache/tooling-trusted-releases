@@ -100,6 +100,8 @@ These include:
 * vulnerability analysis
 * tool version analysis
 
+License analysis places each declared license in a category of the [ASF third party license policy](https://www.apache.org/legal/resolved.html), reading the license strings that the SBOM tool wrote into the file. Those strings can be wrong. A project can declare its license inaccurately in its build file, and an SBOM tool can map a license name to the wrong identifier. A license that ATR does not recognise is treated as Category X. Check anything unexpected against the upstream project. Report a wrong declaration to that project, a wrong mapping to the SBOM tool, and a correctly spelled license that ATR fails to place, or places wrongly, to [ATR](https://github.com/apache/tooling-trusted-release/issues).
+
 The scoring workflow is implemented through:
 
 * `score_tool`

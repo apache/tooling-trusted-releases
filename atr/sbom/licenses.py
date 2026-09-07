@@ -98,9 +98,10 @@ def assess(license_expr: str, is_expression: bool) -> models.licenses.Choice:
     # friendliest half decides and the rest are set aside as alternatives. Anything else - an AND,
     # parentheses, or a licence standing on its own - all applies at once, so there the sternest
     # half wins and there is no choice to offer
+    disjunction = False
     if is_expression:
         try:
-            atoms = license_expression_atoms(license_expr)
+            atoms, disjunction = license_expression_atoms(license_expr)
         except ValueError:
             atoms = {license_expr}
     else:
@@ -109,7 +110,7 @@ def assess(license_expr: str, is_expression: bool) -> models.licenses.Choice:
     ordered = sorted(atoms)
     categories = {atom: _atom_category(atom) for atom in ordered}
 
-    if is_expression and _is_simple_disjunction(license_expr):
+    if disjunction:
         chosen = min(ordered, key=lambda atom: _category_severity(categories[atom]))
         return models.licenses.Choice(
             expression=license_expr,
@@ -160,16 +161,12 @@ def _folded_atom(atom: str) -> str:
     return (resolved if (resolved is not None) else atom).casefold()
 
 
-def _is_simple_disjunction(expr: str) -> bool:
-    # SPDX writes its operators in capitals, so a plain "A OR B" is easy to spot. Parentheses or an
-    # AND could hide a licence that all applies at once, so we relax only the unambiguous shape
-    return (" OR " in expr) and (" AND " not in expr) and ("(" not in expr)
-
-
 def _name_to_id() -> dict[str, str]:
     index: dict[str, str] = {}
     for license_id, name in constants.licenses.LICENSE_NAMES.items():
         index[_normalised_name(name)] = license_id
+    for alias, license_id in constants.licenses.LICENSE_ALIASES.items():
+        index[_normalised_name(alias)] = license_id
     for license_ids in constants.licenses.LICENSES.values():
         for license_id in license_ids:
             index.setdefault(_normalised_name(license_id), license_id)
