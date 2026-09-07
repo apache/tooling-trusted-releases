@@ -322,7 +322,7 @@ async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"], que
         validation.pagination_args_validate(query_args)
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
-    return await _catalog_page(quart.request.args.get("tab", "catalog"), query_args)
+    return await _catalog_page(quart.request.args.get("tab", "update-projects"), query_args)
 
 
 @admin.typed
@@ -336,6 +336,19 @@ async def catalog_post(
             return await _catalog_projects_update(session)
         case CatalogSiteRebuildForm():
             return await _catalog_site_rebuild(session)
+
+
+@admin.typed
+async def committee_keys_get(_session: web.Committer, _committee_keys: Literal["committee-keys"]) -> str:
+    """
+    URL: GET /committee-keys
+
+    Delete all the signing keys held for a committee.
+    """
+    page = htm.Block()
+    page.h1["Delete committee keys"]
+    page.append(await _catalog_delete_committee_keys_tab())
+    return await template.render("admin-blank.html", title="Delete committee keys", content=page.collect())
 
 
 @admin.typed
@@ -1947,7 +1960,7 @@ async def _catalog_delete_committee_keys(
             num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys(datatypes.KeySource.WEB)
     except storage.AccessError as e:
         await quart.flash(str(e), "error")
-        return await session.redirect(catalog_get, tab="committee-keys")
+        return await session.redirect(committee_keys_get)
 
     if num_unlinked == 0:
         await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
@@ -1967,7 +1980,7 @@ async def _catalog_delete_committee_keys(
         if failure := shared.keys.publication_failed_warning(publications):
             await quart.flash(failure, "error")
 
-    return await session.redirect(catalog_get, tab="committee-keys")
+    return await session.redirect(committee_keys_get)
 
 
 async def _catalog_delete_committee_keys_tab() -> htm.Element:
@@ -1979,7 +1992,7 @@ async def _catalog_delete_committee_keys_tab() -> htm.Element:
 
     rendered_form = await form.render(
         model_cls=DeleteCommitteeKeysForm,
-        action=util.as_url(catalog_post, tab="committee-keys"),
+        action=util.as_url(catalog_post),
         submit_label="Delete all keys for selected committee",
         defaults={"committee_key": committee_choices},
     )
@@ -1991,10 +2004,10 @@ async def _catalog_delete_committee_keys_tab() -> htm.Element:
 
 async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
     tab_items = [
-        htm.Tab("catalog", "Catalog", _catalog_tab),
-        htm.Tab("releases", "Releases", lambda: _catalog_releases_tab(query_args)),
-        htm.Tab("update-projects", "Update projects", _catalog_projects_update_tab),
-        htm.Tab("committee-keys", "Delete committee keys", _catalog_delete_committee_keys_tab),
+        htm.Tab("update-projects", "Update", _catalog_projects_update_tab),
+        htm.Tab("releases", "Current releases", lambda: _catalog_releases_tab(query_args)),
+        htm.Tab("admin", "Catalog admin", _catalog_admin_tab),
+        htm.Tab("rebuild", "Rebuild catalog", _catalog_rebuild_tab),
     ]
     page = htm.Block()
     page.h1["Catalog"]
@@ -2075,10 +2088,79 @@ async def _catalog_site_rebuild(session: web.Committer) -> web.WerkzeugResponse:
     except Exception as e:
         log.exception("Failed to queue catalog site rebuild task")
         await quart.flash(f"Failed to queue catalog site rebuild: {e!s}", "error")
-    return await session.redirect(catalog_get, tab="catalog")
+    return await session.redirect(catalog_get, tab="rebuild")
 
 
-async def _catalog_tab() -> htm.Element:
+async def _catalog_rebuild_tab() -> htm.Element:
+    async with db.session() as data:
+        in_flight = await (
+            data.task(
+                task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+                status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+            )
+            .order_by(sql.Task.added)
+            .all()
+        )
+
+    rendered_form = await form.render(
+        model_cls=CatalogSiteRebuildForm,
+        action=util.as_url(catalog_post, tab="rebuild"),
+        submit_label="Queue full rebuild",
+        empty=True,
+        form_classes="",
+    )
+    block = htm.Block()
+    block.h2["Rebuild catalog"]
+    block.p[
+        "Catalogue changes refresh the affected pages on their own, so a full rebuild is only needed to"
+        " populate a fresh deployment or to clear up after project renames, moves or deletions."
+    ]
+    block.append(_catalog_regeneration_status(in_flight))
+    block.append(rendered_form)
+    return block.collect()
+
+
+def _catalog_regeneration_status(in_flight: Sequence[sql.Task]) -> htm.Element:
+    block = htm.Block()
+    block.h3["Regeneration status"]
+    if not in_flight:
+        block.append(htm.div(".alert.alert-secondary", role="alert")["No regeneration is queued or running."])
+        return block.collect()
+
+    rows = []
+    for task in in_flight:
+        # A regeneration with no project is a whole-site rebuild; one with a project
+        # only rewrites that project's subtree
+        scope = "Whole site" if (task.project_key is None) else f"Project: {task.project_key}"
+        if task.status == sql.TaskStatus.ACTIVE:
+            status_badge: htm.Element = htpy.span(".badge.bg-info")["Running"]
+        else:
+            status_badge = htpy.span(".badge.bg-secondary")["Queued"]
+        rows.append(
+            htpy.tr[
+                htpy.td[scope],
+                htpy.td[status_badge],
+                htpy.td[util.format_datetime(task.added)],
+                htpy.td[task.asf_uid],
+            ]
+        )
+    block.append(
+        htpy.table(".table.table-sm")[
+            htpy.thead[
+                htpy.tr[
+                    htpy.th["Scope"],
+                    htpy.th["Status"],
+                    htpy.th["Queued"],
+                    htpy.th["Requested by"],
+                ]
+            ],
+            htpy.tbody[rows],
+        ]
+    )
+    return block.collect()
+
+
+async def _catalog_admin_tab() -> htm.Element:
     async with db.session() as data:
         committees = await data.committee().order_by(sql.Committee.key).all()
 
@@ -2088,25 +2170,23 @@ async def _catalog_tab() -> htm.Element:
             for committee in committees
         ]
     ]
-    rendered_form = await form.render(
-        model_cls=CatalogSiteRebuildForm,
-        action=util.as_url(catalog_post, tab="catalog"),
-        submit_label="Rebuild catalog site",
-        empty=True,
-        form_classes="",
-    )
     block = htm.Block()
-    block.h2["Catalogue corrections"]
-    block.p[htm.a(href="/admin/catalog/dump")["Dump full catalog contents"]]
-    block.h3["Rebuild catalog site"]
+    block.append(
+        htm.div(".alert.alert-warning", role="alert")[
+            "This is the published catalogue: releases imported from external sources, together with ATR"
+            " releases that have finished their workflow. Releases still moving through ATR's workflow are"
+            " managed under ",
+            htm.a(".alert-link", href=util.as_url(catalog_get, tab="releases"))["Current releases"],
+            ".",
+        ]
+    )
+    block.h2["Committees"]
     block.p[
-        "Catalogue changes refresh the affected pages on their own, so a full rebuild is only needed to"
-        " populate a fresh deployment or to clear up after project renames, moves or deletions."
+        "Choose a committee to review and correct its catalogued projects:"
+        " archive, rename, or move projects between committees."
     ]
-    block.append(rendered_form)
-    block.h3(".mt-4")["Committees"]
-    block.p["Choose a committee to review and correct its catalogued projects."]
     block.append(listing)
+    block.p(".mt-3")[htm.a(href="/admin/catalog/dump")["Dump full catalog contents"]]
     return block.collect()
 
 
