@@ -151,6 +151,11 @@ LICENSES: Final[dict[str, list[str]]] = {
     ],
 }
 
+LICENSE_ALIASES: Final[dict[str, str]] = {
+    "EPLv2": "EPL-2.0",
+    "GPL-2.0-with-classpath-exception": "GPL-2.0-only WITH Classpath-exception-2.0",
+}
+
 # The SPDX name for each categorised licence, so that a component declaring its licence by
 # name instead of by identifier can still be categorised
 LICENSE_NAMES: Final[dict[str, str]] = {
