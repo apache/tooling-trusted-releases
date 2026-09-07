@@ -264,7 +264,6 @@ def project(p: sql.Project) -> AnnotatedDivergences:
     yield from project_full_name(p)
     yield from project_key(p)
     yield from project_programming_languages(p)
-    yield from project_release_policy(p)
     yield from project_version_pattern(p)
 
 
@@ -375,15 +374,6 @@ def project_programming_languages(p: sql.Project) -> Divergences:
 
     expected = "comma separated labels without colon"
     yield from divergences_predicate(okay, expected, p.programming_languages)
-
-
-@project_components("Project.release_policy")
-def project_release_policy(p: sql.Project) -> Divergences:
-    """Ensure that release_policy is None."""
-
-    expected = None
-    actual = p.release_policy_id
-    yield from divergences(expected, actual)
 
 
 @project_components("Project.version_pattern")

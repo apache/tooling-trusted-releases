@@ -203,7 +203,6 @@ The [`project`](/ref/atr/validate.py) (project) function checks:
 * `calver_format`, if set, must be a valid date format with at least one calendar field
 * `full_name` must be set and start with "Apache "
 * `programming_languages` must use comma-separated labels without colons
-* `release_policy_id` must be None (not used)
 * `version_pattern`, if set, must be a compilable regex
 
 Per-field coverage:
