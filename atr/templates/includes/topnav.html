@@ -244,24 +244,6 @@
                      {% if request.endpoint == 'atr_admin_validate_jwt_get' %}class="active"{% endif %}><i class="bi bi-check-circle"></i> Validate JWT</a>
                 </li>
               {% endif %}
-              <li>
-                <hr class="dropdown-divider" />
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.keys_check_get) }}"
-                   {% if request.endpoint == 'atr_admin_keys_check_get' %}class="active"{% endif %}><i class="bi bi-key"></i> Keys check</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.keys_update_get) }}"
-                   {% if request.endpoint == 'atr_admin_keys_update_get' %}class="active"{% endif %}><i class="bi bi-key"></i> Update keys</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.committee_keys_get) }}"
-                   {% if request.endpoint == 'atr_admin_committee_keys_get' %}class="active"{% endif %}><i class="bi bi-trash"></i> Delete committee keys</a>
-              </li>
             </ul>
           </li>
         {% else %}
