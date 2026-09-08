@@ -265,6 +265,7 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
         super().__init__(write, data)
         self.banner = writers.banner.FoundationAdmin(write, self, data)
         self.catalogue = writers.catalogue.FoundationAdmin(write, self, data)
+        self.dist_rule = writers.dist_rule.FoundationAdmin(write, self, data)
         self.policy = writers.policy.FoundationAdmin(write, self, data)
         self.project = writers.project.FoundationAdmin(write, self, data)
         self.release = writers.release.FoundationAdmin(write, self, data)

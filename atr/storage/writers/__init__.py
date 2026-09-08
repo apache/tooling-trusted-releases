@@ -23,6 +23,7 @@ import atr.storage.writers.cache as cache
 import atr.storage.writers.catalogue as catalogue
 import atr.storage.writers.checks as checks
 import atr.storage.writers.committee as committee
+import atr.storage.writers.dist_rule as dist_rule
 import atr.storage.writers.distributions as distributions
 import atr.storage.writers.keys as keys
 import atr.storage.writers.mail as mail
@@ -45,6 +46,7 @@ __all__ = [
     "catalogue",
     "checks",
     "committee",
+    "dist_rule",
     "distributions",
     "keys",
     "mail",

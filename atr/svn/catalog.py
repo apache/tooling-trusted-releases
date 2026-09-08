@@ -36,6 +36,7 @@ import atr.storage as storage
 import atr.storage.writers.release as release
 import atr.svn as svn
 import atr.svn.dist as dist
+import atr.svn.dist_rules as dist_rules
 
 # We only watch published releases; dev candidate activity is out of scope
 _RELEASE_PREFIX: Final[str] = dist.RELEASE_PREFIX
@@ -81,17 +82,21 @@ async def catalogue_commit(commit: dict) -> None:
     if not isinstance(changed, dict):
         log.warning(f"dist commit payload has unexpected changed shape: {type(changed).__name__}")
         return
-    changes = _structural_changes(changed)
+    # Load the decomposer's tunables once, so this whole commit is read against one
+    # consistent rule set even if an admin edits the table mid-flight
+    async with db.session() as data:
+        rules = await dist_rules.load(data)
+    changes = _structural_changes(rules, changed)
     added, removed = changes.added, changes.removed
     await _expand_copied(changes.copied, added)
-    added = _collapse_airflow_providers(added)
+    added = _collapse_airflow_providers(rules, added)
     if not (added or removed or changes.removed_files):
         return
     date = _commit_date(commit)
     # Resolve against ATR's projects in a read session first, so decomposition and
     # project lookups stay out of the storage writer
     async with db.session() as data:
-        releases, archives = await _resolve_changes(data, added, removed, changes.removed_files)
+        releases, archives = await _resolve_changes(rules, data, added, removed, changes.removed_files)
     # Report mode (the default) just logs the cataloguing it would do; active mode hands
     # the resolved work to the system actor. The releases list is told either way, since
     # that only depends on having seen the release, not on having recorded it
@@ -201,7 +206,7 @@ async def _expand_copied(copied: dict[_ReleaseKey, str], added: dict[_ReleaseKey
             added[key] = bundle
 
 
-def _decompose_change(path: str) -> tuple[str, dist.Decomposed, bool, str | None] | None:
+def _decompose_change(rules: dist.DistRules, path: str) -> tuple[str, dist.Decomposed, bool, str | None] | None:
     # release/<committee>/... only; returns committee, decomposition, is_dir and
     # the filename (None for a directory)
     if not path.startswith(_RELEASE_PREFIX):
@@ -216,11 +221,11 @@ def _decompose_change(path: str) -> tuple[str, dist.Decomposed, bool, str | None
     if not rest:
         return None
     if is_dir:
-        decomposed = dist.decompose(committee, tuple(rest), None)
+        decomposed = rules.decompose(committee, tuple(rest), None)
         filename = None
     else:
         filename = rest[-1]
-        decomposed = dist.decompose(committee, tuple(rest[:-1]), filename)
+        decomposed = rules.decompose(committee, tuple(rest[:-1]), filename)
     if decomposed is None:
         return None
     return committee, decomposed, is_dir, filename
@@ -254,9 +259,9 @@ def _report(
 
 
 async def _resolve_archive(
-    data: db.Session, committee: str, subproject: str | None, version: str
+    rules: dist.DistRules, data: db.Session, committee: str, subproject: str | None, version: str
 ) -> _ResolvedArchive | None:
-    project = await _resolve_project(data, committee, subproject)
+    project = await _resolve_project(rules, data, committee, subproject)
     if project is None:
         return None
     release_record = await data.release(project_key=project.key, version=version).get()
@@ -266,6 +271,7 @@ async def _resolve_archive(
 
 
 async def _resolve_changes(
+    rules: dist.DistRules,
     data: db.Session,
     added: dict[_ReleaseKey, _ReleaseFiles],
     removed: set[_ReleaseKey],
@@ -273,13 +279,13 @@ async def _resolve_changes(
 ) -> tuple[list[_ResolvedRelease], list[_ResolvedArchive]]:
     releases: list[_ResolvedRelease] = []
     for rel_files in sorted(added.values(), key=lambda r: (r.committee, r.subproject or "", r.version)):
-        resolved = await _resolve_release(data, rel_files)
+        resolved = await _resolve_release(rules, data, rel_files)
         if resolved is not None:
             releases.append(resolved)
     archives: list[_ResolvedArchive] = []
     archived_keys: set[str] = set()
     for committee, subproject, version in sorted(removed, key=lambda k: (k[0], k[1] or "", k[2])):
-        resolved_archive = await _resolve_archive(data, committee, subproject, version)
+        resolved_archive = await _resolve_archive(rules, data, committee, subproject, version)
         if resolved_archive is not None:
             archives.append(resolved_archive)
             archived_keys.add(f"{resolved_archive[0]!s}-{resolved_archive[1]!s}")
@@ -287,7 +293,7 @@ async def _resolve_changes(
         # A release getting a source published in this same commit is being replaced, not
         # retired, so a source deleted here does not archive it - even one ATR already holds,
         # which _resolve_release skips
-        published = await _published_release_keys(data, added)
+        published = await _published_release_keys(rules, data, added)
         for download_path_suffix, artifact_path in sorted(set(removed_files)):
             resolved_file = await _resolve_removed_file(data, download_path_suffix, artifact_path)
             if resolved_file is None:
@@ -300,10 +306,12 @@ async def _resolve_changes(
     return releases, archives
 
 
-async def _resolve_project(data: db.Session, committee: str, subproject: str | None) -> sql.Project | None:
+async def _resolve_project(
+    rules: dist.DistRules, data: db.Session, committee: str, subproject: str | None
+) -> sql.Project | None:
     # Resolve against what ATR already has, via the same remaps and candidate keys
     # as the backfill. The watcher never invents projects; unknowns are logged
-    remapped = dist.PROJECT_REMAPS.get((committee, subproject))
+    remapped = rules.project_remap(committee, subproject)
     candidates = [remapped] if remapped is not None else dist.candidate_keys(committee, subproject)
     for candidate in candidates:
         project = await data.project(key=candidate).get()
@@ -337,20 +345,24 @@ async def _resolve_removed_file(
     return project_key, version_key, release_record.key
 
 
-async def _published_release_keys(data: db.Session, added: dict[_ReleaseKey, _ReleaseFiles]) -> set[str]:
+async def _published_release_keys(
+    rules: dist.DistRules, data: db.Session, added: dict[_ReleaseKey, _ReleaseFiles]
+) -> set[str]:
     # The release keys getting a source published in this commit, resolved the same way
     # _resolve_release resolves projects, so an archival can tell a replace from a retirement
     keys: set[str] = set()
     for rel_files in added.values():
-        project = await _resolve_project(data, rel_files.committee, rel_files.subproject)
+        project = await _resolve_project(rules, data, rel_files.committee, rel_files.subproject)
         if project is not None:
             keys.add(f"{project.key}-{rel_files.version}")
     return keys
 
 
-async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _ResolvedRelease | None:
+async def _resolve_release(
+    rules: dist.DistRules, data: db.Session, rel_files: _ReleaseFiles
+) -> _ResolvedRelease | None:
     version = rel_files.version
-    project = await _resolve_project(data, rel_files.committee, rel_files.subproject)
+    project = await _resolve_project(rules, data, rel_files.committee, rel_files.subproject)
     if project is None:
         log.info(f"dist commit for unknown project: {rel_files.committee}/{rel_files.subproject or ''} {version}")
         return None
@@ -434,7 +446,7 @@ def _removed_artifact_file(path: str) -> tuple[str, str] | None:
     return dirpath, filename
 
 
-def _structural_changes(changed: dict) -> _StructuralChanges:
+def _structural_changes(rules: dist.DistRules, changed: dict) -> _StructuralChanges:
     # Group added files by release so we can record their artifacts, collect version-dir
     # deletions as archivals, and collect individually deleted artifact files to resolve later
     # against the artifacts table - which knows their release, whether they're the source, and
@@ -454,7 +466,7 @@ def _structural_changes(changed: dict) -> _StructuralChanges:
             if removed_file is not None:
                 removed_files.append(removed_file)
             continue
-        change = _decompose_change(path)
+        change = _decompose_change(rules, path)
         if change is None:
             continue
         _record_decomposed(path, flags, change, added, removed, copied)
@@ -462,12 +474,12 @@ def _structural_changes(changed: dict) -> _StructuralChanges:
     return _StructuralChanges(added=with_source, removed=removed, removed_files=removed_files, copied=copied)
 
 
-def _airflow_bundle_area(bundle: _ReleaseFiles) -> str | None:
+def _airflow_bundle_area(rules: dist.DistRules, bundle: _ReleaseFiles) -> str | None:
     if bundle.committee != "airflow":
         return None
     for dirpath, _name, _kind in bundle.files:
         # dirpath is under the release root and leads with the committee, so drop that segment
-        area = dist.airflow_provider_area("airflow", tuple(dirpath.split("/")[1:]))
+        area = rules.airflow_provider_area("airflow", tuple(dirpath.split("/")[1:]))
         if area is not None:
             return area
     return None
@@ -484,6 +496,7 @@ def _airflow_file_kind(name: str, kind: classify.FileType) -> classify.FileType:
 
 
 def _collapse_airflow_providers(
+    rules: dist.DistRules,
     added: dict[tuple[str, str | None, str], _ReleaseFiles],
 ) -> dict[tuple[str, str | None, str], _ReleaseFiles]:
     # Airflow ships its providers as a calver batch: a dated source plus that day's provider
@@ -493,7 +506,7 @@ def _collapse_airflow_providers(
     date_by_area: dict[str, str] = {}
     keys_by_area: dict[str, list[tuple[str, str | None, str]]] = {}
     for key, bundle in added.items():
-        area = _airflow_bundle_area(bundle)
+        area = _airflow_bundle_area(rules, bundle)
         if area is None:
             continue
         keys_by_area.setdefault(area, []).append(key)

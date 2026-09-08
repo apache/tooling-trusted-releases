@@ -436,6 +436,23 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def dist_rule(
+        self,
+        id: Opt[int] = NOT_SET,
+        kind: Opt[sql.DistRuleKind] = NOT_SET,
+        enabled: Opt[bool] = NOT_SET,
+    ) -> Query[sql.DistRule]:
+        query = sqlmodel.select(sql.DistRule)
+
+        if is_defined(id):
+            query = query.where(sql.DistRule.id == id)
+        if is_defined(kind):
+            query = query.where(sql.DistRule.kind == kind)
+        if is_defined(enabled):
+            query = query.where(sql.DistRule.enabled == enabled)
+
+        return Query(self, query)
+
     def distribution(
         self,
         release_key: Opt[str] = NOT_SET,
