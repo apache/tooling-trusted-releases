@@ -463,6 +463,7 @@ class PolicyArgsBase(schema.Strict):
     source_artifact_paths: list[str] | None = None
     source_excludes_lightweight: list[str] | None = None
     source_excludes_rat: list[str] | None = None
+    rat_excludes_url: str | None = None
     start_vote_subject: str | None = None
     start_vote_template: str | None = None
     finish_vote_template: str | None = None
@@ -499,6 +500,9 @@ class PolicyArgsBase(schema.Strict):
 
         if self.download_path_suffix is not None:
             validation.validate_download_path_suffix(self.download_path_suffix)
+
+        if self.rat_excludes_url is not None:
+            validation.validate_rat_excludes_url(self.rat_excludes_url)
 
         github_repository_name = self.github_repository_name
         if github_repository_name is not None:

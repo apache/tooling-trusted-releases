@@ -170,12 +170,24 @@ class ComposePolicyForm(form.Form):
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
+    rat_excludes_url: str = form.label(
+        "RAT excludes URL",
+        "URL of a .rat-excludes file we fetch fresh on each checked revision. Must be an"
+        " apache.org host or raw.githubusercontent.com.",
+        default="",
+    )
     file_tag_mappings: str = form.label(
         "Tagging spec",
         "Spec for which files should be tagged for release in specific distribution types, YAML format",
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
+
+    @pydantic.field_validator("rat_excludes_url", mode="before")
+    @classmethod
+    def validate_rat_excludes_url(cls, val: str) -> str:
+        validation.validate_rat_excludes_url(val)
+        return val
 
 
 class VotePolicyForm(form.Form):

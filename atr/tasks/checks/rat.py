@@ -16,6 +16,7 @@
 # under the License.
 
 import asyncio
+import dataclasses
 import os
 import shlex
 import subprocess
@@ -25,13 +26,16 @@ from typing import Final
 import defusedxml
 import defusedxml.ElementTree as ElementTree
 
+import atr.attestable as attestable
 import atr.config as config
 import atr.constants as constants
 import atr.log as log
+import atr.models.attestable as models_attestable
 import atr.models.checkdata as checkdata
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.rat_excludes as rat_excludes
 import atr.sandbox as sandbox
 import atr.tasks.checks as checks
 import atr.tasks.task as task
@@ -54,6 +58,9 @@ _POLICY_EXCLUDES_FILENAME: Final[str] = ".atr-policy-rat-excludes"
 # The name of the file that contains the exclusions for the specified archive
 _RAT_EXCLUDES_FILENAME: Final[str] = ".rat-excludes"
 
+# The name of the temp file for excludes fetched from a project's configured URL
+_URL_EXCLUDES_FILENAME: Final[str] = ".atr-url-rat-excludes"
+
 # The name of the RAT report file
 _RAT_REPORT_FILENAME: Final[str] = ".atr-rat-report.xml"
 
@@ -70,12 +77,24 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
 ]
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_rat"]
-INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION: Final[str] = "5"
+# The resolver fetches the configured .rat-excludes URL and returns a hash of its contents, so a
+# change to the fetched file busts the cached result even though the URL string is unchanged
+INPUT_EXTRA_ARGS: Final[list[str]] = ["rat_excludes_hash"]
+CHECK_VERSION: Final[str] = "6"
 
 
 class RatError(RuntimeError):
     pass
+
+
+@dataclasses.dataclass
+class _UrlExcludes:
+    # The outcome of fetching a project's configured .rat-excludes URL: content on success, or an
+    # error with transient telling us whether it's worth retrying
+    url: str
+    content: bytes | None = None
+    error: str | None = None
+    transient: bool = False
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -102,13 +121,33 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     log.info(f"Checking RAT licenses for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     policy_excludes = project.policy_source_excludes_rat
+    url_excludes = await _fetch_url_excludes(project)
 
     try:
-        await _check_core(args, recorder, archive_dir, policy_excludes)
+        await _check_core(args, recorder, archive_dir, policy_excludes, url_excludes)
     except OSError as e:
         raise task.CheckRetryableError("Error reading the extracted archive tree", {"error": str(e)}) from e
 
     return None
+
+
+async def _fetch_url_excludes(project: sql.Project) -> _UrlExcludes | None:
+    # We fetch here as well as in the cache-key resolver - the resolver's fetch decides whether the
+    # cached result still applies, and this one gets the rules we actually feed to RAT
+    url = project.policy_rat_excludes_url.strip()
+    if not url:
+        return None
+    try:
+        content = await rat_excludes.fetch(url)
+    except rat_excludes.TransientError as e:
+        return _UrlExcludes(url=url, error=str(e), transient=True)
+    except rat_excludes.UnavailableError as e:
+        return _UrlExcludes(url=url, error=str(e), transient=False)
+    if not content.strip():
+        # An empty file more likely means a misconfigured URL than a deliberate no-op, so we
+        # fall through to the policy excludes rather than silently suppressing them
+        return None
+    return _UrlExcludes(url=url, content=content)
 
 
 def _build_rat_command(
@@ -163,13 +202,17 @@ async def _check_core(
     recorder: checks.Recorder,
     archive_dir: safe.StatePath,
     policy_excludes: list[str],
+    url_excludes: _UrlExcludes | None,
 ) -> None:
     result = await asyncio.to_thread(
         _synchronous,
         archive_dir=str(archive_dir),
         policy_excludes=policy_excludes,
+        url_excludes=url_excludes,
         rat_jar_path=args.extra_args.get("rat_jar_path", _CONFIG.APACHE_RAT_JAR_PATH),
     )
+
+    await _record_url_excludes(args, result, url_excludes)
 
     # Record individual file failures before the overall result
     for file in result.unknown_license_files:
@@ -189,6 +232,34 @@ async def _check_core(
         await recorder.concern(result.message, result_data)
     else:
         await recorder.note(result.message, result_data)
+
+
+async def _record_url_excludes(
+    args: checks.FunctionArguments,
+    result: checkdata.Rat,
+    url_excludes: _UrlExcludes | None,
+) -> None:
+    # Stash what we actually fed to RAT from the URL as attestable data for the revision, so a
+    # later analysis can see what was applied. Only when the URL was the effective source -
+    # an archive .rat-excludes wins, and a transient failure gets recorded by the retry instead
+    if (url_excludes is None) or (result.excludes_source != "url") or url_excludes.transient:
+        return
+    if url_excludes.error is not None:
+        record = models_attestable.RatExcludesRecordV2(url=url_excludes.url, error=url_excludes.error)
+    else:
+        content = url_excludes.content or b""
+        record = models_attestable.RatExcludesRecordV2(
+            url=url_excludes.url,
+            content_hash=rat_excludes.content_hash(content),
+            content=content.decode("utf-8", errors="replace"),
+        )
+    await attestable.write_rat_excludes_data(
+        args.project_key,
+        args.version_key,
+        args.revision_number,
+        str(args.primary_rel_path or ""),
+        record,
+    )
 
 
 def _check_core_logic_execute_rat(
@@ -342,6 +413,7 @@ def _summary_message(valid: bool, unapproved_licenses: int, unknown_licenses: in
 def _synchronous(
     archive_dir: str,
     policy_excludes: list[str],
+    url_excludes: _UrlExcludes | None = None,
     rat_jar_path: str = _CONFIG.APACHE_RAT_JAR_PATH,
 ) -> checkdata.Rat:
     """Verify license headers using Apache RAT."""
@@ -359,7 +431,7 @@ def _synchronous(
 
     with tempfile.TemporaryDirectory(prefix="rat_scratch_") as scratch_dir:
         log.info(f"Created scratch directory: {scratch_dir}")
-        return _synchronous_core(archive_dir, scratch_dir, policy_excludes, rat_jar_path)
+        return _synchronous_core(archive_dir, scratch_dir, policy_excludes, url_excludes, rat_jar_path)
 
 
 def _synchronous_check_jar_exists(rat_jar_path: str) -> tuple[str, checkdata.Rat | None]:
@@ -417,6 +489,7 @@ def _synchronous_core(  # noqa: C901
     archive_dir: str,
     scratch_dir: str,
     policy_excludes: list[str],
+    url_excludes: _UrlExcludes | None,
     rat_jar_path: str,
 ) -> checkdata.Rat:
     exclude_file_paths: list[str] = []
@@ -438,8 +511,12 @@ def _synchronous_core(  # noqa: C901
     # Narrow to single path after validation
     archive_excludes_path: str | None = exclude_file_paths[0] if exclude_file_paths else None
 
+    if (error_result := _url_excludes_error_result(archive_excludes_path, url_excludes)) is not None:
+        return error_result
+
+    url_content = url_excludes.content if (url_excludes is not None) else None
     excludes_source, effective_excludes_path = _synchronous_core_excludes_source(
-        archive_excludes_path, policy_excludes, archive_dir, scratch_dir
+        archive_excludes_path, policy_excludes, url_content, archive_dir, scratch_dir
     )
 
     try:
@@ -503,10 +580,31 @@ def _synchronous_core(  # noqa: C901
     return result
 
 
+def _url_excludes_error_result(
+    archive_excludes_path: str | None, url_excludes: _UrlExcludes | None
+) -> checkdata.Rat | None:
+    # An archive .rat-excludes wins, so a URL failure is only a problem without an archive. A
+    # transient failure is non-structural so the check retries, an unavailable one is structural
+    # so it's recorded as a concern
+    if (archive_excludes_path is not None) or (url_excludes is None) or (url_excludes.error is None):
+        return None
+    return checkdata.Rat(
+        message=f"Could not use the configured RAT excludes URL: {url_excludes.error}",
+        errors=[url_excludes.error],
+        excludes_source="url",
+        structural=not url_excludes.transient,
+    )
+
+
 def _synchronous_core_excludes_source(
-    archive_excludes_path: str | None, policy_excludes: list[str], archive_dir: str, scratch_dir: str
+    archive_excludes_path: str | None,
+    policy_excludes: list[str],
+    url_content: bytes | None,
+    archive_dir: str,
+    scratch_dir: str,
 ) -> tuple[str, str | None]:
-    # Determine excludes_source and effective excludes file
+    # Determine excludes_source and effective excludes file. Precedence is archive, then the
+    # fetched URL, then the hand-typed policy excludes, then defaults only
     excludes_source: str
     effective_excludes_path: str | None
 
@@ -514,6 +612,13 @@ def _synchronous_core_excludes_source(
         excludes_source = "archive"
         effective_excludes_path = os.path.join(archive_dir, archive_excludes_path)
         log.info(f"Using archive {_RAT_EXCLUDES_FILENAME}: {archive_excludes_path}")
+    elif url_content is not None:
+        excludes_source = "url"
+        url_excludes_file = os.path.join(scratch_dir, _URL_EXCLUDES_FILENAME)
+        with open(url_excludes_file, "wb") as f:
+            f.write(url_content)
+        effective_excludes_path = url_excludes_file
+        log.info(f"Using excludes fetched from URL, written to: {url_excludes_file}")
     elif policy_excludes:
         excludes_source = "policy"
         policy_excludes_file = os.path.join(scratch_dir, _POLICY_EXCLUDES_FILENAME)

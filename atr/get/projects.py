@@ -476,6 +476,7 @@ def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, obje
         "github_repository_name",
         "github_repository_branch",
         "download_path_suffix",
+        "rat_excludes_url",
     ):
         value = getattr(release_policy, field)
         if value:
@@ -850,6 +851,7 @@ async def _render_compose_form(project: sql.Project, *, readonly: bool) -> htm.E
                 "license_check_mode": project.policy_license_check_mode,
                 "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
                 "source_excludes_rat": "\n".join(project.policy_source_excludes_rat),
+                "rat_excludes_url": project.policy_rat_excludes_url,
                 "file_tag_mappings": atr_tag_yaml,
             },
             form_classes=".atr-canary.py-4.px-5",

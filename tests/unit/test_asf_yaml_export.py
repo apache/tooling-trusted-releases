@@ -83,6 +83,7 @@ class _FakePolicy:
             "github_vote_workflow_path": [],
             "github_finish_workflow_path": [],
             "download_path_suffix": "",
+            "rat_excludes_url": "",
         }
         defaults.update(fields)
         for key, value in defaults.items():
@@ -100,6 +101,19 @@ def test_export_includes_download_path_suffix_when_set() -> None:
     policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
 
     assert policy["download_path_suffix"] == "{{PROJECT_KEY}}-{{VERSION}}"
+
+
+def test_export_includes_rat_excludes_url_when_set() -> None:
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(rat_excludes_url="https://apache.org/.rat-excludes"),
+    )
+
+    policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
+
+    assert policy["rat_excludes_url"] == "https://apache.org/.rat-excludes"
 
 
 def test_export_includes_only_recipient_keys_that_are_set() -> None:

@@ -444,16 +444,37 @@ async def write_checks_data(
     log.info(f"Writing checks for {project_key}/{version_key}/{revision_number}/{rel_path}: {checks}")
 
     def modify(content: str) -> str:
+        # Load the whole document, not just .checks, so we don't drop a rat_excludes record
+        # written alongside it for the same revision
         try:
-            current = models.AttestableChecksV2.model_validate_json(content).checks
+            doc = models.AttestableChecksV2.model_validate_json(content)
         except pydantic.ValidationError:
-            current = {}
-        if rel_path not in current:
-            current[rel_path] = checks
+            doc = models.AttestableChecksV2()
+        if rel_path not in doc.checks:
+            doc.checks[rel_path] = checks
         else:
-            current[rel_path].update(checks)
-        result = models.AttestableChecksV2(checks=current)
-        return result.model_dump_json(indent=2)
+            doc.checks[rel_path].update(checks)
+        return doc.model_dump_json(indent=2)
+
+    await _atomic_modify_readonly(attestable_checks_path(project_key, version_key, revision_number).path, modify)
+
+
+async def write_rat_excludes_data(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+    rel_path: str,
+    record: models.RatExcludesRecordV2,
+) -> None:
+    log.info(f"Recording RAT excludes for {project_key}/{version_key}/{revision_number}/{rel_path}")
+
+    def modify(content: str) -> str:
+        try:
+            doc = models.AttestableChecksV2.model_validate_json(content)
+        except pydantic.ValidationError:
+            doc = models.AttestableChecksV2()
+        doc.rat_excludes[rel_path] = record
+        return doc.model_dump_json(indent=2)
 
     await _atomic_modify_readonly(attestable_checks_path(project_key, version_key, revision_number).path, modify)
 
