@@ -229,7 +229,7 @@ async def _download_or_list(
         )
     if release.phase == sql.ReleasePhase.RELEASE:
         return await _published_response(release, validated_path)
-    full_path = paths.release_directory(release) / validated_path
+    full_path = paths.release_directory(release) / (file_path or safe.RelDirPath("."))
 
     if await aiofiles.os.path.isdir(full_path):
         return await _list(validated_path, full_path, str(project_key), str(version_key), str(validated_path))
