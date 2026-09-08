@@ -44,7 +44,7 @@ class ReportQuery(web.PageQuery):
 
 @get.typed
 async def selected_path(
-    _session: web.Public,
+    session: web.Public,
     _report: Literal["report"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
@@ -104,7 +104,7 @@ async def selected_path(
         swhid_dir = attestable.path_swhid_dir(attestable_data, str(rel_path))
 
     # Get all check results for this file
-    async with storage.read() as read:
+    async with storage.read(session) as read:
         ragp = read.as_general_public()
         check_results = await ragp.checks.by_release_path(
             release, validated_path, query_args.offset, query_args.limit, revision
