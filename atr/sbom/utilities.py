@@ -20,6 +20,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import urllib.parse
 from typing import TYPE_CHECKING, Any, Literal
 
 import aiohttp
@@ -40,6 +41,7 @@ import jsonpatch
 import jsonpointer
 import orjson
 
+import atr.log as log
 import atr.util as util
 
 from . import constants, models
@@ -56,6 +58,7 @@ if True:
 
 
 _ATR_VERSION = get_atr_version()
+_FETCH_MAX_SIZE = 64 * 1024 * 1024
 _SCORING_METHODS_OSV = {"CVSS_V2": "CVSSv2", "CVSS_V3": "CVSSv3", "CVSS_V4": "CVSSv4"}
 _SCORING_METHODS_CDX = {"CVSSv2": "CVSS_V2", "CVSSv3": "CVSS_V3", "CVSSv4": "CVSS_V4", "other": "Other"}
 _CDX_SEVERITIES = ["critical", "high", "medium", "low", "info", "none", "unknown"]
@@ -125,6 +128,32 @@ def ensure_metadata(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     if any((op.op == "add") and (op.path == "/metadata") for op in patch_ops):
         return
     patch_ops.append(models.patch.AddOp(op="add", path="/metadata", value={}))
+
+
+async def fetch(url: str) -> bytes | None:
+    parsed = urllib.parse.urlsplit(url)
+    if (parsed.scheme != "https") or (parsed.hostname not in {"downloads.apache.org", "archive.apache.org"}):
+        raise ValueError("SBOM URL must use downloads.apache.org or archive.apache.org over HTTPS")
+    if parsed.username or parsed.password or (parsed.port not in (None, 443)):
+        raise ValueError("SBOM URL must not contain credentials or a nonstandard port")
+    async with util.create_secure_session(timeout=aiohttp.ClientTimeout(total=60), public=True) as session:
+        async with session.get(url, allow_redirects=False) as response:
+            response.raise_for_status()
+            if response.status != 200:
+                log.warning(f"The SBOM at {url} returned status {response.status}")
+                return None
+            if (response.content_length is not None) and (response.content_length > _FETCH_MAX_SIZE):
+                log.warning(f"The SBOM at {url} is too large ({response.content_length} bytes)")
+                return None
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in response.content.iter_chunked(65536):
+                size += len(chunk)
+                if size > _FETCH_MAX_SIZE:
+                    log.warning(f"The SBOM at {url} is too large (limit {_FETCH_MAX_SIZE})")
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks)
 
 
 def get_pointer(doc: dict[str, Any], path: str) -> Any | None:

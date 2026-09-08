@@ -191,6 +191,55 @@ class SBOMGenerate(schema.Strict):
     )
 
 
+class SBOMHeatmapRow(schema.Strict):
+    key: str
+    purl: str
+    source_purls: list[str]
+    name: str
+    ecosystem: str
+    version: str | None
+    artifacts: list[str]
+    advisory_status: Literal["found", "none", "version_unknown", "unsupported", "not_found", "failed"]
+    advisories: list[str] = schema.factory(list)
+    published_at: str | None = None
+    repository_url: str | None = None
+    source_repo: str | None = None
+    repository_source: Literal["deps.dev", "ecosyste.ms", "gitbox_mirror"] | None = None
+    latest_release_at: str | None = None
+    rankings_average: float | None = None
+    archived: bool | None = None
+    dds: float | None = None
+    active_maintainers: int | None = None
+    governance_files: int | None = None
+    maintained: int | None = None
+    scorecard_date: str | None = None
+    criticality: float | None = None
+    health: float | None = None
+    health_inputs: int = 0
+    risk: float | None = None
+
+
+class SBOMHeatmapSbom(schema.Strict):
+    artifact_path: str
+    sbom_url: str
+    sha256: str | None = None
+    retrieved_at: str | None = None
+    components: int = 0
+    files: int = 0
+    packages: int = 0
+    error: str | None = None
+
+
+class SBOMHeatmap(schema.Strict):
+    kind: Literal["sbom_heatmap"] = "sbom_heatmap"
+    analysis_version: int
+    generated_at: str
+    sboms: list[SBOMHeatmapSbom]
+    rows: list[SBOMHeatmapRow]
+    sources: dict[str, str]
+    attribution: str
+
+
 class SBOMQsScore(schema.Strict):
     kind: Literal["sbom_qs_score"] = schema.Field(alias="kind")
     project_key: safe.ProjectKey = schema.description("Project name")
@@ -326,6 +375,7 @@ Results = Annotated[
     | SBOMConvert
     | SBOMGenerate
     | SBOMGenerateCycloneDX
+    | SBOMHeatmap
     | SBOMOSVScan
     | SBOMQsScore
     | SBOMToolScore
