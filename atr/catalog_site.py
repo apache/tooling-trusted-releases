@@ -117,6 +117,11 @@ _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 # pages are written once the walk has been through every committee.
 _INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
 
+# The bare PURL prefix, and the directory its landing page lives in. This prefix is the
+# namespace half of every ASF release PURL, so a reader who follows it with nothing after
+# wants an explainer rather than the front page or a 404.
+_PURL_PREFIX_PATH: Final = "the+asf"
+
 # The `class` qualifier abbreviates an artifact's stored classification to the short token
 # filenames use. Only the primary-artifact classes appear; sbom and metadata are companions.
 _CLASS_QUALIFIER: Final[dict[str, str]] = {
@@ -144,6 +149,8 @@ async def generate_all(data: db.Session) -> None:
     """Rebuild every page, overwriting in place so the site stays servable throughout."""
     site_dir = paths.get_catalog_site_dir()
     await _write_assets(site_dir)
+    # Fixed, deploy-time pages that sit beside the assets rather than under a committee.
+    await _write_purl_landing(site_dir)
     # The indexes link a single-project committee straight to that project, so they
     # need its projects alongside it.
     committees = await data.committee(_projects=True).all()
@@ -153,7 +160,7 @@ async def generate_all(data: db.Session) -> None:
     # rather than the ones written, so a page that failed to render keeps what it had
     keep = {committee.key for committee in committees}
     keep |= {project.key for committee in committees for project in committee.projects}
-    await _prune_directories(site_dir, keep | {"assets"})
+    await _prune_directories(site_dir, keep | {"assets", _PURL_PREFIX_PATH})
     log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
@@ -717,6 +724,12 @@ async def _write_project(
         document = release_documents.get(str(version.version))
         await _write_release(project_dir, committee, project, version, f"{root}../", document)
     await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
+
+
+async def _write_purl_landing(site_dir: safe.StatePath) -> None:
+    """Write the PURL explainer served at the bare prefix, /the+asf."""
+    html = _ENVIRONMENT.get_template("purl.html").render(root="../")
+    await _write(site_dir / _PURL_PREFIX_PATH / "index.html", html)
 
 
 async def _write_release(

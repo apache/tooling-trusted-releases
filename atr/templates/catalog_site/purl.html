@@ -1,0 +1,57 @@
+{% extends "catalog_site_base.html" %}
+
+{%- block title -%}Package URLs ~ Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}How Package URLs (PURLs) for Apache Software Foundation releases resolve through this catalog.{%- endblock description -%}
+
+{% block content %}
+  <h1 class="mb-3">Package URLs for ASF releases</h1>
+  <p class="text-muted">
+    Every release in this catalog carries a
+    <a href="https://github.com/package-url/purl-spec" target="_blank" rel="noopener">Package URL</a>
+    (PURL) - a short, portable identifier for a piece of software that doesn't depend on any one
+    package manager. You've landed here because you followed the bare PURL prefix; the sections
+    below explain the shape and how to resolve one.
+  </p>
+
+  <h2 class="fs-4 border-bottom pb-1 mt-4">The shape</h2>
+  <p>An ASF release PURL looks like this:</p>
+  <p class="font-monospace">pkg:software-id/apache.org/the+asf/&lt;project&gt;@&lt;version&gt;</p>
+  <p>
+    The type is <code>software-id</code> and the namespace is <code>apache.org/the+asf</code> -
+    the prefix you're on now. What follows is the project's own key and the release version, for
+    example <span class="font-monospace">pkg:software-id/apache.org/the+asf/tomcat@10.1.0</span>.
+  </p>
+
+  <h2 class="fs-4 border-bottom pb-1 mt-4">Resolving one</h2>
+  <p>
+    The namespace doubles as a resolvable address. Swapping the <code>pkg:software-id/</code>
+    prefix for <span class="font-monospace">https://</span> gives a link that redirects into this
+    catalog:
+  </p>
+  <p class="font-monospace">https://apache.org/the+asf/tomcat@10.1.0</p>
+  <p>
+    A bare PURL like that resolves to the release's manifest - a JSON document listing its
+    artifacts, along with the signatures, checksums and any SBOMs. To browse the same releases as
+    web pages, follow the catalog link below.
+  </p>
+
+  <h2 class="fs-4 border-bottom pb-1 mt-4">Jumping straight to a file</h2>
+  <p>
+    Add a query string and the same URL resolves to a single download rather than the manifest.
+    A release exposes these qualifiers:
+  </p>
+  <ul>
+    <li><code>class</code> - <span class="font-monospace">src</span>, <span class="font-monospace">bin</span> or <span class="font-monospace">docs</span></li>
+    <li><code>os</code> and <code>arch</code> - for platform-specific binaries</li>
+    <li><code>ext</code> - the file extension, such as <span class="font-monospace">tar.gz</span></li>
+    <li><code>file_name</code> - the exact file name, which always addresses one file</li>
+    <li><code>subpath</code> - the distinguishing tail of a file name, where it's unique</li>
+  </ul>
+  <p>So the source archive of the release above is:</p>
+  <p class="font-monospace">https://apache.org/the+asf/tomcat@10.1.0?class=src&ext=tar.gz</p>
+
+  <p class="mt-4">
+    <a href="{{ root }}index.html" class="btn btn-primary">Browse the release catalog</a>
+  </p>
+{% endblock content %}
