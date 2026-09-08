@@ -33,6 +33,12 @@ def compute_dict_hash(to_hash: dict[Any, Any]) -> str:
     return f"blake3:{hasher.hexdigest()}"
 
 
+def compute_bytes_hash(data: bytes) -> str:
+    hasher = blake3.blake3()
+    hasher.update(data)
+    return f"blake3:{hasher.hexdigest()}"
+
+
 async def compute_file_hash(path: str | os.PathLike) -> str:
     path = pathlib.Path(path)
     hasher = blake3.blake3()

@@ -41,6 +41,7 @@ import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
+import atr.rat_excludes as rat_excludes
 import atr.util as util
 
 
@@ -551,6 +552,23 @@ async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None)
     return (release.committee is not None) and release.committee.is_podling
 
 
+async def _resolve_rat_excludes_hash(release: sql.Release, rel_path: str | None = None) -> str:
+    policy = release.release_policy or release.project.release_policy
+    url = (policy.rat_excludes_url if (policy is not None) else "").strip()
+    if not url:
+        return ""
+    try:
+        content = await rat_excludes.fetch(url)
+    except rat_excludes.RatExcludesError:
+        # A failed fetch still has to bust any cached pass, and must stay distinct from the unset
+        # "" case, so we key on the URL rather than the content we couldn't get
+        return f"unavailable:{url}"
+    if not content.strip():
+        # An empty file is treated as no URL excludes by the check, so the key matches the unset case
+        return ""
+    return rat_excludes.content_hash(content)
+
+
 async def _resolve_suffixed_file_existence(release: sql.Release, rel_path: str | None = None) -> list[str]:
     if (not rel_path) or (not release.latest_revision_number):
         return []
@@ -602,6 +620,7 @@ _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]]
     "cross_format_sibling_swhids": _resolve_cross_format_sibling_swhids,
     "github_tp_sha": _resolve_github_tp_sha,
     "is_podling": _resolve_is_podling,
+    "rat_excludes_hash": _resolve_rat_excludes_hash,
     "suffixed_file_existence": _resolve_suffixed_file_existence,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,
     "unsuffixed_file_uploaders": _resolve_unsuffixed_file_uploaders,

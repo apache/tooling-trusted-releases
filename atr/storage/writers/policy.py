@@ -152,6 +152,7 @@ class ReleaseManager(CommitteeParticipant):
         release_policy.license_check_mode = license_check_mode
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
+        release_policy.rat_excludes_url = form.rat_excludes_url.strip()
         release_policy.file_tag_mappings = atr_tags_dict
 
         await self.__commit_and_log(str(project_key))

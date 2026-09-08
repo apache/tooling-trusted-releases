@@ -1395,6 +1395,12 @@ Sincerely,
         return policy.source_excludes_rat or []
 
     @property
+    def policy_rat_excludes_url(self) -> str:
+        if (policy := self.release_policy) is None:
+            return ""
+        return policy.rat_excludes_url or ""
+
+    @property
     def policy_tagging_spec(self) -> dict[str, Any] | None:
         if (policy := self.release_policy) is None:
             return None
@@ -2247,6 +2253,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     source_excludes_rat: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
+    rat_excludes_url: str = sqlmodel.Field(default="")
     github_repository_name: str = sqlmodel.Field(default="")
     github_repository_branch: str = sqlmodel.Field(default="")
     github_compose_workflow_path: list[str] = sqlmodel.Field(
@@ -2286,6 +2293,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             license_check_mode=self.license_check_mode,
             source_excludes_lightweight=list(self.source_excludes_lightweight),
             source_excludes_rat=list(self.source_excludes_rat),
+            rat_excludes_url=self.rat_excludes_url,
             github_repository_name=self.github_repository_name,
             github_repository_branch=self.github_repository_branch,
             github_compose_workflow_path=list(self.github_compose_workflow_path),

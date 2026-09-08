@@ -20,12 +20,14 @@ import shlex
 import tarfile
 import types
 import unittest.mock as mock
+from typing import Any
 
 import pytest
 
 import atr.models.checkdata as checkdata
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.rat_excludes as rat_excludes
 import atr.tasks.checks as checks
 import atr.tasks.checks.rat as rat
 import atr.tasks.task as task
@@ -83,6 +85,7 @@ async def test_check_raises_retryable_for_tooling_errors(tmp_path: pathlib.Path)
     project = types.SimpleNamespace(
         policy_license_check_mode=sql.LicenseCheckMode.BOTH,
         policy_source_excludes_rat=[],
+        policy_rat_excludes_url="",
     )
     result = checkdata.Rat(
         valid=False,
@@ -106,6 +109,7 @@ async def test_check_records_concern_for_structural_errors(tmp_path: pathlib.Pat
     project = types.SimpleNamespace(
         policy_license_check_mode=sql.LicenseCheckMode.BOTH,
         policy_source_excludes_rat=[],
+        policy_rat_excludes_url="",
     )
     result = checkdata.Rat(
         valid=False,
@@ -133,6 +137,7 @@ async def test_check_routes_member_failures_to_concern_and_rollup_to_note(tmp_pa
     project = types.SimpleNamespace(
         policy_license_check_mode=sql.LicenseCheckMode.BOTH,
         policy_source_excludes_rat=[],
+        policy_rat_excludes_url="",
     )
     result = checkdata.Rat(
         valid=False,
@@ -209,6 +214,75 @@ def test_excludes_policy_uses_atr_rat_excludes(rat_available: tuple[bool, bool],
     assert command[idx + 1] == rat._POLICY_EXCLUDES_FILENAME
     # Should therefore NOT have the RAT excludes file in the command
     assert rat._RAT_EXCLUDES_FILENAME not in command
+
+
+def test_excludes_url_written_and_preferred_over_policy(tmp_path: pathlib.Path):
+    """A fetched URL beats the hand-typed policy excludes and is written to the scratch file."""
+    archive_dir = tmp_path / "archive"
+    scratch_dir = tmp_path / "scratch"
+    archive_dir.mkdir()
+    scratch_dir.mkdir()
+    source, path = rat._synchronous_core_excludes_source(None, ["*.py"], b"*.txt\n", str(archive_dir), str(scratch_dir))
+    assert source == "url"
+    assert path is not None
+    assert pathlib.Path(path).read_bytes() == b"*.txt\n"
+
+
+def test_excludes_archive_preferred_over_url(tmp_path: pathlib.Path):
+    """An archive .rat-excludes wins even when a URL was fetched."""
+    archive_dir = tmp_path / "archive"
+    scratch_dir = tmp_path / "scratch"
+    archive_dir.mkdir()
+    scratch_dir.mkdir()
+    source, _ = rat._synchronous_core_excludes_source(
+        ".rat-excludes", ["*.py"], b"*.txt\n", str(archive_dir), str(scratch_dir)
+    )
+    assert source == "archive"
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_excludes_none_when_unset() -> None:
+    project: Any = types.SimpleNamespace(policy_rat_excludes_url="")
+    assert await rat._fetch_url_excludes(project) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_excludes_carries_content_on_success() -> None:
+    project: Any = types.SimpleNamespace(policy_rat_excludes_url="https://apache.org/.rat-excludes")
+    with mock.patch.object(rat_excludes, "fetch", new=mock.AsyncMock(return_value=b"*.txt\n")):
+        result = await rat._fetch_url_excludes(project)
+    assert result is not None
+    assert result.content == b"*.txt\n"
+    assert result.error is None
+    assert result.transient is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_excludes_none_when_body_empty() -> None:
+    # An empty fetched file falls through to policy excludes rather than suppressing them
+    project: Any = types.SimpleNamespace(policy_rat_excludes_url="https://apache.org/.rat-excludes")
+    with mock.patch.object(rat_excludes, "fetch", new=mock.AsyncMock(return_value=b"   \n")):
+        assert await rat._fetch_url_excludes(project) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_excludes_marks_transient_failure_for_retry() -> None:
+    project: Any = types.SimpleNamespace(policy_rat_excludes_url="https://apache.org/.rat-excludes")
+    with mock.patch.object(rat_excludes, "fetch", new=mock.AsyncMock(side_effect=rat_excludes.TransientError("down"))):
+        result = await rat._fetch_url_excludes(project)
+    assert result is not None
+    assert result.transient is True
+    assert result.content is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_excludes_records_unavailable_failure() -> None:
+    project: Any = types.SimpleNamespace(policy_rat_excludes_url="https://apache.org/.rat-excludes")
+    with mock.patch.object(rat_excludes, "fetch", new=mock.AsyncMock(side_effect=rat_excludes.UnavailableError("404"))):
+        result = await rat._fetch_url_excludes(project)
+    assert result is not None
+    assert result.transient is False
+    assert result.error == "404"
 
 
 def test_sanitise_command_replaces_absolute_paths():

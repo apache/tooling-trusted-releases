@@ -126,6 +126,8 @@ You can [read more about license checks](license-checks).
 
 Two separate sets of exclusion patterns let you skip files during license scanning. The _RAT source excludes_ are applied when RAT scans a source artifact that does not contain its own `.rat-excludes` file. The _Lightweight source excludes_ are always applied during the lightweight license header scan for source artifacts. In both cases the exclusions only take effect for artifacts that are classified as source by the source artifact paths setting (this is a [bug](https://github.com/apache/tooling-trusted-releases/issues/630)).
 
+If you would rather not maintain the RAT excludes here as well as in your project, set a _RAT excludes URL_ pointing at a `.rat-excludes` file your project already keeps in git. We fetch it fresh for each revision we check, and record what we used against the revision. The URL must be on an `apache.org` host or `raw.githubusercontent.com`. When a source artifact ships its own `.rat-excludes` that still wins, then the URL, then the _RAT source excludes_ typed above.
+
 You can [read more about license check exclusions](license-checks#project-policy-exclusions).
 
 ### Committee signing keys
