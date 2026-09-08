@@ -23,6 +23,7 @@ import pytest
 import atr.config as config
 import atr.models.args as args
 import atr.models.safe as safe
+import atr.sbom.utilities as utilities
 import atr.tasks.sbom as sbom_tasks
 
 _BOM_TEXT = '{"bomFormat": "CycloneDX", "specVersion": "1.5", "version": 1}'
@@ -105,6 +106,46 @@ async def test_fetch_previous_sbom_returns_body(monkeypatch: pytest.MonkeyPatch)
     assert text == '{"a": 1}'
     assert factory.public is True
     assert factory.session.get_kwargs == {"allow_redirects": False}
+
+
+@pytest.mark.parametrize("host", ["downloads.apache.org", "archive.apache.org"])
+async def test_fetch_returns_original_bytes(host: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    factory = FakeSessionFactory(FakeSession(FakeResponse(200, [b"\xef\xbb\xbf", b"SBOM\r\n"])))
+    monkeypatch.setattr(utilities.util, "create_secure_session", factory)
+
+    assert await utilities.fetch(f"https://{host}/p/x.cdx.json") == b"\xef\xbb\xbfSBOM\r\n"
+    assert factory.public is True
+    assert factory.session.get_kwargs == {"allow_redirects": False}
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://downloads.apache.org/a.json",
+        "https://example.org/a.json",
+        "https://downloads.apache.org.example.org/a.json",
+        "https://user:password@downloads.apache.org/a.json",
+        "https://downloads.apache.org:8443/a.json",
+    ],
+)
+async def test_fetch_rejects_unapproved_urls(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    session = mock.Mock(side_effect=AssertionError("Unexpected network access"))
+    monkeypatch.setattr(utilities.util, "create_secure_session", session)
+
+    with pytest.raises(ValueError):
+        await utilities.fetch(url)
+    session.assert_not_called()
+
+
+@pytest.mark.parametrize("content_length", [None, 5])
+async def test_fetch_bounds_header_and_stream(content_length: int | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    response = FakeResponse(200, [b"123", b"45"])
+    response.content_length = content_length
+    factory = FakeSessionFactory(FakeSession(response))
+    monkeypatch.setattr(utilities.util, "create_secure_session", factory)
+    monkeypatch.setattr(utilities, "_FETCH_MAX_SIZE", 4)
+
+    assert await utilities.fetch("https://downloads.apache.org/p/x.cdx.json") is None
 
 
 async def test_previous_bundle_fetches_published(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

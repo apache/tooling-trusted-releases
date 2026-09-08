@@ -49,7 +49,6 @@ import atr.util as util
 
 _CONFIG: Final = config.get()
 _OSV_UNAVAILABLE_MESSAGE: Final = "The OSV service could not be reached; try the scan again later"
-_PREVIOUS_SBOM_MAX_SIZE: Final[int] = 64 * 1024 * 1024
 
 
 class SBOMConversionError(Exception):
@@ -480,26 +479,8 @@ def _extracted_dir(temp_dir: str) -> str | None:
 
 
 async def _fetch_previous_sbom(url: str) -> str | None:
-    timeout = aiohttp.ClientTimeout(total=60)
-    async with util.create_secure_session(timeout=timeout, public=True) as session:
-        async with session.get(url, allow_redirects=False) as response:
-            response.raise_for_status()
-            if response.status != 200:
-                log.warning(f"The previous release SBOM at {url} returned status {response.status}")
-                return None
-            content_length = response.content_length
-            if (content_length is not None) and (content_length > _PREVIOUS_SBOM_MAX_SIZE):
-                log.warning(f"The previous release SBOM at {url} is too large ({content_length} bytes)")
-                return None
-            chunks: list[bytes] = []
-            size = 0
-            async for chunk in response.content.iter_chunked(65536):
-                size += len(chunk)
-                if size > _PREVIOUS_SBOM_MAX_SIZE:
-                    log.warning(f"The previous release SBOM at {url} is too large (limit {_PREVIOUS_SBOM_MAX_SIZE})")
-                    return None
-                chunks.append(chunk)
-            return b"".join(chunks).decode("utf-8")
+    content = await sbom.utilities.fetch(url)
+    return content.decode("utf-8") if (content is not None) else None
 
 
 async def _generate_cyclonedx_core(
