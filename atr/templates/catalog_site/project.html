@@ -54,7 +54,11 @@
       {% include "_release_list.html" %}
     {% else %}
       <div class="alert alert-info" role="alert">
-        No catalogued releases for {{ heading }}.
+        {% if has_archive %}
+          No active releases for {{ heading }}.
+        {% else %}
+          No catalogued releases for {{ heading }}.
+        {% endif %}
       </div>
     {% endif %}
   {% endif %}
