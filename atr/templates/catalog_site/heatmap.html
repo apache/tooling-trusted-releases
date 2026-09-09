@@ -1,0 +1,93 @@
+{% extends "catalog_site_base.html" %}
+
+<!--
+  Adapted from Alpha-Omega heatmap, scripts/table_template.html.
+  Upstream: https://github.com/alpha-omega-security/heatmap/blob/4ed37981a6e5049c81d7436d90abe036d2810773/scripts/table_template.html
+  Copyright (c) 2026 Alpha-Omega. MIT licensed; see atr/static/licenses/LICENSE-Alpha-Omega-Heatmap.txt.
+  ATR changes: release context, shared assets, JSON loading and artifact selection.
+-->
+
+{%- block title -%}Alpha-Omega dependency heatmap ~ {{ project.display_name }} {{ release_version.version }}{%- endblock title -%}
+
+{%- block description -%}Dependency maintenance and advisories for {{ project.display_name }} {{ release_version.version }}.{%- endblock description -%}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ root }}assets/css/heatmap.css" />
+{% endblock styles %}
+
+{% block content %}
+  <p class="mb-1"><a href="index.html" class="atr-back-link">&larr; {{ project.display_name }} {{ release_version.version }}</a></p>
+  <h1>Dependency heatmap</h1>
+  <p>Maintenance observations and advisories for the package versions listed in this release's SBOMs.</p>
+  {% include "_unreviewed.html" %}
+  <p>
+    Analysed <time datetime="{{ heatmap.generated_at }}">{{ heatmap.generated_at[:16] | replace("T", " ") }} UTC</time>.
+    <a href="heatmap.json" download>Download analysis JSON</a>
+  </p>
+  <details class="mb-3">
+    <summary>How to read this report</summary>
+    <p><strong>Health</strong> (0–1) averages release recency, shared workload, active maintainers and project guidance using A-O's formula. <strong>Maintained</strong> (0–10) is <a href="https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained">OpenSSF Scorecard</a>'s check of commits and issue activity over 90 days. We show both because an active project can still rely on one person.</p>
+    <p><strong>Criticality</strong> (0–1) estimates importance from ecosyste.ms popularity rankings: downloads, dependents, stars and forks.</p>
+    <p><strong>Risk</strong> (0–1) is criticality × (1 − health). It highlights important packages with poor health.</p>
+    <p>Missing data stays unknown. Archived projects get Health 0.05. Advisories are separate from these scores.</p>
+  </details>
+  <details class="mb-3">
+    <summary>Input SBOMs ({{ heatmap.sboms | length }})</summary>
+    {% for sbom in heatmap.sboms %}
+      <p>
+        <strong class="text-break">{{ sbom.artifact_path }}</strong>
+        {% if web_url(sbom.sbom_url) %}<a href="{{ sbom.sbom_url }}">SBOM</a>{% endif %}
+        — {{ sbom.components }} components, {{ sbom.files }} file entries, {{ sbom.packages }} package versions.
+      </p>
+      {% if sbom.error %}<p>{{ sbom.error }}</p>{% endif %}
+      {% if sbom.retrieved_at %}<p>Retrieved {{ sbom.retrieved_at }}.</p>{% endif %}
+      {% if sbom.sha256 %}<p class="text-break">SHA-256: <code>{{ sbom.sha256 }}</code></p>{% endif %}
+    {% endfor %}
+  </details>
+
+  <form id="filters" class="mb-3" hidden>
+    <div class="row g-3 align-items-end">
+      <div class="col-md-5">
+        <label for="artifact" class="form-label">Artifact</label>
+        <select id="artifact" class="form-select">
+          <option value="">All artifacts</option>
+          {% for sbom in heatmap.sboms %}<option value="{{ sbom.artifact_path }}">{{ sbom.artifact_path }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label for="search" class="form-label">Filter packages and advisories</label>
+        <input type="search" id="search" class="form-control" />
+      </div>
+      <div class="col-md-2"><button type="submit" class="btn btn-primary">Filter</button></div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+      <div id="healths" class="d-flex flex-wrap align-items-center gap-1" role="group" aria-label="Filter by Health"><span class="me-1">Filter by Health:</span></div>
+      <div id="ecosystems" class="d-flex flex-wrap align-items-center gap-1" role="group" aria-label="Ecosystems"><span class="me-1">Ecosystem:</span></div>
+    </div>
+  </form>
+  <p id="notice" class="text-warning-emphasis" hidden>Artifact not found; showing all artifacts.</p>
+  <p id="count" aria-live="polite">Loading analysis…</p>
+  <noscript><p>JavaScript is required for the Alpha-Omega table. The analysis JSON and input details are available above.</p></noscript>
+  <div class="table-responsive">
+    <table id="grid" class="table table-sm align-middle text-nowrap">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="small d-block text-secondary mt-3">
+    <p>
+      Adapted from the <a href="https://github.com/alpha-omega-security/heatmap/tree/4ed37981a6e5049c81d7436d90abe036d2810773">Alpha-Omega heatmap</a>.
+      Copyright (c) 2026 Alpha-Omega. <a href="{{ root }}assets/licenses/LICENSE-Alpha-Omega-Heatmap.txt">MIT licence</a>.
+    </p>
+    <p>{{ heatmap.attribution }}</p>
+    <p>
+      {% for name, url in heatmap.sources.items() %}
+        {% if web_url(url) %}<a href="{{ url }}">{{ name }}</a>{% else %}{{ name }}{% endif %}{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </p>
+  </div>
+{% endblock content %}
+
+{% block scripts %}
+  <script src="{{ root }}assets/js/src/heatmap-table.js" type="module"></script>
+{% endblock scripts %}

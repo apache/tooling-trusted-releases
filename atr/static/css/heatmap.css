@@ -1,0 +1,57 @@
+/*
+ * Adapted from Alpha-Omega heatmap, scripts/table_template.html.
+ * Upstream: https://github.com/alpha-omega-security/heatmap/blob/4ed37981a6e5049c81d7436d90abe036d2810773/scripts/table_template.html
+ * Copyright (c) 2026 Alpha-Omega. MIT licensed; see atr/static/licenses/LICENSE-Alpha-Omega-Heatmap.txt.
+ * ATR changes: external assets and JSON, release/artifact context, precomputed
+ * scores, version advisories, explicit unknowns, safe links and complete results.
+ */
+
+#grid th {
+    cursor: pointer;
+}
+
+#grid th.sorted-asc::after {
+    content: " ↑";
+}
+
+#grid th.sorted-desc::after {
+    content: " ↓";
+}
+
+#grid td:first-child {
+    width: 25%;
+    white-space: normal;
+}
+
+#grid td:nth-child(2) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+#grid .name small,
+#grid .coverage {
+    display: block;
+    color: var(--bs-secondary-color);
+    font-size: inherit;
+}
+
+#grid meter {
+    display: block;
+    width: 5rem;
+}
+
+#grid .nul {
+    color: var(--bs-secondary-color);
+}
+
+.pill .dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    margin-right: 0.25rem;
+}
+
+.pill .count {
+    margin-left: 0.25rem;
+}
