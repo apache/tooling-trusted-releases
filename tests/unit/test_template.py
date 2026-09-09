@@ -14,23 +14,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
----
-name: "ASF Allowlist Check"
-"on":
-  workflow_dispatch:
-  pull_request:
-    paths: [".github/**"]
-  push:
-    branches: [main]
-    paths: [".github/**"]
-permissions:
-  contents: read
-jobs:
-  asf-allowlist-check:
-    # Trusted sources on our own runner; fork PRs on the hosted runner.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: apache/infrastructure-actions/allowlist-check@508a67ac1fc4d3597f139f9f5cbb4d3cfe0dd8a1  # allowlist-check/v1.0.2
+
+import jinja2
+import pytest
+import quart
+
+import atr.template as template
+
+
+@pytest.mark.parametrize(
+    ("render", "source"),
+    [
+        (template.render_sync, "example.html"),
+        (template.render_string_sync, "{{ request.path }} {{ value }}"),
+    ],
+)
+async def test_render_sync_populates_context(render, source):
+    app = quart.Quart(__name__)
+    app.jinja_environment = template.SyncEnvironment
+    app.jinja_loader = jinja2.DictLoader({"example.html": "{{ request.path }} {{ value }}"})
+    async with app.test_request_context("/example"):
+        assert await render(source, value="alpha") == "/example alpha"
