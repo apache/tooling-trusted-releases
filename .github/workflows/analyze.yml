@@ -17,7 +17,7 @@ env:
 jobs:
   # Skip the analysis if this commit already passed on another branch.
   dedup:
-    uses: ./.github/workflows/dedup.yml
+    uses: $/.github/workflows/dedup.yml
     permissions:
       actions: read
     with:

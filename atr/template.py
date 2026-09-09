@@ -21,6 +21,7 @@ from typing import Any
 import jinja2
 import quart
 import quart.app as app
+import quart.globals
 import quart.signals as signals
 import quart.templating as templating
 
@@ -58,7 +59,7 @@ async def blank(
 
 async def render_string_sync(source: str, **context_vars: Any) -> str:
     app_instance = quart.current_app
-    await app_instance.update_template_context(context_vars)
+    await app_instance.update_template_context(quart.globals.app_ctx._get_current_object(), context_vars)
     template = app_instance.jinja_env.from_string(source)
     return await _render_in_thread(template, context_vars, app_instance)
 
@@ -68,7 +69,7 @@ async def render_sync(
     **context_vars: Any,
 ) -> str:
     app_instance = quart.current_app
-    await app_instance.update_template_context(context_vars)
+    await app_instance.update_template_context(quart.globals.app_ctx._get_current_object(), context_vars)
     template = app_instance.jinja_env.get_or_select_template(template_name_or_list)
     return await _render_in_thread(template, context_vars, app_instance)
 

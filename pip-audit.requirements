@@ -24,7 +24,7 @@ alembic==1.19.1
     # via tooling-trusted-releases
 annotated-types==0.8.0
     # via pydantic
-anyio==4.14.2
+anyio==4.15.0
     # via watchfiles
 arrow==1.4.0
     # via isoduration
@@ -60,15 +60,13 @@ cfgv==3.5.0
     # via pre-commit
 charset-normalizer==3.5.1
     # via requests
-click==8.4.2
+click==8.5.0
     # via
     #   djlint
     #   flask
     #   quart
 cmarkgfm==2025.10.22
     # via tooling-trusted-releases
-colorama==0.4.6 ; sys_platform == 'win32'
-    # via click
 cryptography==50.0.0
     # via
     #   asfpy
@@ -85,12 +83,12 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.44.2
+djlint==1.45.0
 dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.12
+dulwich==1.2.14
     # via tooling-trusted-releases
 dunamai==1.26.2
     # via tooling-trusted-releases
@@ -110,7 +108,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.32.3
+filelock==3.32.5
     # via
     #   python-discovery
     #   virtualenv
@@ -222,7 +220,7 @@ packaging==26.3
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-platformdirs==4.11.3
+platformdirs==4.11.7
     # via virtualenv
 pre-commit==4.6.2
 priority==2.0.0
@@ -243,12 +241,12 @@ pycparser==3.0 ; implementation_name != 'PyPy'
     # via cffi
 pycryptodomex==3.23.0
     # via ldap3
-pydantic==2.13.4
+pydantic==2.13.5
     # via
     #   pydantic-xml
     #   quart-schema
     #   sqlmodel
-pydantic-core==2.46.4
+pydantic-core==2.46.5
     # via
     #   pydantic
     #   pydantic-xml
@@ -256,8 +254,6 @@ pydantic-xml==2.21.1
     # via tooling-trusted-releases
 pygments==2.21.0
     # via rich
-pyhumps==3.8.0
-    # via quart-schema
 pyjwt==2.13.0
     # via tooling-trusted-releases
 pyright==1.1.411
@@ -267,7 +263,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.5.2
+python-discovery==1.6.0
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -275,7 +271,7 @@ pyyaml==6.0.3
     #   asfquart
     #   djlint
     #   pre-commit
-quart==0.22.0
+quart==0.23.1
     # via
     #   asfquart
     #   quart-rate-limiter
@@ -284,7 +280,7 @@ quart==0.22.0
     #   quart-wtforms
 quart-rate-limiter==0.12.1
     # via tooling-trusted-releases
-quart-schema==0.24.0
+quart-schema==0.25.0
     # via tooling-trusted-releases
 quart-uploads==0.0.4
     # via quart-wtforms
@@ -295,7 +291,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.7.19
+regex==2026.9.3
     # via djlint
 requests==2.34.2
     # via
@@ -315,7 +311,7 @@ rpds-py==2026.6.3
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.16.4
+ruff==0.16.6
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
@@ -328,7 +324,7 @@ sqlalchemy==2.0.52
     # via
     #   alembic
     #   sqlmodel
-sqlmodel==0.0.39
+sqlmodel==0.0.42
     # via tooling-trusted-releases
 ssh-audit==3.9.0
     # via tooling-trusted-releases
@@ -343,6 +339,7 @@ types-aiofiles==25.1.0.20260518
 typing-extensions==4.16.0
     # via
     #   alembic
+    #   anyio
     #   asyncssh
     #   pydantic
     #   pydantic-core
@@ -362,7 +359,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.7.4
+virtualenv==21.7.8
     # via pre-commit
 watchfiles==1.2.0
     # via

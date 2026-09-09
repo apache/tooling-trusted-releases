@@ -23,6 +23,7 @@ import types
 import pytest
 import quart
 import quart.datastructures as datastructures
+import quart.wrappers.base as base
 import werkzeug.exceptions as exceptions
 
 import atr.body as body
@@ -34,25 +35,46 @@ def state_tmp(monkeypatch, tmp_path):
     return tmp_path
 
 
-async def test_body_append_after_close(state_tmp):
-    b = body.Body(None, None)
-    b.append(b"data")
-    b.close()
-    b.append(b"more")
-
-
 async def test_body_await_retains(state_tmp):
     b = body.Body(None, None)
-    b.append(b"alpha")
+    await b.put(b"alpha")
     b.set_complete()
     assert await b == b"alpha"
     assert await b == b"alpha"
 
 
+async def test_body_complete_wakes_reader(state_tmp):
+    b = body.Body(None, None)
+    task = asyncio.ensure_future(anext(b))
+    await asyncio.sleep(0)
+    assert not task.done()
+    b.set_complete()
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(task, 1)
+
+
+async def test_body_disconnect_after_complete(state_tmp):
+    b = body.Body(None, None)
+    b.set_result(b"alpha")
+    b.disconnect()
+    assert await b == b"alpha"
+
+
+@pytest.mark.parametrize("iterate", [False, True])
+async def test_body_disconnect_wakes_reader(state_tmp, iterate):
+    b = body.Body(None, None)
+    task = asyncio.ensure_future(anext(b) if iterate else b)
+    await asyncio.sleep(0)
+    assert not task.done()
+    b.disconnect()
+    with pytest.raises(base.ClientDisconnectedError):
+        await asyncio.wait_for(task, 1)
+
+
 async def test_body_iterate_then_await(state_tmp):
     b = body.Body(None, None)
-    b.append(b"alpha")
-    b.append(b"beta")
+    await b.put(b"alpha")
+    await b.put(b"beta")
     b.set_complete()
     chunks = [chunk async for chunk in b]
     assert b"".join(chunks) == b"alphabeta"
@@ -67,13 +89,13 @@ async def test_body_limit_known_length(state_tmp):
 
 async def test_body_limit_wakes_reader(state_tmp):
     b = body.Body(None, 10)
-    b.append(b"x" * 6)
+    await b.put(b"x" * 6)
     assert await anext(b) == b"x" * 6
     task = asyncio.ensure_future(anext(b))
     await asyncio.sleep(0)
-    b.append(b"x" * 5)
+    await b.put(b"x" * 5)
     with pytest.raises(exceptions.RequestEntityTooLarge):
-        await task
+        await asyncio.wait_for(task, 1)
 
 
 async def test_body_low_disk_refused(state_tmp, monkeypatch):
@@ -85,12 +107,36 @@ async def test_body_low_disk_refused(state_tmp, monkeypatch):
 
     monkeypatch.setattr(body.shutil, "disk_usage", fake_disk_usage)
     b = body.Body(None, None)
-    b.append(b"x" * body.SPOOL_MAX_SIZE)
+    await b.put(b"x" * body.SPOOL_MAX_SIZE)
     assert calls == []
-    b.append(b"x")
+    await b.put(b"x")
     with pytest.raises(exceptions.ServiceUnavailable) as exc_info:
         await anext(b)
     assert "disk space" in exc_info.value.description
+
+
+async def test_body_put_after_close(state_tmp):
+    b = body.Body(None, None)
+    await b.put(b"data")
+    b.close()
+    await b.put(b"more")
+
+
+async def test_body_put_wakes_reader(state_tmp):
+    b = body.Body(None, None)
+    task = asyncio.ensure_future(anext(b))
+    await asyncio.sleep(0)
+    assert not task.done()
+    await b.put(b"alpha")
+    assert await asyncio.wait_for(task, 1) == b"alpha"
+
+
+async def test_body_set_result(state_tmp):
+    b = body.Body(None, None)
+    b.set_result(b"alpha")
+    assert await b == b"alpha"
+    assert await b.get() == b"alpha"
+    assert await b.get() == b""
 
 
 async def test_body_spools_to_disk(state_tmp, monkeypatch):
@@ -105,7 +151,7 @@ async def test_body_spools_to_disk(state_tmp, monkeypatch):
     monkeypatch.setattr(tempfile, "TemporaryFile", recorder)
     b = body.Body(None, None)
     payload = b"x" * (body.SPOOL_MAX_SIZE + 1)
-    b.append(payload)
+    await b.put(payload)
     b.set_complete()
     chunks = [chunk async for chunk in b]
     assert len(calls) == 1
@@ -115,7 +161,8 @@ async def test_body_spools_to_disk(state_tmp, monkeypatch):
     assert b._spool.seek(0, io.SEEK_END) == 0
 
 
-async def test_request_multipart(state_tmp):
+async def test_request_multipart(state_tmp, monkeypatch):
+    monkeypatch.setattr(body.shutil, "disk_usage", lambda path: types.SimpleNamespace(free=body.spool_floor() * 4))
     app = quart.Quart(__name__)
     app.request_class = body.Request
     received = {}
@@ -129,7 +176,7 @@ async def test_request_multipart(state_tmp):
         received["stream"] = fs.stream
         return ""
 
-    payload = b"z" * 200000
+    payload = b"z" * (body.SPOOL_MAX_SIZE + 1)
     client = app.test_client()
     response = await client.post(
         "/upload",

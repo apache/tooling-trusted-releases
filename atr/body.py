@@ -15,13 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
+import collections.abc as abc
 import functools
 import shutil
 import tempfile
-from collections.abc import Generator
 from typing import IO, Any
 
 import quart.formparser as formparser
+import quart.wrappers.base as base
 import quart.wrappers.request as request
 import werkzeug.exceptions as exceptions
 
@@ -36,6 +38,7 @@ SPOOL_MAX_SIZE = 1048576
 class Body(request.Body):
     def __init__(self, expected_content_length: int | None, max_content_length: int | None) -> None:
         super().__init__(expected_content_length, max_content_length)
+        self._has_data = asyncio.Event()
         self._spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE, dir=spool_dir())
         self._closed = False
         self._read_offset = 0
@@ -43,25 +46,14 @@ class Body(request.Body):
         self._write_offset = 0
 
     async def __anext__(self) -> bytes:
-        if self._must_raise is not None:
-            raise self._must_raise
-        if not self._complete.is_set():
-            await self._has_data.wait()
-        if self._must_raise is not None:
-            raise self._must_raise
-        unread = self._write_offset - self._read_offset
-        if self._complete.is_set() and (unread == 0):
-            if not self._closed:
-                self._spool.truncate(0)
-            raise StopAsyncIteration()
-        self._spool.seek(self._read_offset)
-        data = self._spool.read(min(unread, READ_CHUNK_SIZE))
-        self._read_offset += len(data)
-        if self._read_offset == self._write_offset:
-            self._has_data.clear()
-        return data
+        data = await self.get()
+        if data:
+            return data
+        if not self._closed:
+            self._spool.truncate(0)
+        raise StopAsyncIteration()
 
-    def __await__(self) -> Generator[Any, None, Any]:
+    def __await__(self) -> abc.Generator[Any, None, Any]:
         if self._must_raise is not None:
             raise self._must_raise
         yield from self._complete.wait().__await__()
@@ -71,7 +63,7 @@ class Body(request.Body):
         return self._spool.read()
 
     def append(self, data: bytes) -> None:
-        if (data == b"") or self._closed or (self._must_raise is not None):
+        if (data == b"") or self._closed or self._complete.is_set() or (self._must_raise is not None):
             return
         self._received += len(data)
         if (self._max_content_length is not None) and (self._received > self._max_content_length):
@@ -104,10 +96,42 @@ class Body(request.Body):
         self._write_offset = 0
         self._spool.seek(0)
         self._spool.truncate()
+        self._has_data.clear()
 
     def close(self) -> None:
         self._closed = True
         self._spool.close()
+
+    def disconnect(self) -> None:
+        if self._complete.is_set():
+            return
+        self._must_raise = self._must_raise or base.ClientDisconnectedError()
+        self.set_complete()
+
+    async def get(self) -> bytes:
+        if self._must_raise is not None:
+            raise self._must_raise
+        if not self._complete.is_set():
+            await self._has_data.wait()
+        if self._must_raise is not None:
+            raise self._must_raise
+        self._spool.seek(self._read_offset)
+        data = self._spool.read(READ_CHUNK_SIZE)
+        self._read_offset += len(data)
+        if self._read_offset == self._write_offset:
+            self._has_data.clear()
+        return data
+
+    async def put(self, data: bytes) -> None:
+        self.append(data)
+
+    def set_complete(self) -> None:
+        self._complete.set()
+        self._has_data.set()
+
+    def set_result(self, data: bytes) -> None:
+        self.append(data)
+        self.set_complete()
 
 
 class Request(request.Request):
