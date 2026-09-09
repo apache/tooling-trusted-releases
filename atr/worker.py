@@ -44,6 +44,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
+import atr.tasks.heatmap as heatmap
 import atr.tasks.task as task
 import atr.util as util
 
@@ -276,11 +277,18 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
     async with db.session() as data:
         async with data.begin():
             # Get the ID of the oldest queued task
+            heatmap_active = (
+                sqlmodel.select(sql.Task.id)
+                .where(sql.Task.task_type == sql.TaskType.SBOM_HEATMAP, sql.Task.status == task.ACTIVE)
+                .correlate(None)
+                .exists()
+            )
             oldest_queued_task = (
                 sqlmodel.select(sql.Task.id)
                 .where(
                     sqlmodel.and_(
                         sql.Task.status == task.QUEUED,
+                        sqlmodel.or_(sql.Task.task_type != sql.TaskType.SBOM_HEATMAP, ~heatmap_active),
                         sqlmodel.or_(
                             via(sql.Task.scheduled).is_(None),
                             via(sql.Task.scheduled) <= datetime.datetime.now(datetime.UTC),
@@ -428,6 +436,8 @@ async def _task_result_process(
             task_type, task_args, asf_uid, added, started = row
             with contextlib.suppress(ValueError):
                 task_type = sql.TaskType(task_type)
+            if task_type == sql.TaskType.SBOM_HEATMAP:
+                await heatmap.complete(data, task_id, task_args)
             if task_type in task.RECURRING_TASK_TYPES:
                 # A successful recurring run leaves only a log line behind
                 task_obj = sql.Task(

@@ -51,6 +51,7 @@ import atr.tasks.checks.targz as targz
 import atr.tasks.checks.zipformat as zipformat
 import atr.tasks.distribution as distribution
 import atr.tasks.gha as gha
+import atr.tasks.heatmap as heatmap
 import atr.tasks.keys as keys
 import atr.tasks.maintenance as maintenance
 import atr.tasks.message as message
@@ -432,6 +433,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return sbom.generate
         case sql.TaskType.SBOM_GENERATE_CYCLONEDX:
             return sbom.generate_cyclonedx
+        case sql.TaskType.SBOM_HEATMAP:
+            return heatmap.analyse
         case sql.TaskType.SBOM_OSV_SCAN:
             return sbom.osv_scan
         case sql.TaskType.SBOM_QS_SCORE:

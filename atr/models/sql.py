@@ -285,6 +285,7 @@ class TaskType(enum.StrEnum):
     SBOM_CONVERT = "sbom_convert"
     SBOM_GENERATE = "sbom_generate"
     SBOM_GENERATE_CYCLONEDX = "sbom_generate_cyclonedx"
+    SBOM_HEATMAP = "sbom_heatmap"
     SBOM_OSV_SCAN = "sbom_osv_scan"
     SBOM_QS_SCORE = "sbom_qs_score"
     SBOM_TOOL_SCORE = "sbom_tool_score"
@@ -349,6 +350,8 @@ class TaskType(enum.StrEnum):
                 return "SBOM generation and augmentation"
             case TaskType.SBOM_GENERATE_CYCLONEDX:
                 return "SBOM generation"
+            case TaskType.SBOM_HEATMAP:
+                return "SBOM heatmap analysis"
             case TaskType.SBOM_OSV_SCAN:
                 return "SBOM vulnerability scan"
             case TaskType.SBOM_QS_SCORE:
