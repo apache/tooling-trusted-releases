@@ -10,6 +10,17 @@
 
   {% include "_unreviewed.html" %}
 
+  {% if heatmap %}
+    {% set heatmap_artifacts = heatmap.sboms | map(attribute="artifact_path") | list %}
+    <p>
+      <a href="heatmap.html">Dependency heatmap</a>:
+      {{ heatmap.rows | length }} package versions,
+      {{ heatmap.rows | selectattr("advisories") | list | length }} with reported advisories,
+      {{ heatmap.rows | rejectattr("health", "none") | list | length }} with maintenance health.
+      Analysed {{ heatmap.generated_at[:16] | replace("T", " ") }} UTC.
+    </p>
+  {% endif %}
+
   {% set status_classes = {"released": "text-bg-success", "archived": "text-bg-secondary"} %}
   <div class="card mb-3 shadow-sm atr-catalog-version" data-status="{{ release_version.status }}">
     <div class="card-body">
@@ -43,6 +54,9 @@
                 {% if artifact.sbom_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.sbom_url }}">SBOM</a>{% endif %}
               {% else %}
                 <span class="text-secondary">Metadata only</span>
+              {% endif %}
+              {% if heatmap and artifact.artifact_path in heatmap_artifacts %}
+                <a class="btn btn-sm btn-outline-secondary ms-2" href="heatmap.html#sbom={{ artifact.artifact_path | urlencode }}">Heatmap</a>
               {% endif %}
             </span>
           </div>

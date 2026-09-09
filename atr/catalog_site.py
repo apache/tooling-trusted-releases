@@ -51,6 +51,7 @@ import atr.log as log
 import atr.metadata as metadata
 import atr.models.api as api
 import atr.models.args as args
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -84,6 +85,7 @@ _ASSETS: Final[tuple[str, ...]] = (
     "css/normalize.css",
     "css/atr.css",
     "css/bootstrap.custom.css",
+    "css/heatmap.css",
     "webfonts/inter-v.woff2",
     "webfonts/inter-vi.woff2",
     "webfonts/jost-v.woff2",
@@ -93,6 +95,9 @@ _ASSETS: Final[tuple[str, ...]] = (
     "svg/ASF_short-horizontal-color.svg",
     # The front page reuses the app's card filter, so the same script comes along
     "js/src/card-grid.js",
+    "js/src/heatmap-table.js",
+    "js/src/heatmap-columns.js",
+    "licenses/LICENSE-Alpha-Omega-Heatmap.txt",
     # Bootstrap drives the navbar's collapse and the ASF dropdown, same as the app
     "js/min/bootstrap.bundle.min.js",
 )
@@ -382,6 +387,16 @@ async def _guarded_write(description: str, work: Awaitable[None]) -> None:
 
 def _has_live_project(committee: sql.Committee) -> bool:
     return any(project.status in _LIVE_PROJECT_STATUSES for project in committee.projects)
+
+
+def _heatmap_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return None
+    return url if (parsed.scheme in {"http", "https"}) and parsed.netloc else None
 
 
 def _htaccess_cond(qualifier: str, value: str) -> str:
@@ -739,12 +754,24 @@ async def _write_release(
     version: api.CatalogVersion,
     root: str,
     cle_document: dict[str, Any] | None,
+    heatmap: results.SBOMHeatmap | None = None,
 ) -> None:
     release_dir = project_dir / str(version.version)
     if cle_document is not None:
         await _write(release_dir / "cle.json", json.dumps(cle_document, indent=2, default=str))
         # The document is a sibling of artifacts.json, so the link is relative like the page's
         version = version.model_copy(update={"cle_url": "cle.json"})
+    if heatmap is not None:
+        html = _ENVIRONMENT.get_template("heatmap.html").render(
+            committee=committee,
+            project=project,
+            release_version=version,
+            root=root,
+            heatmap=heatmap,
+            web_url=_heatmap_url,
+        )
+        await _write(release_dir / "heatmap.json", heatmap.model_dump_json(indent=2))
+        await _write(release_dir / "heatmap.html", html)
     await _write(
         release_dir / "index.html",
         _ENVIRONMENT.get_template("release.html").render(
@@ -752,10 +779,14 @@ async def _write_release(
             project=project,
             release_version=version,
             root=root,
+            heatmap=heatmap,
         ),
     )
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
     await _write_htaccess(release_dir, version, committee.key, project.key)
+    if heatmap is None:
+        for name in ("heatmap.html", "heatmap.json"):
+            await asyncio.to_thread((release_dir / name).path.unlink, missing_ok=True)
 
 
 async def _write_root_index(
