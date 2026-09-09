@@ -702,7 +702,7 @@ class KeyAttestable(sqlmodel.SQLModel, table=True):
 
 # KeyLink:
 class KeyLink(sqlmodel.SQLModel, table=True):
-    committee_key: str = sqlmodel.Field(foreign_key="committee.key", primary_key=True)
+    committee_key: str = sqlmodel.Field(foreign_key="committee.key", primary_key=True, ondelete="CASCADE")
     # Authorisation is granted to the certificate as a whole, never to an individual signing key
     key_fingerprint: str = sqlmodel.Field(foreign_key="signingcertificate.fingerprint", primary_key=True)
     # Set when a REFLECT-mode sync found this certificate gone from the committee's SVN KEYS file
