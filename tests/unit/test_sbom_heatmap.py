@@ -184,15 +184,22 @@ async def test_analyse_keeps_versions_membership_and_unknown_packages(monkeypatc
     assert results.ResultsAdapter.validate_json(result.model_dump_json()) == result
 
 
+@pytest.mark.parametrize("metadata", [None, {}, {"unused": "present"}])
 async def test_analyse_labels_gitbox_inference_and_deduplicates_repository_calls(
     monkeypatch: pytest.MonkeyPatch,
+    metadata,
 ) -> None:
     source = document({"purl": _KEY + "@1"}, {"purl": "pkg:maven/org.example/other@2"})
     monkeypatch.setattr(heatmap.utilities, "fetch", mock.AsyncMock(return_value=source))
     mirror_url = "https://gitbox.apache.org/repos/asf/example.git"
     packages = [
-        package(repository_url=mirror_url, repo_metadata=None, issue_metadata=None),
-        package(purl="pkg:maven/org.example/other", repository_url=mirror_url, repo_metadata=None, issue_metadata=None),
+        package(repository_url=mirror_url, repo_metadata=metadata, issue_metadata=metadata),
+        package(
+            purl="pkg:maven/org.example/other",
+            repository_url=mirror_url,
+            repo_metadata=metadata,
+            issue_metadata=metadata,
+        ),
     ]
     fake = session(
         monkeypatch,
@@ -232,9 +239,9 @@ async def test_analyse_labels_gitbox_inference_and_deduplicates_repository_calls
         assert entry.source_repo == _PROJECT
         assert entry.repository_source == ("deps.dev" if (entry.key == _KEY) else "gitbox_mirror")
         assert entry.repository_url == mirror_url
-        assert entry.active_maintainers == 0
-        assert entry.health_inputs == 4
-        assert entry.health is not None
+        assert entry.active_maintainers == (None if metadata else 0)
+        assert entry.health_inputs == (1 if metadata else 4)
+        assert (entry.health is None) == bool(metadata)
         assert entry.maintained == 10
         assert entry.scorecard_date == "2026-08-24"
 
@@ -305,11 +312,33 @@ def test_missing_governance_is_not_zero_and_issue_tracker_is_not_source() -> Non
     data = {"relatedProjects": [{"relationType": "ISSUE_TRACKER", "projectKey": {"id": _PROJECT}}]}
     heatmap._observations(entry, {}, {entry.purl: data}, {})
     assert entry.source_repo is None
-    heatmap._repository_observations(entry, {"metadata": {"files": {}}}, {})
+    heatmap._repository_observations(entry, heatmap._repository({"metadata": {"files": {}}}), {})
     assert entry.governance_files is None
-    heatmap._repository_observations(entry, repository(), {"active_maintainers": []})
+    heatmap._repository_observations(
+        entry, heatmap._repository(repository()), heatmap._issues({"active_maintainers": []})
+    )
     assert entry.governance_files == 1
     assert entry.active_maintainers == 0
+
+
+async def test_package_metadata_retains_only_scoring_values(monkeypatch) -> None:
+    records = [
+        package(
+            rankings={"average": 12, "unused": ["bulk"] * 1000},
+            repo_metadata=repository(unused=["bulk"] * 1000),
+            issue_metadata={"active_maintainers": [{"unused": ["bulk"] * 1000}], "unused": ["bulk"] * 1000},
+        )
+    ]
+    fake = session(monkeypatch, packages=records)
+    compact = await heatmap._packages(fake, [_KEY])
+    assert compact[_KEY] == {
+        "latest_release_published_at": "2026-08-01T00:00:00Z",
+        "rankings_average": 12,
+        "repository_url": f"https://{_PROJECT}",
+        "repo_metadata": {"archived": False, "dds": 0.5, "governance_files": 1},
+        "issue_metadata": {"active_maintainers": 1},
+    }
+    assert records[0]["issue_metadata"]["active_maintainers"][0]["unused"] == ["bulk"] * 1000
 
 
 @pytest.mark.parametrize(

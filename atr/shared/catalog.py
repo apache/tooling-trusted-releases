@@ -154,6 +154,10 @@ def cycle_groups(
     ]
 
 
+def sbom_urls(version: models.api.CatalogVersion) -> dict[str, str]:
+    return {artifact.artifact_path: artifact.sbom_url for artifact in version.artifacts if artifact.sbom_url}
+
+
 def version_order(
     version_method: sql.VersionMethod, items: Iterable[tuple[str, datetime.datetime | None, int | None]]
 ) -> list[str]:

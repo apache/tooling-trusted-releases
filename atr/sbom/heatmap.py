@@ -148,6 +148,13 @@ def _health(row: results.SBOMHeatmapRow, now: datetime.datetime) -> tuple[float 
     return (sum(observed) / 4 if (len(observed) == 4) else None), len(observed)
 
 
+def _issues(data: Any) -> dict[str, Any]:
+    if (not isinstance(data, dict)) or (not data):
+        return {}
+    maintainers = data.get("active_maintainers")
+    return {"active_maintainers": len(maintainers) if isinstance(maintainers, list) else None}
+
+
 async def _mirrors(
     session: aiohttp.ClientSession, packages: dict[str, dict[str, Any]]
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any]]]:
@@ -155,12 +162,11 @@ async def _mirrors(
     mirrors = {}
     for project_id in sorted(project_id for project_id in ids if project_id):
         name = urllib.parse.quote(project_id.removeprefix("github.com/"), safe="")
-        repository = await _request(session, f"https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}")
-        issues = await _request(session, f"https://issues.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}")
-        mirrors[project_id] = (
-            repository if isinstance(repository, dict) else {},
-            issues if isinstance(issues, dict) else {},
+        repository = _repository(
+            await _request(session, f"https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}")
         )
+        issues = _issues(await _request(session, f"https://issues.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}"))
+        mirrors[project_id] = (repository, issues)
     return mirrors
 
 
@@ -178,7 +184,7 @@ def _observations(
 ) -> None:
     version = _advisories(row, versions)
     row.latest_release_at = package.get("latest_release_published_at")
-    row.rankings_average = _number((package.get("rankings") or {}).get("average"))
+    row.rankings_average = package.get("rankings_average")
     row.repository_url = package.get("repository_url")
     repository = package.get("repo_metadata") or {}
     issues = package.get("issue_metadata") or {}
@@ -219,15 +225,14 @@ async def _packages(session: aiohttp.ClientSession, keys: list[str]) -> dict[str
             if purl is not None:
                 key = str(packageurl.PackageURL(purl.type, purl.namespace, purl.name))
                 packages[key] = {
-                    field: package.get(field)
-                    for field in (
-                        "latest_release_published_at",
-                        "rankings",
-                        "repository_url",
-                        "repo_metadata",
-                        "issue_metadata",
-                    )
+                    "latest_release_published_at": package.get("latest_release_published_at"),
+                    "rankings_average": _number((package.get("rankings") or {}).get("average")),
+                    "repository_url": package.get("repository_url"),
+                    "repo_metadata": _repository(package.get("repo_metadata")),
+                    "issue_metadata": _issues(package.get("issue_metadata")),
                 }
+            del package
+        del records
     return packages
 
 
@@ -261,6 +266,22 @@ def _purl(text: Any) -> packageurl.PackageURL | None:
         return None
 
 
+def _repository(data: Any) -> dict[str, Any]:
+    if (not isinstance(data, dict)) or (not data):
+        return {}
+    archived = data.get("archived")
+    files = (data.get("metadata") or {}).get("files")
+    names = ("security", "code_of_conduct", "contributing")
+    governance = None
+    if isinstance(files, dict) and all(name in files for name in names):
+        governance = sum(bool(files[name]) for name in names)
+    return {
+        "archived": archived if isinstance(archived, bool) else None,
+        "dds": _number((data.get("commit_stats") or {}).get("dds")),
+        "governance_files": governance,
+    }
+
+
 def _repository_id(url: str) -> str | None:
     parsed = urllib.parse.urlsplit(url)
     if (parsed.scheme not in {"http", "https"}) or (
@@ -274,15 +295,10 @@ def _repository_id(url: str) -> str | None:
 
 
 def _repository_observations(row: results.SBOMHeatmapRow, repository: dict[str, Any], issues: dict[str, Any]) -> None:
-    archived = repository.get("archived")
-    row.archived = archived if isinstance(archived, bool) else None
-    row.dds = _number((repository.get("commit_stats") or {}).get("dds"))
-    maintainers = issues.get("active_maintainers")
-    row.active_maintainers = len(maintainers) if isinstance(maintainers, list) else None
-    files = (repository.get("metadata") or {}).get("files")
-    names = ("security", "code_of_conduct", "contributing")
-    if isinstance(files, dict) and all(name in files for name in names):
-        row.governance_files = sum(bool(files[name]) for name in names)
+    row.archived = repository.get("archived")
+    row.dds = repository.get("dds")
+    row.active_maintainers = issues.get("active_maintainers")
+    row.governance_files = repository.get("governance_files")
 
 
 async def _request(session: aiohttp.ClientSession, url: str, body: dict[str, Any] | None = None) -> Any:

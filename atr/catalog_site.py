@@ -35,6 +35,7 @@ import pathlib
 import re
 import shutil
 import urllib.parse
+import uuid
 from collections.abc import Awaitable, Container, Iterable, Iterator, Sequence
 from typing import Any, Final
 
@@ -55,6 +56,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.sbom.heatmap as heatmap
 import atr.shared.catalog as catalog
 import atr.util as util
 
@@ -233,14 +235,25 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
         log.warning(f"Catalog site: committee {project.committee_key} not found, skipping regeneration")
         return
     site_dir = paths.get_catalog_site_dir()
+    await _write_assets(site_dir)
     await _write_committee_index(data, committee, site_dir)
     # A project sharing its committee's key is the committee page, so it's written already
     if project.key != committee.key:
         await _write_project(data, committee, project, site_dir)
     # A first release, or a last one archived, moves a committee on or off the front page
     # and between the Incubator's two columns, so the indexes are rebuilt every time too.
-    # The assets are not: they only change with a deploy, so the full rebuild owns them.
     await _write_index_pages(data, site_dir, committees)
+
+
+def _applicable_heatmap(
+    snapshot: results.SBOMHeatmap | None, version: api.CatalogVersion
+) -> results.SBOMHeatmap | None:
+    if (snapshot is None) or (snapshot.analysis_version != heatmap.ANALYSIS_VERSION):
+        return None
+    sboms = catalog.sbom_urls(version)
+    if sboms and (sboms == {sbom.artifact_path: sbom.sbom_url for sbom in snapshot.sboms}):
+        return snapshot
+    return None
 
 
 def _artifact_classifier_combos(
@@ -399,6 +412,22 @@ def _heatmap_url(url: str | None) -> str | None:
     return url if (parsed.scheme in {"http", "https"}) and parsed.netloc else None
 
 
+async def _heatmaps(
+    data: db.Session, project_key: str, releases: Sequence[sql.Release]
+) -> dict[str, results.SBOMHeatmap]:
+    published = {release.version for release in releases if release.phase == sql.ReleasePhase.RELEASE}
+    completed = (
+        await data.task(task_type=sql.TaskType.SBOM_HEATMAP, status=sql.TaskStatus.COMPLETED, project_key=project_key)
+        .order_by(sql.Task.completed, sql.Task.id)
+        .all()
+    )
+    return {
+        task.version_key: task.result
+        for task in completed
+        if (task.version_key in published) and isinstance(task.result, results.SBOMHeatmap)
+    }
+
+
 def _htaccess_cond(qualifier: str, value: str) -> str:
     """A RewriteCond matching `<qualifier>=<value>` anywhere in the query string."""
     # Match the raw (percent-encoded) query string, regex-escaped so its metacharacters
@@ -519,7 +548,12 @@ async def _write_assets(site_dir: safe.StatePath) -> None:
     for rel in _ASSETS:
         destination = assets_root / rel
         await aiofiles.os.makedirs(destination.parent, exist_ok=True)
-        await asyncio.to_thread(shutil.copyfile, _STATIC_DIR / rel, destination)
+        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4()}.tmp")
+        try:
+            await asyncio.to_thread(shutil.copyfile, _STATIC_DIR / rel, temporary)
+            await aiofiles.os.replace(temporary, destination)
+        finally:
+            await asyncio.to_thread(temporary.unlink, missing_ok=True)
 
 
 async def _write_attic_index(
@@ -735,9 +769,11 @@ async def _write_project(
             root=root,
         ),
     )
+    heatmaps = await _heatmaps(data, project.key, releases)
     for version in assembled.versions:
         document = release_documents.get(str(version.version))
-        await _write_release(project_dir, committee, project, version, f"{root}../", document)
+        snapshot = _applicable_heatmap(heatmaps.get(str(version.version)), version)
+        await _write_release(project_dir, committee, project, version, f"{root}../", document, snapshot)
     await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
 
 

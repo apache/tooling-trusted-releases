@@ -182,6 +182,11 @@ class ReleaseFinalise(schema.Strict):
     audit_until: str = schema.description("Inclusive audit log datetime boundary for the release log")
 
 
+class SBOMHeatmap(schema.Strict):
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
+
+
 class Send(schema.Strict):
     """Arguments for the task to send an email."""
 
