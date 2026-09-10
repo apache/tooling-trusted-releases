@@ -18,8 +18,8 @@
 import collections
 import dataclasses
 import datetime
-from collections.abc import Sequence
-from typing import Literal
+from collections.abc import Mapping, Sequence
+from typing import Final, Literal
 
 import asfquart.base as base
 
@@ -85,10 +85,11 @@ async def releases(_session: web.Committer, _releases: Literal["releases"]) -> s
     async with db.session() as data:
         latest = await interaction.project_latest_finished(data)
         projects = await data.project(_committee=True).all()
+        attic = await data.committee(key=_ATTIC_COMMITTEE_KEY).get()
 
     return await template.render(
         "releases.html",
-        catalog=_committee_release_catalog(projects, latest),
+        catalog=_committee_release_catalog(projects, latest, attic),
     )
 
 
@@ -113,6 +114,11 @@ async def select(
     )
 
 
+# Retired PMCs (which keep their own committee key) and the Attic's own projects fold into a single
+# Attic card on the releases list, matching how the catalogue collapses them under the Attic
+_ATTIC_COMMITTEE_KEY: Final = "attic"
+
+
 @dataclasses.dataclass
 class _ProjectReleaseEntry:
     project: sql.Project
@@ -128,7 +134,9 @@ class _CommitteeReleaseEntry:
 
 
 def _committee_release_catalog(
-    projects: Sequence[sql.Project], latest: dict[str, tuple[int, str, datetime.datetime | None]]
+    projects: Sequence[sql.Project],
+    latest: Mapping[str, tuple[int, str, datetime.datetime | None]],
+    attic: sql.Committee | None,
 ) -> list[_CommitteeReleaseEntry]:
     committees: dict[str, sql.Committee] = {}
     by_committee: dict[str, list[_ProjectReleaseEntry]] = collections.defaultdict(list)
@@ -140,9 +148,14 @@ def _committee_release_catalog(
         if committee is None:
             # Nothing to group it under here, so skip it. Shouldn't happen in practice.
             continue
+        # A retired PMC (kept its own key) or an Attic-homed project lands on the Attic card
+        if (attic is not None) and (committee.is_archived or (committee.key == _ATTIC_COMMITTEE_KEY)):
+            key, card = _ATTIC_COMMITTEE_KEY, attic
+        else:
+            key, card = committee.key, committee
         finished_count, latest_version, latest_date = finished
-        committees[committee.key] = committee
-        by_committee[committee.key].append(
+        committees[key] = card
+        by_committee[key].append(
             _ProjectReleaseEntry(
                 project=project,
                 finished_count=finished_count,
@@ -156,7 +169,8 @@ def _committee_release_catalog(
     catalog = [
         _CommitteeReleaseEntry(committee=committees[key], projects=entries) for key, entries in by_committee.items()
     ]
-    catalog.sort(key=lambda entry: entry.committee.display_name.lower())
+    # Live committees alphabetically, with the Attic card last
+    catalog.sort(key=lambda entry: (entry.committee.key == _ATTIC_COMMITTEE_KEY, entry.committee.display_name.lower()))
     return catalog
 
 
