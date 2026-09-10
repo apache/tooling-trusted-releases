@@ -193,11 +193,13 @@ async def generate_all(data: db.Session) -> None:
     # The indexes link a single-project committee straight to that project, so they
     # need its projects alongside it.
     committees = await data.committee(_projects=True).all()
+    # The summary feeds don't depend on the page tree, so they're written first. The page
+    # walk below can take long enough that a worker is recycled out from under it before it
+    # finishes; writing the feeds up front means they land regardless of whether the walk
+    # runs to completion.
+    await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir))
     written = await _write_committee_pages(data, committees, site_dir)
     await _write_index_pages(data, site_dir, written)
-    # The summary feed covers every project, so it's built from the full committee list
-    # rather than only the ones whose pages rendered this pass.
-    await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir))
     # Every committee and every project holds a directory here. Keyed off all of them
     # rather than the ones written, so a page that failed to render keeps what it had
     keep = {committee.key for committee in committees}
