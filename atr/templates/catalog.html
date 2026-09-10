@@ -21,6 +21,16 @@
     </div>
   {% endif %}
 
+  {% if not grouped %}
+    <div class="mb-3" id="catalog-filter">
+      {% for value in ("all", "released", "archived") %}
+        <a class="btn btn-sm {% if status == value %}btn-primary active{% else %}btn-outline-secondary{% endif %}"
+           href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=0, status=value) }}"
+           {% if status == value %}aria-current="true"{% endif %}>{{ value | capitalize }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {% if versions %}
     <p>Showing artifacts {{ page.start }} to {{ page.end }} of {{ count }}.</p>
   {% endif %}
@@ -29,6 +39,10 @@
     {% if count %}
       <div class="alert alert-info mt-3" role="alert">
         <i class="bi bi-info-circle me-2"></i> No artifacts to show on this page ({{ count }} total).
+      </div>
+    {% elif status != "all" %}
+      <div class="alert alert-info mt-3" role="alert">
+        <i class="bi bi-info-circle me-2"></i> No {{ status }} artifacts for {{ project.display_name }}.
       </div>
     {% else %}
       <div class="alert alert-info mt-3" role="alert">
@@ -50,12 +64,6 @@
       </div>
     {% endfor %}
   {% else %}
-    <div class="mb-3" id="catalog-filter">
-      <span class="text-muted small me-2">This page:</span>
-      <button type="button" class="btn btn-sm btn-primary active" data-status-filter="all">All</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-status-filter="released">Released</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-status-filter="archived">Archived</button>
-    </div>
     {% for version in versions %}
       {% include "_catalog_version.html" %}
     {% endfor %}
@@ -67,7 +75,7 @@
         {% if page.previous_offset is not none %}
           <li class="page-item">
             <a class="page-link"
-               href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=page.previous_offset) }}">Previous</a>
+               href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=page.previous_offset, status=status) }}">Previous</a>
           </li>
         {% else %}
           <li class="page-item disabled"><span class="page-link">Previous</span></li>
@@ -75,7 +83,7 @@
         {% if page.next_offset is not none %}
           <li class="page-item">
             <a class="page-link"
-               href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=page.next_offset) }}">Next</a>
+               href="{{ as_url(get.catalog.project, project_key=project.key, limit=limit, offset=page.next_offset, status=status) }}">Next</a>
           </li>
         {% else %}
           <li class="page-item disabled"><span class="page-link">Next</span></li>
@@ -84,10 +92,3 @@
     </nav>
   {% endif %}
 {% endblock content %}
-
-{% block javascripts %}
-  {{ super() }}
-  {% if not grouped %}
-    <script src="{{ static_url('js/src/catalog.js') }}"></script>
-  {% endif %}
-{% endblock javascripts %}
