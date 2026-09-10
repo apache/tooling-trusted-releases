@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import unittest.mock as mock
+
 import pytest
 
 import atr.models.safe as safe
@@ -56,7 +58,19 @@ def test_is_bundled_doc_excludes_artifacts_metadata_and_top_level():
     assert paths._is_bundled_doc(safe.RelPath("binaries/de/app-1.0.tar.gz")) is False
     assert paths._is_bundled_doc(safe.RelPath("binaries/de/app-1.0.tar.gz.asc")) is False
     assert paths._is_bundled_doc(safe.RelPath("sub/sbom.cdx.json")) is False
+    assert paths._is_bundled_doc(safe.RelPath("sub/sbom.json")) is False
     assert paths._is_bundled_doc(safe.RelPath("index.html")) is False
+
+
+@pytest.mark.parametrize("name", ["sbom.json", "sbom.json.asc", "sbom.json.sha512", "camel-k-2.11.0-sbom.json"])
+async def test_sbom_paths_accept_source_companions(monkeypatch, tmp_path, name: str) -> None:
+    recorder = _recorder(tmp_path)
+    monkeypatch.setattr(paths.user, "is_admin_async", mock.AsyncMock(return_value=False))
+    relative_paths = {"camel-k-sources-2.11.0.tar.gz", "sbom.json", name}
+    await paths._check_path_process_single(
+        "test", safe.StatePath(tmp_path), safe.RelPath(name), recorder, recorder, recorder, relative_paths, False
+    )
+    assert [status for status, _, _ in recorder.messages] == ["note"]
 
 
 def _recorder(tmp_path) -> RecorderStub:

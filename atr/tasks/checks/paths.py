@@ -43,7 +43,7 @@ _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "9"
+CHECK_VERSION: Final[str] = "10"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -355,6 +355,9 @@ async def _check_path_process_single(  # noqa: C901
                 ext_metadata = suffix
                 is_standalone_metadata = True
                 break
+    if (not ext_metadata) and analysis.is_cyclonedx(path.name):
+        ext_metadata = path.suffix
+        is_standalone_metadata = True
     if (not ext_artifact) and (not ext_metadata) and analysis.is_sbom_metadata(path.name):
         ext_metadata = path.suffix
 
@@ -459,7 +462,7 @@ def _is_bundled_doc(relative_path: safe.RelPath) -> bool:
     search = re.search(analysis.extension_pattern(), path_str)
     if search and (search.group("artifact") or search.group("metadata")):
         return False
-    return not any(path_str.endswith(suffix) for suffix in analysis.STANDALONE_METADATA_SUFFIXES)
+    return not analysis.is_cyclonedx(path_str)
 
 
 async def _record(
