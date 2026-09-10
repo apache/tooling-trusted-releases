@@ -427,7 +427,7 @@ async def test_sweep_removes_obsolete_publication_without_reanalysis(database, t
         assert await data.task(task_type=sql.TaskType.CATALOG_SITE_GENERATE).get() is None
 
 
-@pytest.mark.parametrize("filename", ["heatmap.json", "heatmap.html", "index.html"])
+@pytest.mark.parametrize("filename", ["heatmap.json", "heatmap.html", "heatmap-3d.html", "index.html"])
 @pytest.mark.parametrize("damage", ["missing", "stale"])
 async def test_sweep_repairs_publication_without_reanalysis(database, tmp_path, filename, damage) -> None:
     async with database() as data:

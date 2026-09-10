@@ -25,13 +25,14 @@
  * scores, version advisories, explicit unknowns, safe links and complete results.
  */
 
-import { COLS, esc } from "./heatmap-columns.js";
+import { COLS } from "./heatmap-columns.js";
+import {
+	bucketFor,
+	HEALTH_BUCKETS,
+	makePill,
+	updateCounts,
+} from "./heatmap-filters.js";
 
-const HEALTH_BUCKETS = [
-	{ key: "good", label: "Good", hue: 120, test: (h) => h >= 0.67 },
-	{ key: "mid", label: "Mid", hue: 60, test: (h) => h >= 0.34 },
-	{ key: "bad", label: "Bad", hue: 0, test: (h) => h < 0.34 },
-];
 const activeHealth = new Set(["good", "mid", "bad", "unknown"]);
 const activeEcosystems = new Set();
 
@@ -42,6 +43,7 @@ let sortKey = "";
 let sortDir = -1;
 
 function applyArtifact() {
+	document.getElementById("heatmap-view").hash = window.location.hash;
 	const requested =
 		new URLSearchParams(window.location.hash.slice(1)).get("sbom") || "";
 	const artifact = document.getElementById("artifact");
@@ -52,12 +54,6 @@ function applyArtifact() {
 	artifact.value = sbomFilter;
 	document.getElementById("notice").hidden = valid;
 	render();
-}
-
-function bucketFor(h) {
-	if (h === null) return "unknown";
-	const bucket = HEALTH_BUCKETS.find((b) => b.test(h));
-	return bucket ? bucket.key : "mid";
 }
 
 function buildHeader() {
@@ -94,6 +90,7 @@ function compare(a, b) {
 }
 
 async function initialise() {
+	document.getElementById("heatmap-view").hash = window.location.hash;
 	const response = await fetch("heatmap.json");
 	if (!response.ok) throw new Error(`HTTP ${response.status}`);
 	const data = await response.json();
@@ -116,10 +113,10 @@ async function initialise() {
 	const healths = document.getElementById("healths");
 	const ecosystemPills = document.getElementById("ecosystems");
 	for (const b of HEALTH_BUCKETS)
-		makePill(healths, b.label, b.hue, activeHealth, b.key);
-	makePill(healths, "Unknown", undefined, activeHealth, "unknown");
+		makePill(healths, b.label, b.hue, activeHealth, b.key, render);
+	makePill(healths, "Unknown", undefined, activeHealth, "unknown", render);
 	for (const e of ecosystems)
-		makePill(ecosystemPills, e, undefined, activeEcosystems, e);
+		makePill(ecosystemPills, e, undefined, activeEcosystems, e, render);
 	buildHeader();
 	document.getElementById("filters").addEventListener("submit", (event) => {
 		event.preventDefault();
@@ -134,32 +131,6 @@ async function initialise() {
 	window.addEventListener("hashchange", applyArtifact);
 	applyArtifact();
 	document.getElementById("filters").hidden = false;
-}
-
-function makePill(parent, label, dotHue, set, key) {
-	const btn = document.createElement("button");
-	btn.type = "button";
-	btn.className = "pill btn btn-sm btn-outline-secondary rounded-pill active";
-	btn.dataset.key = key;
-	btn.setAttribute("aria-pressed", "true");
-	let html = "";
-	if (dotHue !== undefined) html += '<span class="dot"></span>';
-	html += `${esc(label)}<span class="count"></span>`;
-	btn.innerHTML = html;
-	if (dotHue !== undefined)
-		btn.querySelector(".dot").style.backgroundColor = `hsl(${dotHue},75%,48%)`;
-	btn.addEventListener("click", () => {
-		if (set.has(key)) {
-			set.delete(key);
-			btn.classList.remove("active");
-		} else {
-			set.add(key);
-			btn.classList.add("active");
-		}
-		btn.setAttribute("aria-pressed", String(set.has(key)));
-		render();
-	});
-	parent.append(btn);
 }
 
 function render() {
@@ -203,21 +174,6 @@ function render() {
 	rowsEl.append(frag);
 	updateSummary(filtered);
 	updateCounts(selected);
-}
-
-function updateCounts(selected) {
-	const eCount = Object.create(null);
-	const hCount = Object.create(null);
-	selected.forEach((p) => {
-		hCount[bucketFor(p.health)] = (hCount[bucketFor(p.health)] || 0) + 1;
-		eCount[p.ecosystem] = (eCount[p.ecosystem] || 0) + 1;
-	});
-	document.querySelectorAll("#healths button").forEach((btn) => {
-		btn.querySelector(".count").textContent = hCount[btn.dataset.key] || 0;
-	});
-	document.querySelectorAll("#ecosystems button").forEach((btn) => {
-		btn.querySelector(".count").textContent = eCount[btn.dataset.key] || 0;
-	});
 }
 
 function updateSummary(filtered) {

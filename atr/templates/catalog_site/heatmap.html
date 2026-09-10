@@ -18,6 +18,9 @@
 {% block content %}
   <p class="mb-1"><a href="index.html" class="atr-back-link">&larr; {{ project.display_name }} {{ release_version.version }}</a></p>
   <h1>Dependency heatmap</h1>
+  {% block heatmap_view %}
+    <p><strong>Table view</strong> · <a id="heatmap-view" href="heatmap-3d.html">3D view</a></p>
+  {% endblock heatmap_view %}
   <p>Maintenance observations and advisories for the package versions listed in this release's SBOMs.</p>
   {% include "_unreviewed.html" %}
   <p>
@@ -66,26 +69,30 @@
     </div>
   </form>
   <p id="notice" class="text-warning-emphasis" hidden>Artifact not found; showing all artifacts.</p>
-  <p id="count" aria-live="polite">Loading analysis…</p>
-  <noscript><p>JavaScript is required for the Alpha-Omega table. The analysis JSON and input details are available above.</p></noscript>
-  <div class="table-responsive">
-    <table id="grid" class="table table-sm align-middle text-nowrap">
-      <thead><tr id="head"></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-  </div>
-  <div class="small d-block text-secondary mt-3">
-    <p>
+  {% block heatmap_report %}
+    <p id="count" aria-live="polite">Loading analysis…</p>
+    <noscript><p>JavaScript is required for the Alpha-Omega table. The analysis JSON and input details are available above.</p></noscript>
+    <div class="table-responsive">
+      <table id="grid" class="table table-sm align-middle text-nowrap">
+        <thead><tr id="head"></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  {% endblock heatmap_report %}
+  <details id="credits" class="small d-block text-secondary border rounded p-3 mt-3">
+    <summary>Credits and sources</summary>
+    <p class="mt-3">
       Adapted from the <a href="https://github.com/alpha-omega-security/heatmap/tree/4ed37981a6e5049c81d7436d90abe036d2810773">Alpha-Omega heatmap</a>.
       Copyright (c) 2026 Alpha-Omega. <a href="{{ root }}assets/licenses/LICENSE-Alpha-Omega-Heatmap.txt">MIT licence</a>.
     </p>
+    {% block heatmap_credits %}{% endblock heatmap_credits %}
     <p>{{ heatmap.attribution }}</p>
-    <p>
+    <p class="mb-0">
       {% for name, url in heatmap.sources.items() %}
         {% if web_url(url) %}<a href="{{ url }}">{{ name }}</a>{% else %}{{ name }}{% endif %}{% if not loop.last %} · {% endif %}
       {% endfor %}
     </p>
-  </div>
+  </details>
 {% endblock content %}
 
 {% block scripts %}

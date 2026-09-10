@@ -99,6 +99,13 @@ _ASSETS: Final[tuple[str, ...]] = (
     "js/src/card-grid.js",
     "js/src/heatmap-table.js",
     "js/src/heatmap-columns.js",
+    "js/src/heatmap-filters.js",
+    "js/src/heatmap-city.js",
+    "js/src/heatmap-city-layout.js",
+    "js/src/heatmap-city-scene.js",
+    "js/min/three.min.js",
+    "js/min/OrbitControls.js",
+    "licenses/LICENSE-three.js.txt",
     "licenses/LICENSE-Alpha-Omega-Heatmap.txt",
     # Bootstrap drives the navbar's collapse and the ASF dropdown, same as the app
     "js/min/bootstrap.bundle.min.js",
@@ -983,16 +990,20 @@ async def _write_release(
         # The document is a sibling of artifacts.json, so the link is relative like the page's
         version = version.model_copy(update={"cle_url": "cle.json"})
     if heatmap is not None:
-        html = _ENVIRONMENT.get_template("heatmap.html").render(
-            committee=committee,
-            project=project,
-            release_version=version,
-            root=root,
-            heatmap=heatmap,
-            web_url=_heatmap_url,
-        )
         await _write(release_dir / "heatmap.json", heatmap.model_dump_json(indent=2))
-        await _write(release_dir / "heatmap.html", html)
+        for template, filename in (
+            (_ENVIRONMENT.get_template("heatmap.html"), "heatmap.html"),
+            (_ENVIRONMENT.get_template("heatmap_city.html"), "heatmap-3d.html"),
+        ):
+            html = template.render(
+                committee=committee,
+                project=project,
+                release_version=version,
+                root=root,
+                heatmap=heatmap,
+                web_url=_heatmap_url,
+            )
+            await _write(release_dir / filename, html)
     await _write(
         release_dir / "index.html",
         _ENVIRONMENT.get_template("release.html").render(
@@ -1006,7 +1017,7 @@ async def _write_release(
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
     await _write_htaccess(release_dir, version, committee.key, project.key)
     if heatmap is None:
-        for name in ("heatmap.html", "heatmap.json"):
+        for name in ("heatmap.html", "heatmap.json", "heatmap-3d.html"):
             await asyncio.to_thread((release_dir / name).path.unlink, missing_ok=True)
 
 
