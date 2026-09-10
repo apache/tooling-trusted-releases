@@ -184,6 +184,15 @@ class _ReleaseSummary:
     date: datetime.datetime | None
 
 
+def applicable_heatmap(snapshot: results.SBOMHeatmap | None, version: api.CatalogVersion) -> results.SBOMHeatmap | None:
+    if (snapshot is None) or (snapshot.analysis_version != heatmap.ANALYSIS_VERSION):
+        return None
+    sboms = catalog.sbom_urls(version)
+    if sboms and (sboms == {sbom.artifact_path: sbom.sbom_url for sbom in snapshot.sboms}):
+        return snapshot
+    return None
+
+
 async def generate_all(data: db.Session) -> None:
     """Rebuild every page, overwriting in place so the site stays servable throughout."""
     site_dir = paths.get_catalog_site_dir()
@@ -283,17 +292,6 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     # The summary feed reflects the catalogue as a whole, so a change to any one project
     # refreshes it, the same as it refreshes the front page.
     await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir))
-
-
-def _applicable_heatmap(
-    snapshot: results.SBOMHeatmap | None, version: api.CatalogVersion
-) -> results.SBOMHeatmap | None:
-    if (snapshot is None) or (snapshot.analysis_version != heatmap.ANALYSIS_VERSION):
-        return None
-    sboms = catalog.sbom_urls(version)
-    if sboms and (sboms == {sbom.artifact_path: sbom.sbom_url for sbom in snapshot.sboms}):
-        return snapshot
-    return None
 
 
 def _artifact_classifier_combos(
@@ -948,7 +946,7 @@ async def _write_project(
     heatmaps = await _heatmaps(data, project.key, releases)
     for version in assembled.versions:
         document = release_documents.get(str(version.version))
-        snapshot = _applicable_heatmap(heatmaps.get(str(version.version)), version)
+        snapshot = applicable_heatmap(heatmaps.get(str(version.version)), version)
         await _write_release(project_dir, committee, project, version, f"{root}../", document, snapshot)
     await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
 

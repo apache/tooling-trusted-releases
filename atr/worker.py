@@ -50,6 +50,7 @@ import atr.util as util
 
 _CPU_LIMIT_SECONDS: Final = 300
 _DEFER_SECONDS: Final = 120
+_HEATMAP_START_INTERVAL: Final = datetime.timedelta(minutes=5)
 _MEMORY_WATCHDOG_POLL_SECONDS: Final = 0.5
 _SHUTDOWN_GRACE_SECONDS: Final = 15.0
 _TASK_LOG_LOGGER: Final = "atr.tasks.log"
@@ -277,10 +278,17 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
     async with db.session() as data:
         async with data.begin():
             # Get the ID of the oldest queued task
+            now = datetime.datetime.now(datetime.UTC)
             heatmap_active = (
                 sqlmodel.select(sql.Task.id)
                 .where(sql.Task.task_type == sql.TaskType.SBOM_HEATMAP, sql.Task.status == task.ACTIVE)
                 .correlate(None)
+                .exists()
+            )
+            heatmap_cooldown = (
+                sqlmodel.select(sql.TextValue.key)
+                .where(sql.TextValue.ns == "heatmap", sql.TextValue.key == "next_start")
+                .where(via(sql.TextValue.value) > now.isoformat(timespec="microseconds"))
                 .exists()
             )
             oldest_queued_task = (
@@ -288,10 +296,13 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
                 .where(
                     sqlmodel.and_(
                         sql.Task.status == task.QUEUED,
-                        sqlmodel.or_(sql.Task.task_type != sql.TaskType.SBOM_HEATMAP, ~heatmap_active),
+                        sqlmodel.or_(
+                            sql.Task.task_type != sql.TaskType.SBOM_HEATMAP,
+                            sqlmodel.and_(~heatmap_active, ~heatmap_cooldown),
+                        ),
                         sqlmodel.or_(
                             via(sql.Task.scheduled).is_(None),
-                            via(sql.Task.scheduled) <= datetime.datetime.now(datetime.UTC),
+                            via(sql.Task.scheduled) <= now,
                         ),
                     )
                 )
@@ -302,7 +313,6 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
 
             # Use an UPDATE with a WHERE clause to atomically claim the task
             # This ensures that only one worker can claim a specific task
-            now = datetime.datetime.now(datetime.UTC)
             created = psutil.Process().create_time()
             update_stmt = (
                 sqlmodel.update(sql.Task)
@@ -321,6 +331,11 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
 
             if claimed_task:
                 task_id, task_type, task_args, asf_uid = claimed_task
+                if task_type == sql.TaskType.SBOM_HEATMAP:
+                    next_start = datetime.datetime.now(datetime.UTC) + _HEATMAP_START_INTERVAL
+                    await data.ns_text_set(
+                        "heatmap", "next_start", next_start.isoformat(timespec="microseconds"), commit=False
+                    )
                 log.info(f"Claimed task {task_id} ({task_type}) with args {_task_args_for_log(task_type, task_args)}")
                 return task_id, task_type, task_args, asf_uid
 
