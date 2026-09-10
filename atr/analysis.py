@@ -59,9 +59,25 @@ ARTIFACT_SUFFIXES: Final[list[str]] = [
     "zip",
 ]
 
-CYCLONEDX_JSON_SUFFIXES: Final[tuple[str, ...]] = (".cdx.json", "-cyclonedx.json")
+CYCLONEDX_JSON_FILENAMES: Final[tuple[str, ...]] = ("sbom.json", "bom.json")
 
-CYCLONEDX_XML_SUFFIXES: Final[tuple[str, ...]] = (".cdx.xml", "-cyclonedx.xml")
+CYCLONEDX_JSON_SUFFIXES: Final[tuple[str, ...]] = (
+    ".cdx.json",
+    "-cyclonedx.json",
+    ".cyclonedx.json",
+    "-sbom.json",
+    "-bom.json",
+)
+
+CYCLONEDX_XML_FILENAMES: Final[tuple[str, ...]] = ("sbom.xml", "bom.xml")
+
+CYCLONEDX_XML_SUFFIXES: Final[tuple[str, ...]] = (
+    ".cdx.xml",
+    "-cyclonedx.xml",
+    ".cyclonedx.xml",
+    "-sbom.xml",
+    "-bom.xml",
+)
 
 DISALLOWED_FILENAMES: Final[frozenset[str]] = frozenset(
     {
@@ -170,6 +186,7 @@ VARIANT_PATTERNS: Final[list[str]] = [
 _CANDIDATE_TAG: Final = r"(?: Candidate | candidate | RC | Rc | rc ) [.-]? [0-9]+"
 _CANDIDATE_PARTIAL: Final = re.compile(rf"(?x) - {_CANDIDATE_TAG}")
 _CANDIDATE_WHOLE: Final = re.compile(rf"(?x) ^ {_CANDIDATE_TAG} $")
+_SOURCE_CLASSIFIER: Final = re.compile(r"[_-](?:source-release|sources|source|src)(?=[_-][0-9]|$)")
 
 
 @dataclasses.dataclass
@@ -368,11 +385,11 @@ def is_cyclonedx(name: str) -> bool:
 
 
 def is_cyclonedx_json(name: str) -> bool:
-    return name.endswith(CYCLONEDX_JSON_SUFFIXES)
+    return name.endswith(CYCLONEDX_JSON_SUFFIXES) or (pathlib.Path(name).name in CYCLONEDX_JSON_FILENAMES)
 
 
 def is_cyclonedx_xml(name: str) -> bool:
-    return name.endswith(CYCLONEDX_XML_SUFFIXES)
+    return name.endswith(CYCLONEDX_XML_SUFFIXES) or (pathlib.Path(name).name in CYCLONEDX_XML_FILENAMES)
 
 
 def is_sbom_metadata(name: str) -> bool:
@@ -503,6 +520,11 @@ def sbom_candidates(name: str, suffixes: tuple[str, ...]) -> list[str]:
         for stem in stems:
             base = stem if (str(directory) == ".") else f"{directory}/{stem}"
             candidates.extend(base + suffix for suffix in suffixes)
+    if stems and _SOURCE_CLASSIFIER.search(stems[0]):
+        if any(suffix.endswith(".json") for suffix in suffixes):
+            candidates.extend(str(path.with_name(filename)) for filename in CYCLONEDX_JSON_FILENAMES)
+        if any(suffix.endswith(".xml") for suffix in suffixes):
+            candidates.extend(str(path.with_name(filename)) for filename in CYCLONEDX_XML_FILENAMES)
     return candidates
 
 
@@ -553,7 +575,10 @@ def _classifier_removed(name: str) -> str:
     # must still be attached for this to work, as variant_pattern wants a trailing separator and
     # the extension's dot provides it
     pattern = r"[_-](?:" + "|".join(VARIANT_PATTERNS) + r")(?=" + extension_pattern() + r")"
-    return re.sub(pattern, "", name, count=1)
+    declassified = re.sub(pattern, "", name, count=1)
+    if (declassified != name) or ((stem := artifact_stem(name)) is None):
+        return declassified
+    return _SOURCE_CLASSIFIER.sub("", stem, count=1) + name[len(stem) :]
 
 
 if __name__ == "__main__":

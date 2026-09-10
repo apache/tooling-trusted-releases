@@ -18,6 +18,8 @@
 
 import json
 
+import pytest
+
 import atr.classify as classify
 import atr.models.safe as safe
 
@@ -179,15 +181,15 @@ async def test_sbom_classified_as_sbom():
 
 
 async def test_sbom_content_marker_classifies_unsuffixed_json_as_sbom(tmp_path):
-    path = safe.RelPath("bom.json")
-    (tmp_path / "bom.json").write_text(json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.6"}))
+    path = safe.RelPath("inventory.json")
+    (tmp_path / "inventory.json").write_text(json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.6"}))
     result = await classify.classify(path, base_path=safe.StatePath(tmp_path))
     assert result == classify.FileType.SBOM
 
 
 async def test_sbom_content_marker_classifies_unsuffixed_xml_as_sbom(tmp_path):
-    path = safe.RelPath("bom.xml")
-    (tmp_path / "bom.xml").write_text('<?xml version="1.0"?><bom xmlns="http://cyclonedx.org/schema/bom/1.6" />')
+    path = safe.RelPath("inventory.xml")
+    (tmp_path / "inventory.xml").write_text('<?xml version="1.0"?><bom xmlns="http://cyclonedx.org/schema/bom/1.6" />')
     result = await classify.classify(path, base_path=safe.StatePath(tmp_path))
     assert result == classify.FileType.SBOM
 
@@ -197,6 +199,14 @@ async def test_sbom_content_marker_ignores_unrelated_json(tmp_path):
     (tmp_path / "package.json").write_text(json.dumps({"name": "widget", "version": "1.0.0"}))
     result = await classify.classify(path, base_path=safe.StatePath(tmp_path))
     assert result != classify.FileType.SBOM
+
+
+@pytest.mark.parametrize("name", ["sbom.json", "bom.xml", "sbom.json.asc", "sbom.json.sha512", "example-sbom.json"])
+async def test_sbom_names_classify_consistently(name: str) -> None:
+    path = safe.RelPath(f"sub/{name}")
+    expected = classify.FileType.METADATA if name.endswith((".asc", ".sha512")) else classify.FileType.SBOM
+    assert classify.classify_path(path.as_path()) == expected
+    assert await classify.classify(path) == expected
 
 
 async def test_sbom_signature_classified_as_metadata():

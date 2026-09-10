@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pytest
+
 import atr.analysis as analysis
 
 
@@ -35,18 +37,51 @@ def test_sbom_candidates() -> None:
     assert analysis.sbom_candidates("apache-example-1.0.jar", analysis.CYCLONEDX_JSON_SUFFIXES) == [
         "apache-example-1.0.jar.cdx.json",
         "apache-example-1.0.jar-cyclonedx.json",
+        "apache-example-1.0.jar.cyclonedx.json",
+        "apache-example-1.0.jar-sbom.json",
+        "apache-example-1.0.jar-bom.json",
         "apache-example-1.0.cdx.json",
         "apache-example-1.0-cyclonedx.json",
+        "apache-example-1.0.cyclonedx.json",
+        "apache-example-1.0-sbom.json",
+        "apache-example-1.0-bom.json",
     ]
     # A name with no artifact extension has only itself to offer
     assert analysis.sbom_candidates("KEYS", analysis.CYCLONEDX_JSON_SUFFIXES) == [
         "KEYS.cdx.json",
         "KEYS-cyclonedx.json",
+        "KEYS.cyclonedx.json",
+        "KEYS-sbom.json",
+        "KEYS-bom.json",
     ]
     # The XML suffixes reach the stem too, which is what the cataloguer and announce pair on
     assert "apache-example-1.0-cyclonedx.xml" in analysis.sbom_candidates(
         "apache-example-1.0.jar", analysis.SBOM_SUFFIXES
     )
+
+
+def test_sbom_candidates_generic_priority_and_directory() -> None:
+    candidates = analysis.sbom_candidates("source/camel-k-sources-2.11.0.tar.gz", analysis.SBOM_SUFFIXES)
+    assert candidates[-4:] == ["source/sbom.json", "source/bom.json", "source/sbom.xml", "source/bom.xml"]
+    assert "sbom.json" not in candidates
+    assert candidates.index("source/camel-k-2.11.0-sbom.json") < candidates.index("camel-k-2.11.0-sbom.json")
+    assert candidates.index("source/camel-k-2.11.0-sbom.json") < candidates.index("source/camel-k-2.11.0-bom.xml")
+    json_candidates = analysis.sbom_candidates("camel-k-sources-2.11.0.tar.gz", analysis.CYCLONEDX_JSON_SUFFIXES)
+    assert json_candidates[-2:] == ["sbom.json", "bom.json"]
+    assert not any(path.endswith(".xml") for path in json_candidates)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "apache-source-tool-1.0.tar.gz",
+        "camel-k-client-2.11.0-linux-amd64.tar.gz",
+        "apache-example-1.0.tar.gz",
+        "apache-example-1.0-sources.tar.gz.asc",
+    ],
+)
+def test_sbom_candidates_generic_requires_source_classifier(name: str) -> None:
+    assert "sbom.json" not in analysis.sbom_candidates(name, analysis.SBOM_SUFFIXES)
 
 
 def test_sbom_candidates_maven_classifier() -> None:
@@ -98,10 +133,28 @@ def test_sbom_pairs_artifact() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("artifact", "sbom"),
+    [
+        ("apache-ant-antunit-1.5.0-bin.tar.gz", "apache-ant-antunit-1.5.0-bin.tar.gz.cyclonedx.json"),
+        ("apache-camel-4.22.0-src.zip", "apache-camel-4.22.0-sbom.json"),
+        ("apache-camel-4.22.0.pom", "apache-camel-4.22.0-sbom.json"),
+        ("apache-ldap-api-2.1.7-src.zip", "apache-ldap-api-2.1.7-bom.xml"),
+        ("camel-kamelets-sources-4.8.5.tar.gz", "camel-kamelets-4.8.5-sbom.json"),
+        ("camel-k-sources-2.11.0.tar.gz", "sbom.json"),
+        ("apache-example-1.0-source-release.zip", "bom.xml"),
+        ("apache-example-src-1.0.0-beta-1.zip", "apache-example-1.0.0-beta-1-cyclonedx.json"),
+    ],
+)
+def test_sbom_pairs_artifact_conventions(artifact: str, sbom: str) -> None:
+    assert analysis.sbom_pairs_artifact(sbom, artifact, analysis.SBOM_SUFFIXES)
+
+
 def test_classifier_removed() -> None:
     # A classifier abutting the extension comes off, along with its leading separator
     assert analysis._classifier_removed("apache-example-1.0-source-release.zip") == "apache-example-1.0.zip"
     assert analysis._classifier_removed("apache-example-1.0-bin.tar.gz") == "apache-example-1.0.tar.gz"
+    assert analysis._classifier_removed("camel-kamelets-sources-4.8.5.tar.gz") == "camel-kamelets-4.8.5.tar.gz"
     # A name with no classifier is returned untouched, so callers can tell nothing was stripped
     assert analysis._classifier_removed("apache-example-1.0.jar") == "apache-example-1.0.jar"
     # A variant word elsewhere in the name is not a classifier, so it stays put
