@@ -15,9 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
+
 import atr.catalog_site as catalog_site
 import atr.models.api as api
 import atr.models.safe as safe
+import atr.models.sql as sql
 
 
 def _artifact(
@@ -403,3 +406,162 @@ async def test_write_htaccess_writes_nothing_when_no_artifact_is_downloadable(tm
     await catalog_site._write_htaccess(safe.StatePath(tmp_path), version, "x", "x")
 
     assert not (tmp_path / ".htaccess").exists()
+
+
+def _committee(key: str = "example", name: str | None = "Example", *, is_podling: bool = False) -> sql.Committee:
+    return sql.Committee(key=key, name=name, is_podling=is_podling)
+
+
+def _project(committee: sql.Committee, **overrides) -> sql.Project:
+    project = sql.Project(
+        key="example",
+        name="Apache Example",
+        created=datetime.datetime(2012, 3, 26, 9, 0, tzinfo=datetime.UTC),
+    )
+    for field, value in overrides.items():
+        setattr(project, field, value)
+    project.committee = committee
+    return project
+
+
+def _committee_with_project(key: str, name: str, *, is_podling: bool) -> sql.Committee:
+    committee = _committee(key=key, name=name, is_podling=is_podling)
+    committee.projects = [_project(committee, key=key, name=f"Apache {name}")]
+    return committee
+
+
+def test_project_releases_entry_maps_the_projects_json_fields() -> None:
+    committee = _committee()
+    project = _project(
+        committee,
+        description="An example project",
+        short_description="An example",
+        categories="data,storage",
+        programming_languages="Java",
+        homepage="https://example.apache.org/",
+        download_page="https://example.apache.org/download",
+        bug_database="https://issues.apache.org/jira/browse/EXAMPLE",
+        mailing_lists="https://example.apache.org/mailing-lists",
+        repositories=["https://github.com/apache/example.git"],
+    )
+    releases = [
+        catalog_site._ReleaseSummary("2.0.0", datetime.datetime(2024, 8, 12, 10, 0, tzinfo=datetime.UTC)),
+        catalog_site._ReleaseSummary("1.0.0", datetime.datetime(2022, 11, 1, 10, 0, tzinfo=datetime.UTC)),
+    ]
+
+    entry = catalog_site._project_releases_entry(project, committee, releases)
+
+    assert entry["name"] == "Apache Example"
+    assert entry["pmc"] == "example"
+    assert entry["license"] == "https://www.apache.org/licenses/LICENSE-2.0.txt"
+    assert entry["description"] == "An example project"
+    assert entry["shortdesc"] == "An example"
+    assert entry["repository"] == ["https://github.com/apache/example.git"]
+    # Re-joined with ", " the way projects.json separates them.
+    assert entry["category"] == "data, storage"
+    assert entry["programming-language"] == "Java"
+    assert entry["homepage"] == "https://example.apache.org/"
+    assert entry["download-page"] == "https://example.apache.org/download"
+    assert entry["bug-database"] == "https://issues.apache.org/jira/browse/EXAMPLE"
+    assert entry["mailing-list"] == "https://example.apache.org/mailing-lists"
+    # No project-level "created": ATR knows only when it ingested the project, not when it
+    # was founded, so it's left out rather than published as the wrong date.
+    assert "created" not in entry
+    # Release-level dates are real, so those stay.
+    assert entry["release"] == [
+        {"name": "Apache Example", "revision": "2.0.0", "created": "2024-08-12"},
+        {"name": "Apache Example", "revision": "1.0.0", "created": "2022-11-01"},
+    ]
+
+
+def test_project_releases_entry_leaves_out_fields_the_project_does_not_hold() -> None:
+    committee = _committee()
+    project = _project(committee)
+
+    entry = catalog_site._project_releases_entry(project, committee, [])
+
+    # The always-present fields stay; the absent ones are left out rather than sent as null.
+    assert set(entry) == {"name", "pmc", "license", "maintainer", "release"}
+    assert entry["release"] == []
+
+
+def test_project_releases_maintainer_is_the_committee_development_list() -> None:
+    committee = _committee(key="airflow", name="Airflow")
+    # A subproject keyed differently from its committee still points at the committee's list.
+    subproject = _project(committee, key="airflow-providers-amazon", name="Apache Airflow Amazon Provider")
+
+    entry = catalog_site._project_releases_entry(subproject, committee, [])
+
+    assert entry["maintainer"] == [{"mbox": "mailto:dev@airflow.apache.org", "name": "Apache Airflow PMC"}]
+
+
+def test_project_releases_maintainer_names_a_podling_ppmc() -> None:
+    committee = _committee(key="example", name="Example", is_podling=True)
+
+    maintainer = catalog_site._dev_list_maintainer(committee)
+
+    assert maintainer == {"mbox": "mailto:dev@example.apache.org", "name": "Apache Example PPMC"}
+
+
+def test_project_releases_maintainer_prefers_a_stored_committee_domain_dev_list() -> None:
+    committee = _committee(key="db", name="DB")
+
+    # A subproject-specific dev list on the committee's own domain is trusted over the bare
+    # convention, which couldn't derive it.
+    maintainer = catalog_site._dev_list_maintainer(committee, "jdo-dev@db.apache.org")
+
+    assert maintainer == {"mbox": "mailto:jdo-dev@db.apache.org", "name": "Apache DB PMC"}
+
+
+def test_project_releases_maintainer_falls_back_when_the_address_is_not_a_committee_dev_list() -> None:
+    committee = _committee(key="tooling", name="Tooling")
+
+    # Private and placeholder lists, and dev lists on another domain, are never published:
+    # the convention stands in for all of them.
+    for address in (
+        "private@tooling.apache.org",
+        "arbitrary@tooling.apache.org",
+        "dev@apache.org",
+        "dev@other.apache.org",
+    ):
+        maintainer = catalog_site._dev_list_maintainer(committee, address)
+        assert maintainer["mbox"] == "mailto:dev@tooling.apache.org"
+
+
+def test_project_releases_entry_carries_the_stored_vote_list_into_the_maintainer() -> None:
+    committee = _committee(key="cordova", name="Cordova")
+    project = _project(committee, key="cordova-android", name="Apache Cordova Android")
+
+    entry = catalog_site._project_releases_entry(project, committee, [], "dev@cordova.apache.org")
+
+    assert entry["maintainer"] == [{"mbox": "mailto:dev@cordova.apache.org", "name": "Apache Cordova PMC"}]
+
+
+def test_release_entry_omits_the_date_when_a_release_is_undated() -> None:
+    entry = catalog_site._release_entry("Apache Example", catalog_site._ReleaseSummary("1.0.0", None))
+
+    assert entry == {"name": "Apache Example", "revision": "1.0.0"}
+
+
+def test_project_releases_categories_join_with_commas_and_drop_placeholders() -> None:
+    # Re-joined with ", " whether ATR stored them spaced or not.
+    assert catalog_site._categories("data,storage") == "data, storage"
+    assert catalog_site._categories("mobile, library") == "mobile, library"
+    # Placeholder tokens the DOAP import left behind are dropped, empties too.
+    assert catalog_site._categories("new_category, tooling") == "tooling"
+    assert catalog_site._categories("no-tlp-doap") is None
+    assert catalog_site._categories(None) is None
+
+
+def test_release_feeds_split_podlings_out_and_sort_by_key() -> None:
+    maven = _committee_with_project("maven", "Maven", is_podling=False)
+    ant = _committee_with_project("ant", "Ant", is_podling=False)
+    amoro = _committee_with_project("amoro", "Amoro", is_podling=True)
+
+    projects, podlings = catalog_site._release_feeds([maven, amoro, ant], {}, {})
+
+    # Podlings are kept out of the project feed, the rest sorted by key.
+    assert list(projects) == ["ant", "maven"]
+    assert list(podlings) == ["amoro"]
+    # The podling's maintainer names the PPMC and its own dev list.
+    assert podlings["amoro"]["maintainer"] == [{"mbox": "mailto:dev@amoro.apache.org", "name": "Apache Amoro PPMC"}]

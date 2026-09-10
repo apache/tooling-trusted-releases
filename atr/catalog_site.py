@@ -137,6 +137,30 @@ _CLASS_QUALIFIER: Final[dict[str, str]] = {
     classify.FileType.DOCS.value: "docs",
 }
 
+# Every ASF release is under the Apache License 2.0, so the summary feed stamps it rather
+# than carrying over a project's DOAP licence, which can't be relied on to be right. This is
+# the URL projects.json most often carries, give or take http vs https.
+_ASF_LICENSE_URL: Final = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+
+# Placeholder category tokens the DOAP import left behind. They mean "nothing was set", so
+# they're dropped rather than published as if they were real categories.
+_JUNK_CATEGORIES: Final[frozenset[str]] = frozenset({"no-tlp-doap", "new_category"})
+
+# Stands in for a missing release date when sorting the summary feed, so an undated
+# historical release sinks below the dated ones instead of breaking the comparison.
+_EPOCH: Final = datetime.datetime.min.replace(tzinfo=datetime.UTC)
+
+# The public summary of the catalogue, one entry per project, written at the site root. It
+# follows the shape of projects.apache.org's projects.json so it can stand in for it, give
+# or take the fields we don't hold. Incubating podlings are left out, the same as they're
+# left out of projects.json until they graduate; they go in the podling file instead.
+_PROJECT_RELEASES_FILE: Final = "project_releases.json"
+
+# The same summary for incubating podlings, kept separate the way the ASF splits podlings.json
+# from projects.json. A podling graduates by ceasing to be one, at which point it moves to the
+# project file on the next rebuild.
+_PODLING_RELEASES_FILE: Final = "podling_releases.json"
+
 
 @dataclasses.dataclass
 class _CommitteeSummary:
@@ -152,6 +176,14 @@ class _SubprojectSummary:
     has_archived: bool
 
 
+@dataclasses.dataclass
+class _ReleaseSummary:
+    version: str
+    # The announce date, or the draft date for a historical release we've no announce
+    # date for; null when we hold neither.
+    date: datetime.datetime | None
+
+
 async def generate_all(data: db.Session) -> None:
     """Rebuild every page, overwriting in place so the site stays servable throughout."""
     site_dir = paths.get_catalog_site_dir()
@@ -163,6 +195,9 @@ async def generate_all(data: db.Session) -> None:
     committees = await data.committee(_projects=True).all()
     written = await _write_committee_pages(data, committees, site_dir)
     await _write_index_pages(data, site_dir, written)
+    # The summary feed covers every project, so it's built from the full committee list
+    # rather than only the ones whose pages rendered this pass.
+    await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir))
     # Every committee and every project holds a directory here. Keyed off all of them
     # rather than the ones written, so a page that failed to render keeps what it had
     keep = {committee.key for committee in committees}
@@ -243,6 +278,9 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     # A first release, or a last one archived, moves a committee on or off the front page
     # and between the Incubator's two columns, so the indexes are rebuilt every time too.
     await _write_index_pages(data, site_dir, committees)
+    # The summary feed reflects the catalogue as a whole, so a change to any one project
+    # refreshes it, the same as it refreshes the front page.
+    await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir))
 
 
 def _applicable_heatmap(
@@ -358,6 +396,15 @@ def _artifact_subpaths(version: api.CatalogVersion, pmc: str, project: str) -> I
     yield from _unique(derived)
 
 
+def _categories(commas: str | None) -> str | None:
+    # ATR stores these comma-separated, sometimes with a space and sometimes without;
+    # projects.json wants ", " between them. Placeholder tokens are dropped along the way.
+    if not commas:
+        return None
+    kept = [token.strip() for token in commas.split(",") if token.strip() and (token.strip() not in _JUNK_CATEGORIES)]
+    return ", ".join(kept) or None
+
+
 async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
     """Fold the released artifacts onto the committee card that shows them on the front page."""
     releases = await data.release(phase=sql.ReleasePhase.RELEASE, _committee=True, _project=True).all()
@@ -388,6 +435,26 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
         )
         for key in (set(counts) | set(names))
     }
+
+
+def _date_only(when: datetime.datetime | None) -> str | None:
+    # projects.json dates the day, not the moment, so the feed does the same.
+    return when.date().isoformat() if (when is not None) else None
+
+
+def _dev_list_maintainer(committee: sql.Committee, vote_address: str | None = None) -> dict[str, str]:
+    # The project's own vote list is preferred, but only when it's a development
+    # list on the committee's own domain - that domain is how we know it's the committee's,
+    # so a private or placeholder address is never published. Otherwise the dev list by ASF
+    # convention, e.g. dev@accumulo.apache.org.
+    role = "PPMC" if committee.is_podling else "PMC"
+    name = committee.name or committee.key.title()
+    local, _, host = (vote_address or "").partition("@")
+    if (host == f"{committee.key}.apache.org") and ("dev" in local.lower()):
+        mbox = f"mailto:{vote_address}"
+    else:
+        mbox = f"mailto:dev@{committee.key}.apache.org"
+    return {"mbox": mbox, "name": f"Apache {name} {role}"}
 
 
 async def _guarded_write(description: str, work: Awaitable[None]) -> None:
@@ -457,6 +524,43 @@ def _minimal_combo(classifiers: dict[str, str], others: list[dict[str, str]]) ->
     return None
 
 
+def _project_releases_entry(
+    project: sql.Project,
+    committee: sql.Committee,
+    releases: Sequence[_ReleaseSummary],
+    vote_address: str | None = None,
+) -> dict[str, Any]:
+    """One project's entry in the summary feed, shaped like a projects.json project."""
+    name = project.name or project.display_name
+    entry: dict[str, Any] = {
+        "name": name,
+        "pmc": committee.key,
+        "license": _ASF_LICENSE_URL,
+        "maintainer": [_dev_list_maintainer(committee, vote_address)],
+        "release": [_release_entry(name, release) for release in releases],
+    }
+
+    # The rest are carried over only when the project holds them, so an absent field is
+    # left out rather than sent as null, the same as projects.json does. There's no
+    # "created": ATR only knows when it ingested the project, not when it was founded,
+    # which is what projects.json means by it.
+    def put(key: str, value: str | None) -> None:
+        if value:
+            entry[key] = value
+
+    put("description", project.description)
+    put("shortdesc", project.short_description)
+    put("homepage", project.homepage)
+    put("download-page", project.download_page)
+    put("bug-database", project.bug_database)
+    put("mailing-list", project.mailing_lists)
+    put("programming-language", project.programming_languages)
+    put("category", _categories(project.categories))
+    if project.repositories:
+        entry["repository"] = project.repositories
+    return entry
+
+
 async def _prune_directories(directory: safe.StatePath, keep: Container[str]) -> None:
     """Remove the subdirectories of one that this build didn't write.
 
@@ -486,6 +590,36 @@ def _redirect_rule(url: str) -> str:
     return f'RewriteRule "^$" "{url}" [R={status},NE,L]'
 
 
+def _release_entry(project_name: str, release: _ReleaseSummary) -> dict[str, Any]:
+    # projects.json repeats the project name on each release and calls the version the
+    # revision, so the feed matches.
+    entry: dict[str, Any] = {"name": project_name, "revision": release.version}
+    if (created := _date_only(release.date)) is not None:
+        entry["created"] = created
+    return entry
+
+
+def _release_feeds(
+    committees: Sequence[sql.Committee],
+    releases_by_project: dict[str, list[_ReleaseSummary]],
+    vote_addresses: dict[str, str],
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """The (project, podling) feeds, each keyed by project key and sorted.
+
+    Podlings are split into their own feed, so the project feed stays a projects.json
+    stand-in. Both are sorted by key so a rebuild that changes nothing rewrites the same bytes.
+    """
+    tlp: dict[str, dict[str, Any]] = {}
+    podling: dict[str, dict[str, Any]] = {}
+    for committee in committees:
+        target = podling if committee.is_podling else tlp
+        for project in committee.projects:
+            target[project.key] = _project_releases_entry(
+                project, committee, releases_by_project.get(project.key, []), vote_addresses.get(project.key)
+            )
+    return ({key: tlp[key] for key in sorted(tlp)}, {key: podling[key] for key in sorted(podling)})
+
+
 def _release_htaccess(version: api.CatalogVersion, pmc: str, project: str) -> str | None:
     """Render a release's files to an Apache `.htaccess` map, or None if none are downloadable.
 
@@ -505,6 +639,28 @@ def _release_htaccess(version: api.CatalogVersion, pmc: str, project: str) -> st
     if not rules:
         return None
     return "RewriteEngine On\n" + "\n".join(rules) + "\n"
+
+
+async def _released_versions_by_project(data: db.Session) -> dict[str, list[_ReleaseSummary]]:
+    """Every announced release, grouped by project and newest first.
+
+    Phase RELEASE is the catalogued releases: the current ones and the archived-historical
+    ones both sit there, while candidates and previews haven't been released yet. It also
+    rules out the embargoed ones, which are only ever in an earlier phase.
+    """
+    via = sql.validate_instrumented_attribute
+    stmt = sqlmodel.select(
+        via(sql.Release.project_key),
+        via(sql.Release.version),
+        via(sql.Release.released),
+        via(sql.Release.created),
+    ).where(via(sql.Release.phase) == sql.ReleasePhase.RELEASE)
+    grouped: dict[str, list[_ReleaseSummary]] = collections.defaultdict(list)
+    for project_key, version, released, created in (await data.execute(stmt)).all():
+        grouped[project_key].append(_ReleaseSummary(version=version, date=released or created))
+    for summaries in grouped.values():
+        summaries.sort(key=lambda summary: ((summary.date or _EPOCH), summary.version), reverse=True)
+    return grouped
 
 
 async def _subproject_summaries(data: db.Session, subprojects: Sequence[sql.Project]) -> dict[str, _SubprojectSummary]:
@@ -537,6 +693,24 @@ def _unique(pairs: list[tuple[str, str]]) -> Iterator[tuple[str, str]]:
     for key, value in pairs:
         if key and (counts[key] == 1):
             yield key, value
+
+
+async def _vote_addresses_by_project(data: db.Session) -> dict[str, str]:
+    """The stored vote "to" address per project, for the maintainer field.
+
+    Only projects that have set one appear; the value is advisory and taken as a candidate,
+    not published as-is - _dev_list_maintainer decides whether it's the committee's own list.
+    """
+    via = sql.validate_instrumented_attribute
+    stmt = sqlmodel.select(via(sql.Project.key), via(sql.ReleasePolicy.recipient_defaults)).join(
+        sql.ReleasePolicy, via(sql.Project.release_policy_id) == via(sql.ReleasePolicy.id)
+    )
+    addresses: dict[str, str] = {}
+    for project_key, recipient_defaults in (await data.execute(stmt)).all():
+        to = ((recipient_defaults or {}).get("vote") or {}).get("to")
+        if to:
+            addresses[project_key] = to
+    return addresses
 
 
 async def _write(path: safe.StatePath, content: str) -> None:
@@ -775,6 +949,17 @@ async def _write_project(
         snapshot = _applicable_heatmap(heatmaps.get(str(version.version)), version)
         await _write_release(project_dir, committee, project, version, f"{root}../", document, snapshot)
     await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
+
+
+async def _write_project_releases(
+    data: db.Session, committees: Sequence[sql.Committee], site_dir: safe.StatePath
+) -> None:
+    """Write the two site-wide summary feeds: projects, and podlings on their own."""
+    releases_by_project = await _released_versions_by_project(data)
+    vote_addresses = await _vote_addresses_by_project(data)
+    projects, podlings = _release_feeds(committees, releases_by_project, vote_addresses)
+    await _write(site_dir / _PROJECT_RELEASES_FILE, json.dumps(projects, indent=2, default=str))
+    await _write(site_dir / _PODLING_RELEASES_FILE, json.dumps(podlings, indent=2, default=str))
 
 
 async def _write_purl_landing(site_dir: safe.StatePath) -> None:
