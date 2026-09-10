@@ -38,7 +38,7 @@ def test_committees_sorted_by_display_name() -> None:
     ]
     latest = {"solr": (1, "9.6.1", _MAY), "commons-io": (1, "2.16.1", _MAY)}
 
-    catalog = release._committee_release_catalog(projects, latest)
+    catalog = release._committee_release_catalog(projects, latest, None)
 
     assert [entry.committee.display_name for entry in catalog] == ["Commons", "Solr"]
 
@@ -47,7 +47,7 @@ def test_empty_version_yields_no_latest() -> None:
     tika = sql.Committee(key="tika", name="Tika")
     projects = [sql.Project(key="tika", name="Apache Tika", committee=tika)]
 
-    catalog = release._committee_release_catalog(projects, {"tika": (1, "", _MAY)})
+    catalog = release._committee_release_catalog(projects, {"tika": (1, "", _MAY)}, None)
 
     assert catalog[0].projects[0].latest_version is None
 
@@ -61,7 +61,7 @@ def test_groups_projects_under_their_committee() -> None:
     ]
     latest = {"commons-io": (2, "2.16.1", _MAY), "commons-lang": (3, "3.14.0", None)}
 
-    catalog = release._committee_release_catalog(projects, latest)
+    catalog = release._committee_release_catalog(projects, latest, None)
 
     assert len(catalog) == 1
     assert catalog[0].committee.key == "commons"
@@ -69,6 +69,32 @@ def test_groups_projects_under_their_committee() -> None:
         ("commons-io", 2),
         ("commons-lang", 3),
     ]
+
+
+def test_retired_committees_fold_into_the_attic_card() -> None:
+    attic = sql.Committee(key="attic", name="Attic")
+    solr = sql.Committee(key="solr", name="Solr")
+    any23 = sql.Committee(key="any23", name="Any23", is_archived=True)
+    projects = [
+        sql.Project(key="solr", name="Apache Solr", committee=solr),
+        sql.Project(key="any23", name="Apache Any23", committee=any23),
+    ]
+    latest = {"solr": (1, "9.6.1", _MAY), "any23": (1, "2.7", _MAY)}
+
+    catalog = release._committee_release_catalog(projects, latest, attic)
+
+    # A live committee keeps its own card; the retired one folds into the Attic card, sorted last
+    assert [entry.committee.key for entry in catalog] == ["solr", "attic"]
+    assert [entry.project.key for entry in catalog[-1].projects] == ["any23"]
+
+
+def test_retired_committees_do_not_fold_without_an_attic_committee() -> None:
+    any23 = sql.Committee(key="any23", name="Any23", is_archived=True)
+    projects = [sql.Project(key="any23", name="Apache Any23", committee=any23)]
+
+    catalog = release._committee_release_catalog(projects, {"any23": (1, "2.7", _MAY)}, None)
+
+    assert [entry.committee.key for entry in catalog] == ["any23"]
 
 
 async def test_project_latest_finished_counts_and_picks_the_newest() -> None:
@@ -101,7 +127,7 @@ async def test_project_latest_finished_counts_and_picks_the_newest() -> None:
 def test_release_with_no_committee_is_skipped() -> None:
     projects = [sql.Project(key="orphan", name="Apache Orphan", committee=None)]
 
-    catalog = release._committee_release_catalog(projects, {"orphan": (1, "1.0.0", _MAY)})
+    catalog = release._committee_release_catalog(projects, {"orphan": (1, "1.0.0", _MAY)}, None)
 
     assert catalog == []
 
