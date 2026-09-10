@@ -6,6 +6,10 @@
  * scores, version advisories, explicit unknowns, safe links and complete results.
  */
 
+#credits {
+    font-size: 0.875rem;
+}
+
 #grid th {
     cursor: pointer;
 }
@@ -29,18 +33,22 @@
 }
 
 #grid .name small,
+#city-detail .name small,
+#city-detail .coverage,
 #grid .coverage {
     display: block;
     color: var(--bs-secondary-color);
     font-size: inherit;
 }
 
-#grid meter {
+#grid meter,
+#city-detail meter {
     display: block;
     width: 5rem;
 }
 
-#grid .nul {
+#grid .nul,
+#city-detail .nul {
     color: var(--bs-secondary-color);
 }
 
@@ -54,4 +62,33 @@
 
 .pill .count {
     margin-left: 0.25rem;
+}
+
+#city {
+    position: relative;
+    height: 70vh;
+    min-height: 24rem;
+    overflow: hidden;
+}
+
+#city canvas {
+    display: block;
+}
+
+#city .city-pointer {
+    cursor: pointer;
+}
+
+#city-tooltip {
+    position: absolute;
+    pointer-events: none;
+    max-width: min(24rem, 100%);
+    overflow-wrap: anywhere;
+}
+
+#city-observations {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.25rem 1rem;
+    overflow-wrap: anywhere;
 }

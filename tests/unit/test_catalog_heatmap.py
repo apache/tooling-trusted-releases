@@ -147,6 +147,17 @@ async def test_heatmap_renders_versions_evidence_and_safe_links(tmp_path) -> Non
     assert "assets/css/heatmap.css" in html
     assert "assets/licenses/LICENSE-Alpha-Omega-Heatmap.txt" in html
     assert "Example data attribution" in html
+    assert 'href="heatmap-3d.html"' in html
+    assert "three.min.js" not in html
+    city = (tmp_path / "1.0/heatmap-3d.html").read_text()
+    assert 'href="heatmap.html"' in city
+    assert 'id="city"' in city
+    assert "heatmap-city.js" in city
+    assert "heatmap-table.js" not in city
+    assert "three.min.js" in city
+    assert "OrbitControls.js" in city
+    assert "Invalid &lt;component&gt;" in city
+    assert not any(attrs["href"].startswith("javascript:") for tag, attrs in Tags(city).elements if tag == "a")
     assert results.SBOMHeatmap.model_validate_json((tmp_path / "1.0/heatmap.json").read_text()) == snapshot
 
     release = Tags((tmp_path / "1.0/index.html").read_text()).elements
@@ -157,6 +168,11 @@ async def test_heatmap_renders_versions_evidence_and_safe_links(tmp_path) -> Non
 
     await catalog_site._write_assets(safe.StatePath(tmp_path))
     assert (tmp_path / "assets/css/heatmap.css").is_file()
+    for name in ("heatmap-city.js", "heatmap-city-layout.js", "heatmap-city-scene.js", "heatmap-filters.js"):
+        assert (tmp_path / "assets/js/src" / name).is_file()
+    for name in ("three.min.js", "OrbitControls.js"):
+        assert (tmp_path / "assets/js/min" / name).is_file()
+    assert (tmp_path / "assets/licenses/LICENSE-three.js.txt").is_file()
     assert 'fetch("heatmap.json")' in (tmp_path / "assets/js/src/heatmap-table.js").read_text()
     assert (
         "Copyright (c) 2026 Alpha-Omega" in (tmp_path / "assets/licenses/LICENSE-Alpha-Omega-Heatmap.txt").read_text()
@@ -173,5 +189,6 @@ async def test_release_without_heatmap_removes_old_files_and_links(tmp_path) -> 
     assert "heatmap.html" not in html
     assert not (tmp_path / "1.0/heatmap.html").exists()
     assert not (tmp_path / "1.0/heatmap.json").exists()
+    assert not (tmp_path / "1.0/heatmap-3d.html").exists()
     assert (tmp_path / "1.0/artifacts.json").is_file()
     await catalog_site._write_release(directory, _COMMITTEE, _PROJECT, version, "../", None)

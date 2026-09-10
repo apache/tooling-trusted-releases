@@ -154,8 +154,8 @@ def _analysis_due(
 def _publication_needed(project_key: str, version_key: str, completed: datetime.datetime | None) -> bool:
     directory = paths.get_catalog_site_dir() / project_key / version_key
     if completed is None:
-        return any((directory / name).path.exists() for name in ("heatmap.json", "heatmap.html"))
-    for name in ("heatmap.json", "heatmap.html", "index.html"):
+        return any((directory / name).path.exists() for name in ("heatmap.json", "heatmap.html", "heatmap-3d.html"))
+    for name in ("heatmap.json", "heatmap.html", "heatmap-3d.html", "index.html"):
         try:
             if (directory / name).path.stat().st_mtime < completed.timestamp():
                 return True

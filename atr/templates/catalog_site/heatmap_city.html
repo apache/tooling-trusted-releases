@@ -1,0 +1,34 @@
+{% extends "heatmap.html" %}
+
+{%- block title -%}Alpha-Omega 3D dependency heatmap ~ {{ project.display_name }} {{ release_version.version }}{%- endblock title -%}
+
+{% block heatmap_view %}
+  <p><a id="heatmap-view" href="heatmap.html">Table view</a> · <strong>3D view</strong></p>
+{% endblock heatmap_view %}
+
+{% block heatmap_report %}
+  <p>Drag to rotate, scroll to zoom, or right-drag to pan. Select a box to show its package version; select it again or use Clear selection to return.</p>
+  <p class="small text-secondary">Colour shows health (red to green; grey means unknown). Height shows relative criticality within this release (unknown uses minimum height). Districts group ecosystems and repository owners; width carries no measurement. Faded boxes are outside the filter or selection.</p>
+  <p id="count" aria-live="polite">Loading analysis…</p>
+  <noscript><p>JavaScript and WebGL are required for the 3D view. The table view and analysis JSON are available above.</p></noscript>
+  <div id="city" class="border rounded" hidden>
+    <div id="city-tooltip" class="border rounded bg-body p-2 small" hidden></div>
+  </div>
+  <section id="city-detail" class="border rounded p-3 mt-3" aria-labelledby="city-detail-title" hidden>
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+      <h2 id="city-detail-title" class="h5 mb-0">Selected package version</h2>
+      <button id="city-clear" type="button" class="btn btn-outline-secondary btn-sm">Clear selection</button>
+    </div>
+    <dl id="city-observations" class="mb-0"></dl>
+  </section>
+{% endblock heatmap_report %}
+
+{% block heatmap_credits %}
+  <p>3D rendering uses Three.js. Copyright © 2010–2021 Three.js Authors. <a href="{{ root }}assets/licenses/LICENSE-three.js.txt">MIT licence</a>.</p>
+{% endblock heatmap_credits %}
+
+{% block scripts %}
+  <script src="{{ root }}assets/js/min/three.min.js"></script>
+  <script src="{{ root }}assets/js/min/OrbitControls.js"></script>
+  <script src="{{ root }}assets/js/src/heatmap-city.js" type="module"></script>
+{% endblock scripts %}
