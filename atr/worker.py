@@ -468,11 +468,12 @@ async def _worker_loop_run() -> None:
         log.clear_context()
         try:
             log.add_context(worker_pid=os.getpid())
-            task = await _task_next_claim()
-            if task:
-                task_id, task_type, task_args, asf_uid = task
+            claimed = await _task_next_claim()
+            if claimed:
+                task_id, task_type, task_args, asf_uid = claimed
                 log.add_context(task_id=task_id, task_type=task_type, asf_uid=asf_uid)
-                util.cpu_limit_arm(_CPU_LIMIT_SECONDS)
+                cpu_limit = max(int(_CPU_LIMIT_SECONDS), task.TASK_TYPE_TIMEOUT_SECONDS.get(sql.TaskType(task_type), 0))
+                util.cpu_limit_arm(cpu_limit)
                 await _task_process(task_id, task_type, task_args, asf_uid)
                 processed += 1
                 # Only process max_to_process tasks and then exit

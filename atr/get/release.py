@@ -149,7 +149,9 @@ def _committee_release_catalog(
             # Nothing to group it under here, so skip it. Shouldn't happen in practice.
             continue
         # A retired PMC (kept its own key) or an Attic-homed project lands on the Attic card
-        if (attic is not None) and (committee.is_archived or (committee.key == _ATTIC_COMMITTEE_KEY)):
+        if (attic is not None and not committee.is_podling) and (
+            committee.is_archived or (committee.key == _ATTIC_COMMITTEE_KEY)
+        ):
             key, card = _ATTIC_COMMITTEE_KEY, attic
         else:
             key, card = committee.key, committee
