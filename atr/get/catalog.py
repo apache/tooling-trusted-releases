@@ -38,6 +38,7 @@ import atr.web as web
 @dataclasses.dataclass
 class CatalogQuery(web.PageQuery):
     limit: int = 200
+    status: str = "all"
 
 
 @get.typed
@@ -52,12 +53,15 @@ async def project(
         validation.pagination_args_validate(query_args)
     except ValueError as e:
         raise base.ASFQuartException(str(e), errorcode=400)
+    if query_args.status not in ("all", "released", "archived"):
+        raise base.ASFQuartException("Status must be all, released, or archived", errorcode=400)
+    is_archived = None if (query_args.status == "all") else (query_args.status == "archived")
     async with db.session() as data:
         project_obj = await data.project(key=str(project_key)).demand(
             base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         project_cycles = await data.project_cycle(project_key=project_obj.key).all()
-        rows = await interaction.catalog_version_rows(data, project_obj.key)
+        rows = await interaction.catalog_version_rows(data, project_obj.key, is_archived=is_archived)
         window = catalog.artifact_window(project_obj.version_method, rows, query_args.offset, query_args.limit)
         artifacts = await _page_artifacts(data, project_obj.key, window)
 
@@ -80,6 +84,7 @@ async def project(
         count=window.count,
         limit=query_args.limit,
         page=page,
+        status=query_args.status,
         continued_version=window.versions[0] if window.skip else None,
     )
 

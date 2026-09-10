@@ -168,11 +168,11 @@ async def all_releases(project: sql.Project) -> list[sql.Release]:
 
 
 async def catalog_version_rows(
-    data: db.Session, project_key: str
+    data: db.Session, project_key: str, *, is_archived: bool | None = None
 ) -> list[tuple[str, datetime.datetime | None, int | None, int]]:
     via = sql.validate_instrumented_attribute
     released = sqlalchemy.func.coalesce(via(sql.Release.released), via(sql.Release.created))
-    rows = await data.execute(
+    query = (
         sqlalchemy.select(
             via(sql.Artifact.version),
             sqlalchemy.func.max(released),
@@ -184,6 +184,10 @@ async def catalog_version_rows(
         .where(via(sql.Artifact.project_key) == project_key)
         .group_by(via(sql.Artifact.version))
     )
+    if is_archived is not None:
+        archived = sqlalchemy.func.coalesce(sqlalchemy.func.min(via(sql.Release.is_archived)), True)
+        query = query.having(archived == is_archived)
+    rows = await data.execute(query)
     return [(row[0], row[1], row[2], row[3]) for row in rows.all()]
 
 
