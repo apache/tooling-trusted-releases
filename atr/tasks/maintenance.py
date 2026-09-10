@@ -28,6 +28,7 @@ import atr.models.results as results
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
+import atr.tasks.heatmap as heatmap
 import atr.tasks.inactivity as inactivity
 
 _EXPIRED_TOKEN_RETENTION_DAYS: Final[int] = 30
@@ -53,6 +54,7 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         await _storage_maintenance()
         await _workflow_auth_maintenance()
         await _inactivity_maintenance()
+        await heatmap.sweep()
 
         log.info(
             "Storage maintenance completed successfully",
