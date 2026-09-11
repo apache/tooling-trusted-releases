@@ -17,111 +17,44 @@
  *  under the License.
  */
 
-function buildLifecycleLink(lifecycleUrl) {
-	const link = document.createElement("a");
-	link.href = lifecycleUrl;
-	link.textContent = "lifecycle settings page";
-	return link;
-}
-
-function readConfig() {
-	const config = document.getElementById("start-cycle-config");
-	if (!config) {
-		return null;
-	}
-	return {
-		cycleMatch: config.dataset.cycleMatch,
-		lifecycleUrl: config.dataset.lifecycleUrl,
-	};
-}
-
-function renderPreview(preview, alertClass, prefixNodes, lifecycleUrl, suffix) {
-	preview.className = `alert ${alertClass} mt-2`;
-	while (preview.firstChild) {
-		preview.firstChild.remove();
-	}
-	for (const node of prefixNodes) {
-		preview.append(node);
-	}
-	preview.append(" Visit the ");
-	preview.append(buildLifecycleLink(lifecycleUrl));
-	preview.append(suffix);
-}
-
-function updatePreview(versionInput, preview, regex, lifecycleUrl) {
-	const version = versionInput.value.trim();
-	if (!version) {
-		renderPreview(
-			preview,
-			"alert-light",
-			[
-				document.createTextNode(
-					"Enter a version to see which cycle it lands in.",
-				),
-			],
-			lifecycleUrl,
-			" to change the cycle pattern.",
-		);
-		return;
-	}
-
-	// Mirror Python's re.fullmatch by requiring the regex to consume the
-	// entire version string, and by treating an empty capture as no match.
-	const match = version.match(regex);
-	if (!match || match[0] !== version || !match[1]) {
-		renderPreview(
-			preview,
-			"alert-warning",
-			[
-				document.createTextNode(
-					"This version doesn't match the project's cycle pattern.",
-				),
-			],
-			lifecycleUrl,
-			" to adjust the pattern.",
-		);
-		return;
-	}
-
-	const cycleName = document.createElement("strong");
-	cycleName.textContent = match[1];
-	renderPreview(
-		preview,
-		"alert-info",
-		[
-			document.createTextNode("This release will be added to cycle "),
-			cycleName,
-			document.createTextNode("."),
-		],
-		lifecycleUrl,
-		" if you'd like to change which cycle this version belongs to.",
-	);
-}
-
 function initStartCyclePreview() {
-	const config = readConfig();
-	if (!config) {
-		return;
-	}
+	const input = document.getElementById("version_key");
+	const output = document.getElementById("start-cycle-preview-text");
+	if (!input || !output) return;
+	const emptyMessage = output.textContent;
+	const url = output.dataset.previewUrl;
 
-	let regex;
-	try {
-		regex = new RegExp(config.cycleMatch);
-	} catch (e) {
-		console.error("Invalid cycle_match regex:", e);
-		return;
-	}
-
-	const versionInput = document.getElementById("version_key");
-	const preview = document.getElementById("start-cycle-preview");
-	if (!versionInput || !preview) {
-		return;
-	}
-
-	const refresh = () =>
-		updatePreview(versionInput, preview, regex, config.lifecycleUrl);
-	versionInput.addEventListener("input", refresh);
+	let timer;
+	const refresh = () => {
+		clearTimeout(timer);
+		const version = input.value;
+		if (!version.trim()) {
+			output.textContent = emptyMessage;
+			return;
+		}
+		output.textContent = "";
+		timer = setTimeout(() => updatePreview(input, output, url, version), 300);
+	};
+	input.addEventListener("input", refresh);
 	refresh();
+}
+
+async function updatePreview(input, output, url, version) {
+	let message;
+	try {
+		const response = await fetch(`${url}?${new URLSearchParams({ version })}`, {
+			redirect: "error",
+		});
+		if (!response.ok) throw new Error("Cycle preview unavailable");
+		const { cycle } = await response.json();
+		message =
+			cycle === null
+				? "Enter a valid version matching the project's cycle pattern."
+				: `Cycle: ${cycle}.`;
+	} catch {
+		message = "Cycle preview unavailable.";
+	}
+	if (input.value === version) output.textContent = message;
 }
 
 document.addEventListener("DOMContentLoaded", initStartCyclePreview);
