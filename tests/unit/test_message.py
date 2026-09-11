@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Tests for ASF ID validation in atr.tasks.message module."""
+"""Tests for sender and recipient validation in atr.tasks.message module."""
 
 import contextlib
 import unittest.mock as mock
@@ -144,6 +144,31 @@ async def test_send_rejects_invalid_asf_id(monkeypatch: "MonkeyPatch") -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("recipient_field", ["email_to", "email_cc", "email_bcc"])
+@pytest.mark.parametrize("recipient", ["otheruser@apache.org", "announce@example.org", "announce@notapache.org"])
+async def test_send_rejects_unauthorized_recipients(
+    monkeypatch: "MonkeyPatch", recipient_field: str, recipient: str
+) -> None:
+    monkeypatch.setattr(
+        "atr.tasks.message.ldap.account_lookup",
+        mock.AsyncMock(
+            return_value=ldap.Result(
+                dn="uid=validuser,ou=people,dc=apache,dc=org", uid=["validuser"], cn=["Valid User"]
+            )
+        ),
+    )
+    mock_storage_write = mock.MagicMock()
+    monkeypatch.setattr("atr.tasks.message.storage.write", mock_storage_write)
+    task_args = _send_args()
+    task_args[recipient_field] = recipient if (recipient_field == "email_to") else [recipient]
+
+    with pytest.raises(message.SendError, match="You are not permitted to send emails"):
+        await message.send(task_args)
+
+    mock_storage_write.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_send_returns_warnings_on_partial_failure(monkeypatch: "MonkeyPatch") -> None:
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
@@ -176,8 +201,12 @@ async def test_send_returns_warnings_on_partial_failure(monkeypatch: "MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> None:
-    """Test that a valid ASF UID passes LDAP validation and sends the email."""
+@pytest.mark.parametrize("recipient_field", ["email_to", "email_cc", "email_bcc"])
+@pytest.mark.parametrize("recipient", ["dev@project.apache.org", "validuser@apache.org", "announce@apache.org"])
+async def test_send_succeeds_with_valid_asf_id(
+    monkeypatch: "MonkeyPatch", recipient_field: str, recipient: str
+) -> None:
+    """A valid ASF sender can deliver to each permitted recipient in any envelope field."""
     # ldap.account_lookup returns a dict for a known UID
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
@@ -197,12 +226,14 @@ async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> No
     mock_write.as_foundation_committer.return_value = mock_wafc
 
     @contextlib.asynccontextmanager
-    async def mock_storage_write(_asf_uid: str):  # type: ignore[no-untyped-def]
+    async def mock_storage_write(_asf_uid: str) -> AsyncIterator[mock.MagicMock]:
         yield mock_write
 
     monkeypatch.setattr("atr.tasks.message.storage.write", mock_storage_write)
 
-    result = await message.send(_send_args(email_sender="validuser@apache.org"))
+    task_args = _send_args(email_to="private@project.apache.org")
+    task_args[recipient_field] = recipient if (recipient_field == "email_to") else [recipient]
+    result = await message.send(task_args)
 
     # Verify the result
     assert result is not None
@@ -210,7 +241,9 @@ async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> No
     assert result.mail_send_warnings == []
 
     # Verify mail.send was called exactly once
-    mock_mail_send.assert_called_once()
+    mock_mail_send.assert_awaited_once()
+    sent_message = mock_mail_send.call_args.args[0]
+    assert getattr(sent_message, recipient_field) == task_args[recipient_field]
 
 
 def test_send_task_args_omits_only_empty_message_id() -> None:

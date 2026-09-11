@@ -290,11 +290,12 @@ async def server_stop(server: asyncssh.SSHAcceptor) -> None:
     log.info("SSH server stopped")
 
 
-def _build_rsync_write_argv(argv: list[str], path: safe.StatePath) -> list[str]:
+def _build_rsync_write_argv(argv: list[str]) -> list[str]:
     """Build the rsync command for a write, adding enforced server side limits."""
     if len(argv) < 2 or argv[-2] != ".":
         raise RuntimeError("Validated rsync write argv must end with '.' and the destination path")
-    return [*argv[:-2], f"--max-size={_RSYNC_MAX_UPLOAD_SIZE}", "--info=skip2", ".", str(path)]
+    # Use exactly '.' so rsync does not reopen ancestors outside the Landlock sandbox
+    return [*argv[:-2], f"--max-size={_RSYNC_MAX_UPLOAD_SIZE}", "--info=skip2", ".", "."]
 
 
 async def _drain_stderr(stream: asyncio.StreamReader) -> bytes:
@@ -677,13 +678,13 @@ async def _step_07b_process_validated_rsync_write(
             nonlocal exit_status
             if old_rev is not None:
                 log.info(f"Using old revision {old_rev.number} and interim path {path}")
-            rsync_argv = _build_rsync_write_argv(argv, path)
+            rsync_argv = _build_rsync_write_argv(argv)
             rsync_argv = sandbox.command(rsync_argv, rw_paths=[str(path)])
 
             ###################################################
             ### Calls _step_08_execute_rsync_upload_command ###
             ###################################################
-            exit_status = await _step_08_execute_rsync(process, rsync_argv)
+            exit_status = await _step_08_execute_rsync(process, rsync_argv, cwd=path)
             if exit_status != 0:
                 if old_rev is not None:
                     for_revision = f"successor of revision {old_rev.number}"
@@ -757,7 +758,9 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
         await data.commit()
 
 
-async def _step_08_execute_rsync(process: asyncssh.SSHServerProcess, argv: list[str]) -> int:
+async def _step_08_execute_rsync(
+    process: asyncssh.SSHServerProcess, argv: list[str], *, cwd: safe.StatePath | None = None
+) -> int:
     """Execute the modified rsync command."""
     log.info(f"Executing modified rsync command: {' '.join(argv)}")
     proc = await asyncio.create_subprocess_exec(
@@ -765,6 +768,7 @@ async def _step_08_execute_rsync(process: asyncssh.SSHServerProcess, argv: list[
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
     )
     stderr_stream = proc.stderr
     drain = asyncio.create_task(_drain_stderr(stderr_stream)) if stderr_stream is not None else None

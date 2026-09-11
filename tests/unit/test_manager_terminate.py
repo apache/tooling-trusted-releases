@@ -78,6 +78,8 @@ async def test_stop_worker_kills_the_group_when_a_child_survives(monkeypatch: py
 
 async def test_stop_worker_reports_a_child_which_outlives_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(manager, "_live_process_group_members", lambda pgid: [123])
+    killpg = mock.Mock()
+    monkeypatch.setattr("os.killpg", killpg)
     monkeypatch.setattr(manager, "_KILL_WAIT_SECONDS", 0.05)
     monkeypatch.setattr(manager, "_KILL_POLL_SECONDS", 0.01)
     errors = []
@@ -86,6 +88,7 @@ async def test_stop_worker_reports_a_child_which_outlives_the_deadline(monkeypat
 
     await manager.WorkerManager().stop_worker(worker_process)
 
+    assert killpg.call_args_list == [mock.call(999, signal.SIGTERM), mock.call(999, signal.SIGKILL)]
     assert len(errors) == 1
     assert "live members after SIGKILL" in errors[0]
     assert worker_process.stopping is False
@@ -105,6 +108,8 @@ async def test_stop_worker_waits_for_a_child_which_is_slow_to_die(monkeypatch: p
     # The child is still listed for the first few looks after SIGKILL, as it is in reality
     looks = [[123], [123], [123], []]
     monkeypatch.setattr(manager, "_live_process_group_members", lambda pgid: looks.pop(0) if looks else [])
+    killpg = mock.Mock()
+    monkeypatch.setattr("os.killpg", killpg)
     monkeypatch.setattr(manager, "_KILL_POLL_SECONDS", 0.01)
     errors = []
     monkeypatch.setattr(manager.log, "error", lambda message: errors.append(message))
@@ -112,6 +117,7 @@ async def test_stop_worker_waits_for_a_child_which_is_slow_to_die(monkeypatch: p
 
     await manager.WorkerManager().stop_worker(worker_process)
 
+    assert killpg.call_args_list == [mock.call(999, signal.SIGTERM), mock.call(999, signal.SIGKILL)]
     assert errors == []
     assert worker_process.stopping is True
 
