@@ -71,8 +71,8 @@ export const COLS = [
 	},
 	{ key: "risk", label: "Risk", numeric: true, fmt: (v) => score(v) },
 	{
-		key: "latest_release_at",
-		label: "Latest release",
+		key: "published_at",
+		label: "Registry publication",
 		numeric: false,
 		fmt: (v) => (v ? esc(v.slice(0, 10)) : nullCell()),
 	},
@@ -125,7 +125,7 @@ function nameCell(p) {
 	return `<div class="name">${name}<small>${esc(p.key)}</small>
     <details><summary>Observations</summary>
       <div>Repository source: ${esc(p.repository_source || "Unknown")}${p.repository_source === "gitbox_mirror" ? " (inferred)" : ""}</div>
-      <div>Version published: ${esc(p.published_at || "Unknown")}</div>
+      <div>Latest indexed release: ${esc(p.latest_release_version || "Unknown")} — ${esc(p.latest_release_at?.slice(0, 10) || "Unknown")}</div>
       <div>Contribution distribution: ${p.dds === null ? "Unknown" : p.dds.toFixed(3)}</div>
       <div>Active maintainers: ${fmtInt(p.active_maintainers)}</div>
       <div>Guidance files: ${fmtInt(p.governance_files)} of 3</div>

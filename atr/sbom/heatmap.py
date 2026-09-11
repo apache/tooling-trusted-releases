@@ -171,9 +171,13 @@ async def _mirrors(
 
 
 def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or (not isinstance(value, int | float)) or (not math.isfinite(value)):
+    if isinstance(value, bool) or (not isinstance(value, int | float | str)):
         return None
-    return float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _observations(
@@ -184,6 +188,7 @@ def _observations(
 ) -> None:
     version = _advisories(row, versions)
     row.latest_release_at = package.get("latest_release_published_at")
+    row.latest_release_version = package.get("latest_release_version")
     row.rankings_average = package.get("rankings_average")
     row.repository_url = package.get("repository_url")
     repository = package.get("repo_metadata") or {}
@@ -226,6 +231,7 @@ async def _packages(session: aiohttp.ClientSession, keys: list[str]) -> dict[str
                 key = str(packageurl.PackageURL(purl.type, purl.namespace, purl.name))
                 packages[key] = {
                     "latest_release_published_at": package.get("latest_release_published_at"),
+                    "latest_release_version": package.get("latest_release_number"),
                     "rankings_average": _number((package.get("rankings") or {}).get("average")),
                     "repository_url": package.get("repository_url"),
                     "repo_metadata": _repository(package.get("repo_metadata")),

@@ -206,6 +206,7 @@ class SBOMHeatmapRow(schema.Strict):
     source_repo: str | None = None
     repository_source: Literal["deps.dev", "ecosyste.ms", "gitbox_mirror"] | None = None
     latest_release_at: str | None = None
+    latest_release_version: str | None = None
     rankings_average: float | None = None
     archived: bool | None = None
     dds: float | None = None

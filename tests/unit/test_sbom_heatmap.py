@@ -84,6 +84,7 @@ def package(**changes) -> dict:
     return {
         "purl": _KEY,
         "repository_url": f"https://{_PROJECT}",
+        "latest_release_number": "2",
         "latest_release_published_at": "2026-08-01T00:00:00Z",
         "rankings": {"average": 0},
         "repo_metadata": repository(),
@@ -166,6 +167,7 @@ async def test_analyse_keeps_versions_membership_and_unknown_packages(monkeypatc
     assert rows[_KEY + "@1"].artifacts == ["a.tar.gz", "c.zip"]
     assert rows[_KEY + "@1"].source_purls == [_KEY + "@1", _KEY + "@1?type=jar"]
     assert rows[_KEY + "@1"].advisories == ["GHSA-one"]
+    assert rows[_KEY + "@1"].latest_release_version == "2"
     assert rows[_KEY + "@2"].artifacts == ["b.tar.gz"]
     assert rows[_KEY + "@2"].advisory_status == "none"
     assert rows[_KEY + "@2"].advisories == []
@@ -321,11 +323,33 @@ def test_missing_governance_is_not_zero_and_issue_tracker_is_not_source() -> Non
     assert entry.active_maintainers == 0
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0, 0),
+        ("0", 0),
+        ("0.016233766233766267", 0.016233766233766267),
+        (True, None),
+        (None, None),
+        ([], None),
+        ("invalid", None),
+        ("", None),
+        ("nan", None),
+        ("inf", None),
+        ("1e999", None),
+        (float("inf"), None),
+        (10**400, None),
+    ],
+)
+def test_number_accepts_only_finite_numbers(value, expected) -> None:
+    assert heatmap._number(value) == expected
+
+
 async def test_package_metadata_retains_only_scoring_values(monkeypatch) -> None:
     records = [
         package(
-            rankings={"average": 12, "unused": ["bulk"] * 1000},
-            repo_metadata=repository(unused=["bulk"] * 1000),
+            rankings={"average": "12", "unused": ["bulk"] * 1000},
+            repo_metadata=repository(commit_stats={"dds": "0.016233766233766267"}, unused=["bulk"] * 1000),
             issue_metadata={"active_maintainers": [{"unused": ["bulk"] * 1000}], "unused": ["bulk"] * 1000},
         )
     ]
@@ -333,9 +357,10 @@ async def test_package_metadata_retains_only_scoring_values(monkeypatch) -> None
     compact = await heatmap._packages(fake, [_KEY])
     assert compact[_KEY] == {
         "latest_release_published_at": "2026-08-01T00:00:00Z",
+        "latest_release_version": "2",
         "rankings_average": 12,
         "repository_url": f"https://{_PROJECT}",
-        "repo_metadata": {"archived": False, "dds": 0.5, "governance_files": 1},
+        "repo_metadata": {"archived": False, "dds": 0.016233766233766267, "governance_files": 1},
         "issue_metadata": {"active_maintainers": 1},
     }
     assert records[0]["issue_metadata"]["active_maintainers"][0]["unused"] == ["bulk"] * 1000
