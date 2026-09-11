@@ -19,19 +19,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import atr.ssh as ssh
 
-if TYPE_CHECKING:
-    import pathlib
 
-
-def test_build_rsync_write_argv_adds_server_side_limits(tmp_path: pathlib.Path) -> None:
+def test_build_rsync_write_argv_adds_server_side_limits() -> None:
     argv = ["rsync", "--server", "-vlogDtpre.iLsfxCIvu", "--delete", ".", "/proj/v1/"]
-    path = tmp_path / "atr-write" / "revision"
 
-    result = ssh._build_rsync_write_argv(argv, path)
+    result = ssh._build_rsync_write_argv(argv)
 
     assert result == [
         "rsync",
@@ -41,6 +35,6 @@ def test_build_rsync_write_argv_adds_server_side_limits(tmp_path: pathlib.Path) 
         f"--max-size={ssh._RSYNC_MAX_UPLOAD_SIZE}",
         "--info=skip2",
         ".",
-        str(path),
+        ".",
     ]
     assert argv == ["rsync", "--server", "-vlogDtpre.iLsfxCIvu", "--delete", ".", "/proj/v1/"]
