@@ -64,6 +64,18 @@ You can only have one `.rat-excludes` file. The folder it's in becomes the **sca
 
 This check looks at source files to see if they have valid license headers.
 
+### Accepted headers
+
+ATR accepts the standard ASF source header or the [SPDX form permitted by ASF policy](https://www.apache.org/legal/src-headers.html#is-an-spdx-form-of-the-source-header-acceptable):
+
+```text
+SPDX-License-Identifier: Apache-2.0
+SPDX-FileCopyrightText: See the NOTICE file distributed with this work for additional information regarding copyright ownership
+SPDX-FileContributor: Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements
+```
+
+All three fields must appear within the first 4KB, each on one line, in any order. Common comment prefixes, differences in case, and extra spaces or tabs are accepted. The identifier line may end with an inline block closer (`*/`, `-->`, or `#>`). A bare identifier, other license identifiers, compound license expressions, and wrapped field values are not recognized by this check.
+
 ### Content-based exclusions
 
 Files are skipped (considered generated) if the first 4KB of the file contains one of these markers:

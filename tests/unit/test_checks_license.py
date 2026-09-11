@@ -37,6 +37,14 @@ NOTICE_VALID: str = (
     "The Apache Software Foundation (http://www.apache.org/).\n"
 )
 
+SPDX_HEADER: tuple[bytes, ...] = (
+    b"SPDX-License-Identifier: Apache-2.0",
+    b"SPDX-FileCopyrightText: See the NOTICE file distributed with this work"
+    b" for additional information regarding copyright ownership",
+    b"SPDX-FileContributor: Licensed to the Apache Software Foundation (ASF)"
+    b" under one or more contributor license agreements",
+)
+
 
 def test_files_binary_license_notice_in_subdir(tmp_path):
     cache_dir = _cache_with_root(tmp_path)
@@ -298,6 +306,63 @@ def test_headers_check_includes_excludes_source_policy(tmp_path):
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
     final_result = artifact_results[-1]
     assert final_result.data["excludes_source"] == "policy"
+
+
+@pytest.mark.parametrize("padding, status", [(0, sql.CheckResultStatus.NOTE), (4096, sql.CheckResultStatus.CONCERN)])
+def test_headers_spdx_file(tmp_path, padding, status):
+    source_path = tmp_path / "example.py"
+    source_path.write_bytes((b"\n" * padding) + b"\n".join(b"# " + line for line in SPDX_HEADER))
+    result = license._headers_check_core_logic_process_file(source_path, "example.py")
+    assert isinstance(result, license.MemberResult)
+    assert result.status == status
+
+
+@pytest.mark.parametrize(
+    "prefix, suffix",
+    [(b"", b""), (b"# ", b""), (b"// ", b""), (b" * ", b""), (b"/* ", b" */"), (b"<!-- ", b" -->"), (b"<# ", b" #>")],
+)
+def test_headers_validate_spdx(prefix, suffix):
+    content = b"\n".join(prefix + line + suffix for line in SPDX_HEADER)
+    assert license.headers_validate(content, "example.py") == (True, None)
+
+
+def test_headers_validate_spdx_formatting():
+    content = b"\r\n".join(reversed(SPDX_HEADER)).lower().replace(b" ", b"\t  ")
+    assert license.headers_validate(content, "example.py") == (True, None)
+
+
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        (b"Apache-2.0", b"Apache-2.0+"),
+        (b"Apache-2.0", b"Apache-2.0 +"),
+        (b"Apache-2.0", b"Apache-2.0."),
+        (b"Apache-2.0", b"Apache-2.0/"),
+        (b"Apache-2.0", b"Apache-2.00"),
+        (b"Apache-2.0", b"Apache/2/0"),
+        (b"Apache-2.0", b"Apache-2.0 OR MIT"),
+        (b"Apache-2.0", b"Apache-2.0 WITH LLVM-exception"),
+        (b"NOTICE", b"OTHER"),
+        (b"one or more", b"no"),
+        (b"information regarding", b"information\n# regarding"),
+        (b"SPDX-", b"See SPDX-"),
+    ],
+)
+def test_headers_validate_spdx_rejects_changes(old, new):
+    content = b"\n".join(SPDX_HEADER).replace(old, new)
+    assert license.headers_validate(content, "example.py")[0] is False
+
+
+@pytest.mark.parametrize("missing", [0, 1, 2])
+def test_headers_validate_spdx_requires_all_fields(missing):
+    content = b"\n".join(line for index, line in enumerate(SPDX_HEADER) if index != missing)
+    assert license.headers_validate(content, "example.py")[0] is False
+
+
+@pytest.mark.parametrize("scheme", [b"http:", b"https:"])
+def test_headers_validate_standard(scheme):
+    content = pathlib.Path(__file__).read_bytes().split(b"\n\n", 1)[0].replace(b"http:", scheme)
+    assert license.headers_validate(content, "example.py") == (True, None)
 
 
 def _cache_with_root(tmp_path: pathlib.Path) -> safe.StatePath:

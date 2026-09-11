@@ -49,6 +49,14 @@ HTTP_APACHE_LICENSE_HEADER: Final[bytes] = (
 
 HTTPS_APACHE_LICENSE_HEADER: Final[bytes] = HTTP_APACHE_LICENSE_HEADER.replace(b" http ", b" https ")
 
+SPDX_APACHE_LICENSE_PATTERNS: Final[tuple[bytes, ...]] = (
+    rb"^[^\w\r\n]*SPDX-License-Identifier: Apache-2\.0 *(?:\*/|-->|#>)? *\r?$",
+    rb"^[^\w\r\n]*SPDX-FileCopyrightText: See the NOTICE file distributed with this work"
+    rb" for additional information regarding copyright ownership[^\w\r\n]*\r?$",
+    rb"^[^\w\r\n]*SPDX-FileContributor: Licensed to the Apache Software Foundation \(ASF\)"
+    rb" under one or more contributor license agreements[^\w\r\n]*\r?$",
+)
+
 # Patterns for files to include in license header checks
 # Ordered by their popularity in the Stack Overflow Developer Survey 2024
 INCLUDED_PATTERNS: Final[list[str]] = [
@@ -84,7 +92,7 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
 CHECK_VERSION_FILES: Final[str] = "7"
-CHECK_VERSION_HEADERS: Final[str] = "6"
+CHECK_VERSION_HEADERS: Final[str] = "7"
 
 _BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
 _BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
@@ -224,6 +232,10 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
     for pattern in generated_by_patterns:
         if pattern in content:
             return True, None
+
+    spdx = re.sub(rb"[ \t]+", b" ", content)
+    if all(re.search(pattern, spdx, re.MULTILINE | re.IGNORECASE) for pattern in SPDX_APACHE_LICENSE_PATTERNS):
+        return True, None
 
     r_span = re.compile(rb"Licensed to the.*?under the License", re.MULTILINE)
     r_words = re.compile(rb"[A-Za-z0-9]+")
