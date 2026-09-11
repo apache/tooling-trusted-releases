@@ -55,7 +55,7 @@
           <small class="text-muted{% if row.inactive_bold %} fw-bold{% endif %}">{{ row.inactive_label }}</small>
         </td>
         <td>
-          <a class="btn btn-sm btn-outline-danger"
+          <a class="btn btn-sm btn-outline-danger text-nowrap"
              href="{{ as_url(admin.current_release_delete_get, project_key=release.project_key, version_key=release.version) }}">
             <i class="bi bi-trash"></i> Delete
           </a>
