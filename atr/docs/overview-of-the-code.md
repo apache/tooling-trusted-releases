@@ -1,10 +1,10 @@
-# 3.2. Overview of the code
+# 3.1. Overview of the code
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.1.` [Running the server](running-the-server)
+**Prev**: `2.8.` [Promoting to release](promoting-to-release)
 
-**Next**: `3.3.` [Database](database)
+**Next**: `3.2.` [How to contribute](how-to-contribute)
 
 **Sections**:
 

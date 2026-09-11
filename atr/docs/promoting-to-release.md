@@ -4,7 +4,7 @@
 
 **Prev**: `2.7.` [Staging and voting](staging-and-voting)
 
-**Next**: `3.1.` [Running the server](running-the-server)
+**Next**: `3.1.` [Overview of the code](overview-of-the-code)
 
 **Sections**:
 

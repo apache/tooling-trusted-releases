@@ -1,10 +1,10 @@
-# 3.6. Tasks
+# 3.11. Tasks
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.5.` [User interface](user-interface)
+**Prev**: `3.10.` [User interface](user-interface)
 
-**Next**: `3.7.` [Build processes](build-processes)
+**Next**: `3.12.` [Authentication security](authentication-security)
 
 **Sections**:
 
