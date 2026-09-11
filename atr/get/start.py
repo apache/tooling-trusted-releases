@@ -19,8 +19,11 @@ from typing import Literal
 
 import asfquart.base as base
 import htpy
+import pydantic.dataclasses as dataclasses
+import quart
 
 import atr.blueprints.get as get
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
@@ -34,6 +37,34 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+
+@dataclasses.dataclass(config={"str_strip_whitespace": True})
+class CyclePreviewQuery:
+    version: str = ""
+
+
+@get.typed
+async def cycle_preview(
+    session: web.Committer,
+    _start: Literal["start"],
+    project_key: safe.ProjectKey,
+    _preview: Literal["cycle-preview"],
+    query: CyclePreviewQuery,
+) -> web.QuartResponse:
+    await session.prevent_confusing_ui_display(project_key, flash_admin_warning=False)
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=False).demand(
+            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+        )
+
+    if util.version_key_error(query.version):
+        return quart.jsonify(cycle=None)
+    try:
+        cycle = cycles.cycle_name_for_version(project, query.version)
+    except ValueError:
+        cycle = None
+    return quart.jsonify(cycle=cycle)
 
 
 @get.typed
@@ -102,15 +133,14 @@ def _cycle_preview(project: sql.Project) -> htm.Element | None:
     if not project.cycle_match:
         return None
     lifecycle_url = util.as_url(projects.view, project_key=str(project.key)) + "?tab=lifecycle"
-    config = htpy.div(
-        "#start-cycle-config.d-none",
-        data_cycle_match=project.cycle_match,
-        data_lifecycle_url=lifecycle_url,
-    )
-    placeholder = htm.div("#start-cycle-preview.alert.alert-light.mt-2")[
-        "Enter a version to see which cycle it lands in."
+    return htm.div("#start-cycle-preview.alert.alert-light.mt-2")[
+        htm.span(
+            "#start-cycle-preview-text", data_preview_url=util.as_url(cycle_preview, project_key=str(project.key))
+        )["Enter a version to see which cycle it lands in."],
+        " ",
+        htm.a(href=lifecycle_url)["Lifecycle settings"],
+        ".",
     ]
-    return htm.div[config, placeholder]
 
 
 def _existing_releases(ul: htm.Block, releases: list[sql.Release], max_revisions: int = 18) -> None:
