@@ -183,6 +183,8 @@ USERS_LIST_COMMITTEES: Final[frozenset[str]] = frozenset(
     }
 )
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
+LISTS_PREFERENCES_URL: Final[str] = "https://lists.apache.org/api/preferences.json"
+_MAILING_LISTS_CACHE: dict[str, frozenset[str]] | None = None
 CAP_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 PROPAGATION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10, connect=5)
 PROPAGATION_PROBE_DEADLINE: Final[int] = 15
@@ -645,12 +647,45 @@ def concern_groups(info: "datatypes.PathInfo | None") -> list[ConcernGroup]:
     ]
 
 
+def committee_user_list_name(committee_key: str) -> str:
+    """Derive whether a committee uses 'users' or 'user' as its public user list name."""
+    if _MAILING_LISTS_CACHE is not None:
+        domain = f"{committee_key}.apache.org"
+        lists = _MAILING_LISTS_CACHE.get(domain)
+        if lists is not None:
+            if "users" in lists:
+                return "users"
+            if "user" in lists:
+                return "user"
+    return "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
+
+
+async def fetch_apache_mailing_lists() -> dict[str, frozenset[str]]:
+    """Fetch the mapping of Apache domain names to available mailing lists from lists.apache.org."""
+    global _MAILING_LISTS_CACHE
+    async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT, ipv4_only=True) as session:
+        async with session.get(LISTS_PREFERENCES_URL) as response:
+            response.raise_for_status()
+            data: Any = await response.json(content_type=None)
+
+    cache: dict[str, frozenset[str]] = {}
+    if isinstance(data, dict):
+        lists_data = data.get("lists")
+        if isinstance(lists_data, dict):
+            for domain, domain_lists in lists_data.items():
+                if isinstance(domain, str) and isinstance(domain_lists, dict):
+                    cache[domain] = frozenset(str(name) for name in domain_lists)
+
+    _MAILING_LISTS_CACHE = cache
+    return cache
+
+
 def configurable_recipients(action: sql.RecipientAction, committee_key: str, *, is_podling: bool) -> list[str]:
     # Stable, committee-derived recipients a project can persist as defaults.
     # These don't depend on the sender or on ALPHA test addresses, so a stored
     # default stays valid for whoever later sends the email.
     if action == sql.RecipientAction.ANNOUNCE:
-        user_list_name = "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
+        user_list_name = committee_user_list_name(committee_key)
         return [
             "announce@apache.org",
             f"announce@{committee_key}.apache.org",
@@ -1318,7 +1353,7 @@ def permitted_announce_recipients(
         return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
     recipients = ["announce@apache.org"]
     if committee_key is not None:
-        user_list_name = "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
+        user_list_name = committee_user_list_name(committee_key)
         recipients.extend(
             [
                 f"announce@{committee_key}.apache.org",
