@@ -15,15 +15,15 @@
 
 This repository contains code developed by the **Apache Software Foundation (ASF) Tooling team**.
 
-As of **January 2026**, this code is available for **internal ASF feedback only**.
-The project is in **alpha development** and subject to significant changes.
+As of **September 2026**, this code is available for **ASF feedback**.
+The project is in **beta development** and we plan to avoid significant changes.
 
 We welcome feedback and discussion, but note that many known issues and design refinements are already scheduled for future iterations.
 Please review our [issue tracker](https://github.com/apache/tooling-trusted-releases/issues) and inline comments before filing new issues.
 
-**Alpha test deployment:** https://release-test.apache.org/
+**Beta deployment:** https://releases.apache.org/
 
-> **Note:** This repository is not yet an officially maintained or endorsed ASF project.
+> **Note:** This repository is now an officially maintained ASF project.
 > It does not represent final technical or policy decisions for future ASF Tooling products.
 > The code is provided without guarantees regarding stability, security, or backward compatibility.
 
@@ -52,13 +52,13 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for additional options including running wi
 | [SUPPORT.md](SUPPORT.md) | Getting help and reporting issues |
 | [GOVERNANCE.md](GOVERNANCE.md) | Project governance |
 
-**Online documentation:** https://release-test.apache.org/docs/
+**Online documentation:** https://releases.apache.org/docs/
 
 ## Getting involved
 
 Community feedback is encouraged! If you are an ASF committer or contributor interested in Trusted Releases:
 
-1. **Try it out** – The [alpha test server](https://release-test.apache.org/) allows you to experiment with the release process.
+1. **Try it out** – The [beta test production server](https://releases.apache.org/) allows you to perform the release process.
 
 2. **Introduce yourself** on the development mailing list:
    [dev@tooling.apache.org](mailto:dev@tooling.apache.org)
