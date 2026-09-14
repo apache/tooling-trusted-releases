@@ -7,6 +7,11 @@ NOTE: This documentation is a work in progress.
 ## Table of contents
 
 * `1.` [Introduction to ATR](introduction-to-atr)
+  * `1.1.` [Getting started](getting-started)
+  * `1.2.` [Project configuration](project-configuration)
+  * `1.3.` [Release manager setup](release-manager-setup)
+  * `1.4.` [Making releases with ATR](release-process-description)
+  * `1.5.`  [Release catalog](release-catalog)
 * `2.` [User guide](user-guide)
   * `2.1.` [Terminology](terminology)
   * `2.2.` [Signing artifacts](signing-artifacts)

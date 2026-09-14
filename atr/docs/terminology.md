@@ -2,7 +2,7 @@
 
 **Up**: `2.` [User guide](user-guide)
 
-**Prev**: (none)
+**Prev**: `1.5.` [Release catalog](release-catalog)
 
 **Next**: `2.2.` [Signing artifacts](signing-artifacts)
 
