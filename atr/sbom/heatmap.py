@@ -20,7 +20,6 @@ import datetime
 import hashlib
 import itertools
 import json
-import math
 import pathlib
 import time
 import urllib.parse
@@ -35,6 +34,7 @@ import packageurl
 import atr.log as log
 import atr.metadata as metadata
 import atr.models.results as results
+import atr.sbom.maintenance as maintenance
 import atr.sbom.utilities as utilities
 import atr.util as util
 
@@ -133,28 +133,6 @@ def _gitbox(url: str) -> str | None:
     return f"github.com/apache/{name.lower()}"
 
 
-def _health(row: results.SBOMHeatmapRow, now: datetime.datetime) -> tuple[float | None, int]:
-    released = _timestamp(row.latest_release_at)
-    recency = None if (released is None) else 1 - ((now - released).total_seconds() / (365 * 86400 * 3))
-    parts = [
-        recency,
-        row.dds,
-        None if (row.active_maintainers is None) else row.active_maintainers / 3,
-        None if (row.governance_files is None) else row.governance_files / 3,
-    ]
-    observed = [max(0, min(1, part)) for part in parts if (part is not None)]
-    if row.archived is True:
-        return 0.05, len(observed)
-    return (sum(observed) / 4 if (len(observed) == 4) else None), len(observed)
-
-
-def _issues(data: Any) -> dict[str, Any]:
-    if (not isinstance(data, dict)) or (not data):
-        return {}
-    maintainers = data.get("active_maintainers")
-    return {"active_maintainers": len(maintainers) if isinstance(maintainers, list) else None}
-
-
 async def _mirrors(
     session: aiohttp.ClientSession, packages: dict[str, dict[str, Any]]
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any]]]:
@@ -162,22 +140,14 @@ async def _mirrors(
     mirrors = {}
     for project_id in sorted(project_id for project_id in ids if project_id):
         name = urllib.parse.quote(project_id.removeprefix("github.com/"), safe="")
-        repository = _repository(
+        repository = maintenance.repository(
             await _request(session, f"https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}")
         )
-        issues = _issues(await _request(session, f"https://issues.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}"))
+        issues = maintenance.issues(
+            await _request(session, f"https://issues.ecosyste.ms/api/v1/hosts/GitHub/repositories/{name}")
+        )
         mirrors[project_id] = (repository, issues)
     return mirrors
-
-
-def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or (not isinstance(value, int | float | str)):
-        return None
-    try:
-        number = float(value)
-    except (OverflowError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
 
 
 def _observations(
@@ -226,16 +196,16 @@ async def _packages(session: aiohttp.ClientSession, keys: list[str]) -> dict[str
         if not isinstance(records, list):
             raise ValueError("ecosyste.ms package lookup failed")
         for package in records:
-            purl = _purl(package.get("purl"))
+            purl = maintenance.package_url(package.get("purl"))
             if purl is not None:
                 key = str(packageurl.PackageURL(purl.type, purl.namespace, purl.name))
                 packages[key] = {
                     "latest_release_published_at": package.get("latest_release_published_at"),
                     "latest_release_version": package.get("latest_release_number"),
-                    "rankings_average": _number((package.get("rankings") or {}).get("average")),
+                    "rankings_average": maintenance.number((package.get("rankings") or {}).get("average")),
                     "repository_url": package.get("repository_url"),
-                    "repo_metadata": _repository(package.get("repo_metadata")),
-                    "issue_metadata": _issues(package.get("issue_metadata")),
+                    "repo_metadata": maintenance.repository(package.get("repo_metadata")),
+                    "issue_metadata": maintenance.issues(package.get("issue_metadata")),
                 }
             del package
         del records
@@ -261,31 +231,6 @@ async def _projects(session: aiohttp.ClientSession, ids: list[str]) -> dict[str,
             if "project" in response:
                 projects[response["request"]["projectKey"]["id"]] = response["project"]
     return projects
-
-
-def _purl(text: Any) -> packageurl.PackageURL | None:
-    if not isinstance(text, str):
-        return None
-    try:
-        return packageurl.PackageURL.from_string(text) if text else None
-    except ValueError:
-        return None
-
-
-def _repository(data: Any) -> dict[str, Any]:
-    if (not isinstance(data, dict)) or (not data):
-        return {}
-    archived = data.get("archived")
-    files = (data.get("metadata") or {}).get("files")
-    names = ("security", "code_of_conduct", "contributing")
-    governance = None
-    if isinstance(files, dict) and all(name in files for name in names):
-        governance = sum(bool(files[name]) for name in names)
-    return {
-        "archived": archived if isinstance(archived, bool) else None,
-        "dds": _number((data.get("commit_stats") or {}).get("dds")),
-        "governance_files": governance,
-    }
 
 
 def _repository_id(url: str) -> str | None:
@@ -349,7 +294,7 @@ def _rows(document: dict[str, Any], snapshot: results.SBOMHeatmapSbom) -> list[r
     for component in components:
         if component.get("type") == "file":
             continue
-        purl = _purl(component.get("purl"))
+        purl = maintenance.package_url(component.get("purl"))
         if purl is None:
             continue
         status: Literal["not_found", "version_unknown", "unsupported"] = (
@@ -418,12 +363,19 @@ async def _sboms(sboms: dict[str, str]) -> tuple[list[results.SBOMHeatmapSbom], 
 
 
 def _score(row: results.SBOMHeatmapRow, now: datetime.datetime) -> None:
-    ranking = row.rankings_average
-    if (ranking is not None) and (0 <= ranking <= 100):
-        row.criticality = 1 - (math.log10(ranking + 1) / math.log10(101))
-    row.health, row.health_inputs = _health(row, now)
-    if (row.criticality is not None) and (row.health is not None):
-        row.risk = row.criticality * (1 - row.health)
+    score = maintenance.score(
+        active_maintainers=row.active_maintainers,
+        archived=row.archived,
+        dds=row.dds,
+        governance_files=row.governance_files,
+        latest_release_at=row.latest_release_at,
+        rankings_average=row.rankings_average,
+        now=now,
+    )
+    row.criticality = score.criticality
+    row.health = score.health
+    row.health_inputs = score.health_inputs
+    row.risk = score.risk
 
 
 def _scorecard(row: results.SBOMHeatmapRow, project: dict[str, Any]) -> None:
@@ -436,16 +388,6 @@ def _scorecard(row: results.SBOMHeatmapRow, project: dict[str, Any]) -> None:
 
 def _supported(row: results.SBOMHeatmapRow) -> bool:
     return (row.version is not None) and (row.ecosystem in _SUPPORTED)
-
-
-def _timestamp(value: str | None) -> datetime.datetime | None:
-    if value is None:
-        return None
-    try:
-        timestamp = datetime.datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return timestamp if timestamp.tzinfo else None
 
 
 def _version_purl(purl: packageurl.PackageURL) -> str:

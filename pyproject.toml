@@ -35,6 +35,7 @@ dependencies = [
   "greenlet>=3.1.1,<4.0.0",
   "htpy (>=25.7.0,<26.0.0)",
   "hypercorn[uvloop]>=0.17,<1.0.0",
+  "ijson>=3.5.1,<4",
   "jsonpatch>=1.33",
   "ldap3 (==2.10.2rc3)",
   "orjson>=3.11.9",
