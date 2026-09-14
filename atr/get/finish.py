@@ -145,16 +145,17 @@ def _render_dist_warning() -> htm.Element:
     return htm.div(".alert.alert-warning.mb-4", role="alert")[
         htm.p(".fw-semibold.mb-1")["NOTE:"],
         htm.p(".mb-1")[
-            "Tools to distribute automatically are still being developed, "
-            "you must do this manually at present. Please use the manual record function below to do so.",
+            "Tools to distribute to third-party platforms automatically are still being developed, "
+            "you must do this manually at present, if required. Please use the manual record function below to do so.",
         ],
     ]
 
 
-def _render_distribution_buttons(release: sql.Release) -> htm.Element:
+def _render_distribution_buttons(release: sql.Release, is_admin: bool) -> htm.Element:
     """Render the distribution tool buttons."""
-    return htm.div()[
-        htm.p(".mb-1")[
+    buttons = []
+    if is_admin:
+        buttons.append(
             htm.a(
                 ".btn.btn-primary.me-2",
                 href=util.as_url(
@@ -162,17 +163,19 @@ def _render_distribution_buttons(release: sql.Release) -> htm.Element:
                     project_key=release.project.key,
                     version_key=release.version,
                 ),
-            )["Distribute"],
-            htm.a(
-                ".btn.btn-secondary.me-2",
-                href=util.as_url(
-                    distribution.record,
-                    project_key=release.project.key,
-                    version_key=release.version,
-                ),
-            )["Record a manual distribution"],
-        ],
-    ]
+            )["Automated distributions"]
+        )
+    buttons.append(
+        htm.a(
+            ".btn.btn-secondary.me-2",
+            href=util.as_url(
+                distribution.record,
+                project_key=release.project.key,
+                version_key=release.version,
+            ),
+        )["Record a manual distribution"]
+    )
+    return htm.div()[htm.p(".mb-1")[buttons],]
 
 
 def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) -> htm.Element:
@@ -278,7 +281,7 @@ async def _render_page(
         page.append(_render_distribution_tasks(release, distribution_tasks))
 
     page.append(_render_dist_warning())
-    page.append(_render_distribution_buttons(release))
+    page.append(_render_distribution_buttons(release, session.is_admin))
 
     if user.is_participant_for_committee(release.committee, session.participant_committees):
         page.h2["Inactivity"]

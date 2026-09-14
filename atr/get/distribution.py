@@ -272,21 +272,22 @@ async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, 
     block = htm.Block()
     render.html_nav_phase(block, str(project), str(version), staging=staging)
 
-    title = "Record a manual staging distribution" if staging else "Record a manual distribution"
+    title = "Record a manual staging distribution" if staging else "Record a third-party distribution"
     block.h1[title]
 
     if (not staging) and release.is_embargoed:
         _render_embargo_banner(block)
 
     block.p[
-        "Record a manual distribution of ",
+        "This form allows you to record a distribution of ",
         htm.strong[f"{project}-{version}"],
-        " using the form below.",
+        " to third-party distribution channels. ATR will verify that this distribution exists before ",
+        "recording it.",
     ]
     block.p[
-        "You can also ",
+        "You can also view the ",
         htm.a(href=util.as_url(list_get, project_key=str(project), version_key=str(version)))[
-            "view the distribution list"
+            "list of recorded distributions"
         ],
         ".",
     ]
@@ -310,7 +311,7 @@ async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, 
     # Render the distribution form
     form_html = await form.render(
         model_cls=shared.distribution.DistributionRecordForm,
-        submit_label="Record distribution",
+        submit_label="Confirm distribution",
         action=action,
         defaults={"package": str(project), "version": str(version)},
         enum_filter_include=enum_filter_include,
