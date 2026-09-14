@@ -1,10 +1,10 @@
-# 3.15. Dependency updates
+# 3.16. Dependency updates
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.14.` [Input validation](input-validation)
+**Prev**: `3.15.` [Input validation](input-validation)
 
-**Next**: `3.16.` [TLS security configuration](tls-security-configuration)
+**Next**: `3.17.` [TLS security configuration](tls-security-configuration)
 
 **Sections**:
 

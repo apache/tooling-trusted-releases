@@ -1,10 +1,10 @@
-# 3.13. Authorization security
+# 3.14. Authorization security
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.12.` [Authentication security](authentication-security)
+**Prev**: `3.13.` [Sessions](sessions)
 
-**Next**: `3.14.` [Input validation](input-validation)
+**Next**: `3.15.` [Input validation](input-validation)
 
 **Sections**:
 

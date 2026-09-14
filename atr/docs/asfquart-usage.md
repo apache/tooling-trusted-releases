@@ -1,10 +1,10 @@
-# 3.18. ASFQuart usage
+# 3.19. ASFQuart usage
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.17.` [API documentation policy](api-documentation-policy)
+**Prev**: `3.18.` [API documentation policy](api-documentation-policy)
 
-**Next**: `3.19.` [Resource management](resource-management)
+**Next**: `3.20.` [Resource management](resource-management)
 
 **Sections**:
 

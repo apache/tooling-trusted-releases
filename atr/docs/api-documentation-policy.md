@@ -1,10 +1,10 @@
-# 3.17. API documentation policy
+# 3.18. API documentation policy
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.16.` [TLS security configuration](tls-security-configuration)
+**Prev**: `3.17.` [TLS security configuration](tls-security-configuration)
 
-**Next**: `3.18.` [ASFQuart usage](asfquart-usage)
+**Next**: `3.19.` [ASFQuart usage](asfquart-usage)
 
 **Sections**:
 

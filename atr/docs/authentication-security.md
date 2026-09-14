@@ -4,7 +4,7 @@
 
 **Prev**: `3.11.` [Tasks](tasks)
 
-**Next**: `3.13.` [Authorization security](authorization-security)
+**Next**: `3.13.` [Sessions](sessions)
 
 **Sections**:
 
