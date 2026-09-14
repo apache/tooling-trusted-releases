@@ -219,12 +219,13 @@ class ReleaseManager(CommitteeParticipant):
         if existing.pending:
             if pending:
                 existing.retries = existing.retries + 1
-                await self.__data.commit()
-                return existing, False
             else:
                 existing.pending = False
-                await self.__data.commit()
-                return existing, False
+                existing.upload_date = upload_date
+                existing.api_url = api_url
+                existing.web_url = web_url
+            await self.__data.commit()
+            return existing, False
         return dist, False
 
     async def record_from_data(
