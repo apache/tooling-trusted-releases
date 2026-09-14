@@ -18,6 +18,7 @@
 import dataclasses
 import datetime
 import math
+import urllib.parse
 from typing import Any
 
 import packageurl
@@ -29,6 +30,23 @@ class Score:
     health: float | None
     health_inputs: int
     risk: float | None
+
+
+def gitbox_mirror(url: str) -> str | None:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.hostname != "gitbox.apache.org":
+        return None
+    if parsed.path.startswith("/repos/asf/"):
+        name = parsed.path.removeprefix("/repos/asf/")
+    elif parsed.path in ("/repos/asf", "/repos/asf.git"):
+        names = urllib.parse.parse_qs(parsed.query).get("p", [])
+        name = names[0] if (len(names) == 1) else ""
+    else:
+        return None
+    name = name.removesuffix(".git")
+    if (not name) or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." for c in name):
+        return None
+    return f"github.com/apache/{name.lower()}"
 
 
 def issues(data: Any) -> dict[str, Any]:
@@ -46,6 +64,11 @@ def number(value: Any) -> float | None:
     except (OverflowError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def package_key(text: str) -> str | None:
+    purl = package_url(text)
+    return str(packageurl.PackageURL(purl.type, purl.namespace, purl.name)) if purl else None
 
 
 def package_url(text: Any) -> packageurl.PackageURL | None:

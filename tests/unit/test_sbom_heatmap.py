@@ -307,7 +307,7 @@ async def test_analyse_raises_when_no_sbom_can_be_retrieved(monkeypatch: pytest.
     ],
 )
 def test_gitbox_mapping_is_narrow(url: str, expected: str | None) -> None:
-    assert heatmap._gitbox(url) == expected
+    assert maintenance.gitbox_mirror(url) == expected
 
 
 def test_missing_governance_is_not_zero_and_issue_tracker_is_not_source() -> None:

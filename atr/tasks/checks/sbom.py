@@ -16,13 +16,18 @@
 # under the License.
 
 import asyncio
+import dataclasses
+import datetime
 from typing import Any, Final
 
 import aiofiles.os
+import aiohttp
 
 import atr.analysis as analysis
 import atr.log as log
 import atr.models.results as results
+import atr.sbom.maintenance as maintenance
+import atr.sbom.observations as observations
 import atr.sbom.streaming as streaming
 import atr.tasks.checks as checks
 import atr.tasks.task as task
@@ -31,7 +36,10 @@ import atr.tasks.task as task
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
 CHECK_VERSION: Final[str] = "3"
-REVIEW_VERSION: Final = "1"
+REVIEW_VERSION: Final = "2"
+RISK_THRESHOLD: Final = 0.6
+_DEADLINE_SECONDS: Final = 540
+_EVIDENCE_LIMIT: Final = 100
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -65,13 +73,28 @@ async def review(args: checks.FunctionArguments) -> results.Results | None:
     if (path := await recorder.abs_path()) is None:
         return None
     try:
-        await asyncio.to_thread(streaming.sbom, path.path)
+        inventory, _ = await asyncio.to_thread(streaming.sbom, path.path)
     except streaming.MalformedError as error:
         await recorder.concern(f"SBOM structure cannot be interpreted reliably: {error}", {"problem": str(error)})
+        return None
     except streaming.UnsupportedError:
         return None
     except (OSError, streaming.LimitError) as error:
         raise task.CheckRetryableError("SBOM structure could not be checked", {"error": str(error)}) from error
+    if recorder.embargoed:
+        return None
+    try:
+        async with asyncio.timeout(_DEADLINE_SECONDS):
+            await _risks(recorder, inventory)
+    except (
+        TimeoutError,
+        OSError,
+        aiohttp.ClientError,
+        ValueError,
+        streaming.MalformedError,
+        streaming.LimitError,
+    ) as error:
+        raise task.CheckRetryableError("SBOM maintenance lookup did not complete", {"error": str(error)}) from error
     return None
 
 
@@ -102,3 +125,50 @@ async def _check_core_logic_find_sboms(recorder: checks.Recorder, sbom_expected_
         "error": "Could not locate a matching SBOM",
         "error_kind": "missing_sbom",
     }
+
+
+async def _risks(recorder: checks.Recorder, inventory: streaming.Inventory) -> None:
+    sources: dict[str, list[str]] = {}
+    for purl in inventory.purls:
+        if key := maintenance.package_key(purl):
+            sources.setdefault(key, []).append(purl)
+    packages = await observations.collect(sorted(sources))
+    now = datetime.datetime.now(datetime.UTC)
+    flagged = []
+    scored = 0
+    for key, purls in sources.items():
+        package = packages.get(key, {})
+        score = maintenance.score(
+            active_maintainers=package.get("active_maintainers"),
+            archived=package.get("archived"),
+            dds=package.get("dds"),
+            governance_files=package.get("governance_files"),
+            latest_release_at=package.get("latest_release_at"),
+            rankings_average=package.get("rankings_average"),
+            now=now,
+        )
+        if score.risk is None:
+            continue
+        scored += 1
+        if score.risk > RISK_THRESHOLD:
+            flagged.append({"key": key, "source_purls": purls, **package, **dataclasses.asdict(score)})
+    if not flagged:
+        return
+    flagged.sort(key=lambda row: (-row["risk"], row["key"]))
+    names = ", ".join(row["key"].removeprefix("pkg:") for row in flagged[:3])
+    remainder = f" (and {len(flagged) - 3} more)" if (len(flagged) > 3) else ""
+    await recorder.concern(
+        f"Packages {names}{remainder} have maintenance risk above {RISK_THRESHOLD:g}",
+        {
+            "finding": "risk",
+            "generated_at": now.isoformat(),
+            "threshold": RISK_THRESHOLD,
+            "packages": len(sources),
+            "scored": scored,
+            "unknown": len(sources) - scored,
+            "risk_count": len(flagged),
+            "risks": flagged[:_EVIDENCE_LIMIT],
+            "risks_truncated": len(flagged) > _EVIDENCE_LIMIT,
+            "attribution": "ecosyste.ms (CC BY-SA 4.0) with inferred Apache Gitbox mirrors; no deps.dev source veto",
+        },
+    )

@@ -887,7 +887,13 @@ async def _sbom_review_task(
             [],
             release,
             revision_number,
-            {"path": str(path)},
+            {
+                "release": release.key,
+                "revision": str(revision_number),
+                "path": str(path),
+                "embargoed": release.is_embargoed,
+                "threshold": sbom_check.RISK_THRESHOLD,
+            },
             file=str(path),
         ),
     )

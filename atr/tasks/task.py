@@ -72,6 +72,7 @@ TASK_TYPE_TIMEOUT_SECONDS: Final[dict[sql.TaskType, int]] = {
     sql.TaskType.CATALOG_SITE_GENERATE: 1800,
     sql.TaskType.RELEASE_FINALISE: 600,
     sql.TaskType.SBOM_HEATMAP: 600,
+    sql.TaskType.SBOM_REVIEW: 600,
 }
 
 

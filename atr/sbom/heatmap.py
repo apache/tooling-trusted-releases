@@ -116,27 +116,10 @@ def _components(document: dict[str, Any]) -> list[dict[str, Any]]:
     return components[1:]
 
 
-def _gitbox(url: str) -> str | None:
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.hostname != "gitbox.apache.org":
-        return None
-    if parsed.path.startswith("/repos/asf/"):
-        name = parsed.path.removeprefix("/repos/asf/")
-    elif parsed.path in ("/repos/asf", "/repos/asf.git"):
-        names = urllib.parse.parse_qs(parsed.query).get("p", [])
-        name = names[0] if (len(names) == 1) else ""
-    else:
-        return None
-    name = name.removesuffix(".git")
-    if (not name) or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." for c in name):
-        return None
-    return f"github.com/apache/{name.lower()}"
-
-
 async def _mirrors(
     session: aiohttp.ClientSession, packages: dict[str, dict[str, Any]]
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any]]]:
-    ids = {_gitbox(package.get("repository_url") or "") for package in packages.values()}
+    ids = {maintenance.gitbox_mirror(package.get("repository_url") or "") for package in packages.values()}
     mirrors = {}
     for project_id in sorted(project_id for project_id in ids if project_id):
         name = urllib.parse.quote(project_id.removeprefix("github.com/"), safe="")
@@ -171,7 +154,7 @@ def _observations(
     if len(sources) == 1:
         row.source_repo = _repository_id("https://" + next(iter(sources)))
         row.repository_source = "deps.dev" if row.source_repo else None
-    mirror = _gitbox(row.repository_url or "")
+    mirror = maintenance.gitbox_mirror(row.repository_url or "")
     if mirror and ((not sources) or (sources == {mirror})):
         mirror_repository, mirror_issues = mirrors.get(mirror, ({}, {}))
         repository = repository or mirror_repository
