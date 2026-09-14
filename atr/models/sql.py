@@ -1238,11 +1238,12 @@ On behalf of the Apache {{COMMITTEE}} project team,
         return """Hello {{COMMITTEE}},
 
 I'd like to call a vote on releasing the following artifacts as
-Apache {{PROJECT_NAME}} {{VERSION}}. This vote is being conducted using an
-Alpha version of the Apache Trusted Releases (ATR) platform.
+Apache {{PROJECT_NAME}} {{VERSION}}. This vote is being conducted using a
+Beta version of the Apache Trusted Releases (ATR) platform.
 Please report any bugs or issues to the ASF Tooling team.
 
-The release candidate page, including downloads, can be found at:
+The page of the release candidate from ATR revision {{REVISION}},
+which includes downloads, can be found at:
 
   {{REVIEW_URL}}
 
