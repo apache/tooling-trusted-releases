@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -148,6 +149,62 @@ async def test_distribution_record_rejects_foreign_committee() -> None:
             False,
             None,
         )
+
+
+@pytest.mark.asyncio
+async def test_distribution_confirming_pending_row_carries_over_resolved_metadata() -> None:
+    existing = SimpleNamespace(
+        pending=True,
+        staging=False,
+        upload_date=None,
+        api_url=None,
+        web_url=None,
+        retries=0,
+        created_by="bob",
+    )
+    release = SimpleNamespace(
+        key="example-1.0.0",
+        project=SimpleNamespace(
+            key="example",
+            status=sql.ProjectStatus.ACTIVE,
+            is_active=True,
+            committee_key="alpha",
+            release_policy=None,
+        ),
+        project_key="example",
+        version="1.0.0",
+    )
+    data = mock.MagicMock()
+    data.release = mock.MagicMock(return_value=Query(release))
+    data.distribution = mock.MagicMock(return_value=Query(existing))
+    data.commit = mock.AsyncMock()
+    writer = object.__new__(distributions.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write = mock.MagicMock()
+    writer._ReleaseManager__write_as = mock.MagicMock()
+    writer._ReleaseManager__asf_uid = "alice"
+    writer._ReleaseManager__committee_key = "alpha"
+
+    upload_date = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.UTC)
+    result, added = await writer.record(
+        safe.ReleaseKey("example-1.0.0"),
+        sql.DistributionPlatform.MAVEN,
+        None,
+        safe.Alphanumeric("pkg"),
+        safe.VersionKey("1.0.0"),
+        False,
+        False,
+        upload_date,
+        api_url="https://api.example/pkg",
+        web_url="https://web.example/pkg",
+    )
+
+    assert added is False
+    assert result is existing
+    assert existing.pending is False
+    assert existing.upload_date == upload_date
+    assert existing.api_url == "https://api.example/pkg"
+    assert existing.web_url == "https://web.example/pkg"
 
 
 @pytest.mark.asyncio
