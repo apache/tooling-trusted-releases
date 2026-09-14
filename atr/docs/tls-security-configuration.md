@@ -1,10 +1,10 @@
-# 3.15. TLS security configuration
+# 3.16. TLS security configuration
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.14.` [Input validation](input-validation)
+**Prev**: `3.15.` [Dependency updates](dependency-updates)
 
-**Next**: `3.16.` [API documentation policy](api-documentation-policy)
+**Next**: `3.17.` [API documentation policy](api-documentation-policy)
 
 **Sections**:
 

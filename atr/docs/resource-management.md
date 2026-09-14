@@ -1,8 +1,8 @@
-# 3.18. Resource management
+# 3.19. Resource management
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.17.` [ASFQuart usage](asfquart-usage)
+**Prev**: `3.18.` [ASFQuart usage](asfquart-usage)
 
 **Next**: (none)
 
