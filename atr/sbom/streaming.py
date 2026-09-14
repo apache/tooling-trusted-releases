@@ -24,6 +24,7 @@ from typing import Any, BinaryIO, Final
 import aiohttp
 import blake3
 import ijson
+import packageurl
 
 import atr.sbom.maintenance as maintenance
 
@@ -33,10 +34,20 @@ MAX_RESPONSE_BYTES: Final = 64 * 1024 * 1024
 MAX_SBOM_BYTES: Final = 256 * 1024 * 1024
 _MAX_DEPTH: Final = 64
 _MAX_FIELD: Final = 4096
+_MAX_LICENSES: Final = 100
 _MAX_MEMBERS: Final = 10000
 _MAX_MEMBER_CHARS: Final = 1024 * 1024
 _MAX_STRING: Final = 1024 * 1024
 _SCALARS: Final = frozenset({"null", "boolean", "number", "string"})
+_COMPONENT_FIELDS: Final = frozenset({"name", "purl", "type", "version"})
+_LICENSE_EVENTS: Final[dict[tuple[str | None, ...], frozenset[str]]] = {
+    ("licenses",): frozenset({"start_array", "end_array"}),
+    ("licenses", None): frozenset({"start_map", "end_map"}),
+    ("licenses", None, "expression"): _SCALARS,
+    ("licenses", None, "license"): frozenset({"start_map", "end_map"}),
+    ("licenses", None, "license", "id"): _SCALARS,
+    ("licenses", None, "license", "name"): _SCALARS,
+}
 
 REPOSITORY_FIELDS: Final = frozenset(
     {
@@ -124,6 +135,15 @@ class Inventory:
     files: int = 0
     unidentified: int = 0
     purls: list[str] = dataclasses.field(default_factory=list)
+    licensed_components: list["LicensedComponent"] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
+class LicensedComponent:
+    name: str
+    version: str | None
+    purl: str | None
+    licenses: list[tuple[str, bool]]
 
 
 class LimitError(Exception):
@@ -207,6 +227,8 @@ class Walk:
     pending: dict[JsonPath, dict[str, Any]] = dataclasses.field(default_factory=dict)
     purls: set[str] = dataclasses.field(default_factory=set)
     declared: dict[str, Any] = dataclasses.field(default_factory=dict)
+    licensed: dict[tuple[str | None, str, str | None], LicensedComponent] = dataclasses.field(default_factory=dict)
+    licenses: int = 0
 
     def feed(self, event: str, value: Any) -> None:
         position = self.cursor.advance(event, value)
@@ -225,7 +247,24 @@ class Walk:
         if (not isinstance(version, str)) or (not version):
             raise MalformedError("Missing CycloneDX specVersion")
         self.inventory.purls = sorted(self.purls)
+        self.inventory.licensed_components = list(self.licensed.values())
         return self.inventory
+
+    def _choice(self, component: dict[str, Any], event: str) -> None:
+        if event == "start_map":
+            component["choice"] = {}
+            return
+        choice = component.pop("choice")
+        if ("license" in choice) == ("expression" in choice):
+            raise MalformedError("CycloneDX license choice must be a license or an expression")
+        text = choice.get("expression") or choice.get("id") or choice.get("name")
+        declaration = (text, "expression" in choice)
+        declarations = component.setdefault("licenses", [])
+        if (not text) or (declaration in declarations):
+            return
+        declarations.append(declaration)
+        if len(declarations) > _MAX_LICENSES:
+            raise LimitError("Component exceeds the 100 license declaration analysis limit")
 
     def _component(self, position: JsonPath, event: str) -> None:
         if event == "start_map":
@@ -243,6 +282,16 @@ class Walk:
         if name in {"bomFormat", "specVersion"}:
             self.declared[name] = value
 
+    def _license(self, component: dict[str, Any], suffix: JsonPath, event: str, value: Any) -> None:
+        if event not in _LICENSE_EVENTS[suffix]:
+            raise MalformedError("CycloneDX component licenses must be an array of license or expression objects")
+        if len(suffix) == 2:
+            self._choice(component, event)
+        elif event == "start_map":
+            component["choice"]["license"] = True
+        elif event in _SCALARS:
+            component["choice"][suffix[-1]] = _text(value)
+
     def _record(self, component: dict[str, Any]) -> None:
         self.inventory.components += 1
         if self.inventory.components > MAX_COMPONENTS:
@@ -251,6 +300,7 @@ class Walk:
             self.inventory.files += 1
             return
         purl = maintenance.package_url(component.get("purl"))
+        self._retain(component, purl)
         if purl is None:
             self.inventory.unidentified += 1
             return
@@ -260,17 +310,37 @@ class Walk:
         if len(self.purls) > MAX_PACKAGES:
             raise LimitError("SBOM exceeds the 10,000 package identity analysis limit")
 
+    def _retain(self, component: dict[str, Any], purl: packageurl.PackageURL | None) -> None:
+        declarations = component.get("licenses")
+        if not declarations:
+            return
+        identity = str(purl) if purl else None
+        name = _text(component.get("name")) or (purl.name if purl else None) or "Unnamed component"
+        version = _text(component.get("version")) or (purl.version if purl else None)
+        retained = self.licensed.get((identity, name, version))
+        if retained is None:
+            retained = self.licensed[identity, name, version] = LicensedComponent(name, version, identity, [])
+            if len(self.licensed) > MAX_PACKAGES:
+                raise LimitError("SBOM exceeds the 10,000 licensed component analysis limit")
+        new = [item for item in declarations if item not in retained.licenses]
+        self.licenses += len(new)
+        if self.licenses > MAX_PACKAGES:
+            raise LimitError("SBOM exceeds the 10,000 license declaration analysis limit")
+        retained.licenses.extend(new)
+
     def _value(self, position: JsonPath, event: str, value: Any) -> None:
         if _component_array(position):
             if event not in {"start_array", "end_array"}:
                 raise MalformedError("CycloneDX components must be an array")
         elif _component(position):
             self._component(position, event)
+        elif (suffix := _license_suffix(position, self.pending)) is not None:
+            self._license(self.pending[position[: -len(suffix)]], suffix, event, value)
         elif event not in _SCALARS:
             return
         elif len(position) == 1:
             self._declare(position[0], value)
-        elif (position[:-1] in self.pending) and (position[-1] in {"type", "purl"}):
+        elif (position[:-1] in self.pending) and (position[-1] in _COMPONENT_FIELDS):
             self.pending[position[:-1]][position[-1]] = value
 
 
@@ -316,6 +386,13 @@ def _component_array(path: JsonPath) -> bool:
     return bool(path) and (path[-1] == "components") and ((len(path) == 1) or _component(path[:-1]))
 
 
+def _license_suffix(path: JsonPath, pending: dict[JsonPath, dict[str, Any]]) -> JsonPath | None:
+    for length in range(1, 5):
+        if (path[-length:] in _LICENSE_EVENTS) and (path[:-length] in pending):
+            return path[-length:]
+    return None
+
+
 async def _project(
     source: aiohttp.StreamReader, fields: frozenset[JsonPath], *, multiple: bool
 ) -> list[dict[str, Any]]:
@@ -337,3 +414,13 @@ async def _project(
     except ijson.JSONError as error:
         raise MalformedError(str(error).splitlines()[0]) from error
     return records if multiple else [projection.record]
+
+
+def _text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise MalformedError("CycloneDX component text must be a string")
+    if len(value) > _MAX_FIELD:
+        raise LimitError("CycloneDX component text exceeds the analysis limit")
+    return value

@@ -29,6 +29,41 @@ import atr.sbom.maintenance as maintenance
 import atr.sbom.streaming as streaming
 
 _CYCLONEDX = b'{"bomFormat": "CycloneDX", "specVersion": "1.6"'
+_LICENSED = {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.6",
+    "metadata": {"component": {"type": "application", "name": "subject", "licenses": [{"expression": "GPL-3.0-only"}]}},
+    "components": [
+        {"type": "file", "name": "LICENSE", "licenses": [{"license": {"id": "MIT"}}]},
+        {
+            "type": "library",
+            "name": "named",
+            "version": "2",
+            "licenses": [
+                {"license": {"id": "MIT", "name": "The MIT License", "text": {"content": "x" * 5000}}},
+                {"license": {"name": "Custom"}, "bom-ref": "custom", "acknowledgement": "declared"},
+                {"expression": "MIT OR GPL-2.0-only"},
+                {"license": {"id": "MIT"}},
+                {"license": {"id": None, "name": ""}},
+            ],
+        },
+        {
+            "type": "library",
+            "purl": "pkg:maven/org.example/lib@1.0",
+            "licenses": [{"license": {"id": "Apache-2.0"}}],
+            "components": [{"purl": "pkg:npm/%40scope/x@2", "licenses": [{"expression": "ISC"}]}],
+        },
+        {"type": "library", "purl": "pkg:maven/org.example/lib@1.0", "licenses": [{"license": {"name": "BSD"}}]},
+        {"type": "library", "name": "bare", "licenses": []},
+        {"licenses": [{"license": {"name": "Unlicense"}}]},
+    ],
+}
+_LICENSED_COMPONENTS = [
+    streaming.LicensedComponent("named", "2", None, [("MIT", False), ("Custom", False), ("MIT OR GPL-2.0-only", True)]),
+    streaming.LicensedComponent("x", "2", "pkg:npm/%40scope/x@2", [("ISC", True)]),
+    streaming.LicensedComponent("lib", "1.0", "pkg:maven/org.example/lib@1.0", [("Apache-2.0", False), ("BSD", False)]),
+    streaming.LicensedComponent("Unnamed component", None, None, [("Unlicense", False)]),
+]
 _NESTED = {
     "bomFormat": "CycloneDX",
     "specVersion": "1.6",
@@ -164,6 +199,12 @@ async def test_project_rejections(data: bytes, multiple: bool, error: type[Excep
         (_NESTED, streaming.Inventory(5, 1, 1, ["pkg:maven/org.example/lib@1.0", "pkg:npm/%40scope/x@2"])),
         ({"bomFormat": "CycloneDX", "specVersion": "1.6", "components": []}, streaming.Inventory()),
         ({"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [{"type": "file"}]}, streaming.Inventory(1, 1)),
+        (
+            _LICENSED,
+            streaming.Inventory(
+                7, 1, 3, ["pkg:maven/org.example/lib@1.0", "pkg:npm/%40scope/x@2"], _LICENSED_COMPONENTS
+            ),
+        ),
     ],
 )
 def test_sbom_inventory_and_hash(
@@ -184,6 +225,21 @@ def test_sbom_inventory_and_hash(
         ("_MAX_MEMBERS", 2, _CYCLONEDX + b', "a": 1}'),
         ("MAX_COMPONENTS", 1, _CYCLONEDX + b', "components": [{"type": "file"}, {"type": "file"}]}'),
         ("MAX_PACKAGES", 1, _CYCLONEDX + b', "components": [{"purl": "pkg:npm/a"}, {"purl": "pkg:npm/b"}]}'),
+        ("_MAX_LICENSES", 1, _CYCLONEDX + b', "components":[{"licenses":[{"expression":"a"},{"expression":"b"}]}]}'),
+        (
+            "MAX_PACKAGES",
+            1,
+            _CYCLONEDX + b', "components": [{"name": "a", "licenses": [{"expression": "MIT"}]}, '
+            b'{"name": "a", "licenses": [{"expression": "ISC"}]}]}',
+        ),
+        (
+            "MAX_PACKAGES",
+            1,
+            _CYCLONEDX + b', "components": [{"name": "a", "licenses": [{"expression": "MIT"}]}, '
+            b'{"name": "b", "licenses": [{"expression": "MIT"}]}]}',
+        ),
+        ("_MAX_FIELD", 2, _CYCLONEDX + b', "components": [{"licenses": [{"expression": "abc"}]}]}'),
+        ("_MAX_FIELD", 2, _CYCLONEDX + b', "components": [{"name": "abc", "licenses": [{"expression": "a"}]}]}'),
         ("_MAX_STRING", 4, _CYCLONEDX + b', "x": "abcde"}'),
     ],
 )
@@ -212,11 +268,26 @@ def test_sbom_limits(
         _CYCLONEDX + b', "components": {}}',
         _CYCLONEDX + b', "components": [1]}',
         _CYCLONEDX + b', "components": [{"components": {}}]}',
+        _CYCLONEDX + b', "components": [{"licenses": {}}]}',
+        _CYCLONEDX + b', "components": [{"licenses": [1]}]}',
+        _CYCLONEDX + b', "components": [{"licenses": [{}]}]}',
+        _CYCLONEDX + b', "components": [{"licenses": [{"license": "MIT"}]}]}',
+        _CYCLONEDX + b', "components": [{"licenses": [{"license": {"id": 1}}]}]}',
+        _CYCLONEDX + b', "components": [{"licenses": [{"license": {"id": "MIT"}, "expression": "MIT"}]}]}',
+        _CYCLONEDX + b', "components": [{"name": 1, "licenses": [{"expression": "MIT"}]}]}',
     ],
 )
 def test_sbom_malformed(tmp_path: pathlib.Path, data: bytes) -> None:
     with pytest.raises(streaming.MalformedError):
         streaming.sbom(_write(tmp_path, data))
+
+
+def test_sbom_repeated_components_share_limits(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(streaming, "MAX_PACKAGES", 1)
+    component = {"purl": "pkg:npm/a", "licenses": [{"expression": "MIT"}]}
+    document = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component] * 3}
+    inventory, _ = streaming.sbom(_write(tmp_path, json.dumps(document).encode()))
+    assert inventory.licensed_components == [streaming.LicensedComponent("a", None, "pkg:npm/a", [("MIT", True)])]
 
 
 @pytest.mark.parametrize(

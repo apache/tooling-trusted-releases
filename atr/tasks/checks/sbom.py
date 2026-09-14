@@ -26,7 +26,9 @@ import aiohttp
 import atr.analysis as analysis
 import atr.log as log
 import atr.models.results as results
+import atr.sbom.licenses as licenses
 import atr.sbom.maintenance as maintenance
+import atr.sbom.models.licenses
 import atr.sbom.observations as observations
 import atr.sbom.streaming as streaming
 import atr.tasks.checks as checks
@@ -36,7 +38,7 @@ import atr.tasks.task as task
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
 CHECK_VERSION: Final[str] = "3"
-REVIEW_VERSION: Final = "2"
+REVIEW_VERSION: Final = "3"
 RISK_THRESHOLD: Final = 0.6
 _DEADLINE_SECONDS: Final = 540
 _EVIDENCE_LIMIT: Final = 100
@@ -81,6 +83,7 @@ async def review(args: checks.FunctionArguments) -> results.Results | None:
         return None
     except (OSError, streaming.LimitError) as error:
         raise task.CheckRetryableError("SBOM structure could not be checked", {"error": str(error)}) from error
+    await _licenses(recorder, inventory)
     if recorder.embargoed:
         return None
     try:
@@ -127,6 +130,51 @@ async def _check_core_logic_find_sboms(recorder: checks.Recorder, sbom_expected_
     }
 
 
+def _headline(names: list[str]) -> str:
+    listed = ", ".join(names[:3])
+    remainder = f" (and {len(names) - 3} more)" if (len(names) > 3) else ""
+    return f"Packages {listed}{remainder}"
+
+
+def _license_name(item: dict[str, Any]) -> str:
+    key = maintenance.package_key(item["purl"]) if item["purl"] else None
+    name = (key or item["name"]).removeprefix("pkg:")
+    return f"{name}@{item['version']}" if item["version"] else name
+
+
+async def _licenses(recorder: checks.Recorder, inventory: streaming.Inventory) -> None:
+    flagged = []
+    for component in inventory.licensed_components:
+        choices = [licenses.assess(expression, explicit) for expression, explicit in component.licenses]
+        rejected = [choice for choice in choices if (choice.category == atr.sbom.models.licenses.Category.X)]
+        if not rejected:
+            continue
+        flagged.append(
+            {
+                "name": component.name,
+                "version": component.version,
+                "purl": component.purl,
+                "expressions": sorted({choice.expression for choice in rejected}),
+                "any_unknown": any(choice.any_unknown for choice in rejected),
+            }
+        )
+    if not flagged:
+        return
+    flagged.sort(key=_license_name)
+    names = [_license_name(item) for item in flagged]
+    unknown = " (including unrecognised licences)" if any(item["any_unknown"] for item in flagged) else ""
+    await recorder.concern(
+        f"{_headline(names)} have Category X licences{unknown}",
+        {
+            "finding": "licenses",
+            "licensed_components": len(inventory.licensed_components),
+            "license_count": len(flagged),
+            "licenses": flagged[:_EVIDENCE_LIMIT],
+            "licenses_truncated": len(flagged) > _EVIDENCE_LIMIT,
+        },
+    )
+
+
 async def _risks(recorder: checks.Recorder, inventory: streaming.Inventory) -> None:
     sources: dict[str, list[str]] = {}
     for purl in inventory.purls:
@@ -155,10 +203,9 @@ async def _risks(recorder: checks.Recorder, inventory: streaming.Inventory) -> N
     if not flagged:
         return
     flagged.sort(key=lambda row: (-row["risk"], row["key"]))
-    names = ", ".join(row["key"].removeprefix("pkg:") for row in flagged[:3])
-    remainder = f" (and {len(flagged) - 3} more)" if (len(flagged) > 3) else ""
+    names = [row["key"].removeprefix("pkg:") for row in flagged]
     await recorder.concern(
-        f"Packages {names}{remainder} have maintenance risk above {RISK_THRESHOLD:g}",
+        f"{_headline(names)} have maintenance risk above {RISK_THRESHOLD:g}",
         {
             "finding": "risk",
             "generated_at": now.isoformat(),

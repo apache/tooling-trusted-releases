@@ -24,7 +24,11 @@ import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.sbom.streaming as streaming
+import atr.tasks.checks as checks
+import atr.tasks.checks.sbom as sbom
 import atr.tasks.task as task
 
 
@@ -73,6 +77,34 @@ async def test_finalise_failure_dedupes_repeated_notifications(sqlite_sessionmak
 
         notification = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
         assert notification.asf_uid == "alice"
+
+
+async def test_finalise_failure_preserves_sbom_license_concern(sqlite_sessionmaker, monkeypatch) -> None:
+    monkeypatch.setattr(db, "session", sqlite_sessionmaker)
+    async with sqlite_sessionmaker() as data:
+        task_row = _active_task(pid=1234, task_type=sql.TaskType.SBOM_REVIEW)
+        data.add(task_row)
+        await data.commit()
+        recorder = await checks.Recorder.create(
+            sbom.review,
+            sbom.REVIEW_VERSION,
+            task_row.inputs_hash,
+            safe.ProjectKey("project"),
+            safe.VersionKey("1.0.0"),
+            safe.RevisionNumber("00001"),
+            safe.RelPath(task_row.primary_rel_path),
+        )
+        inventory = streaming.Inventory(
+            licensed_components=[streaming.LicensedComponent("a", None, None, [("GPL-3.0-only", False)])]
+        )
+        await sbom._licenses(recorder, inventory)
+        assert await task.finalise_failure(task_row.id, 1234, "lookup failed", task.BROKEN, caller_data=data)
+        rows = (await data.execute(sqlmodel.select(sql.CheckResult))).scalars().all()
+        assert {row.status for row in rows} == {sql.CheckResultStatus.CONCERN, sql.CheckResultStatus.EXCEPTION}
+        concern = next(row for row in rows if (row.status == sql.CheckResultStatus.CONCERN))
+        assert concern.data["license_count"] == 1
+        assert all(row.inputs_hash == task_row.inputs_hash for row in rows)
+        assert all(row.checker == checks.function_key(sbom.review) for row in rows)
 
 
 async def test_finalise_failure_skips_notification_for_the_system_uid(sqlite_sessionmaker) -> None:

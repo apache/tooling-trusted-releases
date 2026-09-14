@@ -35,6 +35,11 @@ import atr.tasks.checks.sbom as sbom
 import atr.tasks.task as task
 import tests.unit.recorders as recorders
 
+_LICENSED = (
+    b'{"bomFormat":"CycloneDX","specVersion":"1.6","components":'
+    b'[{"purl":"pkg:npm/a@1","licenses":[{"license":{"id":"GPL-3.0-only"}}]}]}'
+)
+
 
 @pytest.fixture
 def review_input(tmp_path):
@@ -95,14 +100,48 @@ async def test_review_aggregates_risk_with_unknown_coverage(review_input, monkey
     collect.assert_awaited_once_with([f"pkg:npm/{name}" for name in "abcdefgh"])
 
 
-async def test_review_embargo_preserves_structure_check_without_network(review_input, monkeypatch) -> None:
+async def test_review_aggregates_x_and_unknown_licenses_separately_from_risk(review_input, monkeypatch) -> None:
+    path, recorder, args = review_input
+    document = json.loads(_LICENSED)
+    document["components"] += [
+        {"name": "unknown", "licenses": [{"license": {"name": "Custom licence"}}]},
+        {"name": "x", "version": "2", "licenses": [{"expression": "MIT AND GPL-3.0-only"}]},
+        {"name": "allowed", "licenses": [{"expression": "MIT OR GPL-3.0-only"}]},
+        {"name": "category-b", "licenses": [{"license": {"id": "MPL-2.0"}}]},
+        {"name": "missing"},
+        document["components"][0],
+    ]
+    path.write_text(json.dumps(document))
+    monkeypatch.setattr(
+        observations, "collect", mock.AsyncMock(return_value={"pkg:npm/a": {"archived": True, "rankings_average": 0.0}})
+    )
+    assert await sbom.review(args) is None
+    assert len(recorder.messages) == 2
+    assert all(message[0] == sql.CheckResultStatus.CONCERN for message in recorder.messages)
+    assert recorder.messages[0][1] == (
+        "Packages npm/a@1, unknown, x@2 have Category X licences (including unrecognised licences)"
+    )
+    data = recorder.messages[0][2]
+    assert (data["licensed_components"], data["license_count"], data["licenses_truncated"]) == (5, 3, False)
+    assert [item["any_unknown"] for item in data["licenses"]] == [False, True, False]
+    assert data["licenses"][2]["expressions"] == ["MIT AND GPL-3.0-only"]
+    assert [message[2]["finding"] for message in recorder.messages] == ["licenses", "risk"]
+    assert "risks" not in data
+    assert "licenses" not in recorder.messages[1][2]
+    json.dumps(data)
+
+
+async def test_review_embargo_keeps_local_checks_without_network(review_input, monkeypatch) -> None:
     path, recorder, args = review_input
     collect = mock.AsyncMock()
     monkeypatch.setattr(observations, "collect", collect)
     recorder.embargoed = True
-    path.write_bytes(_document(["pkg:npm/a"]))
+    path.write_bytes(_LICENSED)
     assert await sbom.review(args) is None
-    assert recorder.messages == []
+    assert len(recorder.messages) == 1
+    assert recorder.messages[0][0] == sql.CheckResultStatus.CONCERN
+    assert recorder.messages[0][2]["finding"] == "licenses"
+    recorder.messages.clear()
     path.write_bytes(b"{")
     assert await sbom.review(args) is None
     assert len(recorder.messages) == 1
@@ -117,6 +156,7 @@ async def test_review_embargo_preserves_structure_check_without_network(review_i
         (b'{"spdxVersion":"SPDX-2.3"}', 0),
         (b"{", 1),
         (b'{"bomFormat":"CycloneDX","specVersion":"1.6","x":1,"x":2}', 1),
+        (b'{"bomFormat":"CycloneDX","specVersion":"1.6","components":[{"licenses":{}}]}', 1),
     ],
 )
 async def test_review_emits_only_structural_concerns(review_input, monkeypatch, content, concerns) -> None:
@@ -163,6 +203,22 @@ async def test_review_internal_deadline_is_operational(review_input, monkeypatch
     assert recorder.messages == []
 
 
+async def test_review_license_evidence_cap_preserves_total_and_headline(review_input) -> None:
+    path, recorder, args = review_input
+    document = json.loads(_LICENSED)
+    document["components"] = [
+        {"name": f"p{i:03}", "licenses": [{"expression": "GPL-3.0-only"}]} for i in reversed(range(105))
+    ]
+    path.write_text(json.dumps(document))
+    assert await sbom.review(args) is None
+    assert len(recorder.messages) == 1
+    _status, message, data = recorder.messages[0]
+    assert message == "Packages p000, p001, p002 (and 102 more) have Category X licences"
+    assert data["license_count"] == 105
+    assert len(data["licenses"]) == 100
+    assert data["licenses_truncated"] is True
+
+
 @pytest.mark.parametrize("error", [OSError("unreadable"), streaming.LimitError("limit")])
 async def test_review_limits_and_io_are_operational(review_input, monkeypatch, error) -> None:
     _path, recorder, args = review_input
@@ -183,11 +239,13 @@ async def test_review_limits_and_io_are_operational(review_input, monkeypatch, e
 )
 async def test_review_provider_failures_are_operational(review_input, monkeypatch, error) -> None:
     path, recorder, args = review_input
-    path.write_bytes(_document(["pkg:npm/a"]))
+    path.write_bytes(_LICENSED)
     monkeypatch.setattr(observations, "collect", mock.AsyncMock(side_effect=error))
     with pytest.raises(task.CheckRetryableError, match="lookup did not complete"):
         await sbom.review(args)
-    assert recorder.messages == []
+    assert len(recorder.messages) == 1
+    assert recorder.messages[0][0] == sql.CheckResultStatus.CONCERN
+    assert recorder.messages[0][2]["finding"] == "licenses"
 
 
 async def test_review_strict_threshold_and_missing_scores(review_input, monkeypatch) -> None:
@@ -245,7 +303,7 @@ async def test_review_task_cache_scope(review_input, review_release, monkeypatch
     elif change == "threshold":
         monkeypatch.setattr(sbom, "RISK_THRESHOLD", 0.7)
     elif change == "version":
-        monkeypatch.setattr(sbom, "REVIEW_VERSION", "3")
+        monkeypatch.setattr(sbom, "REVIEW_VERSION", sbom.REVIEW_VERSION + ".next")
     elif change == "content":
         session.release_file_hash_at.return_value = "blake3:changed"
     elif change == "recheck":
