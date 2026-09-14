@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 from typing import Any, Final
 
 import aiofiles.os
@@ -22,6 +23,7 @@ import aiofiles.os
 import atr.analysis as analysis
 import atr.log as log
 import atr.models.results as results
+import atr.sbom.streaming as streaming
 import atr.tasks.checks as checks
 import atr.tasks.task as task
 
@@ -29,6 +31,7 @@ import atr.tasks.task as task
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
 CHECK_VERSION: Final[str] = "3"
+REVIEW_VERSION: Final = "1"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -54,6 +57,21 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         case _:
             raise RuntimeError("SBOM location failed for unknown reasons")
 
+    return None
+
+
+async def review(args: checks.FunctionArguments) -> results.Results | None:
+    recorder = await args.recorder(REVIEW_VERSION)
+    if (path := await recorder.abs_path()) is None:
+        return None
+    try:
+        await asyncio.to_thread(streaming.sbom, path.path)
+    except streaming.MalformedError as error:
+        await recorder.concern(f"SBOM structure cannot be interpreted reliably: {error}", {"problem": str(error)})
+    except streaming.UnsupportedError:
+        return None
+    except (OSError, streaming.LimitError) as error:
+        raise task.CheckRetryableError("SBOM structure could not be checked", {"error": str(error)}) from error
     return None
 
 

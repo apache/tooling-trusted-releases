@@ -46,6 +46,7 @@ CHECK_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
         sql.TaskType.LICENSE_HEADERS,
         sql.TaskType.PATHS_CHECK,
         sql.TaskType.RAT_CHECK,
+        sql.TaskType.SBOM_REVIEW,
         sql.TaskType.SIGNATURE_CHECK,
         sql.TaskType.TARGZ_STRUCTURE,
         sql.TaskType.ZIPFORMAT_STRUCTURE,

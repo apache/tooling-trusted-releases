@@ -288,6 +288,7 @@ class TaskType(enum.StrEnum):
     SBOM_HEATMAP = "sbom_heatmap"
     SBOM_OSV_SCAN = "sbom_osv_scan"
     SBOM_QS_SCORE = "sbom_qs_score"
+    SBOM_REVIEW = "sbom_review"
     SBOM_TOOL_SCORE = "sbom_tool_score"
     SIGNATURE_CHECK = "signature_check"
     SVN_IMPORT_FILES = "svn_import_files"
@@ -356,6 +357,8 @@ class TaskType(enum.StrEnum):
                 return "SBOM vulnerability scan"
             case TaskType.SBOM_QS_SCORE:
                 return "SBOM QS score"
+            case TaskType.SBOM_REVIEW:
+                return "SBOM review"
             case TaskType.SBOM_TOOL_SCORE:
                 return "SBOM tool score"
             case TaskType.SIGNATURE_CHECK:

@@ -439,6 +439,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return sbom.osv_scan
         case sql.TaskType.SBOM_QS_SCORE:
             return sbom.score_qs
+        case sql.TaskType.SBOM_REVIEW:
+            return sbom_check.review
         case sql.TaskType.SBOM_TOOL_SCORE:
             return sbom.score_tool
         case sql.TaskType.SIGNATURE_CHECK:
@@ -834,6 +836,7 @@ async def _draft_file_checks(
     for maybe_task in (
         await _archive_comparison_task(asf_uid, release, revision_number, path),
         await _has_sbom_task(asf_uid, release, revision_number, path),
+        await _sbom_review_task(asf_uid, release, revision_number, path),
         await _cyclonedx_score_task(
             asf_uid, release, revision_number, path, project_key, release_version, previous_version
         ),
@@ -863,6 +866,29 @@ async def _has_sbom_task(
             revision_number,
             await checks.resolve_extra_args(sbom_check.INPUT_EXTRA_ARGS, release, path_str),
             file=path_str,
+        ),
+    )
+
+
+async def _sbom_review_task(
+    asf_uid: str, release: sql.Release, revision_number: safe.RevisionNumber, path: safe.RelPath
+) -> sql.Task | None:
+    if not analysis.is_cyclonedx_json(path.as_path().name):
+        return None
+    return await queued(
+        asf_uid,
+        sql.TaskType.SBOM_REVIEW,
+        release,
+        revision_number,
+        str(path),
+        check_cache_key=await checks.resolve_cache_key(
+            sbom_check.review,
+            sbom_check.REVIEW_VERSION,
+            [],
+            release,
+            revision_number,
+            {"path": str(path)},
+            file=str(path),
         ),
     )
 
