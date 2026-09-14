@@ -326,6 +326,7 @@ class WriteAsDistCatalogService(WriteAsSystemService):
         admin = WriteAsFoundationAdmin(write, data)
         self.release_archive = admin.release.archive
         self.release_catalogue_release = admin.release.catalogue_release
+        self.release_notify_archived = admin.release.notify_archived
         self.release_notify_seen = admin.release.notify_seen
 
 

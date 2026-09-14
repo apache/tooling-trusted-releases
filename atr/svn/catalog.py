@@ -97,11 +97,11 @@ async def catalogue_commit(commit: dict) -> None:
     # that only depends on having seen the release, not on having recorded it
     async with storage.write_as_system(storage.WriteAsDistCatalogService) as wadcs:
         if config.get().DIST_CATALOG_WRITE:
-            seen = await _apply_changes(wadcs, releases, archives, date)
+            seen, retired = await _apply_changes(wadcs, releases, archives, date)
         else:
             _report(releases, archives, date)
-            seen = releases
-        await _notify(wadcs, seen, date)
+            seen, retired = releases, archives
+        await _notify(wadcs, seen, retired, date)
 
 
 async def _apply_changes(
@@ -109,8 +109,9 @@ async def _apply_changes(
     releases: list[_ResolvedRelease],
     archives: list[_ResolvedArchive],
     date: datetime.datetime,
-) -> list[_ResolvedRelease]:
+) -> tuple[list[_ResolvedRelease], list[_ResolvedArchive]]:
     catalogued: list[_ResolvedRelease] = []
+    retired: list[_ResolvedArchive] = []
     for project_key, version_key, artifacts in releases:
         try:
             error = await wadcs.release_catalogue_release(project_key, version_key, date, artifacts)
@@ -129,7 +130,9 @@ async def _apply_changes(
             continue
         if error is not None:
             log.info(f"dist watcher did not archive {project_key!s} {version_key!s}: {error}")
-    return catalogued
+            continue
+        retired.append((project_key, version_key))
+    return catalogued, retired
 
 
 def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
@@ -229,12 +232,17 @@ def _decompose_change(path: str) -> tuple[str, dist.Decomposed, bool, str | None
 async def _notify(
     wadcs: storage.WriteAsDistCatalogService,
     releases: list[_ResolvedRelease],
+    archives: list[_ResolvedArchive],
     date: datetime.datetime,
 ) -> None:
     for project_key, version_key, _ in releases:
         error = await wadcs.release_notify_seen(project_key, version_key, date)
         if error is not None:
             log.warning(f"dist watcher could not notify for {project_key!s} {version_key!s}: {error}")
+    for project_key, version_key in archives:
+        error = await wadcs.release_notify_archived(project_key, version_key, date)
+        if error is not None:
+            log.warning(f"dist watcher could not notify archival for {project_key!s} {version_key!s}: {error}")
 
 
 def _report(

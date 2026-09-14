@@ -2061,6 +2061,37 @@ class FoundationAdmin(FoundationCommitter):
                 return None
             raise _unpublish_svn_error(exc, "listing failed") from None
 
+    async def notify_archived(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        archived: datetime.datetime,
+    ) -> str | None:
+        """Tell the releases list about a release the watcher saw leave the dist area.
+
+        Queues the notification whether or not the archival was recorded, since it
+        depends only on having seen the removal. The caller filters out releases
+        already archived, so a given archival never double-notifies.
+        """
+        project = await self.__data.project(key=str(project_key), _committee=True).get()
+        if project is None:
+            return f"Project {project_key!s} not found"
+        if project.committee is None:
+            return f"Project {project_key!s} has no committee"
+        notification = construct.release_archival_notification(project.committee, project, str(version), archived)
+        self.__data.add(
+            sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.MESSAGE_SEND,
+                task_args=notification.as_task_args(),
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                version_key=str(version),
+            )
+        )
+        await self.__data.commit()
+        return None
+
     async def notify_seen(
         self,
         project_key: safe.ProjectKey,

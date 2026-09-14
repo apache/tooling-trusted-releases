@@ -353,6 +353,40 @@ def release_notification(
     )
 
 
+def release_archival_notification(
+    committee: sql.Committee,
+    project: sql.Project,
+    version: str,
+    archived: datetime.datetime,
+) -> args.Send:
+    # The watcher archives a release when its directory (or its source artifact) leaves the
+    # dist area - a strong but inferred signal rather than an ATR action - so the message says
+    # where the signal came from, the same way the detected-release notification does
+    url = config.get().RELEASE_CATALOG_URL
+    catalogue_url = f"{url}{project.key}"
+
+    subject = f"Detected archival: {project.short_display_name} {version}"
+    body = (
+        f"{committee.display_name} archived {project.short_display_name} {version}.\n\n"
+        f"This archival was detected in the distribution area; it was not made through ATR.\n\n"
+        f"Committee: {committee.display_name}\n"
+        f"Project: {project.short_display_name}\n"
+        f"Version: {version}\n"
+        f"Archived: {util.format_datetime(archived)}\n\n"
+        f"The release is now catalogued as archived at:\n\n"
+        f"  {catalogue_url}\n"
+    )
+
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=_RELEASES_LIST_ADDRESS,
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
 async def start_vote_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
