@@ -155,6 +155,8 @@ idna==3.19
     #   jsonschema
     #   requests
     #   yarl
+ijson==3.5.1
+    # via tooling-trusted-releases
 isoduration==20.11.0
     # via jsonschema
 itsdangerous==2.2.0

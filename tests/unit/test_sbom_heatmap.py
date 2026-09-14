@@ -26,6 +26,7 @@ import pytest
 
 import atr.models.results as results
 import atr.sbom.heatmap as heatmap
+import atr.sbom.maintenance as maintenance
 
 _JSON_URL = "https://downloads.apache.org/example/a.cdx.json"
 _XML_URL = "https://archive.apache.org/dist/example/b.cdx.xml"
@@ -314,10 +315,10 @@ def test_missing_governance_is_not_zero_and_issue_tracker_is_not_source() -> Non
     data = {"relatedProjects": [{"relationType": "ISSUE_TRACKER", "projectKey": {"id": _PROJECT}}]}
     heatmap._observations(entry, {}, {entry.purl: data}, {})
     assert entry.source_repo is None
-    heatmap._repository_observations(entry, heatmap._repository({"metadata": {"files": {}}}), {})
+    heatmap._repository_observations(entry, maintenance.repository({"metadata": {"files": {}}}), {})
     assert entry.governance_files is None
     heatmap._repository_observations(
-        entry, heatmap._repository(repository()), heatmap._issues({"active_maintainers": []})
+        entry, maintenance.repository(repository()), maintenance.issues({"active_maintainers": []})
     )
     assert entry.governance_files == 1
     assert entry.active_maintainers == 0
@@ -342,7 +343,7 @@ def test_missing_governance_is_not_zero_and_issue_tracker_is_not_source() -> Non
     ],
 )
 def test_number_accepts_only_finite_numbers(value, expected) -> None:
-    assert heatmap._number(value) == expected
+    assert maintenance.number(value) == expected
 
 
 async def test_package_metadata_retains_only_scoring_values(monkeypatch) -> None:
@@ -375,6 +376,12 @@ async def test_package_metadata_retains_only_scoring_values(monkeypatch) -> None
         ({"active_maintainers": 0, "governance_files": 0}, 0.25, 4, 0.75 * (1 - 0.25)),
         ({"archived": True, "dds": None}, 0.05, 3, 0.75 * 0.95),
         ({"rankings_average": None}, 0.75, 4, None),
+        ({"rankings_average": -1}, 0.75, 4, None),
+        ({"rankings_average": 100}, 0.75, 4, 0),
+        ({"rankings_average": 101}, 0.75, 4, None),
+        ({"latest_release_at": "2026-09-08T00:00:00"}, None, 3, None),
+        ({"latest_release_at": "2030-01-01T00:00:00Z", "dds": 2}, 1, 4, 0),
+        ({"latest_release_at": "2000-01-01T00:00:00Z", "dds": -1}, 0.5, 4, 0.75 * 0.5),
     ],
 )
 def test_scoring_uses_observed_inputs(changes: dict, health: float | None, inputs: int, risk: float | None) -> None:
