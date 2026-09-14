@@ -1,10 +1,10 @@
-# 3.3. Database
+# 3.8. Database
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.2.` [Overview of the code](overview-of-the-code)
+**Prev**: `3.7.` [Running and creating tests](running-and-creating-tests)
 
-**Next**: `3.4.` [Storage interface](storage-interface)
+**Next**: `3.9.` [Storage interface](storage-interface)
 
 **Sections**:
 
