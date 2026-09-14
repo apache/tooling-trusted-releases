@@ -12,7 +12,13 @@
 * [Roles and principals](#roles-and-principals)
 * [LDAP integration](#ldap-integration)
 * [Access control for releases](#access-control-for-releases)
+* [Phase-based access control](#phase-based-access-control)
+* [Access control for third-party distributions](#access-control-for-third-party-distributions)
 * [Access control for tokens](#access-control-for-tokens)
+* [Access control for keys](#access-control-for-keys)
+* [Access control for project policy](#access-control-for-project-policy)
+* [Access control for projects](#access-control-for-projects)
+* [Access control for administrators](#access-control-for-administrators)
 * [Implementation patterns](#implementation-patterns)
 * [Caching behavior](#caching-behavior)
 * [Implementation references](#implementation-references)
@@ -99,18 +105,69 @@ Release operations have the following access requirements:
 
 **Resolve a vote (tally votes and determine outcome)**:
 
-* Allowed for: PMC members only
-* Checked via: `is_member_of(project.committee_key)`
+* Allowed for: Release managers and PMC members
+* Checked via: the release manager storage tier, obtained with `as_project_release_manager`, which admits a project's designated release managers (`is_release_manager`) and its PMC members (`is_member_of`)
 
 **Finish a release (publish to distribution)**:
 
-* Allowed for: PMC members only
+* Allowed for: Release managers and PMC members
 * Constraint: Vote must be resolved with a passing result
 
 **Cancel or delete a release**:
 
 * Draft releases: Project participants
 * Finished releases: ATR administrators only
+
+## Phase-based access control
+
+A release moves through four phases - draft (`RELEASE_CANDIDATE_DRAFT`), candidate
+(`RELEASE_CANDIDATE`), preview (`RELEASE_PREVIEW`), and published (`RELEASE`). The
+phase a release is in, alongside the caller's role, determines which operations are
+permitted. The tables below consolidate those phase rules; the roles they name are
+defined in [Roles and principals](#roles-and-principals).
+
+### Release lifecycle operations
+
+| Operation | Release phase | Who |
+| --- | --- | --- |
+| Create a release | starts a new **Draft** | Participant |
+| Upload or edit files | **Draft** only | Participant *(the starter, or a PMC member)* |
+| Start a vote | **Draft** → Candidate | Release manager or PMC member |
+| Cast a vote | **Candidate** | Participant |
+| Resolve a vote | **Candidate** → Preview (passed) / Draft (failed) | Release manager or PMC member |
+| Announce / publish | **Preview** → Release | Release manager or PMC member |
+
+### rsync (SSH) access
+
+Reads and writes over rsync are gated by phase as well as role.
+
+| Release phase | Read | Write |
+| --- | --- | --- |
+| Draft `RELEASE_CANDIDATE_DRAFT` | Committer *(committee member if embargoed)* | Committer to upload *(committee member to create)* |
+| Candidate `RELEASE_CANDIDATE` | Committer *(committee member if embargoed)* | — |
+| Preview `RELEASE_PREVIEW` | Committer *(committee member if embargoed)* | — |
+| Published `RELEASE` | — | — |
+
+ATR administrators may act throughout.
+
+## Access control for third-party distributions
+
+A distribution records where a release's artifacts have been published to a
+third-party platform - for example a package registry or a download platform.
+Release managers record and remove these distributions:
+
+* **Record** a distribution - note a distribution that exists on a platform.
+* **Delete** a distribution - remove a recorded distribution.
+
+**Allowed for**: Release managers and PMC members, obtained with
+`as_project_release_manager`.
+
+**Constraints** (applied to both):
+
+* The release must belong to the caller's own committee.
+* The project must be active; all release actions are disabled once a project is
+  archived.
+* Writing to an embargoed release additionally requires PMC membership.
 
 ## Access control for tokens
 
@@ -152,6 +209,148 @@ Token operations apply to the authenticated user:
 
 * Allowed for: Foundation administrators only (not committer self-service)
 * Note: System tokens are PATs for a service identity rather than a person. Endpoints that accept them (via `auth_scheme=api_auth.Auth.SYSTEM_BEARER`) apply no committee membership check, so the calling service must establish any committee authorisation upstream. See [System tokens](authentication-security#system-tokens) in the authentication guide for the mechanism.
+
+## Access control for keys
+
+ATR holds two kinds of key: OpenPGP signing keys, used to sign release artifacts,
+and SSH keys, used to authenticate rsync uploads.
+
+### OpenPGP signing keys
+
+**Upload an OpenPGP key**:
+
+* Allowed for: Any committer, for their own key
+* Checked via: `ensure_stored_one` on the committer tier; the key is stored
+  against the ASF UID found in its own user IDs
+
+**Associate a key with a committee**:
+
+* Allowed for: Participants of the committee
+* Checked via: `associate_fingerprint` on the committee participant tier
+
+**Delete an OpenPGP key**:
+
+* Allowed for: The key's owner (a committer)
+* Checked via: `delete_key` on the committer tier, which matches the key by the
+  caller's ASF UID
+* Constraint: a key managed in a committee's SVN KEYS file (reflect mode) cannot
+  be deleted in ATR; it must be removed in SVN
+
+**Import a committee KEYS file**:
+
+* Allowed for: Participants of the committee
+* Checked via: `import_keys_file` on the committee participant tier
+
+**Delete all of a committee's keys**:
+
+* Allowed for: ATR administrators only
+* Checked via: `delete_committee_keys` on the foundation admin tier
+
+### SSH keys
+
+**Add or delete your own SSH key**:
+
+* Allowed for: Any committer, for their own keys
+* Checked via: `add_key` and `delete_key` on the committer tier
+
+**Add a workflow SSH key**:
+
+* Allowed for: Participants of the committee
+* Checked via: `add_workflow_key` on the committee participant tier
+* Note: workflow keys authenticate automated release workflows rather than a
+  person; each is minted once against a single-use OIDC token
+
+**Revoke all of a user's SSH keys**:
+
+* Allowed for: ATR administrators only
+* See [Access control for tokens](#access-control-for-tokens), which documents
+  this operation alongside token revocation
+
+## Access control for project policy
+
+Each project has a release policy governing how its releases are composed, voted
+on, and finished. The policy is changed through a set of edit operations, all on
+the release manager tier:
+
+* **Compose policy** (`edit_compose`) - composition and artifact settings.
+* **Vote policy** (`edit_vote`) - voting settings.
+* **Finish policy** (`edit_finish`) - settings applied when a release is finished.
+* **Trusted publishing** (`edit_trusted_publishing`) - trusted publishing
+  configuration (see [Trusted Publishing](trusted-publishing)).
+* **Version scheme** (`edit_version_scheme`) - the project's version numbering.
+* **Cycle dates** (`edit_cycle_dates`) - release cycle dates.
+
+**Allowed for**: Release managers and PMC members, obtained with
+`as_project_release_manager`.
+
+**See also**: value and type constraints on these settings - such as which vote
+modes a project may use - are validation rather than access control, and are
+covered under [Business logic validation](input-validation#business-logic-validation).
+
+## Access control for projects
+
+Project metadata and lifecycle operations span two tiers.
+
+**Edit project metadata and security settings** (`edit_metadata`, `edit_security`):
+
+* Allowed for: Release managers and PMC members
+* Obtained with: `as_project_release_manager`
+
+**Create a project** (`create`):
+
+* Allowed for: PMC members
+* Obtained with: `as_committee_member`
+
+**Archive or delete a project** (`archive`, `delete`):
+
+* Allowed for: PMC members
+* Obtained with: `as_committee_member`
+* Constraint: each takes an approval request, tying the action to a recorded
+  approval rather than a single click
+
+## Access control for administrators
+
+ATR administrators can act across every committee and project, beyond what any
+committee role grants. Administrative rights are not tied to a committee.
+
+### Who is an administrator
+
+Administrator identity is determined by [`is_admin`](/ref/atr/user.py). The
+administrator set is drawn from ASF LDAP - the Infrastructure Root and Tooling
+service groups (see [Roles and principals](#roles-and-principals)) - fetched by
+`fetch_admin_users`, cached, and refreshed periodically. Additional
+administrators can be configured through `ADMIN_USERS_ADDITIONAL`.
+
+### Downgrade and impersonation
+
+Administrators have two controls that change how their session acts, both recorded
+on the session (see [Sessions](sessions)):
+
+* **Downgrade**: an administrator can drop their own admin rights for the session.
+  While the session is downgraded, `is_admin` returns false and the administrator
+  is treated as an ordinary user.
+* **Browse as**: an administrator can act as another user. The session records the
+  real administrator in `admin_uid`, so both the acting identity and the
+  administrator behind it are known.
+
+### Administrator-only operations
+
+Administrator rights gate operations that are foundation-wide or destructive,
+rather than belonging to a single committee. These include:
+
+* Revoking all of a user's personal access tokens or SSH keys (see
+  [Access control for tokens](#access-control-for-tokens)).
+* Issuing system tokens for service identities (see
+  [Access control for tokens](#access-control-for-tokens)).
+* Deleting all of a committee's signing keys (see
+  [Access control for keys](#access-control-for-keys)).
+* Deleting or cancelling a finished, published release (see
+  [Access control for releases](#access-control-for-releases)).
+* Foundation-wide catalogue and site administration, such as catalogue rebuilds,
+  structural corrections, and the site banner.
+
+The admin dashboard is the definitive surface for these operations; this list
+describes the categories rather than every individual action.
 
 ## Implementation patterns
 
