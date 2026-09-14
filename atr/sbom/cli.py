@@ -167,10 +167,10 @@ def command_where(bundle: models.bundle.Bundle) -> None:
                 print(f"metadata.{error.property.name}")
                 print()
             case models.conformance.MissingComponentProperty():
-                components = bundle.bom.components
+                components = bundle.doc.get("components", [])
                 primary_component = bundle.bom.metadata.component if bundle.bom.metadata else None
                 if (error.index is not None) and len(components) > 0:
-                    print(components[error.index].as_json(SCHEMA_VERSIONS[bundle.spec_version]))
+                    print(orjson.dumps(components[error.index]).decode())
                     print()
                 elif primary_component is not None:
                     print(primary_component.as_json(SCHEMA_VERSIONS[bundle.spec_version]))

@@ -22,6 +22,7 @@ import urllib.parse
 from typing import TYPE_CHECKING, Any, Final
 
 import aiohttp
+import cyclonedx.model.component
 import orjson
 
 from . import constants, models
@@ -29,8 +30,6 @@ from .maven import cache_read, cache_write
 from .utilities import ensure_metadata, get_pointer, resolve_pointer
 
 if TYPE_CHECKING:
-    from cyclonedx.model.component import Component
-
     from .models.bundle import Bundle
 
 
@@ -288,8 +287,10 @@ def ntia_2021_issues(
     else:
         errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA))
 
-    components: list[Component] = list(bom_value.components)
-    for index, component in enumerate(components):
+    for index, component_data in enumerate(bundle.doc.get("components", [])):
+        component = cyclonedx.model.component.Component.from_json(data=component_data)
+        if component is None:
+            raise ValueError(f"Error importing component at /components/{index}")
         component_type = component.type
         component_friendly_name = component.name
         if component_type:
