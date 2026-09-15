@@ -4,7 +4,7 @@
 
 **Prev**: `3.19.` [ASFQuart usage](asfquart-usage)
 
-**Next**: (none)
+**Next**: `3.21.` [SBOM architecture](sbom-architecture)
 
 **Sections**:
 

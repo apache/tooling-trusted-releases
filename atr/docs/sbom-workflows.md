@@ -9,170 +9,45 @@
 **Sections**:
 
 * [Overview](#overview)
-* [Supported SBOM operations](#supported-sbom-operations)
-* [Convert XML SBOM to JSON](#convert-xml-sbom-to-json)
-* [CycloneDX validation](#cyclonedx-validation)
-* [SBOM scoring and validation](#sbom-scoring-and-validation)
-* [Vulnerability scanning](#vulnerability-scanning)
-* [SBOM augmentation](#sbom-augmentation)
-* [Related interfaces](#related-interfaces)
+* [Reading the SBOM report](#reading-the-sbom-report)
 * [Related documentation](#related-documentation)
 
 ## Overview
 
-ATR provides multiple Software Bill of Materials (SBOM) workflows based on the CycloneDX specification. These workflows help projects generate, validate, augment, convert, and analyze SBOM files for release artifacts.
+A Software Bill of Materials (SBOM) lists the components that make up a release artifact, so that consumers can see what they are pulling in and check it against known vulnerabilities and license policy. ATR works with SBOMs in the [CycloneDX](https://cyclonedx.org/) format, stored as JSON files with a `.cdx.json` extension.
 
-ATR integrates several external tools including:
+The best SBOM is one your own build produces, because it knows what actually went into the artifact. When your build produces a CycloneDX JSON SBOM, include it in your release alongside the artifact it describes, and ATR will check it and give you an SBOM report for that file, described below.
 
-* syft
-* CycloneDX CLI
-* sbomqs
-* OSV
+ATR reads the SBOMs you supply. Producing them, and converting them from other formats, is a job for your own build.
 
-These workflows are primarily implemented in the `atr/tasks/sbom.py` module and exposed through draft and report interfaces.
+## Reading the SBOM report
 
-## Supported SBOM operations
+While a release is being prepared, its checks list each file with its results. Any file that is a CycloneDX JSON SBOM carries a **View SBOM** button that opens its SBOM report. The report has two halves: what the SBOM says about the release (Content), and how well-formed the SBOM itself is (Quality). Some of it, the Licenses and Vulnerabilities below and the whole Quality section, appears only once ATR's SBOM checks have run for the file, so parts may be blank on a first look.
 
-ATR supports several SBOM workflows for generation, conversion, analysis, and augmentation.
+### Content
 
-### Generate CycloneDX SBOM
+**Components** lists what the SBOM declares is in the artifact, grouped by type, with each component's name, version, licenses, and package URL (PURL) where the SBOM records one. If the SBOM names an overall subject, the report says which component that is. An SBOM that declares no components is worth a second look, as it usually means the tool that wrote it could not see inside the artifact.
 
-ATR can generate a CycloneDX JSON SBOM from supported release artifacts including:
+**Licenses** places each declared license in a category of the [ASF third party license policy](https://www.apache.org/legal/resolved.html): Category A (permitted), Category B (permitted with conditions), or Category X (not permitted). The categories are read from the license strings the SBOM tool wrote into the file, and those strings can be wrong. A project can declare its license inaccurately in its build file, and an SBOM tool can map a license name to the wrong identifier. A license that ATR does not recognise is treated as Category X.
 
-* `.tar.gz`
-* `.tgz`
-* `.zip`
-* `.jar`
+So treat anything unexpected as something to check rather than a verdict. Look it up against the upstream project, then report a wrong declaration to that project, a wrong mapping to the SBOM tool, and a correctly spelled license that ATR fails to place, or places wrongly, to [ATR](https://github.com/apache/tooling-trusted-release/issues).
 
-SBOM generation uses the `syft` tool and produces `.cdx.json` files.
+Where a component offers a choice of licenses (an `OR` expression), ATR picks the friendliest category and shows the half it chose in colour, with the alternatives it set aside greyed out, so you can see what was on offer without the alternatives reading as a problem.
 
-Generation tasks are queued through:
+**Vulnerabilities** shows the known vulnerabilities recorded in the SBOM. An SBOM does not carry these unless whatever produced it added them, so this section is empty when the SBOM records none.
 
-* `atr/post/draft.py`
-* `atr/storage/writers/sbom.py`
+### Quality
 
-Core implementation:
+The Quality section reports on the SBOM document rather than the release:
 
-* `generate_cyclonedx`
-* `_generate_cyclonedx_core`
+* **Conformance** checks the SBOM against the NTIA 2021 minimum data fields and lists anything missing as warnings or errors.
+* **Outdated tool** flags an SBOM written by a tool version known to have problems.
+* **CycloneDX CLI validation** lists any structural or schema errors found in the file.
 
-## Convert XML SBOM to JSON
-
-ATR can convert CycloneDX XML SBOM files into JSON format.
-
-Supported input:
-
-* `.cdx.xml`
-
-Generated output:
-
-* `.cdx.json`
-
-Core implementation:
-
-* `convert_cyclonedx`
-* `_convert_cyclonedx_core`
-
-## CycloneDX validation
-
-ATR validates CycloneDX SBOM files using the CycloneDX CLI.
-
-Validation workflows detect:
-
-* schema violations
-* malformed SBOM structures
-* invalid metadata
-* specification compatibility issues
-
-Related modules include:
-
-* `atr/sbom/cyclonedx.py`
-
-## SBOM scoring and validation
-
-ATR performs several validation and scoring operations for CycloneDX SBOM files.
-
-These include:
-
-* CycloneDX CLI validation
-* NTIA 2021 conformance checks
-* license analysis
-* vulnerability analysis
-* tool version analysis
-
-License analysis places each declared license in a category of the [ASF third party license policy](https://www.apache.org/legal/resolved.html), reading the license strings that the SBOM tool wrote into the file. Those strings can be wrong. A project can declare its license inaccurately in its build file, and an SBOM tool can map a license name to the wrong identifier. A license that ATR does not recognise is treated as Category X. Check anything unexpected against the upstream project. Report a wrong declaration to that project, a wrong mapping to the SBOM tool, and a correctly spelled license that ATR fails to place, or places wrongly, to [ATR](https://github.com/apache/tooling-trusted-release/issues).
-
-The scoring workflow is implemented through:
-
-* `score_tool`
-
-Related modules include:
-
-* `atr/sbom/conformance.py`
-* `atr/sbom/licenses.py`
-* `atr/sbom/cyclonedx.py`
-* `atr/sbom/sbomqs.py`
-
-## Vulnerability scanning
-
-ATR supports vulnerability analysis through OSV integration.
-
-The OSV workflow:
-
-* scans CycloneDX SBOM files
-* identifies known vulnerabilities
-* augments SBOM files with vulnerability information
-
-Core implementation:
-
-* `osv_scan`
-* `bundle_to_vuln_patch`
-
-Related modules:
-
-* `atr/sbom/osv.py`
-
-## SBOM augmentation
-
-ATR can augment existing SBOM files with additional metadata and NTIA-related properties.
-
-Augmentation workflows may generate updated revisions containing modified SBOM files.
-
-Core implementation:
-
-* `augment`
-* `bundle_to_ntia_patch`
-
-## Related interfaces
-
-SBOM functionality is exposed through several application layers.
-
-Task handlers:
-
-* `atr/tasks/sbom.py`
-
-POST endpoints:
-
-* `atr/post/sbom.py`
-* `atr/post/draft.py`
-
-GET interfaces:
-
-* `atr/get/sbom.py`
-
-Storage writers:
-
-* `atr/storage/writers/sbom.py`
-
-Templates:
-
-* `atr/templates/draft-tools.html`
-* `atr/templates/check-selected-path-table.html`
+The Quality section only has something to show once the checks behind it have run, so if it is empty, give it a moment and reload.
 
 ## Related documentation
 
-Additional SBOM-related behavior is described in:
-
-* [Checks](checks)
-* [Running the server](running-the-server)
-* [Overview of the code](overview-of-the-code)
+* [Checks](checks) covers the wider set of automated checks a release goes through, including how the SBOM report is reached.
+* [License checks](license-checks) explains the license checking that ATR applies to the release as a whole.
+* [SBOM architecture](sbom-architecture) describes how these workflows are built, for developers working on ATR itself.
