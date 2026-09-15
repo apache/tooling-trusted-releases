@@ -1,10 +1,10 @@
-# 3.1. Running the server
+# 3.6. Running the server
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `2.8.` [Promoting to release](promoting-to-release)
+**Prev**: `3.5.` [Build processes](build-processes)
 
-**Next**: `3.2.` [Overview of the code](overview-of-the-code)
+**Next**: `3.7.` [Running and creating tests](running-and-creating-tests)
 
 **Sections**:
 

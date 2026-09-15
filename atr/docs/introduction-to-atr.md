@@ -6,6 +6,14 @@
 
 **Next**: `2.` [User guide](user-guide)
 
+**Pages**:
+
+* `1.1.` [Getting started](getting-started)
+* `1.2.` [Project configuration](project-configuration)
+* `1.3.` [Release manager setup](release-manager-setup)
+* `1.4.` [Making releases with ATR](release-process-description)
+* `1.5.` [Release catalog](release-catalog)
+
 **Sections**:
 
 * [What is ATR?](#what-is-atr)
