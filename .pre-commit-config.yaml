@@ -187,7 +187,7 @@ repos:
 
     - id: check-when-dependencies-updated
       name: check when dependencies were updated
-      description: Verify that dependencies were updated within the configured timeframe, for ASVS 15.2.1
+      description: Verify that dependencies were updated within the configured timeframe, for ASVS 15.1.1
       entry: uv run --frozen python scripts/check_when_dependencies_updated.py
       language: system
       pass_filenames: false
