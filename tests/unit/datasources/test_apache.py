@@ -27,7 +27,19 @@ from atr.datasources.apache import (
     RetiredCommitteeData,
     WhimsyCommitteeData,
     WhimsyPodlingsData,
+    canonical_project_key,
 )
+
+
+def test_canonical_project_key_normalises_prefixed_and_verbose_keys():
+    # The attic- steward prefix drops, the dormant marker drops (it's status), underscores hyphenate,
+    # and a verbose feed key remaps to its short ATR key - a former podling folds onto its committee-
+    # named project (ponymail), while a graduated podling that kept an incubator- key is left as it is
+    assert canonical_project_key("attic-abdera") == "abdera"
+    assert canonical_project_key("commons-chain__dormant_") == "commons-chain"
+    assert canonical_project_key("xerces-for-java-xml-parser") == "xerces-j"
+    assert canonical_project_key("ponymail-pony_mail") == "ponymail"
+    assert canonical_project_key("incubator-batchee") == "incubator-batchee"
 
 
 def test_committee_data_model():
