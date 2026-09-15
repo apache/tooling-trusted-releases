@@ -156,7 +156,7 @@ def _report(behind: list[_Result], unknown: list[_Result]) -> None:
     if behind:
         print("## Dockerfile tool updates available\n")
         print("These tools pinned in `Dockerfile.alpine` have newer upstream releases. Test the")
-        print("newer version before bumping it; this notice changes nothing on its own.\n")
+        print("newer version before bumping it!\n")
         print("| Tool | Pinned | Latest |")
         print("| --- | --- | --- |")
         for result in behind:
