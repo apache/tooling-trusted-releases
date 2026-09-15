@@ -20,12 +20,14 @@
 * `3.10.` [User interface](user-interface)
 * `3.11.` [Tasks](tasks)
 * `3.12.` [Authentication security](authentication-security)
-* `3.13.` [Authorization security](authorization-security)
-* `3.14.` [Input validation](input-validation)
-* `3.15.` [TLS security configuration](tls-security-configuration)
-* `3.16.` [API documentation policy](api-documentation-policy)
-* `3.17.` [ASFQuart usage](asfquart-usage)
-* `3.18.` [Resource management](resource-management)
+* `3.13.` [Sessions](sessions)
+* `3.14.` [Authorization security](authorization-security)
+* `3.15.` [Input validation](input-validation)
+* `3.16.` [Dependency updates](dependency-updates)
+* `3.17.` [TLS security configuration](tls-security-configuration)
+* `3.18.` [API documentation policy](api-documentation-policy)
+* `3.19.` [ASFQuart usage](asfquart-usage)
+* `3.20.` [Resource management](resource-management)
 
 **Sections**:
 
