@@ -130,6 +130,7 @@ _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 # Both index the rest of the catalogue rather than releases of their own, so their
 # pages are written once the walk has been through every committee.
 _INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
+_ENVIRONMENT.globals["indexing_keys"] = _INDEXING_COMMITTEE_KEYS
 
 # The bare PURL prefix, and the directory its landing page lives in. This prefix is the
 # namespace half of every ASF release PURL, so a reader who follows it with nothing after

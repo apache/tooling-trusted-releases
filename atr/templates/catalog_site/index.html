@@ -28,9 +28,10 @@
             <div class="card-body">
               <div class="row align-items-center">
                 <div class="col">
-                  {# A committee with a single project has nothing to choose from, so
-                     the card opens the project itself #}
-                  {% if committee.projects | length == 1 %}
+                  {# A committee with a single project has nothing to choose from, so the card opens
+                     the project itself - but the Incubator and Attic index the rest of the catalogue,
+                     so their cards always open their own page, whatever stray project they might hold #}
+                  {% if committee.projects | length == 1 and committee.key not in indexing_keys %}
                     {% set target = committee.projects[0].key ~ "/index.html" %}
                   {% else %}
                     {% set target = committee.key ~ "/index.html" %}
