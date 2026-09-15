@@ -357,6 +357,28 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
     return revision
 
 
+async def committed_by_atr(url: str, revision: str) -> bool:
+    # A commit ATR made carries the asf:tool=atr revprop, set by commit() - the one signal that marks
+    # our own publishes, since ATR commits under the release manager's UID, not the tool account, so
+    # the author reads the same as a hand commit does
+    stdin_bytes = _authentication(url)
+    tool = await _run_svn_command(
+        "propget",
+        url,
+        "--revprop",
+        "-r",
+        revision,
+        "asf:tool",
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        timeout_seconds=INFO_TIMEOUT_SECONDS,
+        stdin_bytes=stdin_bytes,
+    )
+    return tool.strip() == ASF_TOOL
+
+
 async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> bool:
     stdin_bytes = _authentication(info.url)
     revision = info.last_changed_rev_number
@@ -390,21 +412,7 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
     created_paths = {(path.text or "").strip() for path in entry.findall("./paths/path") if path.get("action") == "A"}
     if target_path not in created_paths:
         return False
-    tool = await _run_svn_command(
-        "propget",
-        info.url,
-        "--revprop",
-        "-r",
-        str(revision),
-        "asf:tool",
-        "--username",
-        ASF_TOOL,
-        "--password-from-stdin",
-        "--non-interactive",
-        timeout_seconds=INFO_TIMEOUT_SECONDS,
-        stdin_bytes=stdin_bytes,
-    )
-    return tool.strip() == ASF_TOOL
+    return await committed_by_atr(info.url, str(revision))
 
 
 async def remove_files(

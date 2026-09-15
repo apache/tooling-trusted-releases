@@ -75,7 +75,6 @@ class _StructuralChanges(NamedTuple):
 
 async def catalogue_commit(commit: dict) -> None:
     if str(commit.get("committer", "")) == svn.ASF_TOOL:
-        # Our own publishes are already in the database
         return
     changed = commit.get("changed", {})
     if not isinstance(changed, dict):
@@ -86,6 +85,8 @@ async def catalogue_commit(commit: dict) -> None:
     await _expand_copied(changes.copied, added)
     added = _collapse_airflow_providers(added)
     if not (added or removed or changes.removed_files):
+        return
+    if await _committed_by_atr(commit.get("id")):
         return
     date = _commit_date(commit)
     # Resolve against ATR's projects in a read session first, so decomposition and
@@ -170,6 +171,19 @@ def _commit_date(commit: dict) -> datetime.datetime:
         return datetime.datetime.strptime(head, "%Y-%m-%d %H:%M:%S %z")
     except ValueError:
         return datetime.datetime.now(datetime.UTC)
+
+
+async def _committed_by_atr(revision: object) -> bool:
+    # Our own publishes carry the asf:tool=atr revprop; a failed read catalogues rather than drops,
+    # since a duplicate release is recoverable and a missed one isn't
+    url = config.get().SVN_PUBLISH_URL
+    if (url is None) or (revision is None):
+        return False
+    try:
+        return await svn.committed_by_atr(url, str(revision))
+    except Exception:
+        log.exception(f"dist watcher could not read asf:tool for r{revision}; treating it as external")
+        return False
 
 
 def _companion(siblings: set[str], artifact: str, suffixes: tuple[str, ...]) -> str | None:

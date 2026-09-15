@@ -147,3 +147,29 @@ async def test_the_same_release_is_only_archived_once_across_several_deleted_sou
         removed_files=[("foo/1.2.0", "foo-1.2.0-src.tar.gz"), ("foo/1.2.0", "foo-1.2.0-src.zip")],
     )
     assert len(archives) == 1
+
+
+# ATR's own publishes carry the asf:tool=atr revprop, so the watcher skips them rather than
+# re-cataloguing a managed release the publish already recorded
+
+
+@pytest.mark.asyncio
+async def test_a_commit_with_no_revision_is_treated_as_external(monkeypatch) -> None:
+    # Nothing to look a revprop up against, so it can't be recognised as ours - catalogue it
+    monkeypatch.setattr(catalog.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL="https://dist.example/release"))
+    assert await catalog._committed_by_atr(None) is False
+
+
+@pytest.mark.asyncio
+async def test_a_commit_carrying_the_atr_tool_revprop_is_recognised_as_ours(monkeypatch) -> None:
+    monkeypatch.setattr(catalog.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL="https://dist.example/release"))
+    monkeypatch.setattr(catalog.svn, "committed_by_atr", mock.AsyncMock(return_value=True))
+    assert await catalog._committed_by_atr(87431) is True
+
+
+@pytest.mark.asyncio
+async def test_a_revprop_read_failure_catalogues_rather_than_drops(monkeypatch) -> None:
+    # A dropped release can't be recovered but a duplicate can, so a failed lookup falls to cataloguing
+    monkeypatch.setattr(catalog.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL="https://dist.example/release"))
+    monkeypatch.setattr(catalog.svn, "committed_by_atr", mock.AsyncMock(side_effect=RuntimeError("svn unreachable")))
+    assert await catalog._committed_by_atr(87431) is False
