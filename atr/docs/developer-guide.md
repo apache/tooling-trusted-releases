@@ -28,6 +28,7 @@
 * `3.18.` [API documentation policy](api-documentation-policy)
 * `3.19.` [ASFQuart usage](asfquart-usage)
 * `3.20.` [Resource management](resource-management)
+* `3.21.` [SBOM architecture](sbom-architecture)
 
 **Sections**:
 
