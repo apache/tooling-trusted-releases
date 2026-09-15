@@ -122,9 +122,7 @@ async def test_review_aggregates_x_and_unknown_licenses_separately_from_risk(rev
         "Packages npm/a@1, unknown, x@2 have Category X licences (including unrecognised licences)"
     )
     data = recorder.messages[0][2]
-    assert (data["licensed_components"], data["license_count"], data["licenses_truncated"]) == (5, 3, False)
-    assert [item["any_unknown"] for item in data["licenses"]] == [False, True, False]
-    assert data["licenses"][2]["expressions"] == ["MIT AND GPL-3.0-only"]
+    assert data == {"finding": "licenses", "licensed_components": 5, "license_count": 3}
     assert [message[2]["finding"] for message in recorder.messages] == ["licenses", "risk"]
     assert "risks" not in data
     assert "licenses" not in recorder.messages[1][2]
@@ -174,7 +172,7 @@ async def test_review_emits_only_structural_concerns(review_input, monkeypatch, 
 
 
 @pytest.mark.parametrize("count", [1, 3, 105])
-async def test_review_headline_and_evidence_cap(review_input, monkeypatch, count) -> None:
+async def test_review_headline_and_full_risk_evidence(review_input, monkeypatch, count) -> None:
     path, recorder, args = review_input
     keys = [f"pkg:npm/p{i:03}" for i in range(count)]
     path.write_bytes(_document(list(reversed(keys))))
@@ -189,8 +187,8 @@ async def test_review_headline_and_evidence_cap(review_input, monkeypatch, count
     remainder = f" (and {count - 3} more)" if (count > 3) else ""
     assert message == f"Packages {names}{remainder} have maintenance risk above 0.6"
     assert data["risk_count"] == count
-    assert len(data["risks"]) == min(count, 100)
-    assert data["risks_truncated"] == (count > 100)
+    assert [row["key"] for row in data["risks"]] == keys
+    assert data["risks_truncated"] is False
 
 
 async def test_review_internal_deadline_is_operational(review_input, monkeypatch) -> None:
@@ -203,7 +201,7 @@ async def test_review_internal_deadline_is_operational(review_input, monkeypatch
     assert recorder.messages == []
 
 
-async def test_review_license_evidence_cap_preserves_total_and_headline(review_input) -> None:
+async def test_review_license_summary_preserves_total_and_headline(review_input) -> None:
     path, recorder, args = review_input
     document = json.loads(_LICENSED)
     document["components"] = [
@@ -214,9 +212,7 @@ async def test_review_license_evidence_cap_preserves_total_and_headline(review_i
     assert len(recorder.messages) == 1
     _status, message, data = recorder.messages[0]
     assert message == "Packages p000, p001, p002 (and 102 more) have Category X licences"
-    assert data["license_count"] == 105
-    assert len(data["licenses"]) == 100
-    assert data["licenses_truncated"] is True
+    assert data == {"finding": "licenses", "licensed_components": 105, "license_count": 105}
 
 
 @pytest.mark.parametrize("error", [OSError("unreadable"), streaming.LimitError("limit")])

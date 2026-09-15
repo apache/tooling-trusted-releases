@@ -27,7 +27,9 @@ import markupsafe
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.get.compose as compose
+import atr.get.report as report
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.log as log
@@ -64,6 +66,9 @@ async def quality(
 
     task = await _score_task(str(file_path), project_key, release, version_key)
     task_result = _score_result(task)
+    review_task, findings = await _review(release, file_path)
+    report_url = util.as_url(report.selected_path, project_key=project_key, version_key=version_key, rel_path=file_path)
+    _review_summary(block, review_task, findings, report_url)
 
     block.h2["Content"]
     breakdown = await _breakdown(base_path, file_path)
@@ -72,10 +77,14 @@ async def quality(
         block.p["This SBOM could not be read, so its components cannot be shown."]
     else:
         _components_section(block, breakdown)
-    _license_section(block, task)
+    _license_section(block, task, findings.get("licenses"))
+    _maintenance_section(block, findings.get("risk"), review_task, release.is_embargoed)
     _vulnerability_section(block, task, task_result)
 
     block.h2["Quality"]
+    if structure := findings.get("structure"):
+        block.h3("#sbom-review-structure")[_review_badge(), "SBOM structure"]
+        block.p[structure.message]
     # The quality checks all read from the score task, so until it has run there is nothing to show
     if task_result is None:
         block.p[_score_unavailable(task)]
@@ -310,13 +319,10 @@ def _license_group_label(category: sbom.models.licenses.Category, any_unknown: b
     return f"Category {category!s} (unrecognised license)" if any_unknown else f"Category {category!s}"
 
 
-def _license_section(block: htm.Block, task: sql.Task | None) -> None:
-    block.h3["Licenses"]
+def _license_section(block: htm.Block, task: sql.Task | None, finding: sql.CheckResult | None = None) -> None:
+    block.h3("#sbom-review-licenses")["Licenses"]
     # The licence issues come from the score, so without one there is nothing to list
     task_result = _score_result(task)
-    if task_result is None:
-        block.p[_score_unavailable(task)]
-        return
     block.p[
         "Categories follow the ",
         htm.a(href="https://www.apache.org/legal/resolved.html")["ASF third party license policy"],
@@ -328,6 +334,11 @@ def _license_section(block: htm.Block, task: sql.Task | None) -> None:
         htm.a(href="https://github.com/apache/tooling-trusted-release/issues")["ATR"],
         ".",
     ]
+    if finding is not None:
+        block.p[_review_badge(), _review_label("licenses", finding)]
+    if task_result is None:
+        block.p[_score_unavailable(task)]
+        return
     warnings = []
     errors = []
     prev_licenses = None
@@ -419,6 +430,83 @@ def _licenses_cell(choices: list[sbom.models.licenses.Choice]) -> htm.Element | 
 
 def _load_license_issues(issues: list[str]) -> list[sbom.models.licenses.Issue]:
     return [sbom.models.licenses.Issue.model_validate(json.loads(i)) for i in issues]
+
+
+def _maintenance_details(item: dict[str, Any]) -> htm.Element:
+    observations = (
+        ("Criticality", "criticality"),
+        ("Health", "health"),
+        ("Health inputs observed (of 4)", "health_inputs"),
+        ("Contributor distribution (DDS)", "dds"),
+        ("Governance files (of 3)", "governance_files"),
+        ("Average package ranking", "rankings_average"),
+        ("Repository URL", "repository_url"),
+        ("Inferred mirror", "inferred_mirror"),
+    )
+    return htm.details[
+        htm.summary["Score and source details"],
+        _review_table(
+            ["Observation", "Value"],
+            [htm.tr[htm.th[label], htm.td[_review_value(item.get(key))]] for label, key in observations],
+        ),
+    ]
+
+
+def _maintenance_section(
+    block: htm.Block, finding: sql.CheckResult | None, task: sql.Task | None, embargoed: bool
+) -> None:
+    block.h3("#sbom-review-risk")["Maintenance"]
+    if finding is None:
+        if embargoed:
+            block.p["Maintenance lookups are skipped for embargoed releases."]
+        elif (task is not None) and (task.status == sql.TaskStatus.COMPLETED):
+            block.p["No maintenance concern recorded. Coverage is unavailable for this review."]
+        else:
+            block.p[_review_status(task)]
+        return
+    data = finding.data
+    block.p(".border-top.border-bottom.py-2")[
+        f"{data['scored']}/{data['packages']} packages in the SBOM were given risk scores."
+    ]
+    block.p[_review_badge(), _review_label("risk", finding)]
+    rows = [
+        htm.tr[
+            htm.td[
+                htm.code[item["key"].removeprefix("pkg:")],
+                htm.details[
+                    htm.summary["Package URLs and versions"],
+                    [htm.div[htm.code[purl]] for purl in item["source_purls"]],
+                ],
+            ],
+            htm.td[f"{item['risk']:.3f}"],
+            htm.td[
+                htm.div[f"Repository archived: {_review_value(item.get('archived'))}"],
+                htm.div[f"Active maintainers: {_review_value(item.get('active_maintainers'))}"],
+                htm.div[f"Latest release: {_review_value(item.get('latest_release_at'))}"],
+                _maintenance_details(item),
+            ],
+        ]
+        for item in data["risks"]
+    ]
+    block.table(".table.table-sm.table-bordered.table-striped")[
+        htm.thead[htm.tr[htm.th["Maintenance risk"], htm.th["Count"]]],
+        htm.tbody[
+            htm.tr[
+                htm.td[
+                    htm.details[
+                        htm.summary[f"Over {data['threshold']:g}"],
+                        htm.div[_review_table(["Package", "Risk (rounded)", "Supporting observations"], rows)],
+                    ],
+                ],
+                htm.td[str(data["risk_count"])],
+            ],
+        ],
+    ]
+    if data["risks_truncated"]:
+        block.p(".small.text-muted")[
+            f"These are the top {len(rows)} riskiest dependencies over {data['threshold']:g}. "
+            f"There are {data['risk_count']} total dependencies over {data['threshold']:g} risk."
+        ]
 
 
 def _missing_table(block: htm.Block, items: list[sbom.models.conformance.Missing]) -> None:
@@ -520,6 +608,104 @@ def _phase_nav(block: htm.Block, release: sql.Release) -> None:
         back_anchor=back_anchor,
         phase=phase,
     )
+
+
+async def _review(release: sql.Release, file_path: safe.RelPath) -> tuple[sql.Task | None, dict[str, sql.CheckResult]]:
+    async with db.session() as data:
+        via = sql.validate_instrumented_attribute
+        task = (
+            await data.task(
+                project_key=release.project_key,
+                version_key=release.version,
+                revision_number=release.latest_revision_number,
+                task_type=sql.TaskType.SBOM_REVIEW,
+                primary_rel_path=str(file_path),
+            )
+            .order_by(via(sql.Task.added).desc(), via(sql.Task.id).desc())
+            .limit(1)
+            .get()
+        )
+        rows = await interaction.check_results_for_revision(
+            release.safe_project_key,
+            release.safe_version_key,
+            release.safe_latest_revision_number,
+            checker="atr.tasks.checks.sbom.review",
+            rel_path=str(file_path),
+            member=False,
+            statuses=[sql.CheckResultStatus.CONCERN, sql.CheckResultStatus.EXCEPTION],
+            caller_data=data,
+        )
+    findings = {}
+    for row in rows:
+        kind = "exception" if (row.status == sql.CheckResultStatus.EXCEPTION) else row.data.get("finding", "structure")
+        findings.setdefault(kind, row)
+    return task, findings
+
+
+def _review_badge(status: sql.CheckResultStatus = sql.CheckResultStatus.CONCERN) -> htm.Element:
+    colour = "warning" if (status == sql.CheckResultStatus.CONCERN) else "danger"
+    return htm.span(f".badge.bg-{colour}-subtle.text-{colour}-emphasis.fw-medium.me-2")[status.value.capitalize()]
+
+
+def _review_label(kind: str, finding: sql.CheckResult) -> str:
+    data = finding.data
+    if kind == "licenses":
+        return f"Category X licences in {util.plural(data['license_count'], 'dependency', 'dependencies')}."
+    if kind == "risk":
+        return f"{util.plural(data['risk_count'], 'package')} with maintenance risk above {data['threshold']:g}."
+    return finding.message
+
+
+def _review_status(task: sql.Task | None) -> str:
+    if task is None:
+        return "SBOM review has not run for this revision."
+    match task.status:
+        case sql.TaskStatus.QUEUED:
+            return "SBOM review is queued."
+        case sql.TaskStatus.ACTIVE:
+            return "SBOM review is running."
+        case sql.TaskStatus.COMPLETED:
+            return "SBOM review completed for this revision."
+        case sql.TaskStatus.FAILED | sql.TaskStatus.BROKEN:
+            return "SBOM review did not complete."
+
+
+def _review_summary(
+    block: htm.Block, task: sql.Task | None, findings: dict[str, sql.CheckResult], report_url: str
+) -> None:
+    count = sum(row.status == sql.CheckResultStatus.CONCERN for row in findings.values())
+    with block.block(htm.div(".atr-sbom-review")) as summary:
+        summary.h3(".mt-0")[f"SBOM review · {util.plural(count, 'concern')} recorded"]
+        rows = [
+            htm.tr[
+                htm.td(".text-nowrap")[_review_badge(findings[kind].status)],
+                htm.td[
+                    htm.a(href=report_url if (kind == "exception") else f"#sbom-review-{kind}")[
+                        _review_label(kind, findings[kind])
+                    ]
+                ],
+            ]
+            for kind in ("licenses", "risk", "structure", "exception")
+            if kind in findings
+        ]
+        if rows:
+            summary.append(_review_table(["Status", "Finding"], rows))
+        summary.p(".small.mb-0")[_review_status(task), " ", htm.a(href=report_url)["View check report"]]
+
+
+def _review_table(headers: list[str], rows: list[htm.Element]) -> htm.Element:
+    return htm.table(".table.table-sm.atr-sbom-table")[
+        htm.thead[htm.tr[[htm.th(scope="col")[header] for header in headers]]],
+        htm.tbody[*rows],
+    ]
+
+
+def _review_value(value: Any) -> str:
+    if value is None:
+        return "Unknown"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return f"{value:.3f}" if isinstance(value, float) else str(value)
 
 
 def _score_result(task: sql.Task | None) -> results.SBOMToolScore | None:

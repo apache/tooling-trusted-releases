@@ -16,6 +16,7 @@
 # under the License.
 
 import cyclonedx.model.license as cdx_license
+import pytest
 
 import atr.sbom.constants as constants
 import atr.sbom.licenses as licenses
@@ -165,6 +166,34 @@ def test_check_a_disjunction_settles_on_the_friendliest_category() -> None:
     assert [issue.component_name for issue in good] == ["dual"]
     assert warnings == []
     assert errors == []
+
+
+@pytest.mark.parametrize("subject", [False, True])
+@pytest.mark.parametrize("source", [False, True])
+def test_check_includes_nested_components(subject, source) -> None:
+    parent = {
+        "type": "library",
+        "name": "unlicensed-parent",
+        "components": [
+            {"type": "library", "name": "forbidden", "licenses": [{"license": {"id": "GPL-3.0-only"}}]},
+            {
+                "type": "library",
+                "name": "weak-copyleft",
+                "licenses": [{"license": {"id": "EPL-2.0"}}],
+                "components": [
+                    {"type": "library", "name": "permissive", "licenses": [{"license": {"id": "MIT"}}]},
+                ],
+            },
+        ],
+    }
+    bom = sboms.build({"metadata": {"component": parent}} if subject else {"components": [parent]})
+    good, warnings, errors = licenses.check(bom, include_all=True, is_source_release=source)
+
+    assert [issue.component_name for issue in good] == ["permissive"]
+    assert [issue.component_name for issue in warnings] == ([] if source else ["weak-copyleft"])
+    assert sorted(issue.component_name for issue in errors) == (
+        ["forbidden", "weak-copyleft"] if source else ["forbidden"]
+    )
 
 
 def test_check_records_the_chosen_half_of_a_disjunction_it_still_flags() -> None:

@@ -57,6 +57,7 @@ def check(
         components = [bom_value.metadata.component, *components]
 
     for component in components:
+        components.extend(component.components)
         name = component.name or "unknown"
         version = component.version
         scope = component.scope

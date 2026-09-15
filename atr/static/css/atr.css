@@ -1247,6 +1247,23 @@ td.atr-checkbox-col {
     text-align: center;
 }
 
+.atr-sbom-review {
+    background-color: #fffaf0;
+    border: 1px solid #ddb968;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+table.atr-sbom-table th,
+table.atr-sbom-table td {
+    padding: 0.65rem 0.5rem;
+    vertical-align: top;
+    font-family: inherit;
+    font-size: inherit;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
 .atr-text-blocker .atr-classification-badge {
     background-color: #fdf6f6;
 }

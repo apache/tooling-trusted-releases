@@ -1,3 +1,4 @@
+import collections.abc as abc
 from enum import Enum
 from typing import Any, Optional
 
@@ -46,3 +47,6 @@ class Component(_JsonSerializable, _XmlSerializable):
     bom_ref: BomRef
 
     def __init__(self, *, component_type: ComponentType, name: str, **kwargs: Any) -> None: ...
+
+    @property
+    def components(self) -> abc.Sequence[Component]: ...

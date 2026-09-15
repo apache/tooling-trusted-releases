@@ -38,10 +38,9 @@ import atr.tasks.task as task
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
 CHECK_VERSION: Final[str] = "3"
-REVIEW_VERSION: Final = "3"
+REVIEW_VERSION: Final = "4"
 RISK_THRESHOLD: Final = 0.6
 _DEADLINE_SECONDS: Final = 540
-_EVIDENCE_LIMIT: Final = 100
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -136,41 +135,32 @@ def _headline(names: list[str]) -> str:
     return f"Packages {listed}{remainder}"
 
 
-def _license_name(item: dict[str, Any]) -> str:
-    key = maintenance.package_key(item["purl"]) if item["purl"] else None
-    name = (key or item["name"]).removeprefix("pkg:")
-    return f"{name}@{item['version']}" if item["version"] else name
+def _license_name(component: streaming.LicensedComponent) -> str:
+    key = maintenance.package_key(component.purl) if component.purl else None
+    name = (key or component.name).removeprefix("pkg:")
+    return f"{name}@{component.version}" if component.version else name
 
 
 async def _licenses(recorder: checks.Recorder, inventory: streaming.Inventory) -> None:
     flagged = []
+    any_unknown = False
     for component in inventory.licensed_components:
         choices = [licenses.assess(expression, explicit) for expression, explicit in component.licenses]
         rejected = [choice for choice in choices if (choice.category == atr.sbom.models.licenses.Category.X)]
         if not rejected:
             continue
-        flagged.append(
-            {
-                "name": component.name,
-                "version": component.version,
-                "purl": component.purl,
-                "expressions": sorted({choice.expression for choice in rejected}),
-                "any_unknown": any(choice.any_unknown for choice in rejected),
-            }
-        )
+        flagged.append(_license_name(component))
+        any_unknown |= any(choice.any_unknown for choice in rejected)
     if not flagged:
         return
-    flagged.sort(key=_license_name)
-    names = [_license_name(item) for item in flagged]
-    unknown = " (including unrecognised licences)" if any(item["any_unknown"] for item in flagged) else ""
+    flagged.sort()
+    unknown = " (including unrecognised licences)" if any_unknown else ""
     await recorder.concern(
-        f"{_headline(names)} have Category X licences{unknown}",
+        f"{_headline(flagged)} have Category X licences{unknown}",
         {
             "finding": "licenses",
             "licensed_components": len(inventory.licensed_components),
             "license_count": len(flagged),
-            "licenses": flagged[:_EVIDENCE_LIMIT],
-            "licenses_truncated": len(flagged) > _EVIDENCE_LIMIT,
         },
     )
 
@@ -214,8 +204,8 @@ async def _risks(recorder: checks.Recorder, inventory: streaming.Inventory) -> N
             "scored": scored,
             "unknown": len(sources) - scored,
             "risk_count": len(flagged),
-            "risks": flagged[:_EVIDENCE_LIMIT],
-            "risks_truncated": len(flagged) > _EVIDENCE_LIMIT,
+            "risks": flagged,
+            "risks_truncated": False,
             "attribution": "ecosyste.ms (CC BY-SA 4.0) with inferred Apache Gitbox mirrors; no deps.dev source veto",
         },
     )
