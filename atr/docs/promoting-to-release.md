@@ -16,7 +16,7 @@
 
 ## Overview
 
-SVN is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting). When the vote passes, the release moves to the finish phase, in which ATR commits the approved artifacts to the canonical release area of the Apache distribution SVN repository:
+SVN dist area is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting). When the vote passes, the release moves to the finish phase, in which ATR commits the approved artifacts to the canonical release area of the Apache distribution SVN repository:
 
 * TLP: `https://dist.apache.org/repos/dist/release/<committee>/`
 * Podling: `https://dist.apache.org/repos/dist/release/incubator/<committee>/`
@@ -25,16 +25,16 @@ Files committed there are served from `downloads.apache.org` and the download CD
 
 **Podling note**: for a podling, prefix the committee path with `incubator/` in every path below, including the `downloads.apache.org` URL.
 
-## Publishing to SVN
+## Publishing to [ASF Distribution Area](https://downloads.apache.org/)
 
 Publication happens in the finish phase, once the vote has resolved successfully. There are two ways to trigger it:
 
-* Automatically, by selecting "Automatically publish to SVN when this vote resolves" when starting the vote. This option is offered when a committee member starts a non-expedited vote in email or Trusted Vote mode.
+* Automatically, by selecting "Automatically publish to SVN distribution area when this vote resolves" when starting the vote. This option is offered when a committee member starts a non-expedited vote in email or Trusted Vote mode.
 * Manually, by pressing the publish button on the finish page for the release.
 
-The finish page shows the destination, and the resulting SVN revision and URL once publication completes.
+The finish page shows the destination, and the resulting SVN dist/ revision and download URL once publication completes.
 
-By default the files are placed in a per release subdirectory, `release/<committee>/<project>-<version>/`, except for a committee's top level project, whose files go directly into `release/<committee>/`. Projects can configure this layout with the download path suffix in their release policy, using the `{{PROJECT_KEY}}`, `{{VERSION}}`, and `{{MAJOR_VERSION}}` tokens, and the release manager can adjust the suffix when publishing manually.
+By default the files are placed in a per release subdirectory, `dist/release/<committee>/<project>-<version>/`, except for a committee's top level project, whose files go directly into `dist/release/<committee>/`. Projects can configure this layout with the download path suffix in their release policy, using the `{{PROJECT_KEY}}`, `{{VERSION}}`, and `{{MAJOR_VERSION}}` tokens, and the release manager can adjust the suffix when publishing manually.
 
 ## Announcing
 
