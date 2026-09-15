@@ -193,6 +193,14 @@ repos:
       pass_filenames: false
       always_run: true
 
+    - id: check-npm-dependencies-updated
+      name: check when npm dependencies were updated
+      description: Verify that npm dependencies were updated within the configured timeframe, for ASVS 15.1.1
+      entry: uv run --frozen python scripts/check_npm_dependencies_updated.py
+      language: system
+      pass_filenames: false
+      always_run: true
+
     - id: uv-audit
       name: audit dependencies with uv
       description: Check uv.lock for known vulnerabilities via OSV, trialled alongside pip-audit

@@ -19,9 +19,9 @@
 ATR depends on three families of third-party code: Python packages, resolved and
 locked by uv; the Bootstrap frontend toolkit, installed through npm; and a small
 set of command-line tools baked into the container image. We make use of specific
-version pinning. Python dependency freshness is enforced automatically at commit
-time through pre-commit hooks, the Bootstrap toolkit is updated manually by a script,
-and the container tools are verified at image build time.
+version pinning. Python and frontend dependency freshness are both enforced
+automatically at commit time through pre-commit hooks, the Bootstrap toolkit is
+updated by a script, and the container tools are verified at image build time.
 
 This page describes how those dependencies are updated and what guardrails apply.
 It covers only ATR's own dependencies. Scanning of the release artifacts that
@@ -32,7 +32,7 @@ users upload is a separate concern and is not covered here.
 Python dependencies are pinned in `uv.lock` and resolved by uv. To refresh them,
 run `make update-deps`.
 
-### Freshness
+### Python dependency freshness
 
 The `check-when-dependencies-updated` pre-commit hook runs
 [`check_when_dependencies_updated.py`](/ref/scripts/check_when_dependencies_updated.py),
@@ -66,7 +66,20 @@ The script enforces a 14-day cooldown: it installs the requested version with
 cannot be pulled in until it has been available for two weeks. It then runs
 `npm audit` to check for known vulnerabilities and `npm audit signatures` to
 verify the registry signatures, and finally reminds the operator to commit the
-updated `package.json` and `package-lock.json`.
+updated `package.json`, `package-lock.json` and `.npm-exclude-newer`.
+
+### Frontend dependency freshness
+
+The `check-npm-dependencies-updated` pre-commit hook runs
+[`check_npm_dependencies_updated.py`](/ref/scripts/check_npm_dependencies_updated.py),
+which fails if the frontend dependencies are more than 60 days old - a looser
+window than Python's 30 days, since Bootstrap moves more slowly and the 14-day
+cooldown already narrows how new an update can be. `package-lock.json` carries no
+timestamp of its own, so `bump.sh` records its `--before` cutoff in
+`bootstrap/source/.npm-exclude-newer`, and the check reads the age from there. A
+`package-lock.json` edit that skips `bump.sh` does not refresh that file, which
+keeps updates on the `bump.sh` path. On failure it prints
+`Run: bootstrap/context/bump.sh VERSION`.
 
 ## External tools in the container image
 
@@ -91,6 +104,7 @@ There is no automated freshness check for these tools.
 ## Implementation references
 
 * [`check_when_dependencies_updated.py`](/ref/scripts/check_when_dependencies_updated.py) - the 30-day Python freshness check
+* [`check_npm_dependencies_updated.py`](/ref/scripts/check_npm_dependencies_updated.py) - the 60-day frontend freshness check
 * [`bump.sh`](/ref/bootstrap/context/bump.sh) - the Bootstrap update script
 * [`Dockerfile.alpine`](/ref/Dockerfile.alpine) - pinned external tools
 * [`pip-audit.requirements`](/ref/pip-audit.requirements) - pinned tree audited by pip-audit

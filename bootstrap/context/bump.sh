@@ -43,5 +43,9 @@ npm audit
 echo "Verifying registry signatures..."
 npm audit signatures
 
+# Record the cutoff so scripts/check_npm_dependencies_updated.py can flag a stale bump, the way
+# uv.lock's exclude-newer feeds the Python check - package-lock.json carries no timestamp of its own
+printf '%s\n' "$CUTOFF" > .npm-exclude-newer
+
 echo "Bootstrap updated to version $VERSION"
-echo "Please commit the updated package.json and package-lock.json"
+echo "Please commit the updated package.json, package-lock.json and .npm-exclude-newer"
