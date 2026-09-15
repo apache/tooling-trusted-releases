@@ -1,0 +1,60 @@
+name: Tool freshness
+
+# Notice, weekly, when the external tools pinned in Dockerfile.alpine have newer
+# upstream releases. This raises or refreshes a tracking issue; it never blocks a
+# build or a pull request. A human tests the newer version before bumping it.
+
+on:
+  schedule:
+    # Mondays at 06:30 UTC, clear of the CodeQL cron.
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: '0.11.20'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Check tool versions
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          uv run --frozen python scripts/ci/check_dockerfile_tool_versions.py > tool-freshness-report.md
+          cat tool-freshness-report.md
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Dockerfile tool updates available
+        run: |
+          number=$(gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -n "$number" ]
+          then
+            gh issue edit "$number" --body-file tool-freshness-report.md
+            echo "Updated issue #$number"
+          else
+            gh issue create --title "$TITLE" --body-file tool-freshness-report.md
+            echo "Opened a new tracking issue"
+          fi
