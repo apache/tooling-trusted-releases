@@ -50,16 +50,9 @@ The files should soon become visible at `https://downloads.apache.org/<committee
 
 ## Removing superseded releases
 
-Apache distribution policy is that `/dist/release/` should hold only the current release of each line, with everything older moved to `archive.apache.org`. Releases committed to `/dist/release/` are picked up by the archive automatically, so you do not have to copy them there yourself. You do, however, have to delete the superseded ones. What to delete depends on the layout your project publishes to, described above. With the default layout for a project that is not the committee's top level project, a superseded release is a single subdirectory:
+Apache distribution policy is that `/dist/release/` should hold only the current release of each line, with everything older moved to `archive.apache.org`. Releases committed to `/dist/release/` are picked up by the archive automatically, so you do not have to copy them there yourself.
 
-```shell
-svn rm -m "Remove superseded <committee> <previous-version>" \
-  https://dist.apache.org/repos/dist/release/<committee>/<project>-<previous-version>
-```
-
-A top level project's files sit directly in the committee directory, so list each superseded file in the `svn rm` command instead.
-
-Do this once you have verified that the new release is reachable. Archiving a release in ATR records the archival in the release catalog, but does not currently remove the files from `/dist/release/`, so this step remains manual.
+Archiving a release in ATR updates the release catalog and removes its files from the distribution area in the background. If enabled in the project settings, select "Auto archive prior release" to do this for the previous release in the same cycle when you announce the new release. ATR warns you if leftover files need manual cleanup.
 
 ## The KEYS file
 
