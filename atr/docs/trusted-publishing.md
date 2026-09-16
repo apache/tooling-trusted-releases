@@ -21,6 +21,8 @@ The process involves creating a dedicated GPG signing key for the project, stori
 
 ## How to set up Trusted Publishing
 
+ATR Trusted Publishing is build on top of [Automated Release Signing](https://infra.apache.org/release-signing.html#automated-release-signing) that define the 6 prerequisite steps.
+
 ### Step 1: Demonstrate reproducibility
 
 Contact the ASF Security team and demonstrate to them that your project's builds are reproducible. This means that, given the same source input, your build process produces bit-for-bit identical output regardless of where or when it runs. The security team will evaluate your build pipeline and confirm that it qualifies for Trusted Publishing.

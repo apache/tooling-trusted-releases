@@ -42,9 +42,16 @@ ATR also runs its own [checks](checks) over every revision, and the results are 
 
 ## How files reach ATR
 
-There are four ways to get files into a candidate: upload through the browser, upload over rsync, import from the committee's `dist/dev` area in SVN, or upload from a GitHub Actions workflow using [Trusted Publishing](trusted-publishing).
+There are many ways to get files into a candidate:
 
-The SVN import is one option among four, and we expect most release managers to use the browser or rsync and bypass SVN entirely. SVN should not be thought of as an intrinsic part of the ATR release process. It becomes involved only at final publication, when the approved artifacts are committed to the distribution repository.
+* upload through the browser,
+* upload over rsync,
+* import from the committee's `dist/dev` area in SVN,
+* upload with `atr` CLI ([Trusted Releases Client](https://github.com/apache/tooling-releases-client)),
+* upload with [ATR Maven Plugin](https://github.com/apache/tooling-atr-maven-plugin),
+* upload from a GitHub Actions workflow using [Trusted Publishing](trusted-publishing).
+
+The SVN `dist/dev` import is one option among others, and we expect most release managers to use other options and bypass SVN `dist/dev`. SVN should not be thought of as an intrinsic part of the ATR release process. It becomes involved only at final publication, when the approved artifacts are committed to the distribution `dist/release` repository for [ASF download area](https://downloads.apache.org/) sync.
 
 ## The earlier dist/dev workflow
 
