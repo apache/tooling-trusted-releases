@@ -19,4 +19,16 @@
 
 from typing import Final
 
+# Button labels
+REGENERATE_KEYS_BUTTON: Final = "Regenerate KEYS file"
+RESET_INACTIVITY_CLOCK_BUTTON: Final = "Reset inactivity clock"
+RESOLVE_VOTE_BUTTON: Final = "Resolve vote"
 VERIFY_DISTRIBUTION_BUTTON: Final = "Verify a third-party distribution"
+
+# File classification labels
+FILE_CLASS_BINARY: Final = "Binary artifact"
+FILE_CLASS_DIRECTORY: Final = "Directory"
+FILE_CLASS_DISALLOWED: Final = "Disallowed file"
+FILE_CLASS_METADATA: Final = "Metadata file"
+FILE_CLASS_SBOM: Final = "SBOM"
+FILE_CLASS_SOURCE: Final = "Source artifact"

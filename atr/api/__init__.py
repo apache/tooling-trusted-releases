@@ -41,6 +41,7 @@ import atr.constants as constants
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
@@ -2605,7 +2606,7 @@ async def _vote_tabulate_trusted(
     if not is_trusted:
         return None, None, None
     if release.committee is None:
-        raise exceptions.InternalServerError("Release has no committee")
+        raise exceptions.InternalServerError(errors.RELEASE_NO_COMMITTEE)
     vote_seq = release.current_vote_seq
     if vote_seq is None:
         return None, None, None

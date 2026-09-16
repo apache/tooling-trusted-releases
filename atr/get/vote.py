@@ -29,6 +29,7 @@ import atr.blueprints.get as get
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.checklist as checklist
 import atr.get.download as download
@@ -45,6 +46,7 @@ import atr.post as post
 import atr.render as render
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -72,10 +74,10 @@ async def category_and_release(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
         if release.committee is None:
-            raise ValueError("Release has no committee")
+            raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
         latest_vote_task = await interaction.release_current_vote_task(release, data)
 
@@ -424,7 +426,7 @@ def _render_header(
         page.append(htm.p[badge])
 
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     voting_committee_name = _vote_committee_name(release)
     page.p[
@@ -590,7 +592,7 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
         page.div[
             htpy.a(".btn.btn-success", href=resolve_url)[
                 htpy.i(".bi.bi-clipboard-check.me-1"),
-                "Resolve vote",
+                strings.RESOLVE_VOTE_BUTTON,
             ],
         ]
 
@@ -606,7 +608,7 @@ async def _render_section_vote(
     page.h2("#vote")["3. Cast your vote"]
 
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     if release.effective_vote_mode == sql.VoteMode.MANUAL:
         _render_vote_manual(page)
@@ -628,7 +630,7 @@ async def _render_trusted_vote_authenticated(
     latest_vote_task: sql.Task | None,
 ) -> None:
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     latest_ballot = None
     if release.current_vote_seq is not None:
@@ -692,7 +694,7 @@ async def _render_vote_authenticated(
     latest_vote_task: sql.Task | None,
 ) -> None:
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     if session is None:
         raise ValueError("Session required for authenticated vote")
 
@@ -743,7 +745,7 @@ def _render_vote_delivery(
         ]
     else:
         page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
-    if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
+    if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
 
 
@@ -885,7 +887,7 @@ def _trusted_vote_status(
 
 def _vote_committee_name(release: sql.Release) -> str:
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     if _is_podling_round_two(release):
         return "Incubator"
     return release.committee.display_name
@@ -935,7 +937,7 @@ def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> 
         if isinstance(task_email_to, str) and task_email_to:
             return task_email_to
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     if _is_podling_round_two(release):
         return util.INCUBATOR_GENERAL_ADDRESS
     return f"dev@{release.committee.key}.apache.org"

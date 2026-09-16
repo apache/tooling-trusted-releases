@@ -25,6 +25,7 @@ import atr.blueprints.get as get
 import atr.config as config
 import atr.construct as construct
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.projects as projects
 import atr.htm as htm
@@ -66,7 +67,7 @@ async def selected(
     subject_template_hash = construct.template_hash(default_subject_template)
 
     if (committee := release.project.committee) is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     # Expand the templates
     options = construct.AnnounceReleaseOptions(
@@ -307,7 +308,7 @@ async def _render_page(
     page.append(_render_release_card(release))
     page.h2["Announce this release"]
 
-    if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
+    if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
 
     announce_msg = _missing_distributions_message(release)

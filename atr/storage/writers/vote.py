@@ -27,6 +27,7 @@ import sqlmodel
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
@@ -373,7 +374,7 @@ class ReleaseManager(CommitteeParticipant):
                 )
             committee = await self._committee_for_release(release)
             if committee is None:
-                raise storage.AccessError("Release has no committee", status=500)
+                raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)
             if release.expedited:
                 email_to = f"private@{committee.key}.apache.org"
                 email_cc = []

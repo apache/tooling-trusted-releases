@@ -27,6 +27,7 @@ import quart
 import atr.blueprints.post as post
 import atr.config as config
 import atr.construct as construct
+import atr.errors as errors
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -69,7 +70,7 @@ async def selected(
     preview_revision_number = release.safe_latest_revision_number
 
     if (committee := release.project.committee) is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     if response := await _validate_recipients(session, announce_form, util.unwrap(committee.key), release.project):
         return response
 

@@ -27,6 +27,7 @@ import atr.blueprints.get as get
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.announce as announce
 import atr.get.distribution as distribution
@@ -119,7 +120,7 @@ async def _get_page_data(
             _release_policy=True,
             _project_release_policy=True,
             _distributions=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         tasks = [
             t
             for t in (
@@ -247,7 +248,7 @@ async def _render_page(
         htm.em[release.version],
     ]
 
-    if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
+    if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
 
     # Release info card
@@ -289,7 +290,7 @@ async def _render_page(
         activity_form = await form.render(
             model_cls=form.Empty,
             action=util.as_url(post.release.activity, project_key=release.project.key, version_key=release.version),
-            submit_label="Reset inactivity clock",
+            submit_label=strings.RESET_INACTIVITY_CLOCK_BUTTON,
             submit_classes="btn-outline-primary",
             pre_submit=activity.inactivity_form_intro(release, action="flagged", noun="preview"),
         )

@@ -33,6 +33,7 @@ import atr.render as render
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -63,7 +64,7 @@ async def resolve_selected(
     content = await _render_resolve_page(release)
 
     return await template.blank(
-        title="Resolve vote",
+        title=strings.RESOLVE_VOTE_BUTTON,
         description="Resolve vote for a release.",
         content=content,
     )
@@ -200,7 +201,7 @@ async def _render_resolve_page(release: sql.Release) -> htm.Element:
         page,
         model_cls=shared.manual.ResolveVoteForm,
         form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
-        submit_label="Resolve vote",
+        submit_label=strings.RESOLVE_VOTE_BUTTON,
     )
 
     return page.collect()

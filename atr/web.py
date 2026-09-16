@@ -29,6 +29,7 @@ import werkzeug.datastructures.headers
 
 import atr.config as config
 import atr.db as db
+import atr.errors as errors
 import atr.form as form
 import atr.htm as htm
 import atr.models.safe as safe
@@ -209,7 +210,7 @@ class Committer:
                     _project_release_policy=with_project_release_policy,
                     _revisions=with_revisions,
                     _distributions=with_distributions,
-                ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+                ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         else:
             release = await data.release(
                 project_key=str(project_key),
@@ -222,7 +223,7 @@ class Committer:
                 _project_release_policy=with_project_release_policy,
                 _revisions=with_revisions,
                 _distributions=with_distributions,
-            ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+            ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         return release
 
     @property

@@ -26,6 +26,7 @@ import asfquart.base as base
 import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
+import atr.errors as errors
 import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -69,16 +70,16 @@ async def selected_path(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
     if release.phase not in (
         sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
         sql.ReleasePhase.RELEASE_CANDIDATE,
         sql.ReleasePhase.RELEASE,
     ):
-        raise base.ASFQuartException("Release does not exist", errorcode=404)
+        raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
     if release.committee is None:
-        raise base.ASFQuartException("Release has no committee", errorcode=500)
+        raise base.ASFQuartException(errors.RELEASE_NO_COMMITTEE, errorcode=500)
 
     if release.phase == sql.ReleasePhase.RELEASE:
         revision, attestable_data, file_size = await _published_file(project_key, version_key, str(rel_path))
@@ -91,7 +92,7 @@ async def selected_path(
 
         # Check that the file exists
         if not await aiofiles.os.path.exists(abs_path):
-            raise base.ASFQuartException("File does not exist", errorcode=404)
+            raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
 
         modified = int(await aiofiles.os.path.getmtime(abs_path))
         uploaded = datetime.datetime.fromtimestamp(modified, tz=datetime.UTC)
@@ -144,7 +145,7 @@ async def _published_file(
     attested = await attestable.load(project_key, version_key, revision) if (revision is not None) else None
     content_hash = attestable.path_hash(attested, rel_path) if (attested is not None) else None
     if (revision is None) or (attested is None) or (content_hash is None):
-        raise base.ASFQuartException("File does not exist", errorcode=404)
+        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
     return revision, attested, attested.hashes[content_hash].size
 
 

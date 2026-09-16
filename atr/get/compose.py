@@ -45,6 +45,7 @@ import atr.shared as shared
 import atr.shared.activity as activity
 import atr.shared.draft as draft
 import atr.storage as storage
+import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -80,7 +81,7 @@ async def selected(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         return await mapping.release_as_redirect(session, release)
 
@@ -214,7 +215,7 @@ async def selected(
         )[""],
     ]
 
-    archived_banner = render.archived_project_banner(release.project, "Release actions are disabled.")
+    archived_banner = render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED)
     archived_banner_html = str(archived_banner) if archived_banner is not None else ""
 
     return await template.render(
@@ -286,7 +287,7 @@ async def _activity_form_html(release: sql.Release, session: web.Committer) -> s
     activity_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(post.release.activity, project_key=release.project.key, version_key=release.version),
-        submit_label="Reset inactivity clock",
+        submit_label=strings.RESET_INACTIVITY_CLOCK_BUTTON,
         submit_classes="btn-outline-primary",
         pre_submit=activity.inactivity_form_intro(release),
     )
@@ -642,7 +643,7 @@ async def _status_selected_impl(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         return quart.jsonify(

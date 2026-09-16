@@ -19,6 +19,7 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.errors as errors
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -48,7 +49,7 @@ async def selected_post(  # noqa: C901
     )
 
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     if release.effective_vote_mode != cast_vote_form.vote_mode:
         await quart.flash("The vote form is stale, please refresh and try again.", "error")

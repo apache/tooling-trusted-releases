@@ -34,6 +34,7 @@ import atr.post as post
 import atr.render as render
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.tabulate as tabulate
 import atr.template as template
 import atr.user as user
@@ -243,7 +244,7 @@ async def selected(  # noqa: C901
 
     cancel_only = False
     submit_classes = "btn-primary"
-    submit_label = "Resolve vote"
+    submit_label = strings.RESOLVE_VOTE_BUTTON
     duration_blocks_result = (not pass_fail_allowed) and (not bypass_active)
     if duration_blocks_result:
         cancel_only = True

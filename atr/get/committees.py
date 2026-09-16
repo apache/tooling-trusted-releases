@@ -31,6 +31,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.shared as shared
+import atr.strings as strings
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -177,7 +178,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
             action=util.as_url(post.keys.keys),
             # Inline block so the button sits beside the Upload link, not on its own row
             form_classes=".d-inline-block.m-0",
-            submit_label="Regenerate KEYS file",
+            submit_label=strings.REGENERATE_KEYS_BUTTON,
             defaults={"committee_key": committee.key},
             empty=True,
         ),

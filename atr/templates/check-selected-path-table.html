@@ -60,18 +60,18 @@
             {% set file_type = info.file_types[path].value if (info and (path in info.file_types)) else None %}
 
             {% if file_type == "disallowed" %}
-              <span class="atr-classification-badge" title="Disallowed file">bad</span>
+              <span class="atr-classification-badge" title="{{ strings.FILE_CLASS_DISALLOWED }}">bad</span>
             {% elif file_type == "source" %}
-              <span class="atr-classification-badge" title="Source artifact">src</span>
+              <span class="atr-classification-badge" title="{{ strings.FILE_CLASS_SOURCE }}">src</span>
             {% elif file_type == "directory" %}
-              <span class="atr-classification-badge" title="Directory">dir</span>
+              <span class="atr-classification-badge" title="{{ strings.FILE_CLASS_DIRECTORY }}">dir</span>
             {% elif file_type == "metadata" %}
-              <span class="atr-classification-badge" title="Metadata file">meta</span>
+              <span class="atr-classification-badge" title="{{ strings.FILE_CLASS_METADATA }}">meta</span>
             {% elif file_type == "sbom" %}
-              <span class="atr-classification-badge" title="SBOM">sbom</span>
+              <span class="atr-classification-badge" title="{{ strings.FILE_CLASS_SBOM }}">sbom</span>
               {# elif file_type == "binary" #}
             {% else %}
-              <span class="atr-classification-badge" title="Binary artifact">bin</span>
+              <span class="atr-classification-badge" title="{{ strings.FILE_CLASS_BINARY }}">bin</span>
             {% endif %}
           </td>
           <td class="py-2">

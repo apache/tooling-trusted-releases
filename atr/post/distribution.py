@@ -22,6 +22,7 @@ from typing import Final, Literal
 import atr.blueprints.post as post
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.get as get
 import atr.models.distribution as distribution
 import atr.models.safe as safe
@@ -137,7 +138,7 @@ async def delete(
 
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-            RuntimeError("Release does not exist")
+            RuntimeError(errors.RELEASE_NOT_FOUND)
         )
     if release.safe_key != delete_form.release_key:
         raise RuntimeError("Release name mismatch")

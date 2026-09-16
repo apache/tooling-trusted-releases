@@ -30,6 +30,7 @@ import werkzeug.exceptions as exceptions
 
 import atr.config as config
 import atr.db as db
+import atr.errors as errors
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -210,7 +211,7 @@ async def confidential_release_block(
     uid = session.uid if (session is not None) else None
     is_member = bool(allow_asf_member and (session is not None) and session.is_member)
     if user.embargo_hides_release(release, uid, is_member=is_member):
-        raise base.ASFQuartException("Release does not exist", errorcode=404)
+        raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
 
 def setup_wrapper(wrapper: Callable[..., Any], func: Callable[..., Any], blueprint_name: str) -> str:

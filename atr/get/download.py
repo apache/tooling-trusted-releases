@@ -225,7 +225,7 @@ async def _download_or_list(
     # We allow downloading files from any phase
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-            base.ASFQuartException("Release does not exist", errorcode=404)
+            base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
         )
     if release.phase == sql.ReleasePhase.RELEASE:
         return await _published_response(release, validated_path)

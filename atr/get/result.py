@@ -22,6 +22,7 @@ import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.errors as errors
 import atr.models.safe as safe
 import atr.web as web
 
@@ -43,10 +44,10 @@ async def data(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
         if release.committee is None:
-            raise base.ASFQuartException("Release has no committee", errorcode=500)
+            raise base.ASFQuartException(errors.RELEASE_NO_COMMITTEE, errorcode=500)
 
         check_result = await data.check_result(
             id=check_id,

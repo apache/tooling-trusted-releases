@@ -36,6 +36,7 @@ import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.classify as classify
 import atr.db as db
+import atr.errors as errors
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.safe as safe
@@ -490,13 +491,13 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
 
 async def _resolve_committee_key(release: sql.Release, rel_path: str | None = None) -> str:
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     return release.committee.key
 
 
 async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | None = None) -> list[str]:
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     via = sql.validate_instrumented_attribute
     committee_key = release.committee.key
     async with db.session() as data:

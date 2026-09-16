@@ -33,6 +33,7 @@ import atr.models.unsafe as unsafe
 import atr.post as post
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -412,7 +413,7 @@ async def _committee_keys(
                     model_cls=shared.keys.UpdateCommitteeKeysForm,
                     action=util.as_url(post.keys.keys),
                     form_classes=".mb-4.d-inline-block",
-                    submit_label="Regenerate KEYS file",
+                    submit_label=strings.REGENERATE_KEYS_BUTTON,
                     submit_classes="btn btn-sm btn-outline-secondary",
                     defaults={"committee_key": committee.key},
                     empty=True,

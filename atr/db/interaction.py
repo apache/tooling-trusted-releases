@@ -32,6 +32,7 @@ import atr.attestable as attestable
 import atr.config as config
 import atr.cycles as cycles
 import atr.db as db
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
@@ -1308,7 +1309,7 @@ async def _trusted_ballot_details_from_ballots(
     caller_data: db.Session | None = None,
 ) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
     active_round = trusted_vote_round(release)
     details: list[TrustedBallotDetail] = []
     summary = TrustedVoteSummary()

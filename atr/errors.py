@@ -16,13 +16,19 @@
 # under the License.
 
 import traceback
-from typing import Any
+from typing import Any, Final
 
 import asfquart.base as base
 import quart
 import werkzeug.exceptions as exceptions
 
 import atr.log as log
+
+# Strings for re-use throughout the app
+FILE_NOT_FOUND: Final = "File does not exist"
+RELEASE_ACTIONS_DISABLED: Final = "Release actions are disabled."
+RELEASE_NO_COMMITTEE: Final = "Release has no committee"
+RELEASE_NOT_FOUND: Final = "Release does not exist"
 
 
 def action_error_response(

@@ -30,6 +30,7 @@ import atr.blueprints.get as get
 import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.download as download
 import atr.get.release
@@ -46,6 +47,7 @@ import atr.render as render
 import atr.shared.draft as draft
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
+import atr.strings as strings
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -104,12 +106,12 @@ async def selected(
             version=str(version_key),
             _committee=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
     if release.phase not in (sql.ReleasePhase.RELEASE_CANDIDATE, sql.ReleasePhase.RELEASE):
-        raise base.ASFQuartException("Release does not exist", errorcode=404)
+        raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
     if release.committee is None:
-        raise ValueError("Release has no committee")
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     if release.phase == sql.ReleasePhase.RELEASE:
         revision, all_paths, file_types = await _published_paths(project_key, version_key)
@@ -166,7 +168,7 @@ async def selected_revision(
             _committee=True,
             # _project=True is included in _project_release_policy=True
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
     base_path = paths.release_directory(release)
     all_paths = [path async for path in util.paths_recursive(base_path)]
@@ -230,17 +232,17 @@ def _classification_badge_cell(
     file_type = info.file_types.get(path) if (info is not None) else None
     match file_type:
         case classify.FileType.DISALLOWED:
-            label, title = "bad", "Disallowed file"
+            label, title = "bad", strings.FILE_CLASS_DISALLOWED
         case classify.FileType.SOURCE:
-            label, title = "src", "Source artifact"
+            label, title = "src", strings.FILE_CLASS_SOURCE
         case classify.FileType.METADATA:
-            label, title = "meta", "Metadata file"
+            label, title = "meta", strings.FILE_CLASS_METADATA
         case classify.FileType.SBOM:
-            label, title = "sbom", "SBOM"
+            label, title = "sbom", strings.FILE_CLASS_SBOM
         case classify.FileType.DIRECTORY:
-            label, title = "dir", "Directory"
+            label, title = "dir", strings.FILE_CLASS_DIRECTORY
         case classify.FileType.DOCS | classify.FileType.BINARY | None:
-            label, title = "bin", "Binary artifact"
+            label, title = "bin", strings.FILE_CLASS_BINARY
     if severity is not None:
         icon_class = render.PATH_STYLE_CLASS.get(severity, "text-success")
     else:

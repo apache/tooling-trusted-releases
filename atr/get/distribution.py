@@ -22,6 +22,7 @@ import htpy
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.errors as errors
 import atr.form as form
 import atr.htm as htm
 import atr.models.args as args
@@ -244,7 +245,7 @@ async def _get_page_data(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         distributions = await data.distribution(release_key=release.key).all()
         tasks = [
             t

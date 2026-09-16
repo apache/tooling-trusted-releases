@@ -26,6 +26,7 @@ import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.compose as compose
 import atr.get.projects as projects
@@ -249,7 +250,7 @@ async def _render_page(  # noqa: C901
         htm.em[release.version],
     ]
 
-    if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
+    if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
 
     page.div(".px-3.py-4.mb-4.bg-light.border.rounded")[
