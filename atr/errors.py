@@ -26,6 +26,7 @@ import atr.log as log
 
 # Strings for re-use throughout the app
 FILE_NOT_FOUND: Final = "File does not exist"
+MANIFEST_NOT_FOUND: Final = "No file manifest is available for this ATR revision"
 RELEASE_ACTIONS_DISABLED: Final = "Release actions are disabled."
 RELEASE_NO_COMMITTEE: Final = "Release has no committee"
 RELEASE_NOT_FOUND: Final = "Release does not exist"

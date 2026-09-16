@@ -609,7 +609,7 @@ async def _generate_files_data(
 
 def _parse_attestable(content: str) -> models.Attestable:
     data = json.loads(content)
-    if data.get("version") == 2:
+    if isinstance(data, dict) and (data.get("version") == 2):
         return models.AttestableV2.model_validate_json(content)
     return models.AttestableV1.model_validate_json(content)
 

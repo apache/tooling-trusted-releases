@@ -908,6 +908,14 @@ a.atr-link-plain:focus-visible {
     word-break: break-all;
 }
 
+.atr-manifest-scroll {
+    contain: inline-size;
+}
+
+.atr-manifest-table {
+    min-width: 48rem;
+}
+
 td.atr-shrink {
     width: 1%;
     white-space: nowrap;

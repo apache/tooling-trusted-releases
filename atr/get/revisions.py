@@ -27,6 +27,7 @@ import sqlmodel
 import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
+import atr.get.manifest as manifest
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.schema as schema
@@ -219,6 +220,16 @@ async def _render_revision_card(
                 card_body.p(".small.text-muted.mb-2")["Initial revision"]
 
             _render_files_diff(card_body, files_diff)
+            card_body.p[
+                htm.a(
+                    href=util.as_url(
+                        manifest.selected,
+                        project_key=project_key,
+                        version_key=version_key,
+                        revision_number=revision.number,
+                    )
+                )["File manifest"]
+            ]
             _render_tag_form(card_body, revision, project_key, version_key)
 
             is_draft = phase_key == "draft"

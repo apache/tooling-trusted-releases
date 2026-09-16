@@ -33,6 +33,7 @@ import atr.get.draft as draft
 import atr.get.file as file
 import atr.get.finish as finish
 import atr.get.keys as keys
+import atr.get.manifest as manifest
 import atr.get.manual as manual
 import atr.get.preview as preview
 import atr.get.projects as projects
@@ -69,6 +70,7 @@ __all__ = [
     "file",
     "finish",
     "keys",
+    "manifest",
     "manual",
     "preview",
     "projects",
