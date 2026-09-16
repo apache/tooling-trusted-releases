@@ -549,9 +549,7 @@ def _project_releases_entry(
     }
 
     # The rest are carried over only when the project holds them, so an absent field is
-    # left out rather than sent as null, the same as projects.json does. There's no
-    # "created": ATR only knows when it ingested the project, not when it was founded,
-    # which is what projects.json means by it.
+    # left out rather than sent as null, the same as projects.json does.
     def put(key: str, value: str | None) -> None:
         if value:
             entry[key] = value
@@ -564,6 +562,7 @@ def _project_releases_entry(
     put("mailing-list", project.mailing_lists)
     put("programming-language", project.programming_languages)
     put("category", _categories(project.categories))
+    put("created", _date_only(project.created))
     if project.repositories:
         entry["repository"] = project.repositories
     return entry

@@ -464,10 +464,9 @@ def test_project_releases_entry_maps_the_projects_json_fields() -> None:
     assert entry["download-page"] == "https://example.apache.org/download"
     assert entry["bug-database"] == "https://issues.apache.org/jira/browse/EXAMPLE"
     assert entry["mailing-list"] == "https://example.apache.org/mailing-lists"
-    # No project-level "created": ATR knows only when it ingested the project, not when it
-    # was founded, so it's left out rather than published as the wrong date.
-    assert "created" not in entry
-    # Release-level dates are real, so those stay.
+    # Project-level "created" is the project's date, formatted as a day.
+    assert entry["created"] == "2012-03-26"
+    # Release-level dates are real too.
     assert entry["release"] == [
         {"name": "Apache Example", "revision": "2.0.0", "created": "2024-08-12"},
         {"name": "Apache Example", "revision": "1.0.0", "created": "2022-11-01"},
@@ -480,8 +479,9 @@ def test_project_releases_entry_leaves_out_fields_the_project_does_not_hold() ->
 
     entry = catalog_site._project_releases_entry(project, committee, [])
 
-    # The always-present fields stay; the absent ones are left out rather than sent as null.
-    assert set(entry) == {"name", "pmc", "license", "maintainer", "release"}
+    # The always-present fields stay (created included - project.created is never null);
+    # the absent ones are left out rather than sent as null.
+    assert set(entry) == {"name", "pmc", "license", "maintainer", "release", "created"}
     assert entry["release"] == []
 
 
