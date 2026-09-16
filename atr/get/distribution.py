@@ -250,6 +250,7 @@ async def _get_page_data(
             _committee=True,
         ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         distributions = await data.distribution(release_key=release.key).all()
+        phase = "compose" if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT else "finish"
         tasks = [
             t
             for t in (
@@ -263,8 +264,11 @@ async def _get_page_data(
                 .order_by(sql.sqlmodel.desc(via(sql.Task.started)))
                 .all()
             )
-            if (t.status in [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE, sql.TaskStatus.FAILED])
-            or (t.workflow and (t.workflow.status in ["in-progress", "failed"]))
+            if (t.task_args.get("phase") == phase)
+            and (
+                (t.status in [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE, sql.TaskStatus.FAILED])
+                or (t.workflow and (t.workflow.status in ["in-progress", "failed"]))
+            )
         ]
 
     return distributions, tasks

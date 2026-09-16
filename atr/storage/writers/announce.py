@@ -541,19 +541,6 @@ class ReleaseManager(CommitteeParticipant):
         )
         await self.__data.execute_query(delete_revisions_stmt)
 
-    async def __parent_revision_number(
-        self, release_key: str, revision_number: safe.RevisionNumber
-    ) -> safe.RevisionNumber:
-        revision = await self.__data.revision(
-            release_key=release_key,
-            number=str(revision_number),
-            _parent=True,
-        ).get()
-        if (revision is not None) and (revision.parent is not None):
-            return revision.parent.safe_number
-        # Fall back to the revision itself when there's no parent (a single-revision release)
-        return revision_number
-
     async def __signature_fingerprint(
         self,
         release: sql.Release,
@@ -591,6 +578,22 @@ class ReleaseManager(CommitteeParticipant):
                 return None
         return None
 
+    async def __signature_revision_number(
+        self, release_key: str, revision_number: safe.RevisionNumber
+    ) -> safe.RevisionNumber:
+        revision = await self.__data.revision(
+            release_key=release_key,
+            number=str(revision_number),
+            _parent=True,
+        ).get()
+        if (
+            (revision is not None)
+            and (revision.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
+            and (revision.parent is not None)
+        ):
+            return revision.parent.safe_number
+        return revision_number
+
     async def __write_artifact_rows(
         self,
         release: sql.Release,
@@ -602,9 +605,7 @@ class ReleaseManager(CommitteeParticipant):
         dated: datetime.datetime,
     ) -> None:
         revision_seq = int(str(revision_number))
-        # The preview revision created when a vote passes has no checks of its own, so the
-        # signature check sits on the parent draft it was promoted from
-        parent_revision_number = await self.__parent_revision_number(release.key, revision_number)
+        signature_revision_number = await self.__signature_revision_number(release.key, revision_number)
         rel_paths = {str(p) async for p in util.paths_recursive(files_path)}
         classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
         # The directory the files publish to under the dist root, the same for every artifact here
@@ -626,7 +627,7 @@ class ReleaseManager(CommitteeParticipant):
                     sbom_path = candidate
                     break
             fingerprint = (
-                await self.__signature_fingerprint(release, parent_revision_number, signature_path)
+                await self.__signature_fingerprint(release, signature_revision_number, signature_path)
                 if signature_path is not None
                 else None
             )

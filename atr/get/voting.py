@@ -166,7 +166,7 @@ def _add_automatic_publish_fields(
             class_="form-check-input",
         ),
         htm.div(".form-text.text-muted.mt-1")[
-            "If enabled, ATR will publish the preview revision to SVN automatically",
+            "If enabled, ATR will publish the approved revision to SVN automatically",
             f" when the final approving {vote_label} resolves.",
         ],
     ]

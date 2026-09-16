@@ -124,7 +124,7 @@ class Initiate(schema.Strict):
     )
     automatic_publish_when_resolved: bool = pydantic.Field(
         default=False,
-        description="Publish the preview revision to SVN automatically when the final approving vote resolves",
+        description="Publish the approved revision to SVN automatically when the final approving vote resolves",
     )
     automatic_publish_asf_uid: str | None = pydantic.Field(
         default=None,
@@ -170,7 +170,7 @@ class ReleaseFinalise(schema.Strict):
     asf_uid: str = schema.description("ASF UID of the user who announced the release")
     project_key: safe.ProjectKey = schema.description("Project key in ATR")
     version_key: safe.VersionKey = schema.description("Version key in ATR")
-    revision_number: safe.RevisionNumber = schema.description("Published preview revision number")
+    revision_number: safe.RevisionNumber = schema.description("Published ATR revision number")
     svn_revision: int = schema.description("The SVN revision number that the publish landed in")
     download_path_suffix: safe.OptionalRelPath = pydantic.Field(
         default=None,
@@ -234,7 +234,7 @@ class SvnPublish(schema.Strict):
     asf_uid: str = schema.description("ASF UID of the user initiating publication")
     project_key: safe.ProjectKey = schema.description("Project key in ATR")
     version_key: safe.VersionKey = schema.description("Version key in ATR")
-    revision_number: safe.RevisionNumber = schema.description("Preview revision number to publish")
+    revision_number: safe.RevisionNumber = schema.description("Approved ATR revision number to publish")
     download_path_suffix: safe.OptionalRelPath = pydantic.Field(
         default=None,
         description="Optional path suffix appended under the committee distribution path",

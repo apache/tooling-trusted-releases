@@ -351,8 +351,7 @@ async def test_manual_failed_returns_to_draft_and_clears_podling_thread_id() -> 
 
 
 @pytest.mark.asyncio
-async def test_manual_passed_creates_preview_revision() -> None:
-    """Manual passed promotes to preview and creates a revision."""
+async def test_manual_passed_retains_candidate_revision() -> None:
     data = _mock_data()
     write_as = _mock_write_as()
     writer = _writer_with_mocks(data, write_as)
@@ -374,10 +373,8 @@ async def test_manual_passed_creates_preview_revision() -> None:
     assert release.phase == sql.ReleasePhase.RELEASE_PREVIEW
     assert release.vote_resolved is not None
     assert success == "Vote marked as passed"
-    write_as.revision.create_revision_with_quarantine.assert_awaited_once()
-    revision_call = write_as.revision.create_revision_with_quarantine.await_args
-    assert revision_call is not None
-    assert revision_call.kwargs["allowed_phases"] == frozenset({sql.ReleasePhase.RELEASE_PREVIEW})
+    assert release.latest_revision_number == "00001"
+    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -456,6 +453,7 @@ def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest
     page = htm.Block()
     release = SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        latest_revision_number="00001",
         vote_mode=sql.VoteMode.MANUAL,
         effective_vote_mode=sql.VoteMode.MANUAL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
@@ -473,6 +471,74 @@ def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest
     html = str(page.collect())
     assert 'href="/manual/resolve/project/1.0.0"' in html
     assert 'href="/resolve/project/1.0.0"' not in html
+
+
+@pytest.mark.parametrize(
+    ("vote_mode", "automatic_publish", "expedited"),
+    [
+        (sql.VoteMode.EMAIL, False, False),
+        (sql.VoteMode.EMAIL, True, False),
+        (sql.VoteMode.TRUSTED, False, False),
+        (sql.VoteMode.TRUSTED, True, False),
+        (sql.VoteMode.TRUSTED, False, True),
+    ],
+)
+async def test_passed_vote_retains_revision_for_publication(
+    monkeypatch, vote_mode, automatic_publish, expedited
+) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
+    release = _candidate_release()
+    release.vote_mode = vote_mode
+    release.effective_vote_mode = vote_mode
+    release.expedited = expedited
+    release.is_embargoed = expedited
+    release.current_vote_seq = 1
+    release.safe_latest_revision_number = safe.RevisionNumber("00001")
+    data.merge = mock.AsyncMock(return_value=release)
+    data.release.return_value.demand = mock.AsyncMock(return_value=release)
+    data.refresh = _refresh_as(phase=sql.ReleasePhase.RELEASE_PREVIEW)
+    vote_task = _latest_vote_task_with_end(-24)
+    vote_task.task_args.update(
+        automatic_publish_when_resolved=automatic_publish,
+        automatic_publish_asf_uid="initiator",
+        download_path_suffix="project-1.0.0",
+    )
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
+    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        interaction,
+        "trusted_ballot_summary",
+        mock.AsyncMock(return_value=interaction.TrustedVoteSummary(binding_votes_yes=3)),
+    )
+
+    _release, _round, success, error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+        expected_vote_seq=1,
+        expected_vote_mode=vote_mode,
+    )
+
+    assert success == "Vote marked as passed"
+    assert error is None
+    assert release.phase == sql.ReleasePhase.RELEASE_PREVIEW
+    assert release.latest_revision_number == "00001"
+    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
+    if automatic_publish:
+        write_as.release.publish_to_svn.assert_awaited_once_with(
+            _project_key(),
+            release.safe_version_key,
+            safe.RevisionNumber("00001"),
+            safe.RelPath("project-1.0.0"),
+            publisher_asf_uid="initiator",
+        )
+    else:
+        write_as.release.publish_to_svn.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1052,7 +1118,7 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
     )
 
     assert success == "Vote marked as passed"
-    write_as.revision.create_revision_with_quarantine.assert_awaited_once()
+    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1222,12 +1288,18 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
     release.vote_mode = sql.VoteMode.TRUSTED
     release.effective_vote_mode = sql.VoteMode.TRUSTED
     release.current_vote_seq = 2
+    release.safe_latest_revision_number = safe.RevisionNumber("00001")
     release.committee = SimpleNamespace(key="myproject", display_name="MyProject", is_podling=True)
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
 
     past_task = _latest_vote_task_with_end(-24)
+    past_task.task_args.update(
+        automatic_publish_when_resolved=True,
+        automatic_publish_asf_uid="initiator",
+        download_path_suffix="project-1.0.0",
+    )
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
     monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
     effective_ballots = mock.AsyncMock(return_value=[mock.MagicMock(), mock.MagicMock(), mock.MagicMock()])
@@ -1255,7 +1327,15 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
 
     assert success == "Vote marked as passed"
     effective_ballots.assert_awaited()
-    write_as.revision.create_revision_with_quarantine.assert_awaited_once()
+    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
+
+    write_as.release.publish_to_svn.assert_awaited_once_with(
+        _project_key(),
+        release.safe_version_key,
+        safe.RevisionNumber("00001"),
+        safe.RelPath("project-1.0.0"),
+        publisher_asf_uid="initiator",
+    )
 
 
 def test_vote_end_get_returns_datetime_for_valid_task() -> None:
@@ -1520,6 +1600,7 @@ def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNam
     return SimpleNamespace(
         key="project-1.0.0",
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        latest_revision_number="00001",
         vote_mode=sql.VoteMode.MANUAL,
         effective_vote_mode=sql.VoteMode.MANUAL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
@@ -1565,6 +1646,7 @@ def _mock_write_as() -> mock.MagicMock:
     write_as = mock.MagicMock()
     write_as.append_to_audit_log = mock.MagicMock()
     write_as.revision.create_revision_with_quarantine = mock.AsyncMock()
+    write_as.release.publish_to_svn = mock.AsyncMock()
     write_as.cache.get_message_archive_url = mock.AsyncMock(return_value=None)
     return write_as
 

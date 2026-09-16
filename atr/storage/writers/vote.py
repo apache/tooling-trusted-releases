@@ -648,14 +648,6 @@ class ReleaseManager(CommitteeParticipant):
                 await self.__data.refresh(release)
                 success_message = "Vote marked as passed"
 
-                description = "Create a preview revision from the last candidate draft"
-                await self.__write_as.revision.create_revision_with_quarantine(
-                    project_key,
-                    release.safe_version_key,
-                    self.__asf_uid,
-                    allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
-                    description=description,
-                )
             case "failed" | "cancelled":
                 # The vote_resolved property refers to when the vote succeeded only
                 await self._resolve_transition(
@@ -808,18 +800,10 @@ class ReleaseManager(CommitteeParticipant):
             await self.__data.refresh(release)
             success_message = "Vote marked as passed"
 
-            description = "Create a preview revision from the last candidate draft"
-            preview_revision = await self.__write_as.revision.create_revision_with_quarantine(
-                project_key,
-                release.safe_version_key,
-                self.__asf_uid,
-                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
-                description=description,
-            )
             publish_enqueue_error = await self.__enqueue_automatic_svn_publish(
                 project_key,
                 release.safe_version_key,
-                preview_revision,
+                release.safe_latest_revision_number,
                 latest_vote_task,
                 release,
             )
@@ -1146,18 +1130,10 @@ class ReleaseManager(CommitteeParticipant):
 
         extra_destination = None
         if (vote_result == "passed") and (voting_round != 1):
-            description = "Create a preview revision from the last candidate draft"
-            preview_revision = await self.__write_as.revision.create_revision_with_quarantine(
-                project_key,
-                release.safe_version_key,
-                self.__asf_uid,
-                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
-                description=description,
-            )
             publish_enqueue_error = await self.__enqueue_automatic_svn_publish(
                 project_key,
                 release.safe_version_key,
-                preview_revision,
+                release.safe_latest_revision_number,
                 latest_vote_task,
                 release,
             )
@@ -1303,12 +1279,10 @@ class ReleaseManager(CommitteeParticipant):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        preview_result: sql.Revision | sql.Quarantined,
+        revision_number: safe.RevisionNumber,
         vote_task_with_publish_options: sql.Task | None,
         release: sql.Release,
     ) -> str | None:
-        if not isinstance(preview_result, sql.Revision):
-            return None
         if vote_task_with_publish_options is None:
             return None
         if not bool(vote_task_with_publish_options.task_args.get("automatic_publish_when_resolved", False)):
@@ -1326,7 +1300,7 @@ class ReleaseManager(CommitteeParticipant):
             await self.__write_as.release.publish_to_svn(
                 project_key,
                 version_key,
-                preview_result.safe_number,
+                revision_number,
                 download_path_suffix,
                 publisher_asf_uid=publisher_asf_uid,
             )

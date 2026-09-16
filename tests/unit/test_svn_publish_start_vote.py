@@ -51,14 +51,14 @@ async def test_automatic_publish_failure_reloads_caller_objects(monkeypatch) -> 
         task_args={"automatic_publish_when_resolved": True, "initiator_id": "resolver"},
         asf_uid="resolver",
     )
-    preview_revision = sql.Revision(number="00001", seq=1, release_key="example-1.0", asfuid="resolver")
+    revision_number = safe.RevisionNumber("00001")
     release = sql.Release(key="example-1.0", project_key="example", version="1.0")
 
     enqueue = getattr(writer, "_ReleaseManager__enqueue_automatic_svn_publish")
     error = await enqueue(
         safe.ProjectKey("example"),
         safe.VersionKey("1.0"),
-        preview_revision,
+        revision_number,
         task,
         release,
     )
@@ -86,7 +86,7 @@ async def test_automatic_publish_uses_carried_original_initiator(monkeypatch) ->
         },
         asf_uid="resolver",
     )
-    preview_revision = sql.Revision(number="00001", seq=1, release_key="example-1.0", asfuid="resolver")
+    revision_number = safe.RevisionNumber("00001")
 
     release = sql.Release(key="example-1.0", project_key="example", version="1.0")
 
@@ -94,13 +94,18 @@ async def test_automatic_publish_uses_carried_original_initiator(monkeypatch) ->
     await enqueue(
         safe.ProjectKey("example"),
         safe.VersionKey("1.0"),
-        preview_revision,
+        revision_number,
         task,
         release,
     )
 
-    release_writer.publish_to_svn.assert_awaited_once()
-    assert release_writer.publish_to_svn.await_args.kwargs["publisher_asf_uid"] == "alice"
+    release_writer.publish_to_svn.assert_awaited_once_with(
+        safe.ProjectKey("example"),
+        safe.VersionKey("1.0"),
+        revision_number,
+        safe.RelPath("example-1.0"),
+        publisher_asf_uid="alice",
+    )
 
 
 async def test_email_vote_can_opt_in_to_automatic_publish(monkeypatch) -> None:

@@ -133,6 +133,7 @@ async def _get_page_data(
                 .order_by(sql.sqlmodel.desc(via(sql.Task.started)))
                 .all()
             )
+            if t.task_args.get("phase") == "finish"
         ]
 
     if release.phase != sql.ReleasePhase.RELEASE_PREVIEW:
