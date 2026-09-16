@@ -9,7 +9,7 @@
 **Sections**:
 
 * [Overview](#overview)
-* [Publishing to SVN](#publishing-to-svn)
+* [Publishing to ASF Distribution Area](#publishing-to-asf-distribution-area)
 * [Announcing](#announcing)
 * [Removing superseded releases](#removing-superseded-releases)
 * [The KEYS file](#the-keys-file)
@@ -25,9 +25,9 @@ Files committed there are served from `downloads.apache.org` and the download CD
 
 **Podling note**: for a podling, prefix the committee path with `incubator/` in every path below, including the `downloads.apache.org` URL.
 
-## Publishing to [ASF Distribution Area](https://downloads.apache.org/)
+## Publishing to ASF Distribution Area
 
-Publication happens in the finish phase, once the vote has resolved successfully. There are two ways to trigger it:
+Publication to [ASF Distribution Area](https://downloads.apache.org/) happens in the finish phase, once the vote has resolved successfully. There are two ways to trigger it:
 
 * Automatically, by selecting "Automatically publish to SVN distribution area when this vote resolves" when starting the vote. This option is offered when a committee member starts a non-expedited vote in email or Trusted Vote mode.
 * Manually, by pressing the publish button on the finish page for the release.
