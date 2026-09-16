@@ -49,7 +49,7 @@ There are many ways to get files into a candidate:
 * import from the committee's `dist/dev` area in SVN,
 * upload with `atr` CLI ([Trusted Releases Client](https://github.com/apache/tooling-releases-client)),
 * upload with [ATR Maven Plugin](https://github.com/apache/tooling-atr-maven-plugin),
-* upload from a GitHub Actions workflow using [Trusted Publishing](trusted-publishing).
+* upload from a GitHub Actions workflow using [Trusted Publishing](trusted-publishing.md).
 
 The SVN `dist/dev` import is one option among others, and we expect most release managers to use other options and bypass SVN `dist/dev`. SVN should not be thought of as an intrinsic part of the ATR release process. It becomes involved only at final publication, when the approved artifacts are committed to the distribution `dist/release` repository for [ASF download area](https://downloads.apache.org/) sync.
 
