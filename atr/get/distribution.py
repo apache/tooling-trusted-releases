@@ -30,6 +30,7 @@ import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
+import atr.strings as strings
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -76,10 +77,10 @@ async def list_get(
             project_key=str(project_key),
             version_key=str(version_key),
         ),
-    )["Record a distribution"]
+    )[strings.VERIFY_DISTRIBUTION_BUTTON]
 
     # Distribution list for project-version
-    block.h1["Distribution list for ", htm.em[f"{project_key!s}-{version_key!s}"]]
+    block.h1["Third-party distribution list for ", htm.em[f"{project_key!s}-{version_key!s}"]]
 
     if len(tasks) > 0:
         _render_distribution_tasks(tasks, block, project_key, version_key)
@@ -91,15 +92,15 @@ async def list_get(
             "Distribution list",
             content=block.collect(),
         )
-    block.p["Here are all of the distributions recorded for this release."]
+    block.p["Here are all of the third-party distributions recorded for this release."]
     block.p[record_a_distribution]
     # Table of contents
     block.append(htm.ul_links(*[(f"#distribution-{dist.identifier}", dist.title) for dist in distributions]))
 
-    ## Distributions on third party platforms
-    block.h2["Distributions on third party platforms"]
+    ## Distributions on third-party platforms
+    block.h2["Distributions on third-party platforms"]
     block.p[
-        "These are distributions that are hosted on third party platforms such as Maven Central, PyPI, or Docker Hub."
+        "These are distributions that are hosted on third-party platforms such as Maven Central, PyPI, or Docker Hub."
     ]
     for dist in distributions:
         title_extra = []
@@ -272,7 +273,7 @@ async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, 
     block = htm.Block()
     render.html_nav_phase(block, str(project), str(version), staging=staging)
 
-    title = "Record a manual staging distribution" if staging else "Record a third-party distribution"
+    title = "Record a staging third-party distribution" if staging else "Record a third-party distribution"
     block.h1[title]
 
     if (not staging) and release.is_embargoed:

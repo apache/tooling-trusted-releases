@@ -69,6 +69,7 @@ import atr.pubsub as pubsub
 import atr.sessions as sessions
 import atr.ssh as ssh
 import atr.storage as storage
+import atr.strings as strings
 import atr.svn as svn
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
@@ -335,6 +336,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "post": post,
             "release_catalog_url": config.get().RELEASE_CATALOG_URL,
             "static_url": util.static_url,
+            "strings": strings,
             "topnav_unfinished_releases": topnav_unfinished_releases,
             "topnav_user_projects": topnav_user_projects,
             "release_as_url": mapping.release_as_url,

@@ -134,9 +134,9 @@
     </div>
   </div>
   {% if phase == "release_candidate_draft" %}
-    <h3 id="distribution" class="mt-4">Distribution</h3>
+    <h3 id="distribution" class="mt-4">Third-party distribution</h3>
     <p>
-      While this release is in draft, you can create a staging distribution. Use the button below to record a manual distribution performed outside of ATR.
+      While this release is in draft, you can record a staging-level third-party distribution - an artifact published outside ATR, such as to Maven Central Staging. ATR will verify that it exists before recording it.
     </p>
 {#    <div class="alert alert-warning mb-4">#}
 {#      <p class="fw-semibold mb-1">NOTE:</p>#}
@@ -146,7 +146,7 @@
 {#      <a class="btn btn-primary"#}
 {#         href="{{ as_url(get.distribution.stage_automate, project_key=release.project.key, version_key=release.version) }}">Distribute</a>#}
       <a class="btn btn-primary"
-         href="{{ as_url(get.distribution.stage_record, project_key=release.project.key, version_key=release.version) }}">Record a manual distribution</a>
+         href="{{ as_url(get.distribution.stage_record, project_key=release.project.key, version_key=release.version) }}">{{ strings.VERIFY_DISTRIBUTION_BUTTON }}</a>
     </p>
     <div id="move-files-container">
       {% if move_file_html %}

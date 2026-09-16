@@ -44,6 +44,7 @@ import atr.post as post
 import atr.render as render
 import atr.shared as shared
 import atr.shared.activity as activity
+import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -173,7 +174,7 @@ def _render_distribution_buttons(release: sql.Release, is_admin: bool) -> htm.El
                 project_key=release.project.key,
                 version_key=release.version,
             ),
-        )["Record a manual distribution"]
+        )[strings.VERIFY_DISTRIBUTION_BUTTON]
     )
     return htm.div()[htm.p(".mb-1")[buttons],]
 
