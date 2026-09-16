@@ -37,7 +37,6 @@ import atr.get.file as file
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
-import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -180,50 +179,6 @@ def _render_distribution_buttons(release: sql.Release, is_admin: bool) -> htm.El
     return htm.div()[htm.p(".mb-1")[buttons],]
 
 
-def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) -> htm.Element:
-    """Render current and failed distribution tasks."""
-    failed_tasks = [
-        t for t in tasks if (t.status == sql.TaskStatus.FAILED) or (t.workflow and (t.workflow.status == "failed"))
-    ]
-    in_progress_tasks = [
-        t
-        for t in tasks
-        if (t.status in [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE])
-        or (t.workflow and (t.workflow.status not in ["completed", "success", "failed"]))
-    ]
-
-    block = htm.Block()
-
-    if len(failed_tasks) > 0:
-        summary = f"{len(failed_tasks)} distribution{'s' if (len(failed_tasks) != 1) else ''} failed for this release"
-        block.append(
-            htm.div(".alert.alert-danger.mb-3")[
-                htm.h3["Failed distributions"],
-                htm.details[
-                    htm.summary[summary],
-                    htm.div[*[_render_task(f) for f in failed_tasks]],
-                ],
-            ]
-        )
-    if len(in_progress_tasks) > 0:
-        block.append(
-            htm.div(".alert.alert-info.mb-3")[
-                htm.h3["In-progress distributions"],
-                htm.p["One or more automatic distributions are still in-progress:"],
-                *[_render_task(f) for f in in_progress_tasks],
-                htm.a(
-                    ".btn.btn-success.mt-2",
-                    href=util.as_url(
-                        selected,
-                        project_key=release.project.key,
-                        version_key=release.version,
-                    ),
-                )["Refresh"],
-            ]
-        )
-    return block.collect()
-
-
 async def _render_page(
     session: web.Committer,
     release: sql.Release,
@@ -280,7 +235,12 @@ async def _render_page(
     ]
 
     if len(distribution_tasks) > 0:
-        page.append(_render_distribution_tasks(release, distribution_tasks))
+        page.append(
+            shared.distribution.render_distribution_tasks(
+                distribution_tasks,
+                util.as_url(selected, project_key=release.project.key, version_key=release.version),
+            )
+        )
 
     page.append(_render_dist_warning())
     page.append(_render_distribution_buttons(release, session.is_admin))
@@ -441,27 +401,6 @@ def _render_svn_publish_completed(page: htm.Block, release: sql.Release, complet
         page.div(".alert.alert-success.mb-4")[text]
         return
     page.div(".alert.alert-success.mb-4")[text, " at ", htm.a(href=url)[url]]
-
-
-def _render_task(task: sql.Task) -> htm.Element:
-    """Render a distribution task's details."""
-    workflow_args: args.DistributionWorkflow = args.DistributionWorkflow.model_validate(task.task_args)
-    task_date = task.added.strftime("%Y-%m-%d %H:%M:%S")
-    task_status = task.status.value
-    workflow_status = task.workflow.status if task.workflow else ""
-    workflow_message = (
-        task.workflow.message if (task.workflow and task.workflow.message) else workflow_status.capitalize()
-    )
-    if task_status != sql.TaskStatus.COMPLETED:
-        return htm.details(".ms-4")[
-            htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
-            htm.p(".ms-4")[task.error if task.error else task_status.capitalize()],
-        ]
-    else:
-        return htm.details(".ms-4")[
-            htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
-            *[htm.p(".ms-4")[w] for w in workflow_message.split("\n")],
-        ]
 
 
 def _svn_download_path_default(release: sql.Release) -> str:

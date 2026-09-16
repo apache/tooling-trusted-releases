@@ -20,7 +20,10 @@ from __future__ import annotations
 import datetime
 import enum
 import urllib.parse
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 import aiohttp
 import pydantic
@@ -28,6 +31,7 @@ import pydantic
 import atr.db as db
 import atr.form as form
 import atr.htm as htm
+import atr.models.args as args
 import atr.models.basic as basic
 import atr.models.distribution as distribution
 import atr.models.safe as safe
@@ -454,6 +458,64 @@ async def release_validated_and_committee(
     if committee is None:
         raise RuntimeError(f"Release {project} {version} has no committee")
     return release, committee
+
+
+def render_distribution_tasks(tasks: Sequence[sql.Task], refresh_url: str) -> htm.Element:
+    """Render current and failed distribution tasks."""
+    failed_tasks = [
+        t for t in tasks if (t.status == sql.TaskStatus.FAILED) or (t.workflow and (t.workflow.status == "failed"))
+    ]
+    in_progress_tasks = [
+        t
+        for t in tasks
+        if (t.status in [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE])
+        or (t.workflow and (t.workflow.status not in ["completed", "success", "failed"]))
+    ]
+
+    block = htm.Block()
+
+    if len(failed_tasks) > 0:
+        summary = f"{len(failed_tasks)} distribution{'s' if (len(failed_tasks) != 1) else ''} failed for this release"
+        block.append(
+            htm.div(".alert.alert-danger.mb-3")[
+                htm.h3["Failed distributions"],
+                htm.details[
+                    htm.summary[summary],
+                    htm.div[*[render_task(f) for f in failed_tasks]],
+                ],
+            ]
+        )
+    if len(in_progress_tasks) > 0:
+        block.append(
+            htm.div(".alert.alert-info.mb-3")[
+                htm.h3["In-progress distributions"],
+                htm.p["One or more automatic distributions are still in-progress:"],
+                *[render_task(f) for f in in_progress_tasks],
+                htm.a(".btn.btn-success.mt-2", href=refresh_url)["Refresh"],
+            ]
+        )
+    return block.collect()
+
+
+def render_task(task: sql.Task) -> htm.Element:
+    """Render a distribution task's details."""
+    workflow_args: args.DistributionWorkflow = args.DistributionWorkflow.model_validate(task.task_args)
+    task_date = task.added.strftime("%Y-%m-%d %H:%M:%S")
+    task_status = task.status.value
+    workflow_status = task.workflow.status if task.workflow else ""
+    workflow_message = (
+        task.workflow.message if (task.workflow and task.workflow.message) else workflow_status.capitalize()
+    )
+    if task_status != sql.TaskStatus.COMPLETED:
+        return htm.details(".ms-4")[
+            htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
+            htm.p(".ms-4")[task.error if task.error else task_status.capitalize()],
+        ]
+    else:
+        return htm.details(".ms-4")[
+            htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
+            *[htm.p(".ms-4")[w] for w in workflow_message.split("\n")],
+        ]
 
 
 def _template_url(
