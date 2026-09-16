@@ -1237,11 +1237,13 @@ td.atr-checkbox-col {
 }
 
 .atr-classification-badge {
-    border-width: 1.5px;
+    border-width: 1px;
     border-style: solid;
-    padding: 0 5px;
-    border-radius: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 0.875rem;
     font-weight: 500;
+    line-height: 1.25;
     min-width: 56px;
     display: inline-block;
     text-align: center;
@@ -1273,8 +1275,8 @@ table.atr-sbom-table td {
 }
 
 .text-success .atr-classification-badge {
-    background-color: #f6f6f6;
-    color: #777777;
+    background-color: #e9eef4;
+    color: #475569;
 }
 
 .text-danger .atr-classification-badge {
