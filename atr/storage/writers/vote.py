@@ -1222,6 +1222,8 @@ class ReleaseManager(CommitteeParticipant):
             (release_activity_at > now, via(sql.Release.inactivity_notice_key)),
             else_=None,
         )
+        if new_phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            stmt = stmt.values(voted_revision_number=None)
         result = await self.__data.execute(
             stmt.values(
                 phase=new_phase,

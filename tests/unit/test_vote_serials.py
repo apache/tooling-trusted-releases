@@ -32,6 +32,8 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post.vote as post_vote
+import atr.storage as storage
+import atr.storage.writers.announce as announce
 import atr.storage.writers.release as release
 import atr.storage.writers.vote as vote
 import atr.util as util
@@ -343,7 +345,50 @@ async def test_cast_trusted_rolls_back_duplicate_receipt_id(sqlite_sessionmaker,
 
 
 @pytest.mark.asyncio
-async def test_podling_second_round_rolls_back_with_task_creation(sqlite_sessionmaker) -> None:
+@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
+@pytest.mark.parametrize("voted_revision_number", [None, "00001", "00002"])
+async def test_podling_second_round_preserves_voted_revision(
+    sqlite_sessionmaker, vote_mode, voted_revision_number
+) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            is_podling=True,
+            vote_mode=vote_mode,
+            voted_revision_number=voted_revision_number,
+        )
+        writer = _release_writer_with_data(data)
+        await data.begin_immediate()
+        if voted_revision_number == "00002":
+            with pytest.raises(storage.AccessError) as error:
+                await writer.start_vote_no_commit(
+                    safe.ReleaseKey("project-1.0.0"),
+                    safe.RevisionNumber("00001"),
+                    allowed_vote_modes=frozenset({vote_mode}),
+                    promote=False,
+                )
+            assert error.value.status == 409
+            await data.rollback()
+            assert await data.get(sql.VoteCounter, "project-1.0.0") is None
+        else:
+            release_model, _seq, _mode, _revision = await writer.start_vote_no_commit(
+                safe.ReleaseKey("project-1.0.0"),
+                safe.RevisionNumber("00001"),
+                allowed_vote_modes=frozenset({vote_mode}),
+                promote=False,
+            )
+            assert release_model.voted_revision_number == voted_revision_number
+            await data.commit()
+
+    async with sqlite_sessionmaker() as data:
+        release_model = await data.release(key="project-1.0.0").demand(RuntimeError("release missing"))
+        assert release_model.voted_revision_number == voted_revision_number
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("voted_revision_number", [None, "00001"])
+async def test_podling_second_round_rolls_back_with_task_creation(sqlite_sessionmaker, voted_revision_number) -> None:
     async with sqlite_sessionmaker() as data:
         seeded_release = await _seed_release(
             data,
@@ -351,6 +396,7 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
             current_vote_seq=1,
             is_podling=True,
             vote_mode=sql.VoteMode.EMAIL,
+            voted_revision_number=voted_revision_number,
         )
         data.add(sql.VoteCounter(release_key=seeded_release.key, last_allocated_number=1))
         await data.commit()
@@ -407,6 +453,7 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
         assert counter is not None
         assert release_model.podling_thread_id is None
         assert release_model.current_vote_seq == 1
+        assert release_model.voted_revision_number == voted_revision_number
         assert counter.last_allocated_number == 1
 
 
@@ -517,6 +564,46 @@ async def test_release_current_vote_task_matches_serial_and_legacy_fallback(sqli
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("vote_result", ["failed", "cancelled"])
+async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatch, vote_result) -> None:
+    monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
+    async with sqlite_sessionmaker() as data:
+        release_model = await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            vote_mode=sql.VoteMode.MANUAL,
+            voted_revision_number="00001",
+        )
+        release_model.vote_started = datetime.datetime.now(datetime.UTC)
+        await data.commit()
+        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+        await writer.resolve_manually(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), vote_result)
+        assert release_model.voted_revision_number is None
+        assert await data.release(key=release_model.key, voted_revision_number=None).get() is not None
+        data.add(
+            sql.Revision(
+                key="project-1.0.0 00002",
+                release_key=release_model.key,
+                seq=2,
+                number="00002",
+                asfuid="chair",
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            )
+        )
+        await data.commit()
+        await data.refresh(release_model)
+        await data.begin_immediate()
+        release_model, _seq, _mode, _revision = await _release_writer_with_data(data).start_vote_no_commit(
+            safe.ReleaseKey("project-1.0.0"),
+            safe.RevisionNumber("00002"),
+            allowed_vote_modes=frozenset({sql.VoteMode.EMAIL}),
+            promote=True,
+        )
+        assert release_model.voted_revision_number == "00002"
+        await data.commit()
+
+
+@pytest.mark.asyncio
 async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessionmaker, monkeypatch) -> None:
     monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
     async with sqlite_sessionmaker() as data:
@@ -544,8 +631,89 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
         latest_task = await interaction.release_latest_vote_task(release_model, data)
         assert release_model.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
         assert release_model.current_vote_seq is None
+        assert release_model.voted_revision_number is None
         assert counter is None
         assert latest_task is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("vote_mode", "expedited"),
+    [
+        (sql.VoteMode.EMAIL, False),
+        (sql.VoteMode.TRUSTED, False),
+        (sql.VoteMode.MANUAL, False),
+        (sql.VoteMode.TRUSTED, True),
+    ],
+)
+async def test_vote_start_records_revision(sqlite_sessionmaker, monkeypatch, vote_mode, expedited) -> None:
+    monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
+    async with sqlite_sessionmaker() as data:
+        release_model = await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
+        release_model.project.release_policy = sql.ReleasePolicy(vote_mode=vote_mode)
+        release_model.expedited = expedited
+        await data.commit()
+        await data.begin_immediate()
+        release_model, _seq, actual_mode, revision = await _release_writer_with_data(data).start_vote_no_commit(
+            safe.ReleaseKey("project-1.0.0"),
+            None,
+            allowed_vote_modes=frozenset({vote_mode}),
+            promote=True,
+        )
+        assert actual_mode == vote_mode
+        assert release_model.voted_revision_number == str(revision) == "00001"
+        await data.commit()
+
+    async with sqlite_sessionmaker() as data:
+        assert await data.release(key="project-1.0.0", voted_revision_number="00001").get() is not None
+        assert await data.release(key="project-1.0.0", voted_revision_number=None).get() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("voted_revision_number", [None, "00001"])
+async def test_voted_revision_survives_pass_announcement_and_archive(
+    sqlite_sessionmaker, voted_revision_number
+) -> None:
+    async with sqlite_sessionmaker() as data:
+        release_model = await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            vote_mode=sql.VoteMode.MANUAL,
+            voted_revision_number=voted_revision_number,
+        )
+        release_model.vote_started = datetime.datetime.now(datetime.UTC)
+        await data.commit()
+        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+        await writer.resolve_manually(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "passed")
+        assert release_model.voted_revision_number == voted_revision_number
+        assert release_model.latest_revision_number == "00001"
+        announce_writer = object.__new__(announce.ReleaseManager)
+        announce_writer._ReleaseManager__data = data
+        await announce_writer._ReleaseManager__promote_in_database(
+            release_model, safe.RevisionNumber("00001"), datetime.datetime.now(datetime.UTC)
+        )
+        await data.commit()
+
+    async with sqlite_sessionmaker() as data:
+        release_model = await data.release(key="project-1.0.0").demand(RuntimeError("release missing"))
+        assert release_model.phase == sql.ReleasePhase.RELEASE
+        assert release_model.latest_revision_number is None
+        assert release_model.voted_revision_number == voted_revision_number
+        error = await release.archive_release_core(
+            data,
+            SimpleNamespace(append_to_audit_log=mock.MagicMock()),
+            "chair",
+            safe.ProjectKey("project"),
+            safe.VersionKey("1.0.0"),
+            release_model,
+            sql.ArchiveSource.DIST_WATCHER,
+        )
+        assert error is None
+
+    async with sqlite_sessionmaker() as data:
+        release_model = await data.release(key="project-1.0.0").demand(RuntimeError("release missing"))
+        assert release_model.is_archived
+        assert release_model.voted_revision_number == voted_revision_number
 
 
 def _completed_vote_task(vote_seq: int, added: datetime.datetime) -> sql.Task:
@@ -632,6 +800,7 @@ async def _seed_release(
     current_vote_seq: int | None = None,
     is_podling: bool = False,
     vote_mode: sql.VoteMode | None = None,
+    voted_revision_number: str | None = None,
 ) -> sql.Release:
     committee = sql.Committee(
         key="project",
@@ -650,6 +819,7 @@ async def _seed_release(
         created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
         current_vote_seq=current_vote_seq,
         vote_mode=vote_mode,
+        voted_revision_number=voted_revision_number,
     )
     revision = sql.Revision(
         key="project-1.0.0 00001",

@@ -1607,6 +1607,7 @@ class Release(sqlmodel.SQLModel, table=True):
     )
 
     vote_mode: VoteMode | None = sqlmodel.Field(default=None, **example(VoteMode.EMAIL))
+    voted_revision_number: str | None = sqlmodel.Field(default=None, **example("00001"))
     current_vote_seq: int | None = sqlmodel.Field(default=None, index=True)
     vote_started: datetime.datetime | None = sqlmodel.Field(
         default=None,

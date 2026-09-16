@@ -759,6 +759,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         sboms: Opt[list[str]] = NOT_SET,
         release_policy_id: Opt[int] = NOT_SET,
         latest_revision_number: Opt[str | None] = NOT_SET,
+        voted_revision_number: Opt[str | None] = NOT_SET,
         _project: bool = True,
         _committee: bool = True,
         _release_policy: bool = False,
@@ -785,6 +786,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Release.sboms == sboms)
         if is_defined(release_policy_id):
             query = query.where(sql.Release.release_policy_id == release_policy_id)
+        if is_defined(voted_revision_number):
+            query = query.where(sql.Release.voted_revision_number == voted_revision_number)
         if is_defined(latest_revision_number):
             # Must define the subquery explicitly, mirroring the column_property
             # In other words, this doesn't work:

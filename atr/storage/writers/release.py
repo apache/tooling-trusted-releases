@@ -931,12 +931,19 @@ class CommitteeParticipant(FoundationCommitter):
         if promote:
             values["phase"] = sql.ReleasePhase.RELEASE_CANDIDATE
             values["vote_mode"] = vote_mode
+            values["voted_revision_number"] = str(revision_for_cas)
         stmt = sqlmodel.update(sql.Release).where(
             via(sql.Release.key) == release_for_pre_checks.key,
             via(sql.Release.phase) == expected_phase,
             sql.latest_revision_number_query() == str(revision_for_cas),
         )
         if not promote:
+            stmt = stmt.where(
+                sqlalchemy.or_(
+                    via(sql.Release.voted_revision_number).is_(None),
+                    via(sql.Release.voted_revision_number) == str(revision_for_cas),
+                )
+            )
             if expected_podling_thread_id is None:
                 stmt = stmt.where(via(sql.Release.podling_thread_id).is_(None))
             else:
