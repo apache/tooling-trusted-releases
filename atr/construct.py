@@ -321,6 +321,7 @@ def release_notification(
     version: str,
     released: datetime.datetime,
     detected: bool = False,
+    superseded_draft: bool = False,
 ) -> args.Send:
     # A detected release is one the watcher found published in the dist area rather than
     # one ATR made itself, so it's named as such and the body says where it came from
@@ -333,6 +334,13 @@ def release_notification(
     else:
         subject = f"{committee.display_name} Released {project.short_display_name} {version}"
         provenance = ""
+    if superseded_draft:
+        # The watcher found this published outside ATR while ATR still held an unfinished
+        # draft or candidate for the same version, so it removed that draft - the email says so
+        provenance += (
+            "ATR held an in-progress draft or candidate for this version, "
+            "which has been removed in favour of the published release.\n\n"
+        )
     body = (
         f"{committee.display_name} has released {project.short_display_name} {version}.\n\n"
         f"{provenance}"

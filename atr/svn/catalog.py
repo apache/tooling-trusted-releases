@@ -52,6 +52,22 @@ type _ResolvedArchive = tuple[safe.ProjectKey, safe.VersionKey]
 type _ReleaseKey = tuple[str, str | None, str]
 
 
+class _SupersededDraft(NamedTuple):
+    # An in-progress draft ATR still holds for a version now seen published outside
+    # ATR. The draft is wiped and, where we know who was working on it, its author
+    # told, before the published release is catalogued over the top
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
+    author_asf_uid: str | None
+
+
+class _ReleaseResolution(NamedTuple):
+    # What resolving one added release comes to: the release to catalogue when it's
+    # new to ATR, and any draft it supersedes that has to be wiped first
+    catalogue: _ResolvedRelease | None
+    supersede: _SupersededDraft | None
+
+
 @dataclasses.dataclass
 class _ReleaseFiles:
     # Added files for one release in a commit as (dir-under-release, basename, classification),
@@ -92,28 +108,39 @@ async def catalogue_commit(commit: dict) -> None:
     # Resolve against ATR's projects in a read session first, so decomposition and
     # project lookups stay out of the storage writer
     async with db.session() as data:
-        releases, archives = await _resolve_changes(data, added, removed, changes.removed_files)
+        releases, supersessions, archives = await _resolve_changes(data, added, removed, changes.removed_files)
     # Report mode (the default) just logs the cataloguing it would do; active mode hands
     # the resolved work to the system actor. The releases list is told either way, since
     # that only depends on having seen the release, not on having recorded it
     async with storage.write_as_system(storage.WriteAsDistCatalogService) as wadcs:
         if config.get().DIST_CATALOG_WRITE:
-            seen, retired = await _apply_changes(wadcs, releases, archives, date)
+            seen, retired = await _apply_changes(wadcs, releases, supersessions, archives, date)
+            superseded_keys = {f"{s.project_key!s}-{s.version_key!s}" for s in supersessions}
         else:
-            _report(releases, archives, date)
+            _report(releases, supersessions, archives, date)
             seen, retired = releases, archives
-        await _notify(wadcs, seen, retired, date)
+            # Report mode wipes nothing, so its email never claims a draft was removed
+            superseded_keys = set()
+        await _notify(wadcs, seen, retired, date, superseded_keys)
 
 
 async def _apply_changes(
     wadcs: storage.WriteAsDistCatalogService,
     releases: list[_ResolvedRelease],
+    supersessions: list[_SupersededDraft],
     archives: list[_ResolvedArchive],
     date: datetime.datetime,
 ) -> tuple[list[_ResolvedRelease], list[_ResolvedArchive]]:
+    # An external publish overtook a draft ATR still held. Wipe the draft first, so
+    # cataloguing the published release below finds a clear version rather than the
+    # stale row, which catalogue_release would otherwise leave alone
+    superseded_failed = await _apply_supersessions(wadcs, supersessions)
     catalogued: list[_ResolvedRelease] = []
     retired: list[_ResolvedArchive] = []
     for project_key, version_key, artifacts in releases:
+        if f"{project_key!s}-{version_key!s}" in superseded_failed:
+            # The stale draft is still there, so cataloguing would only be skipped
+            continue
         try:
             error = await wadcs.release_catalogue_release(project_key, version_key, date, artifacts)
         except Exception:
@@ -134,6 +161,26 @@ async def _apply_changes(
             continue
         retired.append((project_key, version_key))
     return catalogued, retired
+
+
+async def _apply_supersessions(
+    wadcs: storage.WriteAsDistCatalogService,
+    supersessions: list[_SupersededDraft],
+) -> set[str]:
+    # Wipe each draft an external publish overtook, returning the keys whose wipe failed so
+    # the caller skips cataloguing over a draft that's still present
+    failed: set[str] = set()
+    for project_key, version_key, author_asf_uid in supersessions:
+        try:
+            error = await wadcs.release_supersede_draft(project_key, version_key, author_asf_uid)
+        except Exception:
+            log.exception(f"dist watcher failed to supersede draft {project_key!s} {version_key!s}")
+            failed.add(f"{project_key!s}-{version_key!s}")
+            continue
+        if error is not None:
+            log.warning(f"dist watcher could not supersede draft {project_key!s} {version_key!s}: {error}")
+            failed.add(f"{project_key!s}-{version_key!s}")
+    return failed
 
 
 def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
@@ -248,9 +295,11 @@ async def _notify(
     releases: list[_ResolvedRelease],
     archives: list[_ResolvedArchive],
     date: datetime.datetime,
+    superseded_keys: set[str],
 ) -> None:
     for project_key, version_key, _ in releases:
-        error = await wadcs.release_notify_seen(project_key, version_key, date)
+        superseded = f"{project_key!s}-{version_key!s}" in superseded_keys
+        error = await wadcs.release_notify_seen(project_key, version_key, date, superseded_draft=superseded)
         if error is not None:
             log.warning(f"dist watcher could not notify for {project_key!s} {version_key!s}: {error}")
     for project_key, version_key in archives:
@@ -261,9 +310,15 @@ async def _notify(
 
 def _report(
     releases: list[_ResolvedRelease],
+    supersessions: list[_SupersededDraft],
     archives: list[_ResolvedArchive],
     date: datetime.datetime,
 ) -> None:
+    for project_key, version_key, author_asf_uid in supersessions:
+        log.info(
+            f"dist watcher (report mode) would supersede in-progress draft {project_key!s} {version_key!s} "
+            f"(notifying {author_asf_uid or 'unknown author'}) before cataloguing the published release"
+        )
     for project_key, version_key, artifacts in releases:
         log.info(
             f"dist watcher (report mode) would catalogue release {project_key!s} {version_key!s} "
@@ -292,12 +347,15 @@ async def _resolve_changes(
     added: dict[_ReleaseKey, _ReleaseFiles],
     removed: set[_ReleaseKey],
     removed_files: list[tuple[str, str]],
-) -> tuple[list[_ResolvedRelease], list[_ResolvedArchive]]:
+) -> tuple[list[_ResolvedRelease], list[_SupersededDraft], list[_ResolvedArchive]]:
     releases: list[_ResolvedRelease] = []
+    supersessions: list[_SupersededDraft] = []
     for rel_files in sorted(added.values(), key=lambda r: (r.committee, r.subproject or "", r.version)):
-        resolved = await _resolve_release(data, rel_files)
-        if resolved is not None:
-            releases.append(resolved)
+        resolution = await _resolve_release(data, rel_files)
+        if resolution.catalogue is not None:
+            releases.append(resolution.catalogue)
+        if resolution.supersede is not None:
+            supersessions.append(resolution.supersede)
     archives: list[_ResolvedArchive] = []
     archived_keys: set[str] = set()
     for committee, subproject, version in sorted(removed, key=lambda k: (k[0], k[1] or "", k[2])):
@@ -319,7 +377,7 @@ async def _resolve_changes(
                 continue
             archives.append((project_key, version_key))
             archived_keys.add(release_key)
-    return releases, archives
+    return releases, supersessions, archives
 
 
 async def _resolve_project(data: db.Session, committee: str, subproject: str | None) -> sql.Project | None:
@@ -370,20 +428,38 @@ async def _published_release_keys(data: db.Session, added: dict[_ReleaseKey, _Re
     return keys
 
 
-async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _ResolvedRelease | None:
+async def _draft_author(data: db.Session, release_record: sql.Release) -> str | None:
+    # Who last worked the draft, so the wipe can tell them. latest_revision_number is the
+    # bare revision number, not the composite key, so it's paired with the release key
+    number = release_record.latest_revision_number
+    if number is None:
+        return None
+    revision = await data.revision(release_key=release_record.key, number=number).get()
+    return revision.asfuid if revision is not None else None
+
+
+async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _ReleaseResolution:
     version = rel_files.version
     project = await _resolve_project(data, rel_files.committee, rel_files.subproject)
     if project is None:
         log.info(f"dist commit for unknown project: {rel_files.committee}/{rel_files.subproject or ''} {version}")
-        return None
-    if await data.release(project_key=project.key, version=version).get() is not None:
-        # Already catalogued, whether by ATR or an earlier watcher pass
-        return None
+        return _ReleaseResolution(None, None)
     keys = _safe_keys(project.key, version)
     if keys is None:
-        return None
+        return _ReleaseResolution(None, None)
     project_key, version_key = keys
-    return project_key, version_key, _artifacts(rel_files)
+    existing = await data.release(project_key=project.key, version=version).get()
+    supersede: _SupersededDraft | None = None
+    if existing is not None:
+        if existing.phase == sql.ReleasePhase.RELEASE:
+            # Already catalogued as released, whether by ATR or an earlier watcher pass
+            return _ReleaseResolution(None, None)
+        # ATR still holds an in-progress draft of a version that has now been published
+        # outside ATR. The draft is stale, so flag it to be wiped and its author told,
+        # then catalogue the published release over the top
+        author = await _draft_author(data, existing)
+        supersede = _SupersededDraft(project_key, version_key, author)
+    return _ReleaseResolution((project_key, version_key, _artifacts(rel_files)), supersede)
 
 
 def _safe_keys(project_key: str, version: str) -> tuple[safe.ProjectKey, safe.VersionKey] | None:

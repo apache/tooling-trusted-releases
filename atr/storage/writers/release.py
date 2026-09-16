@@ -2097,6 +2097,7 @@ class FoundationAdmin(FoundationCommitter):
         project_key: safe.ProjectKey,
         version: safe.VersionKey,
         released: datetime.datetime,
+        superseded_draft: bool = False,
     ) -> str | None:
         """Tell the releases list about a release seen published in the dist area.
 
@@ -2109,7 +2110,9 @@ class FoundationAdmin(FoundationCommitter):
             return f"Project {project_key!s} not found"
         if project.committee is None:
             return f"Project {project_key!s} has no committee"
-        notification = construct.release_notification(project.committee, project, str(version), released, detected=True)
+        notification = construct.release_notification(
+            project.committee, project, str(version), released, detected=True, superseded_draft=superseded_draft
+        )
         self.__data.add(
             sql.Task(
                 status=sql.TaskStatus.QUEUED,
@@ -2121,6 +2124,41 @@ class FoundationAdmin(FoundationCommitter):
             )
         )
         await self.__data.commit()
+        return None
+
+    async def supersede_draft(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        author_asf_uid: str | None,
+    ) -> str | None:
+        """Discard an in-progress draft overtaken by an external dist publish.
+
+        ATR still held an unfinished draft of a version that has now shown up
+        published in the dist area, so the draft can't be finished. We remove it
+        with the usual teardown and, where we know who was working on it, tell
+        them - leaving the version clear for the published release to be
+        catalogued over the top.
+        """
+        error = await self.delete(project_key, version)
+        if error is not None:
+            return error
+        if author_asf_uid is not None:
+            message = (
+                f"Release {project_key!s} {version!s} was published to the distribution area outside ATR, "
+                "so your in-progress draft has been removed."
+            )
+            insert_stmt = sql.notification_insert(author_asf_uid, message, sql.NotificationLevel.WARNING)
+            await self.__data.execute(insert_stmt)
+            await self.__data.commit()
+        # The system did the wipe, so it's the actor; the draft's author is only
+        # the notification recipient, recorded as its own field
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version),
+            notified_asf_uid=author_asf_uid,
+        )
         return None
 
     async def __delete_body(
