@@ -89,17 +89,17 @@ time, each pinned to a specific version in
 
 * **Apache RAT** (`0.18`) - downloaded from the ASF distribution mirrors and
   checked against the published `.sha512` checksum.
-* **syft** (`1.46.0`) - installed through the pinned upstream `install.sh`, which
+* **syft** (`1.51.1`) - installed through the pinned upstream `install.sh`, which
   is itself verified against a recorded sha256; the resulting binary is then
   verified against a per-architecture sha256.
-* **cyclonedx-cli** (`0.32.0`) - downloaded as a per-architecture release asset
+* **cyclonedx-cli** (`0.33.1`) - downloaded as a per-architecture release asset
   and verified against a per-architecture sha256.
-* **parlay** (`0.9.0`) and **sbomqs** (`1.1.0`) - built with `go install` at a
+* **sbomqs** (`2.1.2`) - built with `go install` at a
   pinned version, which resolves and verifies each module against the Go checksum
   database.
 
 Updating a tool means editing its version and its checksum in the Dockerfile and rebuilding the image.
-There is no automated freshness check for these tools.
+The weekly tool freshness workflow reports newer releases of these tools.
 
 ## Implementation references
 

@@ -65,10 +65,10 @@ RUN set -eux; \
     rm -rf /tmp/apache-rat
 
 # WORKDIR /var/run
-ENV SYFT_VERSION=1.46.0
-ENV SYFT_INSTALL_SHA256=8a277b4b4dc21809ecd9a0e4926f4d7319affc6451a607fdeb3e5e1fbd9bc573
-ENV SYFT_SHA256_amd64=574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2
-ENV SYFT_SHA256_arm64=9640d29da74a63de41d2cc2373ac2092462165ee99709f7d8dc3dea57a748b06
+ENV SYFT_VERSION=1.51.1
+ENV SYFT_INSTALL_SHA256=ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
+ENV SYFT_SHA256_amd64=abca2def61de9952fa06d3977bb1e064818facb9badfce502b450d3d6846a91f
+ENV SYFT_SHA256_arm64=617cef943234e0cae184b4901414ca4059ad6c6923a9c9decb46f49f6a2c6573
 # RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
 # Faster than a go-install; the resulting binary is pinned by SHA after install
 RUN case "$TARGETARCH" in \
@@ -81,16 +81,14 @@ RUN case "$TARGETARCH" in \
     sh /tmp/syft-install.sh -b /usr/local/bin "v${SYFT_VERSION}" && \
     echo "${SYFT_SHA256}  /usr/local/bin/syft" | sha256sum -c - && \
     rm -f /tmp/syft-install.sh
-ENV PARLAY_VERSION=0.9.0
-RUN GOPATH=/usr/local go install github.com/snyk/parlay@v${PARLAY_VERSION}
-ENV SBOMQS_VERSION=1.1.0
-RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v${SBOMQS_VERSION}
+ENV SBOMQS_VERSION=2.1.2
+RUN GOPATH=/usr/local GOTOOLCHAIN=auto go install github.com/interlynk-io/sbomqs/v2@v${SBOMQS_VERSION}
 
-ENV CDXCLI_VERSION=0.32.0
+ENV CDXCLI_VERSION=0.33.1
 ENV CDXCLI_ASSET_amd64=cyclonedx-linux-musl-x64
 ENV CDXCLI_ASSET_arm64=cyclonedx-linux-arm64
-ENV CDXCLI_SHA256_amd64=29138e6068e6cf2dc60e776d078c2b17cbf45750c485aa12c28e1fef5556a15f
-ENV CDXCLI_SHA256_arm64=abf0b7c5648a5b127791d691cad41f004aceea27c75bb42c9572fdc9694770cf
+ENV CDXCLI_SHA256_amd64=0095dcfeec6ea1a3f6598d8e0257d52903341d0df21a325fb1510aee7c6b30dd
+ENV CDXCLI_SHA256_arm64=b2e9fdf9665ef49868a2ec012171c6e785dcd69745bc5869e53e4f4bfb096a5f
 RUN case "$TARGETARCH" in \
       amd64|"") CDXCLI_ASSET="$CDXCLI_ASSET_amd64"; CDXCLI_SHA256="$CDXCLI_SHA256_amd64" ;; \
       arm64) CDXCLI_ASSET="$CDXCLI_ASSET_arm64"; CDXCLI_SHA256="$CDXCLI_SHA256_arm64" ;; \
@@ -141,7 +139,6 @@ RUN addgroup -g 1000 atr && \
     chown atr:atr /opt/atr/state
 
 COPY --from=depbuilder /usr/local/bin/syft /usr/local/bin/syft
-COPY --from=depbuilder /usr/local/bin/parlay /usr/local/bin/parlay
 COPY --from=depbuilder /usr/local/bin/sbomqs /usr/local/bin/sbomqs
 COPY --from=depbuilder /usr/local/bin/cyclonedx /usr/local/bin/cyclonedx
 COPY --from=depbuilder /opt/tools /opt/tools

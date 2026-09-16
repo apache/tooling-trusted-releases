@@ -332,7 +332,7 @@ async def score_qs(args: args.FileArgs) -> results.Results | None:
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     proc = await asyncio.create_subprocess_exec(
         *sandbox.command(
-            ["sbomqs", "score", "--json", "--", full_path.name],
+            ["sbomqs", "score", "--legacy", "--json", "--", full_path.name],
             ro_paths=[str(full_path.parent)],
         ),
         cwd=str(full_path.parent),

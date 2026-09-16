@@ -44,7 +44,6 @@ _GITHUB_API: Final = "https://api.github.com"
 # Dockerfile ENV that pins them, with the binary name each produces.
 _GITHUB_TOOLS: Final[dict[str, tuple[str, str]]] = {
     "SYFT_VERSION": ("anchore/syft", "syft"),
-    "PARLAY_VERSION": ("snyk/parlay", "parlay"),
     "SBOMQS_VERSION": ("interlynk-io/sbomqs", "sbomqs"),
     "CDXCLI_VERSION": ("CycloneDX/cyclonedx-cli", "cyclonedx-cli"),
 }

@@ -28,7 +28,7 @@ from . import models
 
 
 def total_score(value: pathlib.Path | str | dict[str, Any]) -> float:
-    args = ["sbomqs", "compliance", "--ntia", "--json", "--"]
+    args = ["sbomqs", "compliance", "--ntia-2021", "--json", "--"]
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as tf:
         match value:
             case dict():
