@@ -23,11 +23,13 @@ import atr.models.args as args
 import atr.models.sql as sql
 
 
-def _notification(detected: bool = False) -> args.Send:
+def _notification(detected: bool = False, superseded_draft: bool = False) -> args.Send:
     committee = sql.Committee(name="Apache Example", key="example")
     project = sql.Project(name="Apache Example", key="example")
     released = datetime.datetime(2026, 7, 3, 12, 0, 0, tzinfo=datetime.UTC)
-    return construct.release_notification(committee, project, "1.2.3", released, detected=detected)
+    return construct.release_notification(
+        committee, project, "1.2.3", released, detected=detected, superseded_draft=superseded_draft
+    )
 
 
 def test_release_notification_goes_to_the_releases_list_from_noreply():
@@ -68,3 +70,15 @@ def test_managed_release_not_detected_text():
     send = _notification()
 
     assert "detected" not in send.body.lower()
+
+
+def test_superseding_a_draft_states_the_draft_was_removed():
+    send = _notification(detected=True, superseded_draft=True)
+
+    assert "has been removed in favour of the published release" in send.body
+
+
+def test_a_release_that_supersedes_no_draft_does_not_mention_a_removed_draft():
+    send = _notification(detected=True)
+
+    assert "removed" not in send.body.lower()

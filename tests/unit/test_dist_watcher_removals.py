@@ -121,7 +121,7 @@ async def test_a_source_deleted_for_a_release_republished_in_the_same_commit_is_
         mock.AsyncMock(return_value=(safe.ProjectKey("foo"), safe.VersionKey("1.2.0"), "foo-1.2.0")),
     )
     monkeypatch.setattr(catalog, "_published_release_keys", mock.AsyncMock(return_value={"foo-1.2.0"}))
-    _releases, archives = await catalog._resolve_changes(
+    _releases, _supersessions, archives = await catalog._resolve_changes(
         dist_rules.empty(), mock.MagicMock(), added={}, removed=set(), removed_files=[("foo/1.2.0", "foo-1.2.0.tar.gz")]
     )
     assert archives == []
@@ -135,7 +135,7 @@ async def test_a_source_deleted_for_a_release_not_republished_is_archived(monkey
         mock.AsyncMock(return_value=(safe.ProjectKey("foo"), safe.VersionKey("1.2.0"), "foo-1.2.0")),
     )
     monkeypatch.setattr(catalog, "_published_release_keys", mock.AsyncMock(return_value=set()))
-    _releases, archives = await catalog._resolve_changes(
+    _releases, _supersessions, archives = await catalog._resolve_changes(
         dist_rules.empty(), mock.MagicMock(), added={}, removed=set(), removed_files=[("foo/1.2.0", "foo-1.2.0.tar.gz")]
     )
     assert [(str(p), str(v)) for p, v in archives] == [("foo", "1.2.0")]
@@ -149,7 +149,7 @@ async def test_the_same_release_is_only_archived_once_across_several_deleted_sou
         mock.AsyncMock(return_value=(safe.ProjectKey("foo"), safe.VersionKey("1.2.0"), "foo-1.2.0")),
     )
     monkeypatch.setattr(catalog, "_published_release_keys", mock.AsyncMock(return_value=set()))
-    _releases, archives = await catalog._resolve_changes(
+    _releases, _supersessions, archives = await catalog._resolve_changes(
         dist_rules.empty(),
         mock.MagicMock(),
         added={},
