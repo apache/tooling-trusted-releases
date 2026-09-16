@@ -56,7 +56,7 @@ class StartVotingForm(form.Form):
         default=False,
     )
     automatic_publish_when_resolved: form.Bool = form.label(
-        "Automatically publish to SVN when this vote resolves",
+        "Automatically publish to SVN distribution area when this vote resolves",
         widget=form.Widget.CUSTOM,
         default=False,
     )

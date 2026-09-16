@@ -275,9 +275,9 @@ async def _render_page(
 
 def _render_publish_step() -> list[htm.Element | str]:
     if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
-        return ["1. publish to SVN ", htm.code["dist/release"], " if you did not already"]
+        return ["1. publish to SVN dist ", htm.code["dist/release"], " if you did not already"]
     return [
-        "1. publish to SVN ",
+        "1. publish to SVN dist ",
         htm.code["dist/atr"],
         " if you did not already, and then ",
         htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
@@ -355,7 +355,7 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
     proj = release.safe_project_key
     ver = release.safe_version_key
     rev = release.safe_latest_revision_number
-    page.h2["Publish to SVN"]
+    page.h2["Publish to ASF Distribution Area"]
     completed = await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)
     if completed is not None:
         _render_svn_publish_completed(page, release, completed)
@@ -363,7 +363,7 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
     in_flight = await interaction.release_in_flight_svn_publish_task(proj, ver, rev)
     if in_flight is not None:
         page.div(".alert.alert-info.mb-4")[
-            htm.p["The release files are being published to SVN."],
+            htm.p["The release files are being published to SVN dist."],
             htm.a(
                 ".btn.btn-primary",
                 href=util.as_url(selected, project_key=release.project.key, version_key=release.version),
@@ -373,11 +373,11 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
     failed = await interaction.release_latest_failed_svn_publish_task(proj, ver, rev)
     if failed is not None:
         page.div(".alert.alert-danger.mb-4")[
-            f"The most recent attempt to publish to SVN failed: {failed.error or 'unknown error'}"
+            f"The most recent attempt to publish to SVN dist failed: {failed.error or 'unknown error'}"
         ]
     if release.is_embargoed:
         page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
-            "This is an expedited security release, and is embargoed. Publishing to SVN copies the"
+            "This is an expedited security release, and is embargoed. Publishing to SVN dist copies the"
             " release files to the public distribution area, which breaks the embargo. Please ensure"
             " that you have the authority to lift the embargo before publishing. This action is not"
             " reversible."
@@ -395,12 +395,12 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
 
 def _render_svn_publish_completed(page: htm.Block, release: sql.Release, completed: sql.Task) -> None:
     revision = _svn_publish_revision(completed)
-    text = f"Published to SVN as r{revision}" if (revision is not None) else "Published to SVN"
+    text = f"Published to SVN dist as r{revision}" if (revision is not None) else "Published to SVN dist"
     url = _svn_publish_url(release, completed)
     if url is None:
         page.div(".alert.alert-success.mb-4")[text]
         return
-    page.div(".alert.alert-success.mb-4")[text, " at ", htm.a(href=url)[url]]
+    page.div(".alert.alert-success.mb-4")[text, " synced soon to ", htm.a(href=url)[url]]
 
 
 def _svn_download_path_default(release: sql.Release) -> str:
