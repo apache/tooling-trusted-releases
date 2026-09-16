@@ -20,6 +20,7 @@ from typing import Literal
 
 import asfquart.base as base
 
+import atr.api as api
 import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
@@ -98,6 +99,17 @@ def _render_page(
         ".",
     ]
     page.p[f"{util.plural(len(path_hashes), 'file')} recorded."]
+    if not release.is_embargoed:
+        page.p[
+            htm.a(
+                href=util.as_url(
+                    api.release_manifest,
+                    project_key=release.project_key,
+                    version_key=release.version,
+                    revision=revision_number,
+                )
+            )["JSON manifest"]
+        ]
     if not path_hashes:
         page.p(".text-muted")["This revision contains no files."]
         return page.collect()

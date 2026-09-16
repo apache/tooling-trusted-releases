@@ -30,6 +30,7 @@ import quart
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
+import atr.api as api
 import atr.attestable as attestable
 import atr.blueprints.common as common
 import atr.db as db
@@ -80,6 +81,11 @@ async def app(monkeypatch, tmp_path):
         ]
     )
     app.add_url_rule(
+        "/api/release/manifest/<project_key>/<version_key>/<revision>",
+        endpoint=api.release_manifest.endpoint,
+        view_func=api.release_manifest,
+    )
+    app.add_url_rule(
         "/manifest/<project_key>/<version_key>/<revision_number>",
         endpoint=manifest.selected.endpoint,
         view_func=manifest.selected,
@@ -107,6 +113,9 @@ async def test_embargo_uses_existing_visibility_rules(app, tmp_path, monkeypatch
     assert response.status_code == (200 if permitted else 404)
     if not permitted:
         loader.assert_not_awaited()
+    else:
+        body = await response.get_data(as_text=True)
+        assert ("JSON manifest" in body) == (phase == sql.ReleasePhase.RELEASE)
 
 
 async def test_empty_manifest(app, tmp_path):
@@ -116,6 +125,7 @@ async def test_empty_manifest(app, tmp_path):
     assert response.status_code == 200
     assert "0 files recorded." in body
     assert "This revision contains no files." in body
+    assert '<a href="/api/release/manifest/example/1.0/00001">JSON manifest</a>' in body
     assert "File manifest pages" not in body
 
 
@@ -236,6 +246,7 @@ async def test_pagination(app, tmp_path, query, limit, offset, shown, previous_o
     body = html.unescape(await response.get_data(as_text=True))
     assert response.status_code == 200
     assert "513 files recorded." in body
+    assert '<a href="/api/release/manifest/example/1.0/00001">JSON manifest</a>' in body
     assert [int(index) for index in re.findall(r">file-(\d+)\.txt</code>", body)] == list(range(offset, offset + shown))
     if shown:
         assert f"Showing files {offset + 1} to {offset + shown} of 513." in body

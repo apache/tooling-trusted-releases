@@ -802,6 +802,22 @@ class ReleaseGetResults(schema.Strict):
         return v
 
 
+class ReleaseManifestFile(schema.Strict):
+    path: str
+    size: int | None = schema.description("File size in bytes, or null when unavailable in the retained manifest.")
+    digest: str = schema.description("Content digest including its algorithm prefix, such as blake3:.")
+
+
+class ReleaseManifestResults(schema.Strict):
+    endpoint: Literal["/release/manifest"] = schema.alias("endpoint")
+    project: safe.ProjectKey
+    version: safe.VersionKey
+    revision: safe.RevisionNumber
+    files: Sequence[ReleaseManifestFile] = schema.description(
+        "All files in the requested revision, without pagination."
+    )
+
+
 @dataclasses.dataclass
 class ReleasePathsQuery:
     offset: int = 0

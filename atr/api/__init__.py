@@ -33,6 +33,7 @@ import sqlalchemy
 import sqlmodel
 import werkzeug.exceptions as exceptions
 
+import atr.attestable as attestable
 import atr.blueprints.api as api
 import atr.blueprints.api_auth as api_auth
 import atr.cle as cle
@@ -1437,6 +1438,42 @@ async def release_get(
     return models.api.ReleaseGetResults(
         endpoint="/release/get",
         release=release,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ReleaseManifestResults, 200),
+)
+async def release_manifest(
+    _release_manifest: Literal["release/manifest"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision: safe.RevisionNumber,
+) -> DictResponse:
+    async with db.session() as data:
+        await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound(errors.RELEASE_NOT_FOUND)
+        )
+    recorded = await attestable.load(project_key, version_key, revision)
+    if recorded is None:
+        raise exceptions.NotFound(errors.MANIFEST_NOT_FOUND)
+    files = []
+    for path, content_hash in sorted(attestable.path_hashes(recorded).items()):
+        entry = recorded.hashes.get(content_hash)
+        files.append(
+            models.api.ReleaseManifestFile(
+                path=path,
+                size=entry.size if (entry is not None) else None,
+                digest=content_hash,
+            )
+        )
+    return models.api.ReleaseManifestResults(
+        endpoint="/release/manifest",
+        project=project_key,
+        version=version_key,
+        revision=revision,
+        files=files,
     ).model_dump(mode="json"), 200
 
 
