@@ -356,6 +356,11 @@ class FoundationAdmin:
         if not release_keys:
             return
         via = sql.validate_instrumented_attribute
+        releases = sqlmodel.select(via(sql.Release.project_key), via(sql.Release.version)).where(
+            via(sql.Release.key).in_(release_keys)
+        )
+        identity = sqlalchemy.tuple_(via(sql.Task.project_key), via(sql.Task.version_key))
+        await self.__data.execute(sqlmodel.delete(sql.Task).where(identity.in_(releases)))
         for model, attr in repoint.RELEASE_KEY_REFS:
             if model is sql.Release:
                 continue
@@ -561,8 +566,26 @@ class FoundationAdmin:
         )
 
     async def _repoint_release_rows(self, old_key: str, from_project: str, version: str, to_project: str) -> None:
+        pending = await (
+            self.__data.task(
+                project_key=from_project,
+                version_key=version,
+                status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+            )
+            .limit(1)
+            .get()
+        )
+        if pending is not None:
+            raise storage.AccessError(
+                f"Release '{old_key}' has queued or active tasks; wait for them before moving it.", status=409
+            )
         via = sql.validate_instrumented_attribute
         new_key = f"{to_project}-{version}"
+        await self.__data.execute(
+            sqlmodel.update(sql.Task)
+            .where(via(sql.Task.project_key) == from_project, via(sql.Task.version_key) == version)
+            .values(project_key=to_project)
+        )
         await self.__data.execute(
             sqlmodel.update(sql.Artifact)
             .where(via(sql.Artifact.project_key) == from_project)

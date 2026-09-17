@@ -33,6 +33,7 @@ import sqlalchemy.pool
 import sqlmodel
 
 import atr.db as db
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared.catalogue_diff as catalogue_diff
@@ -112,6 +113,80 @@ async def test_an_artifact_repoint_survives_a_repoint_of_the_release_it_came_fro
         # The repointed artifact goes where the file asked; the other follows its release
         assert await data.get(sql.Artifact, ("alpha-three", "1.0.0", "a.tgz")) is not None
         assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "b.tgz")) is not None
+
+
+@pytest.mark.parametrize("operation", ["delete", "move", "import"])
+@pytest.mark.parametrize("status", [sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN])
+async def test_catalogue_release_changes_update_only_matching_tasks(sessionmaker, operation, status) -> None:
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        data.add(sql.Project(key="alpha", name="Apache Alpha", committee_key="alpha"))
+        await data.commit()
+        tasks = [
+            _task("alpha-one", "1.0.0", status),
+            _task("alpha-one", "2.0.0", status),
+            _task("alpha-two", "1.0.0", status),
+            _task("alpha", "one-1.0.0", status),
+            _task("alpha-one", None, sql.TaskStatus.QUEUED),
+        ]
+        data.add_all(tasks)
+        await data.commit()
+        before = [task.model_dump() for task in tasks]
+
+        if operation == "delete":
+            await _writer(data).import_catalogue_csvs({"releases": []}, "alpha", catalogue_diff.Mode.REPLACE)
+        elif operation == "move":
+            await _writer(data).move_release(safe.ReleaseKey("alpha-one-1.0.0"), safe.ProjectKey("alpha-two"))
+        else:
+            row = _release_row("alpha-one", "1.0.0")
+            row["project_key"] = "alpha-two"
+            await _writer(data).import_catalogue_csvs({"releases": [row]}, "alpha", catalogue_diff.Mode.ADDITIVE)
+
+        data.expire_all()
+        changed = await data.get(sql.Task, before[0]["id"])
+        if operation == "delete":
+            assert changed is None
+        else:
+            assert changed is not None
+            assert changed.model_dump() == {**before[0], "project_key": "alpha-two"}
+        for expected in before[1:]:
+            unchanged = await data.get(sql.Task, expected["id"])
+            assert unchanged is not None
+            assert unchanged.model_dump() == expected
+        assert not (await data.execute(sqlalchemy.text("PRAGMA foreign_key_check"))).all()
+
+
+@pytest.mark.parametrize("operation", ["delete", "move", "import"])
+@pytest.mark.parametrize("status", [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE])
+async def test_catalogue_release_changes_with_unfinished_tasks(sessionmaker, operation, status) -> None:
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        task = _task("alpha-one", "1.0.0", status)
+        data.add(task)
+        await data.commit()
+        before = task.model_dump()
+
+        if operation == "delete":
+            await _writer(data).import_catalogue_csvs({"releases": []}, "alpha", catalogue_diff.Mode.REPLACE)
+            data.expire_all()
+            assert not await data.task(project_key="alpha-one", version_key="1.0.0").all()
+            assert await data.get(sql.Release, "alpha-one-1.0.0") is None
+            return
+
+        with pytest.raises(catalogue.storage.AccessError, match="queued or active tasks"):
+            if operation == "move":
+                await _writer(data).move_release(safe.ReleaseKey("alpha-one-1.0.0"), safe.ProjectKey("alpha-two"))
+            else:
+                row = _release_row("alpha-one", "1.0.0")
+                row["project_key"] = "alpha-two"
+                await _writer(data).import_catalogue_csvs({"releases": [row]}, "alpha", catalogue_diff.Mode.ADDITIVE)
+
+        data.expire_all()
+        unchanged = await data.get(sql.Task, before["id"])
+        assert unchanged is not None
+        assert unchanged.model_dump() == before
+        assert await data.get(sql.Release, "alpha-one-1.0.0") is not None
+        assert await data.get(sql.Release, "alpha-two-1.0.0") is None
 
 
 @pytest.mark.asyncio
@@ -566,6 +641,27 @@ async def _seed_two_projects_with_release(data: db.Session, versioned_projects: 
             )
         )
     await data.commit()
+
+
+def _task(project: str, version: str | None, status: sql.TaskStatus) -> sql.Task:
+    created = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    return sql.Task(
+        task_type=sql.TaskType.MESSAGE_SEND,
+        task_args={"project_key": project, "version_key": version, "subject": "Original subject"},
+        project_key=project,
+        version_key=version,
+        asf_uid="tester",
+        status=status,
+        started=created if status == sql.TaskStatus.ACTIVE else None,
+        pid=1 if status == sql.TaskStatus.ACTIVE else None,
+        completed=created
+        if status in (sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN)
+        else None,
+        result=results.MessageSend(kind="message_send", mid="original@example.invalid", mail_send_warnings=[])
+        if status == sql.TaskStatus.COMPLETED
+        else None,
+        error="Failed" if status in (sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN) else None,
+    )
 
 
 def _writer(data: db.Session) -> catalogue.FoundationAdmin:
