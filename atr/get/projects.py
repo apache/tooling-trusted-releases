@@ -721,7 +721,12 @@ def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction, *,
     committee = project.committee
     committee_key = committee.key if (committee is not None) else str(project.key)
     is_podling = bool(committee is not None and committee.is_podling)
-    options = util.configurable_recipients(action, committee_key, is_podling=is_podling)
+    options = util.configurable_recipients(
+        action,
+        committee_key,
+        is_podling=is_podling,
+        mail_addresses=committee.mail_addresses if (committee is not None) else [],
+    )
     stored_to, stored_cc, stored_bcc = project.policy_recipients(action)
     # Include any already-stored recipients (eg set via .asf.yaml) so a saved
     # value remains a selectable option even when it's outside the committee

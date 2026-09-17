@@ -69,9 +69,9 @@ async def selected(
     )
     preview_revision_number = release.safe_latest_revision_number
 
-    if (committee := release.project.committee) is None:
+    if release.project.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
-    if response := await _validate_recipients(session, announce_form, util.unwrap(committee.key), release.project):
+    if response := await _validate_recipients(session, announce_form, release.project):
         return response
 
     if announce_form.revision_number != preview_revision_number:
@@ -213,10 +213,9 @@ async def _validate_download_page(
 async def _validate_recipients(
     session: web.Committer,
     announce_form: shared.announce.AnnounceForm,
-    committee_key: str,
     project: sql.Project,
 ) -> web.WerkzeugResponse | None:
-    permitted = util.permitted_announce_recipients(session.uid, committee_key=committee_key, project=project)
+    permitted = util.permitted_announce_recipients(session.uid, committee=project.committee, project=project)
     addresses = [announce_form.email_to, *announce_form.email_cc, *announce_form.email_bcc]
     for addr in addresses:
         if addr not in permitted:

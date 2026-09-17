@@ -997,6 +997,9 @@ class Committee(sqlmodel.SQLModel, table=True):
     # True only if this is an incubator podling with a PPMC
     is_podling: bool = sqlmodel.Field(default=False)
     keys_mode: KeysMode = sqlmodel.Field(default=KeysMode.REFLECT)
+    mail_addresses: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
 
     # The date the PMC itself retired, not the dates its projects did. Null when there's
     # no such date, which includes a committee that's retired but undated (an older Attic

@@ -645,17 +645,16 @@ def concern_groups(info: "datatypes.PathInfo | None") -> list[ConcernGroup]:
     ]
 
 
-def configurable_recipients(action: sql.RecipientAction, committee_key: str, *, is_podling: bool) -> list[str]:
+def configurable_recipients(
+    action: sql.RecipientAction, committee_key: str, *, is_podling: bool, mail_addresses: Sequence[str] = ()
+) -> list[str]:
     # Stable, committee-derived recipients a project can persist as defaults.
     # These don't depend on the sender or on ALPHA test addresses, so a stored
     # default stays valid for whoever later sends the email.
     if action == sql.RecipientAction.ANNOUNCE:
-        user_list_name = "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
         return [
             "announce@apache.org",
-            f"announce@{committee_key}.apache.org",
-            f"dev@{committee_key}.apache.org",
-            f"{user_list_name}@{committee_key}.apache.org",
+            *mail_addresses,
             f"private@{committee_key}.apache.org",
         ]
     if is_podling:
@@ -1312,21 +1311,13 @@ def paths_to_inodes(directory: os.PathLike) -> dict[str, int]:
 
 
 def permitted_announce_recipients(
-    asf_uid: str, committee_key: str | None = None, *, project: sql.Project | None = None
+    asf_uid: str, committee: sql.Committee | None = None, *, project: sql.Project | None = None
 ) -> list[str]:
     if config.get().ATR_STATUS == "ALPHA":
         return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
     recipients = ["announce@apache.org"]
-    if committee_key is not None:
-        user_list_name = "users" if (committee_key in USERS_LIST_COMMITTEES) else "user"
-        recipients.extend(
-            [
-                f"announce@{committee_key}.apache.org",
-                f"dev@{committee_key}.apache.org",
-                f"{user_list_name}@{committee_key}.apache.org",
-                f"private@{committee_key}.apache.org",
-            ]
-        )
+    if committee is not None:
+        recipients.extend([*committee.mail_addresses, f"private@{committee.key}.apache.org"])
     _add_policy_recipients(recipients, project, sql.RecipientAction.ANNOUNCE)
     return recipients
 

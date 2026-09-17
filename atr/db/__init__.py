@@ -360,6 +360,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         is_archived: Opt[bool] = NOT_SET,
         archived: Opt[datetime.datetime | None] = NOT_SET,
         keys_mode: Opt[sql.KeysMode] = NOT_SET,
+        mail_addresses: Opt[list[str]] = NOT_SET,
         catalog_reviewed: Opt[bool] = NOT_SET,
         parent_committee_key: Opt[str] = NOT_SET,
         updated: Opt[datetime.datetime | None] = NOT_SET,
@@ -394,6 +395,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.archived == archived)
         if is_defined(keys_mode):
             query = query.where(sql.Committee.keys_mode == keys_mode)
+        if is_defined(mail_addresses):
+            query = query.where(sql.Committee.mail_addresses == mail_addresses)
         if is_defined(catalog_reviewed):
             query = query.where(sql.Committee.catalog_reviewed == catalog_reviewed)
         if is_defined(parent_committee_key):

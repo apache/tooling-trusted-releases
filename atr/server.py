@@ -846,6 +846,8 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
             data.add(test_committee)
             await data.commit()
 
+        test_committee.mail_addresses = ["dev@test.apache.org", "user@test.apache.org"]
+
         test_project = await data.project(key="test").get()
         if not test_project:
             test_project = sql.Project(
@@ -894,6 +896,8 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
             )
             data.add(test_podling_committee)
             await data.commit()
+
+        test_podling_committee.mail_addresses = ["dev@test-podling.apache.org"]
 
         test_podling_project = await data.project(key="test-podling").get()
         if not test_podling_project:

@@ -81,9 +81,7 @@ async def selected(
         default_subject_template, default_body_template, options
     )
 
-    permitted_recipients = util.permitted_announce_recipients(
-        session.uid, committee_key=util.unwrap(committee.key), project=release.project
-    )
+    permitted_recipients = util.permitted_announce_recipients(session.uid, committee=committee, project=release.project)
 
     embargo_message = None
     if release.is_embargoed:

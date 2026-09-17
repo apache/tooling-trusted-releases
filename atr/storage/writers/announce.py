@@ -159,16 +159,13 @@ class ReleaseManager(CommitteeParticipant):
 
         # Loaded the release first so a project's stored announce recipients can
         # be folded into the permitted set before we validate the addresses.
-        permitted = util.permitted_announce_recipients(
-            self.__asf_uid, committee_key=self.__committee_key, project=release.project
-        )
+        if (committee := release.project.committee) is None:
+            raise storage.AccessError("Release has no committee - Invalid state", status=500)
+        permitted = util.permitted_announce_recipients(self.__asf_uid, committee=committee, project=release.project)
         all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
         for addr in all_addrs:
             if addr not in permitted:
                 raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
-        if (committee := release.project.committee) is None:
-            raise storage.AccessError("Release has no committee - Invalid state", status=500)
-
         policy = release.release_policy or release.project.release_policy
         if policy and policy.file_tag_mappings:
             missing = []

@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Final
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+import aiohttp
 import pydantic
 import sqlalchemy.dialects.sqlite as sqlite
 import sqlmodel
@@ -49,6 +50,7 @@ _PROJECTS_COMMITTEE_URL: Final[str] = "https://projects.apache.org/json/foundati
 _PROJECTS_PROJECTS_URL: Final[str] = "https://projects.apache.org/json/foundation/projects.json"
 _PROJECTS_PODLINGS_URL: Final[str] = "https://projects.apache.org/json/foundation/podlings.json"
 _PROJECTS_GROUPS_URL: Final[str] = "https://projects.apache.org/json/foundation/groups.json"
+_PONYMAIL_LISTS_URL: Final[str] = "https://lists.apache.org/api/preferences.lua"
 
 
 class RosterCountDetails(schema.Strict):
@@ -156,6 +158,10 @@ class PodlingsData(helpers.DictRoot[PodlingStatus]):
 
 class GroupsData(helpers.DictRoot[list[str]]):
     pass
+
+
+class MailingListsData(schema.Subset):
+    lists: dict[str, dict[str, Any]] = pydantic.Field(min_length=1)
 
 
 class LDAPPersonEntry(schema.Subset):
@@ -316,6 +322,17 @@ async def get_ldap_projects_data() -> LDAPProjectsData:
     return LDAPProjectsData.model_validate(data)
 
 
+async def get_mailing_lists_data() -> MailingListsData | None:
+    try:
+        async with util.create_secure_session(timeout=util.LISTS_APACHE_TIMEOUT) as session:
+            async with session.get(_PONYMAIL_LISTS_URL) as response:
+                response.raise_for_status()
+                return MailingListsData.model_validate(await response.json())
+    except (aiohttp.ClientError, TimeoutError, ValueError) as e:
+        log.warning(f"Could not refresh mailing lists: {e}")
+        return None
+
+
 async def get_people_data() -> LDAPPeopleData:
     """Returns the full roster of ASF accounts with display names."""
 
@@ -383,6 +400,7 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
     retired_committees = await get_retired_committee_data()
     whimsy_podlings = await get_whimsy_podlings_data()
     projects = await get_projects_data() if include_projects else None
+    mailing_lists = await get_mailing_lists_data()
 
     ldap_projects_by_name: Mapping[str, LDAPProject] = {p.name: p for p in ldap_projects.projects}
     whimsy_committees_by_name: Mapping[str, WhimsyCommittee] = {c.name: c for c in whimsy_committees.committees}
@@ -394,15 +412,17 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
         async with data.begin():
             await _update_people(data, people)
 
-            added, updated = await _update_committees(data, ldap_projects, whimsy_committees_by_name, committees)
+            added, updated = await _update_committees(
+                data, ldap_projects, whimsy_committees_by_name, committees, mailing_lists
+            )
             added_count += added
             updated_count += updated
 
-            added, updated = await _update_podlings(data, podlings_data, ldap_projects_by_name)
+            added, updated = await _update_podlings(data, podlings_data, ldap_projects_by_name, mailing_lists)
             added_count += added
             updated_count += updated
 
-            added, updated = await _update_tooling(data, ldap_projects_by_name)
+            added, updated = await _update_tooling(data, ldap_projects_by_name, mailing_lists)
             added_count += added
             updated_count += updated
 
@@ -515,6 +535,7 @@ async def _update_committees(
     ldap_projects: LDAPProjectsData,
     whimsy_committees_by_name: Mapping[str, WhimsyCommittee],
     committees: dict[str, Committee],
+    mailing_lists: MailingListsData | None,
 ) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
@@ -544,6 +565,9 @@ async def _update_committees(
         whimsy_info = whimsy_committees_by_name.get(name)
         if whimsy_info:
             committee.name = whimsy_info.display_name
+            stem = whimsy_info.mail_list
+            if re.fullmatch(r"[a-z0-9-]+", stem):
+                _update_mail_addresses(committee, f"{stem}.apache.org", mailing_lists)
         committee_info = committees.get(name)
         if committee_info:
             committee.charter = committee_info.charter
@@ -552,6 +576,16 @@ async def _update_committees(
         updated_count += 1
 
     return added_count, updated_count
+
+
+def _update_mail_addresses(committee: sql.Committee, domain: str, mailing_lists: MailingListsData | None) -> None:
+    if mailing_lists is None:
+        return
+    committee.mail_addresses = sorted(
+        f"{name}@{domain}"
+        for name in mailing_lists.lists.get(domain, {})
+        if name in {"announce", "dev", "user", "users"}
+    )
 
 
 async def _update_people(data: db.Session, people: LDAPPeopleData) -> None:
@@ -571,7 +605,10 @@ async def _update_people(data: db.Session, people: LDAPPeopleData) -> None:
 
 
 async def _update_podlings(
-    data: db.Session, podlings_data: PodlingsData, ldap_projects_by_name: Mapping[str, LDAPProject]
+    data: db.Session,
+    podlings_data: PodlingsData,
+    ldap_projects_by_name: Mapping[str, LDAPProject],
+    mailing_lists: MailingListsData | None,
 ) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
@@ -590,6 +627,7 @@ async def _update_podlings(
 
         # We create a PPMC
         ppmc.is_podling = True
+        _update_mail_addresses(ppmc, f"{podling_name}.apache.org", mailing_lists)
         ppmc.name = podling_data.name.removesuffix("(Incubating)").removeprefix("Apache").strip()
         podling_project = ldap_projects_by_name.get(podling_name)
         if podling_project is not None:
@@ -755,7 +793,9 @@ async def _update_retirements(
     return updated_count
 
 
-async def _update_tooling(data: db.Session, ldap_projects_by_name: Mapping[str, LDAPProject]) -> tuple[int, int]:
+async def _update_tooling(
+    data: db.Session, ldap_projects_by_name: Mapping[str, LDAPProject], mailing_lists: MailingListsData | None
+) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
 
@@ -789,6 +829,7 @@ async def _update_tooling(data: db.Session, ldap_projects_by_name: Mapping[str, 
         tooling_committee.committers = list(extra)
     _remove_member_release_managers(tooling_committee)
     tooling_committee.is_podling = False
+    _update_mail_addresses(tooling_committee, "tooling.apache.org", mailing_lists)
     tooling_committee.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 
     return added_count, updated_count
