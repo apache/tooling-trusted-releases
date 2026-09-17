@@ -458,6 +458,10 @@ def release_on_disk(r: sql.Release) -> Divergences:
         yield from divergences_predicate(lambda p: not p.path.exists(), expected, unfinished)
         return
     path = paths.release_directory(r)
+    if r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+        expected = "directory to exist"
+        yield from divergences_predicate(lambda p: p.path.is_dir(), expected, path)
+        return
 
     def okay(p: safe.StatePath) -> bool:
         # The release directory must exist and contain at least one entry

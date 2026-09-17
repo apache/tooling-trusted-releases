@@ -55,6 +55,37 @@ def release(phase: sql.ReleasePhase) -> mock.MagicMock:
     return result
 
 
+@pytest.mark.parametrize("embargoed", [False, True])
+@pytest.mark.parametrize(
+    ("phase", "expected_divergences"),
+    [
+        (sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, 0),
+        (sql.ReleasePhase.RELEASE_CANDIDATE, 1),
+        (sql.ReleasePhase.RELEASE_PREVIEW, 1),
+    ],
+)
+def test_release_on_disk_empty_revision(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    embargoed: bool,
+    phase: sql.ReleasePhase,
+    expected_divergences: int,
+) -> None:
+    unfinished = safe.StatePath(tmp_path / "unfinished")
+    private = safe.StatePath(tmp_path / "embargoed")
+    monkeypatch.setattr(validate.paths, "get_unfinished_dir", lambda: unfinished)
+    monkeypatch.setattr(validate.paths, "get_embargoed_dir", lambda: private)
+    root = private if embargoed else unfinished
+    (root.path / "proj" / "1.0" / "00001").mkdir(parents=True)
+    release_mock = release(phase)
+    release_mock.is_embargoed = embargoed
+    release_mock.latest_revision_number = "00001"
+
+    divergences = list(validate.release_on_disk(release_mock))
+
+    assert len(divergences) == expected_divergences
+
+
 def test_release_on_disk_flags_lingering_unfinished_directory(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
