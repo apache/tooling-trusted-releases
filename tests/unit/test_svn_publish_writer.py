@@ -115,10 +115,12 @@ async def test_publish_to_svn_enqueues_task(sqlite_sessionmaker, monkeypatch: py
         assert task.asf_uid == "alice"
         assert task.revision_number == "00001"
         assert "target_url" not in task.task_args
+        assert task.task_args["vote_thread_url"] == "https://lists.apache.org/thread/current"
 
 
+@pytest.mark.parametrize("vote_thread_url", [None, "https://lists.apache.org/thread/snapshot"])
 async def test_publish_to_svn_execute_heals_existing_path_published_by_same_user(
-    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch, vote_thread_url
 ) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
     publish_release = mock.AsyncMock(
@@ -149,6 +151,7 @@ async def test_publish_to_svn_execute_heals_existing_path_published_by_same_user
                 project_key="project",
                 version_key="1.0.0",
                 revision_number="00001",
+                vote_thread_url=vote_thread_url,
             )
         )
 
@@ -157,6 +160,12 @@ async def test_publish_to_svn_execute_heals_existing_path_published_by_same_user
         assert provenance.await_args.args[1] == "alice"
         assert "Project: project" in provenance.await_args.args[2]
         assert "Revision: 00001" in provenance.await_args.args[2]
+        vote_line = "Vote thread: https://lists.apache.org/thread/snapshot\n" if vote_thread_url else ""
+        assert provenance.await_args.args[2] == (
+            "Publish project-1.0.0\n\nCommittee: project\nProject: project\nVersion: 1.0.0\nRevision: 00001\n"
+            f"{vote_line}Tool: ATR\nReleased by alice via ATR"
+        )
+        assert publish_release.await_args.args[3] == provenance.await_args.args[2]
 
 
 async def test_publish_to_svn_execute_maps_connection_error(
@@ -209,12 +218,28 @@ async def test_publish_to_svn_execute_maps_existing_svn_path(
             )
 
 
+async def test_publish_to_svn_execute_rejects_unvoted_revision(sqlite_sessionmaker, monkeypatch) -> None:
+    publish = mock.AsyncMock()
+    remove = mock.AsyncMock()
+    monkeypatch.setattr(release_writer.svn, "publish_release", publish)
+    monkeypatch.setattr(release_writer.ReleaseManager, "_ReleaseManager__remove_existing_publication_files", remove)
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data, voted_revision_number="00002")
+        task_args = args.SvnPublish(
+            asf_uid="alice", project_key="project", version_key="1.0.0", revision_number="00001"
+        )
+        with pytest.raises(datatypes.FailedError, match="differs from the voted ATR revision"):
+            await _release_writer(data).publish_to_svn_execute(task_args)
+    publish.assert_not_awaited()
+    remove.assert_not_awaited()
+
+
 async def test_publish_to_svn_execute_returns_result(sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
     publish_release = mock.AsyncMock(return_value=12345)
     monkeypatch.setattr(release_writer.svn, "publish_release", publish_release)
     async with sqlite_sessionmaker() as data:
-        await _seed_preview_release(data)
+        await _seed_preview_release(data, voted_revision_number="00001")
         writer = _release_writer(data)
 
         result = await writer.publish_to_svn_execute(
@@ -380,7 +405,7 @@ def _release_writer(data: db.Session) -> release_writer.ReleaseManager:
     return writer
 
 
-async def _seed_preview_release(data: db.Session) -> None:
+async def _seed_preview_release(data: db.Session, *, voted_revision_number: str | None = None) -> None:
     committee = sql.Committee(
         key="project",
         name="Project",
@@ -396,6 +421,8 @@ async def _seed_preview_release(data: db.Session) -> None:
         project_key=project.key,
         version="1.0.0",
         created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        voted_revision_number=voted_revision_number,
+        vote_thread_url="https://lists.apache.org/thread/current",
     )
     revision = sql.Revision(
         key="project-1.0.0 00001",

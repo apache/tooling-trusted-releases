@@ -1250,6 +1250,11 @@ which includes downloads, can be found at:
 
   {{REVIEW_URL}}
 
+The file manifest for ATR revision {{REVISION}}, including file digests,
+can be found at:
+
+  {{MANIFEST_URL}}
+
 The release artifacts are signed with one or more OpenPGP keys from:
 
   {{KEYS_FILE}}

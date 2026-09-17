@@ -22,6 +22,7 @@ import pytest
 
 import atr.construct as construct
 import atr.models.safe as safe
+import atr.models.sql as sql
 
 
 class MockQuery:
@@ -178,8 +179,11 @@ async def test_announce_release_subject_and_body_uses_top_level_canonical_downlo
         (True, "https://downloads.apache.org/incubator/myproject/KEYS"),
     ],
 )
+@pytest.mark.parametrize(
+    "template", [sql.Project(key="x").policy_start_vote_default, construct.START_VOTE_EXPEDITED_DEFAULT]
+)
 async def test_start_vote_subject_and_body_uses_canonical_keys_url(
-    monkeypatch, is_podling: bool, expected_url: str
+    monkeypatch, is_podling: bool, expected_url: str, template: str
 ) -> None:
     committee = SimpleNamespace(key="myproject", is_podling=is_podling, display_name="Apache MyProject")
     project = SimpleNamespace(
@@ -200,11 +204,11 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
     monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
     monkeypatch.setattr(construct.db, "get_project_release_policy", no_release_policy)
-    monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")
+    monkeypatch.setattr(construct.util, "as_url", lambda _route, **kw: f"/example/{kw.get('revision_number', '')}")
 
     _subject, body = await construct.start_vote_subject_and_body(
         "",
-        "{{KEYS_FILE}}",
+        template,
         construct.StartVoteOptions(
             asfuid="sbp",
             fullname="Some Body",
@@ -215,7 +219,10 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
         ),
     )
 
-    assert body == expected_url
+    assert expected_url in body
+    assert "https://atr.example.invalid/example/1" in body
+    assert "ATR revision 1" in body
+    assert "Beta version" in body
 
 
 @pytest.mark.asyncio

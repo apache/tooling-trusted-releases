@@ -411,7 +411,8 @@ async def test_manual_resolve_page_explains_cancellation_notice_url(
     assert "manual vote resolution" in html
     assert "where you posted the result" in html
     assert "cancellation notice" in html
-    assert "does not store them" in html
+    assert "For a passed vote, ATR stores the vote thread URL" in html
+    assert "it does not store the result thread URL" in html
 
 
 @pytest.mark.asyncio

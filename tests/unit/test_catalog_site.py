@@ -65,6 +65,23 @@ def _version(artifacts: list[api.CatalogArtifact], version: str = "1.0.0") -> ap
     )
 
 
+async def test_release_page_shows_date_and_svn_revision(tmp_path) -> None:
+    version = _version([])
+    version.released = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    version.svn_revision = 123
+    await catalog_site._write_release(
+        safe.StatePath(tmp_path),
+        committee=sql.Committee(key="x", name="X"),
+        project=sql.Project(key="x", name="X"),
+        version=version,
+        root="../../",
+        cle_document=None,
+    )
+    html = (tmp_path / "1.0.0/index.html").read_text()
+    assert "01 Jan 2026" in html
+    assert "svn r123" in html
+
+
 def test_htaccess_maps_each_downloadable_artifact_by_its_file_name_qualifier() -> None:
     version = _version(
         [

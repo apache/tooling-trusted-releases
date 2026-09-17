@@ -611,6 +611,7 @@ class ReleaseManager(CommitteeParticipant):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         vote_result: Literal["passed", "failed", "cancelled"],
+        vote_thread_url: str | None = None,
     ) -> str:
         release = await self.__data.release(
             project_key=str(project_key),
@@ -643,6 +644,7 @@ class ReleaseManager(CommitteeParticipant):
                     new_vote_mode=release.effective_vote_mode,
                     new_vote_resolved=datetime.datetime.now(datetime.UTC),
                     new_podling_thread_id=None,
+                    new_vote_thread_url=vote_thread_url,
                 )
                 await self.__data.commit()
                 await self.__data.refresh(release)

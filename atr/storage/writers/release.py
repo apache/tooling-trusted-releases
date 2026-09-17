@@ -1345,6 +1345,7 @@ class ReleaseManager(CommitteeParticipant):
                     version_key=version_key,
                     revision_number=expected_revision,
                     download_path_suffix=download_path_suffix,
+                    vote_thread_url=release.vote_thread_url,
                 ).model_dump(),
                 asf_uid=task_asf_uid,
                 project_key=str(project_key),
@@ -1385,20 +1386,20 @@ class ReleaseManager(CommitteeParticipant):
         committee = release.project.committee
         if committee is None:
             raise datatypes.FailedError("Release has no committee - Invalid state")
-        latest_revision = release.safe_latest_revision_number
-        if latest_revision != task_args.revision_number:
-            raise datatypes.FailedError("A newer revision appeared after queuing this publish task")
+        self.__validate_publication_revision(release, task_args.revision_number)
         try:
             internal_url = util.svn_publish_internal_url(committee, task_args.download_path_suffix)
         except ValueError as exc:
             raise datatypes.FailedError(f"SVN publish URL is not acceptable: {exc}") from exc
         preview_path = paths.release_directory(release)
+        vote_line = f"Vote thread: {task_args.vote_thread_url}\n" if task_args.vote_thread_url else ""
         log_message = (
             f"Publish {task_args.project_key!s}-{task_args.version_key!s}\n\n"
             f"Committee: {committee.key}\n"
             f"Project: {task_args.project_key!s}\n"
             f"Version: {task_args.version_key!s}\n"
             f"Revision: {task_args.revision_number!s}\n"
+            f"{vote_line}"
             "Tool: ATR\n"
             f"Released by {task_args.asf_uid} via ATR"
         )
@@ -1477,6 +1478,12 @@ class ReleaseManager(CommitteeParticipant):
             asf_uid,
             "Remove previously published files before republishing\n\nTool: ATR",
         )
+
+    def __validate_publication_revision(self, release: sql.Release, revision: safe.RevisionNumber) -> None:
+        if release.safe_latest_revision_number != revision:
+            raise datatypes.FailedError("A newer revision appeared after queuing this publish task")
+        if (release.voted_revision_number is not None) and (release.voted_revision_number != str(revision)):
+            raise datatypes.FailedError("The ATR revision to publish differs from the voted ATR revision")
 
 
 class CommitteeMember(ReleaseManager):

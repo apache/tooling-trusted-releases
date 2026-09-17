@@ -74,7 +74,9 @@ async def resolve_selected(
 
     try:
         async with storage.write_as_project_release_manager(project_key) as warm:
-            success_message = await warm.vote.resolve_manually(project_key, version_key, vote_result)
+            success_message = await warm.vote.resolve_manually(
+                project_key, version_key, vote_result, vote_thread_url=resolve_vote_form.vote_thread_url
+            )
     except storage.AccessError as e:
         return await session.redirect(
             get.manual.resolve_selected,

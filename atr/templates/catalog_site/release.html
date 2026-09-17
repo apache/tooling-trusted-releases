@@ -37,7 +37,8 @@
         </span>
       </div>
       <p class="text-muted small mb-2">
-        {% if release_version.released %}{{ release_version.released.strftime("%d %b %Y") }}{% elif release_version.svn_revision %}svn r{{ release_version.svn_revision }}{% endif %}
+        {% if release_version.released %}{{ release_version.released.strftime("%d %b %Y") }}{% endif %}
+        {% if release_version.svn_revision %}svn r{{ release_version.svn_revision }}{% endif %}
       </p>
       {% if release_version.artifacts %}
         {% for artifact in release_version.artifacts %}

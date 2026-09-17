@@ -100,6 +100,7 @@ class _VoteValues(TypedDict):
     DURATION: str
     HOMEPAGE: str
     KEYS_FILE: str
+    MANIFEST_URL: str
     PROJECT_NAME: str
     PROJECT_KEY: str
     RELEASE_CHECKLIST: str
@@ -132,6 +133,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "KEYS_FILE": "URL to the KEYS file",
     "LIFECYCLE_PAGE": "Lifecycle page URL",
     "MAILING_LISTS": "Mailing lists page URL",
+    "MANIFEST_URL": "URL to the file manifest for the voted ATR revision",
     "OUTCOME": "Vote outcome - 'passed' or 'failed'",
     "PODLING_DISCLAIMER": "Podling incubation disclaimer",
     "PROJECT_NAME": "Project name",
@@ -152,13 +154,18 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
 START_VOTE_EXPEDITED_DEFAULT: Final[str] = """Hello {{COMMITTEE}},
 
 I'd like to call an expedited vote on releasing the following artifacts as
-Apache {{PROJECT_NAME}} {{VERSION}}. This vote is being conducted using an
-Alpha version of the Apache Trusted Releases (ATR) platform.
+Apache {{PROJECT_NAME}} {{VERSION}}. This vote is being conducted using a
+Beta version of the Apache Trusted Releases (ATR) platform.
 Please report any bugs or issues to the ASF Tooling team.
 
 The release candidate page, including downloads, can be found at:
 
   {{REVIEW_URL}}
+
+The file manifest for ATR revision {{REVISION}}, including file digests,
+can be found at:
+
+  {{MANIFEST_URL}}
 
 The release artifacts are signed with one or more OpenPGP keys from:
 
@@ -398,6 +405,7 @@ async def start_vote_default(project_key: safe.ProjectKey) -> str:
 
 async def start_vote_subject_and_body(subject: str, body: str, options: StartVoteOptions) -> tuple[str, str]:
     import atr.get.checklist as checklist
+    import atr.get.manifest as manifest
     import atr.get.vote as vote
 
     async with db.session() as data:
@@ -424,6 +432,12 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     checklist_url = f"https://{host}{checklist_path}"
     review_path = util.as_url(vote.selected, project_key=str(options.project_key), version_key=str(options.version_key))
     review_url = f"https://{host}{review_path}"
+    manifest_path = util.as_url(
+        manifest.selected,
+        project_key=str(options.project_key),
+        version_key=str(options.version_key),
+        revision_number=options.revision_number,
+    )
     project = release.project
     project_display_name = project.short_display_name if project else str(options.project_key)
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=options.vote_duration)
@@ -460,6 +474,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "DURATION": str(options.vote_duration or "an unlimited number of"),
         "HOMEPAGE": project.homepage or "",
         "KEYS_FILE": paths.committee_keys_url(committee),
+        "MANIFEST_URL": f"https://{host}{manifest_path}",
         "PROJECT_NAME": project_display_name,
         "PROJECT_KEY": project.key,
         "RELEASE_CHECKLIST": checklist_content,

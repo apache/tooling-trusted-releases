@@ -684,7 +684,9 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
         release_model.vote_started = datetime.datetime.now(datetime.UTC)
         await data.commit()
         writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
-        await writer.resolve_manually(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "passed")
+        await writer.resolve_manually(
+            safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "passed", "https://lists.apache.org/thread/vote"
+        )
         assert release_model.voted_revision_number == voted_revision_number
         assert release_model.latest_revision_number == "00001"
         announce_writer = object.__new__(announce.ReleaseManager)
@@ -697,6 +699,7 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
     async with sqlite_sessionmaker() as data:
         release_model = await data.release(key="project-1.0.0").demand(RuntimeError("release missing"))
         assert release_model.phase == sql.ReleasePhase.RELEASE
+        assert release_model.vote_thread_url == "https://lists.apache.org/thread/vote"
         assert release_model.latest_revision_number is None
         assert release_model.voted_revision_number == voted_revision_number
         error = await release.archive_release_core(

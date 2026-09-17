@@ -235,6 +235,7 @@ class SvnPublish(schema.Strict):
     project_key: safe.ProjectKey = schema.description("Project key in ATR")
     version_key: safe.VersionKey = schema.description("Version key in ATR")
     revision_number: safe.RevisionNumber = schema.description("Approved ATR revision number to publish")
+    vote_thread_url: str | None = pydantic.Field(default=None, description="Vote thread URL at publication request")
     download_path_suffix: safe.OptionalRelPath = pydantic.Field(
         default=None,
         description="Optional path suffix appended under the committee distribution path",
