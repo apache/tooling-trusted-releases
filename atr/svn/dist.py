@@ -32,9 +32,20 @@ RELEASE_PREFIX: Final[str] = "release/"
 PROJECT_REMAPS: Final[dict[tuple[str, str | None], str]] = {
     ("activemq", "activemq-artemis"): "artemis",  # Artemis graduated from ActiveMQ, dist still splits it
     ("apr", None): "apr-portable-runtime",  # the committee's top level is the Portable Runtime itself
+    ("aries", "javax.persistence"): "aries-javax-persistence",
+    ("felix", "javax.servlet"): "felix-javax-servlet",
+    ("felix", "org.osgi.compendium"): "felix-org-osgi-compendium",
+    ("felix", "org.osgi.core"): "felix-org-osgi-core",
+    ("felix", "org.osgi.foundation"): "felix-org-osgi-foundation",
+    ("felix", "org.osgi.service.obr"): "felix-org-osgi-service-obr",
+    ("felix", "osgi.core"): "felix-osgi-core",
+    ("felix", "shell.tui"): "felix-shell-tui",
     ("httpd", None): "httpd-http-server",  # the committee's top level is the HTTP Server
-    ("lucenenet", None): "lucenenet-lucenedotnet",
+    ("incubator", "lucene.net"): "lucenenet",
+    ("lucenenet", "Apache-Lucene.Net"): "lucenenet",
     ("sis", None): "sis-spatial-information-system",
+    ("sling", "sling-maven-plugin.parent"): "sling-maven-plugin",
+    ("tapestry", "Tapestry-Web"): "tapestry",
     ("trafficcontrol", None): "traffic-control",
     ("trafficserver", None): "trafficserver-traffic-server",
     ("xmlgraphics", "commons"): "xmlgraphics-xml-graphics-commons",

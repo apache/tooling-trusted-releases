@@ -619,6 +619,22 @@ async def _update_podlings(
 # Xalan), and a former podling whose feed key still carries its product name where the committee-
 # named project is the one ATR keeps (ponymail-pony_mail, hyphenated by the time we look it up)
 _PROJECT_KEY_REMAP: Final[dict[str, str]] = {
+    "aries-javax.persistence": "aries-javax-persistence",
+    "felix-javax.servlet": "felix-javax-servlet",
+    "felix-org.osgi.compendium": "felix-org-osgi-compendium",
+    "felix-org.osgi.core": "felix-org-osgi-core",
+    "felix-org.osgi.foundation": "felix-org-osgi-foundation",
+    "felix-org.osgi.service.obr": "felix-org-osgi-service-obr",
+    "felix-osgi.core": "felix-osgi-core",
+    "felix-shell.tui": "felix-shell-tui",
+    "lucene.net": "lucenenet",
+    "lucenenet-Apache-Lucene.Net": "lucenenet",
+    "lucenenet-lucenedotnet": "lucenenet",
+    "openwhisk-OpenWhisk": "openwhisk",
+    "sling-maven-plugin.parent": "sling-maven-plugin",
+    "tapestry-Tapestry": "tapestry",
+    "tapestry-Tapestry-Web": "tapestry",
+    "vcl-VCL": "vcl",
     "xerces-for-c++-xml-parser": "xerces-c",
     "xerces-for-java-xml-parser": "xerces-j",
     "xerces-for-perl-xml-parser": "xerces-p",
