@@ -1074,6 +1074,9 @@ async def _register_recurrent_tasks() -> None:
     # Run maintenance task immediately on server startup
     maintenance = await tasks.run_maintenance(asf_uid=constants.SYSTEM_SERVICE_UID, schedule_next=True)
     log.info(f"Scheduled maintenance with ID {maintenance.id}")
+    await tasks.schedule_next(
+        constants.SYSTEM_SERVICE_UID, tasks.INTEGRITY_CHECK_INTERVAL_SECONDS, tasks.integrity_check
+    )
     # Start other tasks 5 min after server start
     await asyncio.sleep(300)
     try:

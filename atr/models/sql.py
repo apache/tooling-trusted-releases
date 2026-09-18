@@ -282,6 +282,7 @@ class TaskType(enum.StrEnum):
     DISTRIBUTION_WORKFLOW = "distribution_workflow"
     HAS_SBOM = "has_sbom"
     HASHING_CHECK = "hashing_check"
+    INTEGRITY_CHECK = "integrity_check"
     KEYS_IMPORT_FILE = "keys_import_file"
     LICENSE_FILES = "license_files"
     LICENSE_HEADERS = "license_headers"
@@ -334,6 +335,8 @@ class TaskType(enum.StrEnum):
                 return "SBOM check"
             case TaskType.HASHING_CHECK:
                 return "Hashing check"
+            case TaskType.INTEGRITY_CHECK:
+                return "Integrity check"
             case TaskType.KEYS_IMPORT_FILE:
                 return "Key import"
             case TaskType.LICENSE_FILES:

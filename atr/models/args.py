@@ -136,6 +136,11 @@ class Initiate(schema.Strict):
     )
 
 
+class IntegrityCheckArgs(schema.Strict):
+    asf_uid: str
+    next_schedule_seconds: int = 0
+
+
 class MaintenanceArgs(schema.Strict):
     """Arguments for the task to perform scheduled maintenance."""
 

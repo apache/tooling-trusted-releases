@@ -49,13 +49,14 @@ async def sqlite_sessionmaker(
     await engine.dispose()
 
 
+@pytest.mark.parametrize("task_type", [sql.TaskType.MAINTENANCE, sql.TaskType.INTEGRITY_CHECK])
 async def test_completion_deletes_a_recurring_task_and_logs_it(
-    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch, task_type: sql.TaskType
 ) -> None:
     completed_log = mock.Mock()
     monkeypatch.setattr(worker, "_task_completed_log", completed_log)
     async with sqlite_sessionmaker() as data:
-        task_row = _active_task(pid=os.getpid(), task_type=sql.TaskType.MAINTENANCE)
+        task_row = _active_task(pid=os.getpid(), task_type=task_type)
         data.add(task_row)
         await data.commit()
 
@@ -65,7 +66,7 @@ async def test_completion_deletes_a_recurring_task_and_logs_it(
         assert remaining is None
         completed_log.assert_called_once()
         record = completed_log.call_args.args[0]
-        assert record["task_type"] == sql.TaskType.MAINTENANCE.value
+        assert record["task_type"] == task_type.value
         assert record["status"] == sql.TaskStatus.COMPLETED.value
 
 

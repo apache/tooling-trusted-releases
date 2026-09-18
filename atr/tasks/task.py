@@ -59,6 +59,7 @@ RECURRING_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
     {
         sql.TaskType.CATALOG_SITE_GENERATE,
         sql.TaskType.DISTRIBUTION_STATUS,
+        sql.TaskType.INTEGRITY_CHECK,
         sql.TaskType.MAINTENANCE,
         sql.TaskType.METADATA_UPDATE,
         sql.TaskType.WORKFLOW_STATUS,

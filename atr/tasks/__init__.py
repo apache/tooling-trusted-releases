@@ -52,6 +52,7 @@ import atr.tasks.checks.zipformat as zipformat
 import atr.tasks.distribution as distribution
 import atr.tasks.gha as gha
 import atr.tasks.heatmap as heatmap
+import atr.tasks.integrity as integrity
 import atr.tasks.keys as keys
 import atr.tasks.maintenance as maintenance
 import atr.tasks.message as message
@@ -63,6 +64,8 @@ import atr.tasks.svnpub as svnpub
 import atr.tasks.task as task
 import atr.tasks.vote as vote
 import atr.util as util
+
+INTEGRITY_CHECK_INTERVAL_SECONDS: Final = 60 * 20
 
 _EVERY_2_MINUTES = 60 * 2
 _DAILY = 60 * 60 * 24
@@ -276,6 +279,32 @@ async def draft_checks(
     return len(relative_paths)
 
 
+async def integrity_check(
+    asf_uid: str,
+    caller_data: db.Session | None = None,
+    schedule: datetime.datetime | None = None,
+    schedule_next: bool = False,
+) -> sql.Task:
+    task_args = args.IntegrityCheckArgs(
+        asf_uid=asf_uid,
+        next_schedule_seconds=INTEGRITY_CHECK_INTERVAL_SECONDS if schedule_next else 0,
+    )
+    async with db.ensure_session(caller_data) as data:
+        task = sql.Task(
+            task_type=sql.TaskType.INTEGRITY_CHECK,
+            task_args=task_args.model_dump(),
+            asf_uid=asf_uid,
+            scheduled=schedule,
+        )
+        if schedule is not None:
+            await data.begin_immediate()
+            await _clear_existing_scheduled(data, sql.TaskType.INTEGRITY_CHECK, asf_uid)
+        data.add(task)
+        await data.commit()
+        await data.flush()
+        return task
+
+
 async def queue_sync_keys_from_svn(
     asf_uid: str, committee_key: str, caller_data: db.Session | None = None
 ) -> sql.Task | None:
@@ -405,6 +434,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return sbom_check.check
         case sql.TaskType.HASHING_CHECK:
             return hashing.check
+        case sql.TaskType.INTEGRITY_CHECK:
+            return integrity.check
         case sql.TaskType.KEYS_IMPORT_FILE:
             raise ValueError("KEYS_IMPORT_FILE has been removed; KEYS files are imported through the web interface")
         case sql.TaskType.LICENSE_FILES:
