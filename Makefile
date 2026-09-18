@@ -27,7 +27,7 @@ build-docs:
 	mkdir -p docs
 	rm -f docs/*.html
 	uv run --frozen python3 scripts/docs_build.py
-	for fn in atr/docs/*.md; do out=$${fn#atr/}; uv run --frozen python3 scripts/gfm_to_html.py "$$fn" "$${out%.md}.html"; done
+	for fn in atr/docs/*.md; do out=$${fn#atr/}; uv run --frozen python3 scripts/gfm_to_html.py "$$fn" "$${out%.md}.html" || exit $$?; done
 	uv run --frozen python3 scripts/docs_post_process.py docs/*.html
 
 build-playwright:
@@ -78,7 +78,7 @@ docs:
 	uv run --frozen python3 scripts/docs_check.py
 	rm -f docs/*.html
 	uv run --frozen python3 scripts/docs_build.py
-	for fn in atr/docs/*.md; do out=$${fn#atr/}; uv run --frozen python3 scripts/gfm_to_html.py "$$fn" "$${out%.md}.html"; done
+	for fn in atr/docs/*.md; do out=$${fn#atr/}; uv run --frozen python3 scripts/gfm_to_html.py "$$fn" "$${out%.md}.html" || exit $$?; done
 	uv run --frozen python3 scripts/docs_post_process.py docs/*.html
 	uv run --frozen python3 scripts/docs_check.py
 

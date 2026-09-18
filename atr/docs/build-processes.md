@@ -12,7 +12,7 @@
 
 ## Documentation build script
 
-To **regenerate the documentation**, run `make docs`.
+To **regenerate the documentation**, run `make docs`. Pre-commit runs this too. Review and stage any regenerated Markdown, then rerun.
 
 The ATR documentation that you're reading right now is structured like a book, with numbered chapters, sections, and navigation links between pages. We could maintain all of this by hand, but that would be tedious and error-prone. Instead, we use [`scripts/docs_build.py`](/ref/scripts/docs_build.py) to generate the navigation automatically from a single table of contents.
 

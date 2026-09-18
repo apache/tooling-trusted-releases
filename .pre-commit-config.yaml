@@ -246,3 +246,10 @@ repos:
       entry: uv run --frozen python scripts/check_templates.py atr
       language: system
       pass_filenames: false
+
+    - id: docs
+      name: build and check documentation
+      entry: make docs
+      language: system
+      pass_filenames: false
+      always_run: true
