@@ -593,6 +593,26 @@ async def test_podling_stale_round_one_cancel_after_pass() -> None:
     data.rollback.assert_awaited()
 
 
+def test_presentations_bypass_set_audits_only_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    conf = interaction.config.get()
+    assert conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS is False
+    monkeypatch.setattr(conf, "PRESENTATIONS_VOTE_RESOLUTION_BYPASS", False)
+    monkeypatch.setattr(storage.user, "is_admin", lambda _asf_uid: True)
+    audit = mock.Mock()
+    monkeypatch.setattr(storage, "audit", audit)
+    writer = storage.Write(SimpleNamespace(asf_uid="admin"), _mock_data()).as_foundation_admin().vote
+
+    writer.presentations_bypass_set(True)
+    assert conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS is True
+    writer.presentations_bypass_set(True)
+    writer.presentations_bypass_set(False)
+    assert conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS is False
+    assert audit.call_args_list == [
+        mock.call(asf_uid="admin", previous=False, enabled=True),
+        mock.call(asf_uid="admin", previous=True, enabled=False),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.MonkeyPatch) -> None:
     """Writer allows Cancelled even before the end of the vote."""
@@ -624,7 +644,6 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
     assert success == "Vote marked as cancelled"
 
 
-@pytest.mark.skip(reason="The production bypass is temporarily disabled")
 @pytest.mark.parametrize("vote_result", ["failed", "passed"])
 @pytest.mark.asyncio
 async def test_resolve_allows_early_result_for_production_bypass_project(
@@ -644,9 +663,13 @@ async def test_resolve_allows_early_result_for_production_bypass_project(
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST="release-test.apache.org"))
+    monkeypatch.setattr(
+        interaction.config,
+        "get",
+        lambda: SimpleNamespace(APP_HOST="release-test.apache.org", PRESENTATIONS_VOTE_RESOLUTION_BYPASS=True),
+    )
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
-    monkeypatch.setattr(interaction.user, "is_admin", lambda asf_uid: asf_uid == "chair")
+    monkeypatch.setattr(interaction.user, "is_admin", lambda _asf_uid: False)
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
         return_value=(release, None, f"Vote marked as {vote_result}", None)
@@ -1082,7 +1105,6 @@ def test_trusted_email_context_labels_avoid_authoritative_terms() -> None:
     assert "Formal" not in {row.status_label for row in rows}
 
 
-@pytest.mark.skip(reason="The production bypass is temporarily disabled")
 @pytest.mark.asyncio
 async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
     data = _mock_data()
@@ -1100,9 +1122,13 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
     data.release = mock.MagicMock(return_value=query)
 
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
-    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST="release-test.apache.org"))
+    monkeypatch.setattr(
+        interaction.config,
+        "get",
+        lambda: SimpleNamespace(APP_HOST="release-test.apache.org", PRESENTATIONS_VOTE_RESOLUTION_BYPASS=True),
+    )
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
-    monkeypatch.setattr(interaction.user, "is_admin", lambda asf_uid: asf_uid == "chair")
+    monkeypatch.setattr(interaction.user, "is_admin", lambda _asf_uid: False)
     monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
@@ -1393,17 +1419,21 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
 
 
 @pytest.mark.parametrize(
-    ("app_host", "production_mode", "is_admin", "committee_key", "project_key", "expected"),
+    ("app_host", "production_mode", "is_admin", "committee_key", "project_key", "enabled", "expected"),
     [
-        ("tooling-vm-ec2-de.apache.org", True, True, "tooling", "tooling", True),
-        ("tooling-vm-ec2-de.apache.org:443", True, True, "tooling", "tooling-demo", True),
-        ("tooling-vm-ec2-de.apache.org", True, False, "tooling", "tooling", False),
-        ("tooling-vm-ec2-de.apache.org", True, True, "other", "tooling", False),
-        ("tooling-vm-ec2-de.apache.org", False, False, "tooling", "tooling", False),
-        ("release-test.apache.org", True, True, "tooling", "tooling", False),
-        ("release-test.apache.org", True, False, "tooling", "tooling-presentations", False),
-        ("127.0.0.1", False, False, "other", "project", True),
-        ("127.0.0.1", True, True, "tooling", "tooling", False),
+        ("tooling-vm-ec2-de.apache.org", True, True, "tooling", "tooling", False, True),
+        ("tooling-vm-ec2-de.apache.org:443", True, True, "tooling", "tooling-demo", False, True),
+        ("tooling-vm-ec2-de.apache.org", True, False, "tooling", "tooling", False, False),
+        ("tooling-vm-ec2-de.apache.org", True, True, "other", "tooling", False, False),
+        ("tooling-vm-ec2-de.apache.org", False, False, "tooling", "tooling", False, False),
+        ("tooling-vm-ec2-de.apache.org", True, False, "tooling", "tooling-presentations", True, False),
+        ("release-test.apache.org", True, True, "tooling", "tooling", False, False),
+        ("release-test.apache.org", True, False, "tooling", "tooling-presentations", False, False),
+        ("release-test.apache.org", True, False, "tooling", "tooling-presentations", True, True),
+        ("release-test.apache.org", True, True, "tooling", "tooling-presentations-other", True, False),
+        ("release-test.apache.org", True, True, "tooling", "tooling", True, False),
+        ("127.0.0.1", False, False, "other", "project", False, True),
+        ("127.0.0.1", True, True, "tooling", "tooling", False, False),
     ],
 )
 def test_vote_resolution_bypass(
@@ -1413,12 +1443,17 @@ def test_vote_resolution_bypass(
     is_admin: bool,
     committee_key: str,
     project_key: str,
+    enabled: bool,
     expected: bool,
 ) -> None:
     release = _candidate_release()
     release.project_key = project_key
     release.project.committee_key = committee_key
-    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST=app_host))
+    monkeypatch.setattr(
+        interaction.config,
+        "get",
+        lambda: SimpleNamespace(APP_HOST=app_host, PRESENTATIONS_VOTE_RESOLUTION_BYPASS=enabled),
+    )
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: production_mode)
     monkeypatch.setattr(interaction.user, "is_admin", lambda _asf_uid: is_admin)
 

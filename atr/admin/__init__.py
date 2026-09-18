@@ -145,6 +145,7 @@ type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
 type CATALOG_SITE_REBUILD = Literal["CATALOG_SITE_REBUILD"]
 type LDAP = Literal["LDAP"]
+type PRESENTATIONS_VOTE_BYPASS = Literal["PRESENTATIONS_VOTE_BYPASS"]
 type PROJECTS_UPDATE = Literal["PROJECTS_UPDATE"]
 type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
 type REVOKE_SSH_KEYS = Literal["REVOKE_SSH_KEYS"]
@@ -201,6 +202,16 @@ class LdapLookupForm(form.Form):
     uid: str = form.label("ASF UID (optional)", "Enter ASF UID, e.g. johnsmith, or * for all")
     email: form.OptionalEmail = form.label(
         "Email address (optional)", "Enter email address, e.g. user@example.org", widget=form.Widget.EMAIL
+    )
+
+
+class PresentationsVoteBypassForm(form.Form):
+    variant: PRESENTATIONS_VOTE_BYPASS = form.value(PRESENTATIONS_VOTE_BYPASS)
+    enabled: form.Bool = form.label(
+        "Allow presentations vote shortcuts",
+        "Allow release managers to resolve tooling-presentations votes early or without enough trusted votes. "
+        "Resets to off when the web application restarts or reloads.",
+        default=False,
     )
 
 
@@ -332,7 +343,9 @@ class TestRosterResetForm(form.Form):
 type CatalogForm = Annotated[ProjectsUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
 
 
-type SystemForm = Annotated[EditBannerForm | RestoreBannerForm | SendTestMessageForm, form.DISCRIMINATOR]
+type SystemForm = Annotated[
+    EditBannerForm | PresentationsVoteBypassForm | RestoreBannerForm | SendTestMessageForm, form.DISCRIMINATOR
+]
 
 
 type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestRosterResetForm, form.DISCRIMINATOR]
@@ -1698,6 +1711,8 @@ async def system_post(
     match system_form:
         case EditBannerForm():
             return await _system_banner_set(session, system_form)
+        case PresentationsVoteBypassForm():
+            return await _system_presentations_vote_bypass(session, system_form)
         case RestoreBannerForm():
             return await _system_banner_restore(session, system_form)
         case SendTestMessageForm():
@@ -2738,6 +2753,15 @@ async def _system_configuration_tab() -> htm.Element:
     block = htm.Block()
     block.h2["Configuration"]
     block.pre[htm.code["\n".join(values)]]
+    block.h3(".mt-4")["Presentations vote shortcuts"]
+    block.append(
+        await form.render(
+            model_cls=PresentationsVoteBypassForm,
+            action=util.as_url(system_post, tab="configuration"),
+            submit_label="Save presentations setting",
+            defaults={"enabled": conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS},
+        )
+    )
     return block.collect()
 
 
@@ -2833,6 +2857,16 @@ async def _system_performance_tab() -> htm.Element:
     sorted_summary = dict(sorted(summary.items(), key=one_total_mean, reverse=True))
     content = await template.render("performance.html", stats=sorted_summary)
     return htm.div[markupsafe.Markup(content)]
+
+
+async def _system_presentations_vote_bypass(
+    session: web.Committer, bypass_form: PresentationsVoteBypassForm
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        write.as_foundation_admin().vote.presentations_bypass_set(bypass_form.enabled)
+    state = "enabled" if bypass_form.enabled else "disabled"
+    await quart.flash(f"Presentations vote shortcuts are {state}.", "success")
+    return await session.redirect(system_get, tab="configuration")
 
 
 async def _system_tasks_tab(minutes: int) -> htm.Element:

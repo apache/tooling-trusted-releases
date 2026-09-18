@@ -132,6 +132,7 @@ class AppConfig:
     LOG_JSON = _ENVIRONMENT_CONFIG("LOG_JSON", default=False, cast=bool)
     LOG_PUBLIC_KEY = _config_secrets("LOG_PUBLIC_KEY", STATE_DIR, default=None, cast=str)
     MAX_SESSION_AGE = _ENVIRONMENT_CONFIG("MAX_SESSION_AGE", default=60 * 60 * 72, cast=int)
+    PRESENTATIONS_VOTE_RESOLUTION_BYPASS: bool = False
     PUBSUB_URL = _config_secrets("PUBSUB_URL", STATE_DIR, default=None, cast=str)
     PUBSUB_USER = _config_secrets("PUBSUB_USER", STATE_DIR, default=None, cast=str)
     PUBSUB_PASSWORD = _config_secrets("PUBSUB_PASSWORD", STATE_DIR, default=None, cast=str)

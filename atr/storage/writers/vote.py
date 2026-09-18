@@ -24,6 +24,7 @@ from typing import Literal
 import sqlalchemy
 import sqlmodel
 
+import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -209,6 +210,20 @@ class FoundationCommitter(GeneralPublic):
             replaced_ballot_id=previous_ballot.id if (previous_ballot is not None) else None,
         )
         return [email_to], ""
+
+
+class FoundationAdmin(FoundationCommitter):
+    def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
+        super().__init__(write, write_as, data)
+        self.__write_as = write_as
+
+    def presentations_bypass_set(self, enabled: bool) -> None:
+        conf = config.get()
+        previous = conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS
+        if previous == enabled:
+            return
+        conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS = enabled
+        self.__write_as.append_to_audit_log(asf_uid=self.__write_as.asf_uid, previous=previous, enabled=enabled)
 
 
 class CommitteeParticipant(FoundationCommitter):

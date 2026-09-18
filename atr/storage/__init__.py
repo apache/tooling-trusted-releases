@@ -271,6 +271,7 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
         self.release = writers.release.FoundationAdmin(write, self, data)
         self.ssh = writers.ssh.FoundationAdmin(write, self, data)
         self.tokens = writers.tokens.FoundationAdmin(write, self, data)
+        self.vote = writers.vote.FoundationAdmin(write, self, data)
 
 
 class WriteAsCommitteeAdmin(WriteAsCommitteeMember):

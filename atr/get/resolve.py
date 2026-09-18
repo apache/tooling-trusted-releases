@@ -359,6 +359,8 @@ async def selected(  # noqa: C901
                 f"The vote thread could not be tabulated, so {binding_label.lower()} vote requirements"
                 " could not be verified automatically."
             )
+        if bypass_active and is_trusted_mode:
+            message += " The vote resolution bypass allows this vote to be marked as passed anyway."
         pre_submit = htm.div(".border.rounded.bg-warning-subtle.p-3.mb-3")[icon, message]
 
     resolve_form = await atr.form.render(
