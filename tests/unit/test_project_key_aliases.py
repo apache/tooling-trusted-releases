@@ -51,6 +51,36 @@ CASES = [
 ]
 
 
+_RULES = dist.DistRules(
+    project_remaps={
+        ("activemq", "activemq-artemis"): "artemis",
+        ("apr", None): "apr-portable-runtime",
+        ("aries", "javax.persistence"): "aries-javax-persistence",
+        ("felix", "javax.servlet"): "felix-javax-servlet",
+        ("felix", "org.osgi.compendium"): "felix-org-osgi-compendium",
+        ("felix", "org.osgi.core"): "felix-org-osgi-core",
+        ("felix", "org.osgi.foundation"): "felix-org-osgi-foundation",
+        ("felix", "org.osgi.service.obr"): "felix-org-osgi-service-obr",
+        ("felix", "osgi.core"): "felix-osgi-core",
+        ("felix", "shell.tui"): "felix-shell-tui",
+        ("httpd", None): "httpd-http-server",
+        ("incubator", "lucene.net"): "lucenenet",
+        ("lucenenet", "Apache-Lucene.Net"): "lucenenet",
+        ("sis", None): "sis-spatial-information-system",
+        ("sling", "sling-maven-plugin.parent"): "sling-maven-plugin",
+        ("tapestry", "Tapestry-Web"): "tapestry",
+        ("trafficcontrol", None): "traffic-control",
+        ("trafficserver", None): "trafficserver-traffic-server",
+        ("xmlgraphics", "commons"): "xmlgraphics-xml-graphics-commons",
+    },
+    grouping_buckets=frozenset({"providers", "source", "sources", "binaries", "bin", "src", "releases"}),
+    committee_buckets=frozenset({("maven", "plugins"), ("cordova", "platforms"), ("cordova", "tools")}),
+    excluded_parts=frozenset({"repos"}),
+    name_build_suffixes=frozenset({"src", "source", "sources", "bin", "binaries", "incubating", "v"}),
+    airflow_provider_areas=frozenset({"providers", "backport-providers"}),
+)
+
+
 @pytest.fixture
 async def data() -> collections.abc.AsyncIterator[db.Session]:
     engine = sqlalchemy.ext.asyncio.create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -95,18 +125,18 @@ async def test_dist_paths_resolve_to_repaired_project(
     project = sql.Project(key=canonical_key, name="Apache Existing", committee=committee)
     data.add(project)
     await data.commit()
-    change = catalog._decompose_change(f"release/{path}")
+    change = catalog._decompose_change(_RULES, f"release/{path}")
     assert change is not None
     dist_committee, decomposed, _is_dir, _filename = change
     subproject = dist.module_component(dist_committee, decomposed.subproject) or decomposed.subproject
-    assert await catalog._resolve_project(data, dist_committee, subproject) is project
+    assert await catalog._resolve_project(_RULES, data, dist_committee, subproject) is project
 
 
 async def test_dist_remaps_do_not_fold_unrelated_committees(data: db.Session) -> None:
     project = sql.Project(key="karaf", committee=sql.Committee(key="karaf"))
     data.add(project)
     await data.commit()
-    changes = catalog._structural_changes({"release/camel/Karaf-1.2.3-source.tar.gz": {"flags": "A "}})
+    changes = catalog._structural_changes(_RULES, {"release/camel/Karaf-1.2.3-source.tar.gz": {"flags": "A "}})
     ((committee, subproject, _version),) = changes.added
-    assert await catalog._resolve_project(data, committee, subproject) is None
+    assert await catalog._resolve_project(_RULES, data, committee, subproject) is None
     assert apache.canonical_project_key("camel-Karaf") == "camel-Karaf"

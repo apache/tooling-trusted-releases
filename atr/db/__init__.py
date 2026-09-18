@@ -439,6 +439,38 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def dist_rule(
+        self,
+        id: Opt[int] = NOT_SET,
+        kind: Opt[sql.DistRuleKind] = NOT_SET,
+        committee: Opt[str | None] = NOT_SET,
+        subproject: Opt[str | None] = NOT_SET,
+        pattern: Opt[str | None] = NOT_SET,
+        target: Opt[str | None] = NOT_SET,
+        enabled: Opt[bool] = NOT_SET,
+        note: Opt[str | None] = NOT_SET,
+    ) -> Query[sql.DistRule]:
+        query = sqlmodel.select(sql.DistRule)
+
+        if is_defined(id):
+            query = query.where(sql.DistRule.id == id)
+        if is_defined(kind):
+            query = query.where(sql.DistRule.kind == kind)
+        if is_defined(committee):
+            query = query.where(sql.DistRule.committee == committee)
+        if is_defined(subproject):
+            query = query.where(sql.DistRule.subproject == subproject)
+        if is_defined(pattern):
+            query = query.where(sql.DistRule.pattern == pattern)
+        if is_defined(target):
+            query = query.where(sql.DistRule.target == target)
+        if is_defined(enabled):
+            query = query.where(sql.DistRule.enabled == enabled)
+        if is_defined(note):
+            query = query.where(sql.DistRule.note == note)
+
+        return Query(self, query)
+
     def distribution(
         self,
         release_key: Opt[str] = NOT_SET,
