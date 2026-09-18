@@ -63,7 +63,6 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.noisy as noisy
-import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
 import atr.render as render
@@ -2288,42 +2287,25 @@ async def _check_keys(fix: bool = False) -> str:
 
 
 async def _database_consistency_tab() -> htm.Element:
-    # Get all releases from the database
     async with db.session() as data:
-        releases = await data.release().all()
-    database_dirs = await _consistency_database_dirs(releases)
-    if len(set(database_dirs)) != len(database_dirs):
-        raise base.ASFQuartException("Duplicate release directories in database", errorcode=500)
-
-    # Get all releases from the filesystem
-    filesystem_dirs = await _get_filesystem_dirs()
-
-    # Pair them up where possible
-    paired_dirs = []
-    for database_dir in database_dirs[:]:
-        for filesystem_dir in filesystem_dirs[:]:
-            if database_dir == filesystem_dir:
-                paired_dirs.append(database_dir)
-                database_dirs.remove(database_dir)
-                filesystem_dirs.remove(filesystem_dir)
-                break
+        report = await validate.consistency(data)
     text = (
         "=== BROKEN ===\n"
         "\n"
         "DATABASE ONLY:\n"
         "\n"
-        f"{chr(10).join(sorted(database_dirs or ['-']))}\n"
+        f"{chr(10).join(report.db_only or ['-'])}\n"
         "\n"
         "FILESYSTEM ONLY:\n"
         "\n"
-        f"{chr(10).join(sorted(filesystem_dirs or ['-']))}\n"
+        f"{chr(10).join(report.fs_only or ['-'])}\n"
         "\n"
         "\n"
         "== Okay ==\n"
         "\n"
         "Paired correctly:\n"
         "\n"
-        f"{chr(10).join(sorted(paired_dirs or ['-']))}\n"
+        f"{chr(10).join(report.paired or ['-'])}\n"
     )
     block = htm.Block()
     block.h2["Consistency"]
@@ -2573,63 +2555,6 @@ def _format_exception_location(exc: BaseException) -> str:
     lineno = last_tb.tb_lineno
     func = frame.f_code.co_name
     return f"{type(exc).__name__} at {filename}:{lineno} in {func}: {exc}"
-
-
-async def _consistency_database_dirs(releases: Sequence[sql.Release]) -> list[str]:
-    database_dirs: list[str] = []
-    for release in releases:
-        path = paths.release_directory_version(release)
-        if (release.phase == sql.ReleasePhase.RELEASE) and (not await aiofiles.os.path.isdir(path)):
-            continue
-        database_dirs.append(str(path))
-    return database_dirs
-
-
-async def _get_filesystem_dirs() -> list[str]:
-    filesystem_dirs = []
-    await _get_filesystem_dirs_finished(filesystem_dirs)
-    await _get_filesystem_dirs_embargoed(filesystem_dirs)
-    await _get_filesystem_dirs_unfinished(filesystem_dirs)
-    return filesystem_dirs
-
-
-async def _get_filesystem_dirs_embargoed(filesystem_dirs: list[str]) -> None:
-    embargoed_dir = paths.get_embargoed_dir()
-    embargoed_dir_contents = await aiofiles.os.listdir(embargoed_dir)
-    for project_dir in embargoed_dir_contents:
-        project_dir_path = os.path.join(embargoed_dir, project_dir)
-        if await aiofiles.os.path.isdir(project_dir_path):
-            for version_dir in await aiofiles.os.listdir(project_dir_path):
-                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
-                    version_dir_path = os.path.join(project_dir_path, version_dir)
-                    if await aiofiles.os.path.isdir(version_dir_path):
-                        filesystem_dirs.append(version_dir_path)
-
-
-async def _get_filesystem_dirs_finished(filesystem_dirs: list[str]) -> None:
-    finished_dir = paths.get_finished_dir()
-    finished_dir_contents = await aiofiles.os.listdir(finished_dir)
-    for project_dir in finished_dir_contents:
-        project_dir_path = os.path.join(finished_dir, project_dir)
-        if await aiofiles.os.path.isdir(project_dir_path):
-            for version_dir in await aiofiles.os.listdir(project_dir_path):
-                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
-                    version_dir_path = os.path.join(project_dir_path, version_dir)
-                    if await aiofiles.os.path.isdir(version_dir_path):
-                        filesystem_dirs.append(version_dir_path)
-
-
-async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
-    unfinished_dir = paths.get_unfinished_dir()
-    unfinished_dir_contents = await aiofiles.os.listdir(unfinished_dir)
-    for project_dir in unfinished_dir_contents:
-        project_dir_path = os.path.join(unfinished_dir, project_dir)
-        if await aiofiles.os.path.isdir(project_dir_path):
-            for version_dir in await aiofiles.os.listdir(project_dir_path):
-                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
-                    version_dir_path = os.path.join(project_dir_path, version_dir)
-                    if await aiofiles.os.path.isdir(version_dir_path):
-                        filesystem_dirs.append(version_dir_path)
 
 
 def _keys_update_gated() -> bool:

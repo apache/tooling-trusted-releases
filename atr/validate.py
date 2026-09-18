@@ -17,9 +17,12 @@
 
 import asyncio
 import datetime
+import os
 import re
 from collections.abc import AsyncGenerator, Callable, Generator, Iterable, Sequence
 from typing import Final, NamedTuple, TypeVar
+
+import aiofiles.os
 
 import atr.db as db
 import atr.models.safe as safe
@@ -38,6 +41,12 @@ class AnnotatedDivergence(NamedTuple):
     validator: str
     source: str
     divergence: Divergence
+
+
+class Consistency(NamedTuple):
+    db_only: list[str]
+    fs_only: list[str]
+    paired: list[str]
 
 
 type Divergences = Generator[Divergence]
@@ -205,6 +214,35 @@ def committees(cs: Iterable[sql.Committee]) -> AnnotatedDivergences:
         yield from committee(c)
 
 
+async def consistency(data: db.Session) -> Consistency:
+    # Get all releases from the database
+    release_records = await data.release().all()
+    finalising_releases = await _finalising_releases(data)
+    database_dirs = await _consistency_database_dirs(release_records)
+    if len(set(database_dirs)) != len(database_dirs):
+        raise ValueError("Duplicate release directories in database")
+
+    # Get all releases from the filesystem
+    filesystem_dirs = set(await _get_filesystem_dirs())
+    for record in release_records:
+        if (record.phase != sql.ReleasePhase.RELEASE) or (
+            (record.project_key, record.version) not in finalising_releases
+        ):
+            continue
+        filesystem_dirs.discard(str(paths.get_unfinished_dir() / record.project_key / record.version))
+        filesystem_dirs.discard(
+            str(paths.get_unfinished_tombstone_for(record.safe_project_key, record.safe_version_key))
+        )
+
+    # Pair them up where possible
+    database_paths = set(database_dirs)
+    return Consistency(
+        sorted(database_paths - filesystem_dirs),
+        sorted(filesystem_dirs - database_paths),
+        sorted(database_paths & filesystem_dirs),
+    )
+
+
 def divergences[T](expected: T, actual: T) -> Divergences:
     """Compare two values and yield the divergence if they differ."""
     if expected != actual:
@@ -233,15 +271,7 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     committees_sorted = await data.committee(_child_committees=True).order_by(sql.Committee.key).all()
     projects_sorted = await data.project(_distribution_channels=True).order_by(sql.Project.key).all()
     releases_sorted = await data.release().order_by(sql.Release.key).all()
-    finalising_tasks = await data.task(
-        status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
-        task_type=sql.TaskType.RELEASE_FINALISE,
-    ).all()
-    finalising_releases = {
-        (task.project_key, task.version_key)
-        for task in finalising_tasks
-        if (task.project_key is not None) and (task.version_key is not None)
-    }
+    finalising_releases = await _finalising_releases(data)
 
     for c in await asyncio.to_thread(committees, committees_sorted):
         yield c
@@ -528,3 +558,72 @@ def releases(
     finalising_releases = finalising_releases or set()
     for r in rs:
         yield from release(r, (r.project_key, r.version) in finalising_releases)
+
+
+async def _consistency_database_dirs(releases: Sequence[sql.Release]) -> list[str]:
+    database_dirs: list[str] = []
+    for release in releases:
+        path = paths.release_directory_version(release)
+        if (release.phase == sql.ReleasePhase.RELEASE) and (not await aiofiles.os.path.isdir(path)):
+            continue
+        database_dirs.append(str(path))
+    return database_dirs
+
+
+async def _finalising_releases(data: db.Session) -> set[tuple[str, str]]:
+    finalising_tasks = await data.task(
+        status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+        task_type=sql.TaskType.RELEASE_FINALISE,
+    ).all()
+    return {
+        (task.project_key, task.version_key)
+        for task in finalising_tasks
+        if (task.project_key is not None) and (task.version_key is not None)
+    }
+
+
+async def _get_filesystem_dirs() -> list[str]:
+    filesystem_dirs = []
+    await _get_filesystem_dirs_finished(filesystem_dirs)
+    await _get_filesystem_dirs_embargoed(filesystem_dirs)
+    await _get_filesystem_dirs_unfinished(filesystem_dirs)
+    return filesystem_dirs
+
+
+async def _get_filesystem_dirs_embargoed(filesystem_dirs: list[str]) -> None:
+    embargoed_dir = paths.get_embargoed_dir()
+    embargoed_dir_contents = await aiofiles.os.listdir(embargoed_dir)
+    for project_dir in embargoed_dir_contents:
+        project_dir_path = os.path.join(embargoed_dir, project_dir)
+        if await aiofiles.os.path.isdir(project_dir_path):
+            for version_dir in await aiofiles.os.listdir(project_dir_path):
+                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
+                    version_dir_path = os.path.join(project_dir_path, version_dir)
+                    if await aiofiles.os.path.isdir(version_dir_path):
+                        filesystem_dirs.append(version_dir_path)
+
+
+async def _get_filesystem_dirs_finished(filesystem_dirs: list[str]) -> None:
+    finished_dir = paths.get_finished_dir()
+    finished_dir_contents = await aiofiles.os.listdir(finished_dir)
+    for project_dir in finished_dir_contents:
+        project_dir_path = os.path.join(finished_dir, project_dir)
+        if await aiofiles.os.path.isdir(project_dir_path):
+            for version_dir in await aiofiles.os.listdir(project_dir_path):
+                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
+                    version_dir_path = os.path.join(project_dir_path, version_dir)
+                    if await aiofiles.os.path.isdir(version_dir_path):
+                        filesystem_dirs.append(version_dir_path)
+
+
+async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
+    unfinished_dir = paths.get_unfinished_dir()
+    unfinished_dir_contents = await aiofiles.os.listdir(unfinished_dir)
+    for project_dir in unfinished_dir_contents:
+        project_dir_path = os.path.join(unfinished_dir, project_dir)
+        if await aiofiles.os.path.isdir(project_dir_path):
+            for version_dir in await aiofiles.os.listdir(project_dir_path):
+                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
+                    version_dir_path = os.path.join(project_dir_path, version_dir)
+                    if await aiofiles.os.path.isdir(version_dir_path):
+                        filesystem_dirs.append(version_dir_path)
