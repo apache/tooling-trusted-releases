@@ -2000,6 +2000,7 @@ async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
         htm.Tab("update-projects", "Update", _catalog_projects_update_tab),
         htm.Tab("releases", "Current releases", lambda: _catalog_releases_tab(query_args)),
         htm.Tab("admin", "Catalog admin", _catalog_admin_tab),
+        htm.Tab("reproducible-builds", "Reproducible builds", _catalog_reproducible_builds_tab),
         htm.Tab("rebuild", "Rebuild catalog", _catalog_rebuild_tab),
     ]
     page = htm.Block()
@@ -2072,6 +2073,67 @@ async def _catalog_releases_tab(query_args: web.PageQuery) -> htm.Element:
         page=page,
     )
     return htm.div[markupsafe.Markup(content)]
+
+
+async def _catalog_reproducible_builds_tab() -> htm.Element:
+    keys = await interaction.automated_release_signing_keys()
+    keys.sort(
+        key=lambda key: (
+            -key.created.timestamp() if key.created else float("inf"),
+            key.committee.display_name.casefold(),
+            key.committee.key,
+            key.fingerprint,
+        )
+    )
+    committees: dict[str, list[interaction.AutomatedReleaseSigningKey]] = {}
+    for key in keys:
+        committees.setdefault(key.committee.key, []).append(key)
+    bodies = [_catalog_reproducible_committee_rows(group) for group in committees.values()]
+    if not bodies:
+        bodies.append(htpy.tbody[htpy.tr[htpy.td(colspan="3")["No reproducible build signing keys recorded."]]])
+    return htpy.div(".table-responsive")[
+        htpy.table(".table.align-middle")[
+            htpy.thead[
+                htpy.tr[
+                    htpy.th(scope="col")["Committee"],
+                    htpy.th(scope="col")["Signing key"],
+                    htpy.th(scope="col")["Primary key created (UTC)"],
+                ]
+            ],
+            bodies,
+        ]
+    ]
+
+
+def _catalog_reproducible_committee_rows(keys: list[interaction.AutomatedReleaseSigningKey]) -> htm.Element:
+    rows = []
+    for index, key in enumerate(keys):
+        cells = []
+        if index == 0:
+            cells.append(
+                htpy.th(scope="rowgroup", rowspan=str(len(keys)))[
+                    htpy.a(href=util.as_url(get.committees.view, name=key.committee.key))[key.committee.display_name]
+                ]
+            )
+        cells.extend(
+            [
+                htpy.td(".font-monospace.text-break")[
+                    htpy.a(
+                        href=util.as_url(get.keys.details, fingerprint=key.fingerprint),
+                        title=key.fingerprint.upper(),
+                    )[key.fingerprint[-16:].upper()]
+                ],
+                htpy.td(".text-nowrap")[
+                    htpy.time(datetime=key.created.isoformat(), title=key.created.isoformat())[
+                        key.created.astimezone(datetime.UTC).strftime("%Y-%m-%d")
+                    ]
+                    if key.created
+                    else "Not recorded"
+                ],
+            ]
+        )
+        rows.append(htpy.tr[cells])
+    return htpy.tbody[rows]
 
 
 async def _catalog_site_rebuild(session: web.Committer) -> web.WerkzeugResponse:

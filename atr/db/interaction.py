@@ -64,6 +64,12 @@ class ApacheUserMissingError(RuntimeError):
         self.primary_uid = primary_uid
 
 
+class AutomatedReleaseSigningKey(NamedTuple):
+    committee: sql.Committee
+    fingerprint: str
+    created: datetime.datetime | None
+
+
 class InteractionError(RuntimeError):
     pass
 
@@ -211,12 +217,37 @@ async def certificate_artifact_counts(data: db.Session, fingerprints: list[str])
 
 async def automated_release_signing_committees(caller_data: db.Session | None = None) -> frozenset[str]:
     """Get all automated release signing committees."""
-    committees = []
+    keys = await automated_release_signing_keys(caller_data)
+    committees = [key.committee.key for key in keys]
+
+    # Committees allowed to make automated releases for testing
+    committees.append("test")
+    committees.append("tooling")
+
+    return frozenset(committees)
+
+
+async def automated_release_signing_keys(caller_data: db.Session | None = None) -> list[AutomatedReleaseSigningKey]:
     async with db.ensure_session(caller_data) as data:
         via = sql.validate_instrumented_attribute
         query = (
-            sqlmodel.select(sql.SigningCertificate)
-            .options(orm.selectinload(via(sql.SigningCertificate.committees)))
+            sqlmodel.select(
+                sql.Committee,
+                sql.SigningCertificate.fingerprint,
+                sql.SigningCertificate.primary_declared_uid,
+                sql.SigningKey.created,
+            )
+            .options(orm.load_only(via(sql.Committee.key), via(sql.Committee.name), via(sql.Committee.is_podling)))
+            .select_from(sql.SigningCertificate)
+            .join(sql.KeyLink, via(sql.KeyLink.key_fingerprint) == via(sql.SigningCertificate.fingerprint))
+            .join(sql.Committee, via(sql.Committee.key) == via(sql.KeyLink.committee_key))
+            .outerjoin(
+                sql.SigningKey,
+                sqlalchemy.and_(
+                    via(sql.SigningKey.fingerprint) == via(sql.SigningCertificate.fingerprint),
+                    via(sql.SigningKey.is_primary).is_(True),
+                ),
+            )
             .where(
                 sqlalchemy.and_(
                     sqlalchemy.or_(
@@ -231,18 +262,11 @@ async def automated_release_signing_committees(caller_data: db.Session | None = 
             )
         )
         result = await data.execute(query)
-        keys = result.scalars().all()
-
-        for key in keys:
-            for committee in key.committees:
-                if util.is_automated_release_signing_uid(key.primary_declared_uid, committee.key):
-                    committees.append(committee.key)
-
-    # Committees allowed to make automated releases for testing
-    committees.append("test")
-    committees.append("tooling")
-
-    return frozenset(committees)
+        return [
+            AutomatedReleaseSigningKey(committee, fingerprint, created)
+            for committee, fingerprint, uid, created in result.all()
+            if util.is_automated_release_signing_uid(uid, committee.key)
+        ]
 
 
 async def ballot_receipt_message_ids(
