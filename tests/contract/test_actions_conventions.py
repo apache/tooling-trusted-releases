@@ -99,8 +99,8 @@ def test_pinned_upload_snippet_fresh():
     if _git(root, "rev-parse", "--is-shallow-repository").stdout.strip() == "true":
         pytest.skip("actions checkout is shallow")
     assert _git(root, "cat-file", "-e", f"{sha}^{{commit}}").returncode == 0, f"pinned SHA {sha} not in actions history"
-    diff = _git(root, "diff", "--quiet", sha, "HEAD", "--", "upload-to-atr/")
-    assert diff.returncode == 0, f"upload-to-atr/ changed since pinned SHA {sha}"
+    diff = _git(root, "diff", "--quiet", sha, "HEAD", "--", "upload-to-atr/", ":(exclude)upload-to-atr/README.md")
+    assert diff.returncode == 0, f"upload-to-atr/ implementation changed since pinned SHA {sha}"
 
 
 def test_run_name_is_atr_id():
