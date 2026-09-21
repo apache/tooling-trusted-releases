@@ -44,14 +44,16 @@ async def check(task_args: args.IntegrityCheckArgs) -> None:
     for path in report.fs_only:
         log.error(f"Integrity consistency error: directory missing from database: {path}")
     consistency_errors = len(report.db_only) + len(report.fs_only)
+    message = None
     if validation_errors or consistency_errors:
-        await _notify_admins(
+        message = (
             f"Integrity check found {validation_errors} validation errors and {consistency_errors} consistency errors."
             " See worker logs for details."
         )
+    await _notify_admins(message)
 
 
-async def _notify_admins(message: str) -> None:
+async def _notify_admins(message: str | None) -> None:
     for asf_uid in sorted(await cache.admins_get_async()):
         async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications_create(message, link="/admin/data?tab=validation", link_text="View checks")
+            await waus.notifications_replace(message, link="/admin/data?tab=validation", link_text="View checks")

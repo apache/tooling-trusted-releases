@@ -107,3 +107,67 @@ async def test_integrity_check(sqlite_sessionmaker, monkeypatch: pytest.MonkeyPa
             mock.call("Integrity consistency error: directory missing from database: orphan"),
         ]
     )
+
+
+async def test_integrity_notifications_follow_current_result(
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admins = frozenset({"alice", "bob"})
+    link = "/admin/data?tab=validation"
+    async with sqlite_sessionmaker() as data:
+        for asf_uid in admins:
+            for count in (2, 3):
+                await data.execute(
+                    sql.notification_insert(
+                        asf_uid, f"Integrity check found {count} validation errors", sql.NotificationLevel.ERROR, link
+                    )
+                )
+        await data.execute(sql.notification_insert("alice", "Unrelated alert", sql.NotificationLevel.ERROR))
+        await data.execute(sql.notification_insert("carol", "Other user's alert", sql.NotificationLevel.ERROR, link))
+        await data.commit()
+
+    divergence = validate.AnnotatedDivergence(
+        ["Project.name"], "project_name", "example", validate.Divergence("Apache Example", "Example")
+    )
+    divergences = mock.MagicMock()
+    monkeypatch.setattr(validate, "everything", mock.Mock(return_value=divergences))
+    consistency = mock.AsyncMock(return_value=validate.Consistency([], [], []))
+    monkeypatch.setattr(validate, "consistency", consistency)
+    monkeypatch.setattr(cache, "admins_get_async", mock.AsyncMock(return_value=admins))
+    monkeypatch.setattr(tasks, "schedule_next", mock.AsyncMock())
+    monkeypatch.setattr(log, "error", mock.Mock())
+    handler = tasks.resolve(sql.TaskType.INTEGRITY_CHECK)
+    previous_count = 0
+    previous = []
+
+    for count in (4, 6, 6, None, 0, 2, 0):
+        divergences.__aiter__.return_value = [divergence] * (count or 0)
+        consistency.side_effect = RuntimeError("scan failed") if count is None else None
+        if count is None:
+            with pytest.raises(RuntimeError, match="scan failed"):
+                await handler({"asf_uid": constants.SYSTEM_SERVICE_UID})
+        else:
+            await handler({"asf_uid": constants.SYSTEM_SERVICE_UID})
+
+        async with sqlite_sessionmaker() as data:
+            notifications = (await data.execute(sqlmodel.select(sql.Notification))).scalars().all()
+        current = [row for row in notifications if (row.asf_uid in admins) and (row.link == link)]
+        untouched = [row for row in notifications if row not in current]
+        assert {(row.asf_uid, row.message) for row in untouched} == {
+            ("alice", "Unrelated alert"),
+            ("carol", "Other user's alert"),
+        }
+        snapshot = sorted((row.asf_uid, row.id, row.created) for row in current)
+        if count == previous_count:
+            assert snapshot == previous
+        previous_count, previous = count, snapshot
+        if count == 0:
+            assert not current
+            continue
+        assert len(current) == 2
+        assert {row.asf_uid for row in current} == admins
+        expected = "Integrity check could not complete."
+        if count is not None:
+            expected = f"Integrity check found {count} validation errors and 0 consistency errors."
+        expected += " See worker logs for details."
+        assert all(row.message == expected for row in current)

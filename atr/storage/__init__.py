@@ -288,6 +288,7 @@ class WriteAsUserService(WriteAs):
             raise AccessError("User service writes require an ASF UID", status=500)
         self.__asf_uid = asf_uid
         self.notifications_create = writers.notifications.FoundationCommitter(write, self, data).create
+        self.notifications_replace = writers.notifications.FoundationCommitter(write, self, data).replace
 
     @property
     def asf_uid(self) -> str:

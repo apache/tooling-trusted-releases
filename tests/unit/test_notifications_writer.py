@@ -60,3 +60,19 @@ async def test_create_dedupes_and_audits_once(sqlite_sessionmaker) -> None:
         assert notification.id == first.id
         assert notification.message == "The SVN dist repository was not reachable"
         write_as.append_to_audit_log.assert_called_once_with(asf_uid="alice", notification_id=first.id, level="error")
+
+
+async def test_replace_dedupes_normalised_message(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        write_as = mock.MagicMock(asf_uid="alice")
+        writer = notifications.FoundationCommitter(mock.MagicMock(), write_as, data)
+        link = "/admin/data?tab=validation"
+
+        await writer.replace("Integrity  check failed", link)
+        await writer.replace("Integrity check failed", link)
+
+        notification = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
+        assert notification.message == "Integrity check failed"
+        write_as.append_to_audit_log.assert_called_once_with(
+            asf_uid="alice", link=link, removed=0, notification_id=notification.id
+        )
