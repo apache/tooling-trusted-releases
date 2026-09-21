@@ -20,7 +20,6 @@ from collections.abc import Sequence
 from typing import Literal
 
 import asfquart.base as base
-import markupsafe
 import quart
 
 import atr.blueprints.get as get
@@ -287,14 +286,6 @@ async def _render_page(
         )
         page.div(".mb-4")[activity_form]
 
-    # Custom styles
-    page_styles = """
-        .page-extra-muted {
-            color: #aaaaaa;
-        }
-    """
-    page.style[markupsafe.Markup(page_styles)]
-
     content = page.collect()
 
     return await template.blank(
@@ -376,7 +367,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 ],
             ],
             htm.div(
-                "#finish-publication-status.page-extra-muted.mt-2",
+                "#finish-publication-status.text-danger.mt-2",
                 role="status",
                 data_status_url=util.as_url(
                     downloads,
