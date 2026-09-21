@@ -250,6 +250,7 @@ async def test_heatmaps_are_claimed_exclusively_across_projects(database, clock,
 
 async def test_maintenance_runs_heatmap_sweep(monkeypatch) -> None:
     for name in (
+        "_downloads_monitor_maintenance",
         "_expired_pats_maintenance",
         "_session_data_maintenance",
         "_storage_maintenance",

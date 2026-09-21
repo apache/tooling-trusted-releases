@@ -19,7 +19,9 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.constants as constants
 import atr.ldap as ldap
+import atr.models.results as results
 import atr.models.sql as sql
 import atr.tasks.task as task
 import atr.worker as worker
@@ -90,6 +92,19 @@ async def test_task_process_fails_when_handler_ldap_unavailable(monkeypatch: pyt
 
     defer.assert_not_awaited()
     result_process.assert_awaited_once_with(1, None, task.FAILED, "down", error_data=None)
+
+
+async def test_task_process_forwards_deferred_checkpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    progress = results.DownloadsCheck(waiting_for="a.tar.gz", total=3)
+    handler = mock.AsyncMock(side_effect=task.DeferredError(seconds=30, result=progress))
+    monkeypatch.setattr("atr.tasks.resolve", lambda task_type: handler)
+    defer = mock.AsyncMock()
+    monkeypatch.setattr(worker, "_task_defer", defer)
+    result_process = mock.AsyncMock()
+    monkeypatch.setattr(worker, "_task_result_process", result_process)
+    await worker._task_process(1, sql.TaskType.DOWNLOADS_CHECK.value, {}, constants.SYSTEM_SERVICE_UID)
+    defer.assert_awaited_once_with(1, seconds=30, checkpoint=progress)
+    result_process.assert_not_awaited()
 
 
 async def test_task_process_marks_retryable_check_failures_broken(monkeypatch: pytest.MonkeyPatch) -> None:

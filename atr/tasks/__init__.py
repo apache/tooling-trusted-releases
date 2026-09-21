@@ -50,6 +50,7 @@ import atr.tasks.checks.signature as signature
 import atr.tasks.checks.targz as targz
 import atr.tasks.checks.zipformat as zipformat
 import atr.tasks.distribution as distribution
+import atr.tasks.downloads as downloads
 import atr.tasks.gha as gha
 import atr.tasks.heatmap as heatmap
 import atr.tasks.integrity as integrity
@@ -430,6 +431,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return distribution.status_check
         case sql.TaskType.DISTRIBUTION_WORKFLOW:
             return gha.trigger_workflow
+        case sql.TaskType.DOWNLOADS_CHECK:
+            return downloads.check
         case sql.TaskType.HAS_SBOM:
             return sbom_check.check
         case sql.TaskType.HASHING_CHECK:

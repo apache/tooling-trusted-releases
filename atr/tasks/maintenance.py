@@ -22,12 +22,14 @@ from typing import Final
 import sqlmodel
 
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.log as log
 import atr.models.args as args
 import atr.models.results as results
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
+import atr.tasks.downloads as downloads
 import atr.tasks.heatmap as heatmap
 import atr.tasks.inactivity as inactivity
 
@@ -55,6 +57,7 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         await _workflow_auth_maintenance()
         await _inactivity_maintenance()
         await heatmap.sweep()
+        await _downloads_monitor_maintenance()
 
         log.info(
             "Storage maintenance completed successfully",
@@ -67,6 +70,29 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         error_msg = f"Unexpected error during maintenance: {e!s}"
         log.exception("Maintenance failed with unexpected error")
         raise MaintenanceError(error_msg) from e
+
+
+async def _downloads_monitor_maintenance() -> None:
+    async with db.session() as data:
+        await data.begin_immediate()
+        for release in await data.release(phase=sql.ReleasePhase.RELEASE_PREVIEW).all():
+            if release.latest_revision_number is None:
+                continue
+            publication = await interaction.release_completed_svn_publish_task_for_revision(
+                release.safe_project_key,
+                release.safe_version_key,
+                release.safe_latest_revision_number,
+                caller_data=data,
+            )
+            if publication is None:
+                continue
+            monitor = await data.task(
+                task_type=sql.TaskType.DOWNLOADS_CHECK,
+                task_args=args.DownloadsCheck(publish_task_id=publication.id).model_dump(),
+            ).get()
+            if monitor is None:
+                downloads.queue(data, publication.id, publication.task_args)
+        await data.commit()
 
 
 async def _expired_pats_maintenance() -> None:

@@ -44,6 +44,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
+import atr.tasks.downloads as downloads
 import atr.tasks.heatmap as heatmap
 import atr.tasks.task as task
 import atr.util as util
@@ -246,9 +247,10 @@ def _task_completed_record(
     }
 
 
-async def _task_defer(task_id: int) -> None:
+async def _task_defer(task_id: int, *, seconds: int | None = None, checkpoint: results.Results | None = None) -> None:
     via = sql.validate_instrumented_attribute
-    scheduled = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=_DEFER_SECONDS)
+    delay = _DEFER_SECONDS if (seconds is None) else seconds
+    scheduled = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=delay)
     async with db.session() as data:
         async with data.begin():
             update_stmt = (
@@ -263,6 +265,8 @@ async def _task_defer(task_id: int) -> None:
                 .values(status=task.QUEUED, started=None, pid=None, pid_created=None, scheduled=scheduled)
                 .returning(via(sql.Task.id))
             )
+            if checkpoint is not None:
+                update_stmt = update_stmt.values(result=checkpoint)
             result = await data.execute(update_stmt)
             if result.first() is None:
                 log.warning(f"Task {task_id} was not deferred because it is no longer active")
@@ -392,9 +396,9 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         task_results = handler_result
         status = task.COMPLETED
         error = None
-    except task.DeferredError:
+    except task.DeferredError as exc:
         log.info(f"Task {task_id} ({task_type}) deferred, re-queued for a later attempt")
-        await _task_defer(task_id)
+        await _task_defer(task_id, seconds=exc.seconds, checkpoint=exc.result)
         return
     except task.CheckRetryableError as e:
         task_results = None
@@ -453,6 +457,8 @@ async def _task_result_process(
                 task_type = sql.TaskType(task_type)
             if task_type == sql.TaskType.SBOM_HEATMAP:
                 await heatmap.complete(data, task_id, task_args)
+            if (task_type == sql.TaskType.SVN_PUBLISH) and isinstance(task_results, results.SvnPublish):
+                downloads.queue(data, task_id, task_args)
             if task_type in task.RECURRING_TASK_TYPES:
                 # A successful recurring run leaves only a log line behind
                 task_obj = sql.Task(

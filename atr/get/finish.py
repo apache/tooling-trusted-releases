@@ -24,6 +24,7 @@ import markupsafe
 import quart
 
 import atr.blueprints.get as get
+import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -37,6 +38,7 @@ import atr.get.file as file
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -49,6 +51,29 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+
+@get.typed
+async def downloads(
+    session: web.Committer,
+    _finish: Literal["finish"],
+    _downloads: Literal["downloads"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+) -> web.QuartResponse:
+    await session.prevent_confusing_ui_display(project_key, flash_admin_warning=False)
+    release = await session.release(
+        project_key,
+        version_key,
+        phase=sql.ReleasePhase.RELEASE_PREVIEW,
+        latest_revision_number=revision_number,
+        with_distributions=True,
+        with_release_policy=True,
+        with_project_release_policy=True,
+    )
+    message = await _announce_disable_message(release)
+    return quart.jsonify(message=message, ready=not message)
 
 
 @get.typed
@@ -78,32 +103,37 @@ async def selected(
         await quart.flash("Preview revision directory not found.", "error")
         return await session.redirect(root.index)
 
-    announce_msg = ""
-    if release.project.release_policy and release.project.release_policy.file_tag_mappings:
-        missing = []
-        tags = release.project.release_policy.file_tag_mappings.keys()
-        distributions = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
-        for tag in tags:
-            if tag not in distributions:
-                missing.append(tag)
-        if missing:
-            announce_msg = f"This release cannot be announced until the following distributions have been recorded: {
-                ', '.join(missing)
-            }"
-
-    if (not announce_msg) and (release.latest_revision_number is not None):
-        completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
-            project_key, version_key, release.safe_latest_revision_number
-        )
-        if completed_publish is None:
-            announce_msg = "This release cannot be announced until it has been published to SVN."
-
     return await _render_page(
         session=session,
         release=release,
         distribution_tasks=tasks,
-        announce_disable_message=announce_msg,
+        announce_disable_message=await _announce_disable_message(release),
     )
+
+
+async def _announce_disable_message(release: sql.Release) -> str:
+    local = config.svn_publish_kind() is config.SvnPublishKind.LOCAL_REPOSITORY
+    publication = await interaction.release_completed_svn_publish_task_for_revision(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if publication is None:
+        if local:
+            return "Cannot announce until SVN publication is complete."
+        return "Cannot announce until SVN and download area publications are complete."
+    if not local:
+        async with db.session() as data:
+            monitor = await data.task(
+                task_type=sql.TaskType.DOWNLOADS_CHECK,
+                task_args=args.DownloadsCheck(publish_task_id=publication.id).model_dump(),
+            ).get()
+        if (
+            (monitor is None)
+            or (monitor.status is not sql.TaskStatus.COMPLETED)
+            or (not isinstance(monitor.result, results.DownloadsCheck))
+            or (not monitor.result.available)
+        ):
+            return "Cannot announce until download area publication is complete."
+    return announce._missing_distributions_message(release)
 
 
 async def _get_page_data(
@@ -271,6 +301,7 @@ async def _render_page(
         title=f"Finish {release.project.display_name} {release.version} ~ ATR",
         description=f"Finish {release.project.display_name} {release.version} as a release preview.",
         content=content,
+        javascripts=["finish-downloads"],
     )
 
 
@@ -296,6 +327,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
     announce_classes = ".btn-success"
     if announce_disable_message:
         announce_classes += ".disabled"
+    announce_url = util.as_url(announce.selected, project_key=release.project.key, version_key=release.version)
     card = htm.div(".card.mb-4.shadow-sm", id=release.key)[
         htm.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
             htm.h3(".card-title.mb-0")["About this release preview"],
@@ -332,20 +364,34 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     " Show files",
                 ],
                 htm.a(
-                    f".btn{announce_classes}.me-2",
+                    f"#finish-announce.btn{announce_classes}.me-2",
                     title=f"Announce {release.key}",
-                    href=util.as_url(
-                        announce.selected,
-                        project_key=release.project.key,
-                        version_key=release.version,
-                    )
-                    if (not announce_disable_message)
-                    else None,
+                    href=announce_url if (not announce_disable_message) else None,
+                    data_announce_url=announce_url,
+                    aria_disabled="true" if announce_disable_message else "false",
+                    tabindex=-1 if announce_disable_message else None,
                 )[
                     htm.icon("check-circle"),
                     " Announce",
                 ],
-                htm.span(".page-preview-meta-item.page-extra-muted")[f"{announce_disable_message}"],
+            ],
+            htm.div(
+                "#finish-publication-status.page-extra-muted.mt-2",
+                role="status",
+                data_status_url=util.as_url(
+                    downloads,
+                    project_key=release.project.key,
+                    version_key=release.version,
+                    revision_number=release.safe_latest_revision_number,
+                ),
+            )[
+                htm.p("#finish-publication-message.mb-0", hidden=not announce_disable_message)[
+                    announce_disable_message
+                ],
+                htm.p(".mb-0")["Local SVN repository in use. Download checking is disabled."]
+                if config.svn_publish_kind() is config.SvnPublishKind.LOCAL_REPOSITORY
+                else None,
+                htm.p("#finish-publication-refresh.mb-0", hidden=True)["Refreshing every 30s."],
             ],
         ],
     ]

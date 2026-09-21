@@ -68,6 +68,10 @@ class DistributionStatusCheckArgs(schema.Strict):
     asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
 
 
+class DownloadsCheck(schema.Strict):
+    publish_task_id: int
+
+
 class FileArgs(schema.Strict):
     """Arguments for SBOM file processing tasks."""
 

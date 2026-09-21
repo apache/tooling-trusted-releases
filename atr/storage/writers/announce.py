@@ -224,16 +224,17 @@ class ReleaseManager(CommitteeParticipant):
             raise storage.AccessError("The completed SVN publish has no recorded revision - Invalid state", status=500)
         try:
             kind = config.svn_publish_kind()
-            target = util.svn_publish_target()
-            public_url = util.publication_check_url(
-                committee, effective_download_path_suffix, util.DownloadFile.METADATA
+            public_url = util.download_url_for_path(
+                paths.committee_dist_relpath(committee, effective_download_path_suffix), util.DownloadFile.METADATA
             )
             internal_url = util.svn_publish_internal_url(committee, effective_download_path_suffix)
         except ValueError as exc:
             log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
         else:
             if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
-                await self.__check_publication_artifacts(unfinished_path, target, public_url, acknowledge_unreachable)
+                await self.__check_publication_artifacts(
+                    unfinished_path, util.SvnPublishTarget.RELEASE, public_url, acknowledge_unreachable
+                )
             else:
                 await self.__check_local_publication_artifacts(unfinished_path, internal_url, published_revision)
 

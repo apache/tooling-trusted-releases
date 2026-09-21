@@ -59,9 +59,7 @@ def announcing_writer(
     monkeypatch.setattr(announce.log, "audit_flush", lambda: calls.append("flush"))
     monkeypatch.setattr(announce.paths, "release_directory_base", lambda _release: unfinished)
     monkeypatch.setattr(announce.util, "permitted_announce_recipients", lambda *a, **k: ["announce@example.apache.org"])
-    monkeypatch.setattr(announce.util, "publication_check_url", lambda *a, **k: "https://example.invalid/")
     monkeypatch.setattr(announce.util, "svn_publish_internal_url", lambda *a, **k: "https://example.invalid/")
-    monkeypatch.setattr(announce.util, "svn_publish_target", lambda: None)
     data = mock.MagicMock()
     data.release.return_value.demand = mock.AsyncMock(return_value=release_row())
     # A released version queues a catalog-site regeneration, which first looks for an existing queued one.
@@ -98,7 +96,7 @@ def release_arguments() -> dict[str, Any]:
 def release_row() -> SimpleNamespace:
     project = SimpleNamespace(
         committee_key="alpha",
-        committee=SimpleNamespace(key="alpha"),
+        committee=sql.Committee(key="alpha"),
         is_active=True,
         key="example",
         policy_download_path_suffix="",
@@ -167,12 +165,22 @@ async def test_commit_failure_keeps_unfinished_files(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_finalise_queues_task_and_keeps_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("area", ["atr", "release"])
+async def test_finalise_queues_task_and_keeps_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, area: str
+) -> None:
     calls: list[str] = []
     release_manager = announcing_writer(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(announce.config.get(), "SVN_DIST_PUBLIC_URL", f"https://dist.apache.org/repos/dist/{area}")
 
     await release_manager.release(**release_arguments())
 
+    release_manager._ReleaseManager__check_publication_artifacts.assert_awaited_once_with(
+        tmp_path / "unfinished" / "example" / "2.0.0" / "00003",
+        announce.util.SvnPublishTarget.RELEASE,
+        "https://downloads.apache.org/alpha",
+        False,
+    )
     assert calls == ["flush", "finalise", "commit"]
     tasks = added_tasks(release_manager, sql.TaskType.RELEASE_FINALISE)
     assert len(tasks) == 1

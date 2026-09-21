@@ -87,6 +87,11 @@ class CheckRetryableError(Exception):
 class DeferredError(Exception):
     """Raised by a handler to send its own task back to the queue for a later attempt."""
 
+    def __init__(self, message: str = "", *, seconds: int | None = None, result: results.Results | None = None) -> None:
+        super().__init__(message)
+        self.seconds = seconds
+        self.result = result
+
 
 class Error(Exception):
     """Error during task execution."""

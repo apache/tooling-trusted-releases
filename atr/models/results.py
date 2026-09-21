@@ -47,6 +47,15 @@ class DistributionWorkflowStatus(schema.Strict):
     kind: Literal["distribution_workflow_status"] = schema.Field(alias="kind")
 
 
+class DownloadsCheck(schema.Strict):
+    kind: Literal["downloads_check"] = "downloads_check"
+    cursor: int = 0
+    waiting_for: str | None = None
+    total: int = 0
+    available: bool = False
+    message: str = "Waiting for downloads to become available."
+
+
 class HashingCheck(schema.Strict):
     """Result of the task to check the hash of a file."""
 
@@ -367,6 +376,7 @@ Results = Annotated[
     | DistributionStatusCheck
     | DistributionWorkflow
     | DistributionWorkflowStatus
+    | DownloadsCheck
     | HashingCheck
     | Maintenance
     | MessageSend

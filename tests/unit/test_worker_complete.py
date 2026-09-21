@@ -26,8 +26,12 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
+import atr.config as config
+import atr.constants as constants
 import atr.db as db
+import atr.models.results as results
 import atr.models.sql as sql
+import atr.tasks.maintenance as maintenance
 import atr.tasks.task as task
 import atr.worker as worker
 
@@ -96,6 +100,112 @@ async def test_completion_is_fenced_and_stores_a_null_result(sqlite_sessionmaker
         await data.refresh(task_row)
         assert task_row.status == sql.TaskStatus.COMPLETED
         assert task_row.completed is not None
+
+
+@pytest.mark.parametrize("kind", list(config.SvnPublishKind))
+async def test_completion_queues_one_download_monitor(sqlite_sessionmaker, monkeypatch, kind) -> None:
+    monkeypatch.setattr(config, "svn_publish_kind", lambda: kind)
+    async with sqlite_sessionmaker() as data:
+        parent = _active_task(pid=os.getpid(), task_type=sql.TaskType.SVN_PUBLISH)
+        parent.task_args = {
+            "asf_uid": "alice",
+            "project_key": "example",
+            "version_key": "1.0",
+            "revision_number": "00001",
+            "download_path_suffix": "saved-path",
+        }
+        data.add(parent)
+        await data.commit()
+        result = results.SvnPublish(kind="svn_publish", svn_revision=42, message="Published")
+        await worker._task_result_process(parent.id, result, task.COMPLETED)
+        await worker._task_result_process(parent.id, result, task.COMPLETED)
+        monitors = await data.task(task_type=sql.TaskType.DOWNLOADS_CHECK).all()
+        if kind is config.SvnPublishKind.LOCAL_REPOSITORY:
+            assert not monitors
+            return
+        assert len(monitors) == 1
+        monitor = monitors[0]
+        assert (
+            await data.task(task_type=sql.TaskType.DOWNLOADS_CHECK, task_args={"publish_task_id": parent.id}).get()
+            is monitor
+        )
+        assert monitor.task_args == {"publish_task_id": parent.id}
+        assert monitor.asf_uid == constants.SYSTEM_SERVICE_UID
+        assert (monitor.project_key, monitor.version_key, monitor.revision_number) == ("example", "1.0", "00001")
+
+
+async def test_deferral_saves_progress_and_preserves_it_with_default_delay(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        row = _active_task(pid=os.getpid(), task_type=sql.TaskType.DOWNLOADS_CHECK)
+        data.add(row)
+        await data.commit()
+        checkpoint = results.DownloadsCheck(waiting_for="b.tar.gz", total=3)
+        before = datetime.datetime.now(datetime.UTC)
+        await worker._task_defer(row.id, seconds=30, checkpoint=checkpoint)
+        await data.refresh(row)
+        assert row.status is sql.TaskStatus.QUEUED
+        assert row.result == checkpoint
+        assert row.started is row.pid is row.pid_created is None
+        assert 30 <= (row.scheduled - before).total_seconds() < 35
+        scheduled = row.scheduled
+        await worker._task_defer(row.id, seconds=0, checkpoint=results.DownloadsCheck())
+        await data.refresh(row)
+        assert (row.result, row.scheduled) == (checkpoint, scheduled)
+        row.status, row.started, row.pid = sql.TaskStatus.ACTIVE, datetime.datetime.now(datetime.UTC), os.getpid()
+        await data.commit()
+        before = datetime.datetime.now(datetime.UTC)
+        await worker._task_defer(row.id)
+        await data.refresh(row)
+        assert row.result == checkpoint
+    assert 120 <= (row.scheduled - before).total_seconds() < 125
+
+
+async def test_maintenance_backfills_only_current_publications_once(sqlite_sessionmaker, monkeypatch) -> None:
+    monkeypatch.setattr(config, "svn_publish_kind", lambda: config.SvnPublishKind.ASF_DISTRIBUTION)
+    async with sqlite_sessionmaker() as data:
+        data.add(sql.Project(key="example"))
+        for version, revisions in [("0.5", 0), ("1.0", 1), ("2.0", 2)]:
+            data.add(
+                sql.Release(
+                    key=f"example-{version}",
+                    project_key="example",
+                    version=version,
+                    created=datetime.datetime.now(datetime.UTC),
+                    phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                )
+            )
+            for _ in range(revisions):
+                data.add(
+                    sql.Revision(
+                        release_key=f"example-{version}",
+                        asfuid="alice",
+                        phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                    )
+                )
+            data.add(
+                sql.Task(
+                    task_type=sql.TaskType.SVN_PUBLISH,
+                    status=sql.TaskStatus.COMPLETED,
+                    started=datetime.datetime.now(datetime.UTC),
+                    completed=datetime.datetime.now(datetime.UTC),
+                    pid=os.getpid(),
+                    project_key="example",
+                    version_key=version,
+                    revision_number="00001",
+                    asf_uid="alice",
+                    task_args=dict(
+                        asf_uid="alice", project_key="example", version_key=version, revision_number="00001"
+                    ),
+                    result=results.SvnPublish(kind="svn_publish", svn_revision=42, message="Published"),
+                )
+            )
+        await data.commit()
+    await maintenance._downloads_monitor_maintenance()
+    await maintenance._downloads_monitor_maintenance()
+    async with sqlite_sessionmaker() as data:
+        monitors = await data.task(task_type=sql.TaskType.DOWNLOADS_CHECK).all()
+        assert len(monitors) == 1
+        assert (monitors[0].version_key, monitors[0].status) == ("1.0", sql.TaskStatus.QUEUED)
 
 
 async def test_task_claim_records_the_process_creation_time(sqlite_sessionmaker) -> None:

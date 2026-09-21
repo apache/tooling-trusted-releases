@@ -15,17 +15,98 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import inspect
 import types
 import unittest.mock as mock
 
 import pytest
+import quart
 
+import atr.config as config
 import atr.db as db
 import atr.get.distribution as distribution
 import atr.get.finish as finish
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.util as util
+
+
+@pytest.mark.parametrize(
+    ("local", "published", "status", "available", "missing", "message"),
+    [
+        (False, False, None, False, False, "Cannot announce until SVN and download area publications are complete."),
+        (True, False, None, False, False, "Cannot announce until SVN publication is complete."),
+        (True, True, None, False, False, ""),
+        (False, True, sql.TaskStatus.COMPLETED, True, False, ""),
+        *[
+            (False, True, status, available, False, "Cannot announce until download area publication is complete.")
+            for status, available in [
+                (None, False),
+                (sql.TaskStatus.QUEUED, False),
+                (sql.TaskStatus.ACTIVE, True),
+                (sql.TaskStatus.FAILED, True),
+                (sql.TaskStatus.BROKEN, False),
+                (sql.TaskStatus.COMPLETED, False),
+            ]
+        ],
+        *[
+            (
+                local,
+                True,
+                sql.TaskStatus.COMPLETED,
+                True,
+                True,
+                "This release cannot be announced until the following distributions have been recorded: maven",
+            )
+            for local in [False, True]
+        ],
+    ],
+)
+async def test_announce_gate_reads_publication_status(
+    monkeypatch, local, published, status, available, missing, message
+) -> None:
+    kind = config.SvnPublishKind.LOCAL_REPOSITORY if local else config.SvnPublishKind.ASF_DISTRIBUTION
+    monkeypatch.setattr(config, "svn_publish_kind", lambda: kind)
+    project, version, revision = safe.ProjectKey("example"), safe.VersionKey("1.0"), safe.RevisionNumber("00001")
+    release = types.SimpleNamespace(
+        safe_project_key=project,
+        safe_version_key=version,
+        safe_latest_revision_number=revision,
+        release_policy=sql.ReleasePolicy(file_tag_mappings={"maven": True}) if missing else None,
+        project=sql.Project(key="example"),
+        distributions=[],
+    )
+    session = mock.Mock(prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release))
+    publication = mock.AsyncMock(return_value=types.SimpleNamespace(id=42) if published else None)
+    monkeypatch.setattr(finish.interaction, "release_completed_svn_publish_task_for_revision", publication)
+    monitor = types.SimpleNamespace(status=status, result=results.DownloadsCheck(available=available))
+    data = mock.MagicMock()
+    data.__aenter__.return_value = data
+    data.task.return_value.get = mock.AsyncMock(return_value=monitor if status else None)
+    monkeypatch.setattr(db, "session", lambda: data)
+    probe = mock.AsyncMock()
+    monkeypatch.setattr(util, "check_propagation", probe)
+    async with quart.Quart(__name__).app_context():
+        response = await inspect.getclosurevars(inspect.unwrap(finish.downloads)).nonlocals["func"](
+            session, "finish", "downloads", project, version, revision
+        )
+        assert await response.get_json() == {"message": message, "ready": not message}
+    session.release.assert_awaited_once_with(
+        project,
+        version,
+        phase=sql.ReleasePhase.RELEASE_PREVIEW,
+        latest_revision_number=revision,
+        with_distributions=True,
+        with_release_policy=True,
+        with_project_release_policy=True,
+    )
+    publication.assert_awaited_once_with(project, version, revision)
+    if published and (not local):
+        data.task.assert_called_once_with(task_type=sql.TaskType.DOWNLOADS_CHECK, task_args={"publish_task_id": 42})
+    else:
+        data.task.assert_not_called()
+    probe.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
