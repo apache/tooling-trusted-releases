@@ -33,6 +33,11 @@ function initFinishDownloads() {
 			});
 			if (response.ok) {
 				const data = await response.json();
+				const publishing = document.getElementById("finish-svn-publishing");
+				if (publishing && data.svn_html) {
+					document.getElementById("finish-svn-publish").innerHTML =
+						data.svn_html;
+				}
 				message.textContent = data.message;
 				message.hidden = !data.message;
 				button.classList.toggle("disabled", !data.ready);

@@ -72,7 +72,14 @@ async def downloads(
         with_project_release_policy=True,
     )
     message = await _announce_disable_message(release)
-    return quart.jsonify(message=message, ready=not message)
+    svn_html = None
+    if user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
+        release.committee, session.uid
+    ):
+        svn = htm.Block()
+        await _render_svn_publish(svn, release)
+        svn_html = str(svn.collect())
+    return quart.jsonify(message=message, ready=not message, svn_html=svn_html)
 
 
 @get.typed
@@ -250,7 +257,8 @@ async def _render_page(
     if user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
         release.committee, session.uid
     ):
-        await _render_svn_publish(page, release)
+        with page.block(htm.div("#finish-svn-publish")) as svn:
+            await _render_svn_publish(svn, release)
 
     page.h2["Distribute on third party platforms"]
     if release.is_embargoed:
@@ -400,7 +408,7 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
         return
     in_flight = await interaction.release_in_flight_svn_publish_task(proj, ver, rev)
     if in_flight is not None:
-        page.div(".alert.alert-info.mb-4")[
+        page.div("#finish-svn-publishing.alert.alert-info.mb-4")[
             htm.p["The release files are being published to SVN dist."],
             htm.a(
                 ".btn.btn-primary",
@@ -423,6 +431,7 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
     await form.render_block(
         page,
         shared.finish.PublishToSvnForm,
+        action=util.as_url(post.finish.selected, project_key=release.project.key, version_key=release.version),
         defaults={
             "download_path_suffix": _svn_download_path_default(release),
             "revision_number": release.latest_revision_number,

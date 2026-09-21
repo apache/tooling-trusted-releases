@@ -75,6 +75,7 @@ async def test_announce_gate_reads_publication_status(
         safe_latest_revision_number=revision,
         release_policy=sql.ReleasePolicy(file_tag_mappings={"maven": True}) if missing else None,
         project=sql.Project(key="example"),
+        committee=None,
         distributions=[],
     )
     session = mock.Mock(prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release))
@@ -91,7 +92,7 @@ async def test_announce_gate_reads_publication_status(
         response = await inspect.getclosurevars(inspect.unwrap(finish.downloads)).nonlocals["func"](
             session, "finish", "downloads", project, version, revision
         )
-        assert await response.get_json() == {"message": message, "ready": not message}
+        assert await response.get_json() == {"message": message, "ready": not message, "svn_html": None}
     session.release.assert_awaited_once_with(
         project,
         version,
@@ -142,6 +143,58 @@ async def test_distribution_tasks_match_phase_on_retained_revision(
 
     assert [task.task_args["phase"] for task in selected] == [expected_phase]
     assert data.task.call_args.kwargs["revision_number"] == "00002"
+
+
+@pytest.mark.parametrize("uid", ["member", "manager", "committer"])
+async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkeypatch, uid) -> None:
+    committee = sql.Committee(
+        key="example", committee_members=["member"], committers=["manager", "committer"], release_managers=["manager"]
+    )
+    project, version, revision = safe.ProjectKey("example"), safe.VersionKey("1.0"), safe.RevisionNumber("00001")
+    release = types.SimpleNamespace(
+        safe_project_key=project,
+        safe_version_key=version,
+        safe_latest_revision_number=revision,
+        latest_revision_number="00001",
+        committee=committee,
+        project=sql.Project(key="example", committee_key="example"),
+        version="1.0",
+        download_path_suffix="example/1.0",
+        is_embargoed=False,
+    )
+    session = mock.Mock(
+        uid=uid, prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release)
+    )
+    monkeypatch.setattr(finish, "_announce_disable_message", mock.AsyncMock(return_value="Waiting"))
+    monkeypatch.setattr(
+        finish.interaction, "release_completed_svn_publish_task_for_revision", mock.AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(finish.interaction, "release_in_flight_svn_publish_task", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        finish.interaction,
+        "release_latest_failed_svn_publish_task",
+        mock.AsyncMock(return_value=types.SimpleNamespace(error="<failed>")),
+    )
+    monkeypatch.setattr(finish.form, "_get_flash_error_data", mock.AsyncMock(return_value={}))
+    monkeypatch.setattr(finish.form.utils, "generate_csrf", lambda: "test")
+    url = mock.Mock(return_value="/finish/example/1.0")
+    monkeypatch.setattr(util, "as_url", url)
+    monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
+    async with quart.Quart(__name__).test_request_context("/finish/downloads/example/1.0/00001"):
+        response = await inspect.getclosurevars(inspect.unwrap(finish.downloads)).nonlocals["func"](
+            session, "finish", "downloads", project, version, revision
+        )
+        html = (await response.get_json())["svn_html"]
+    if uid == "committer":
+        assert html is None
+        url.assert_not_called()
+        return
+    assert "Publish to ASF Distribution Area" in html
+    assert "&lt;failed&gt;" in html
+    assert 'action="/finish/example/1.0"' in html
+    assert 'name="download_path_suffix"' in html
+    assert "finish-svn-publishing" not in html
+    url.assert_called_once_with(finish.post.finish.selected, project_key="example", version_key="1.0")
 
 
 def test_render_publish_step_omits_promotion_for_release_target(monkeypatch: pytest.MonkeyPatch) -> None:

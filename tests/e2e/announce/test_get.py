@@ -19,6 +19,7 @@ import pathlib
 import re
 
 import e2e.announce.helpers as helpers  # type: ignore[reportMissingImports]
+import pytest
 from playwright.sync_api import Page, expect
 
 
@@ -28,9 +29,21 @@ def test_body_contains_publication_download_url(page_announce: Page) -> None:
     expect(body).to_have_value(re.compile(f"^{re.escape(url)}$", re.MULTILINE))
 
 
-def test_finish_announce_enables_after_publication_and_stops_refreshing(page: Page) -> None:
+@pytest.mark.parametrize("published", [True, False])
+def test_finish_refreshes_svn_and_announcement_status(page: Page, published: bool) -> None:
     pending = "Cannot announce until download area publication is complete."
-    responses = iter([{"message": pending, "ready": False}, {"message": "", "ready": True}])
+    final_message = "" if published else "Cannot announce until SVN and download area publications are complete."
+    svn_html = (
+        "<p>Published to SVN dist as r123</p>"
+        if published
+        else '<p>Publication failed</p><form><input name="download_path_suffix" value="original"></form>'
+    )
+    responses = iter(
+        [
+            {"message": pending, "ready": False, "svn_html": svn_html},
+            {"message": final_message, "ready": published, "svn_html": "Must not replace this section"},
+        ]
+    )
     requests = []
     page.on("request", lambda request: requests.append(request.url))
     page.route("https://atr.test/downloads", lambda route: route.fulfill(json=next(responses)))
@@ -42,6 +55,7 @@ def test_finish_announce_enables_after_publication_and_stops_refreshing(page: Pa
         '<div id="finish-publication-status" data-status-url="/downloads">'
         '<p id="finish-publication-message">Cannot announce until SVN and download area publications are complete.</p>'
         '<p id="finish-publication-refresh" hidden>Refreshing every 30s.</p></div>'
+        '<div id="finish-svn-publish"><div id="finish-svn-publishing">Being published</div></div>'
     )
     page.clock.install()
     page.add_script_tag(path=pathlib.Path(__file__).parents[3] / "atr/static/js/src/finish-downloads.js")
@@ -53,7 +67,20 @@ def test_finish_announce_enables_after_publication_and_stops_refreshing(page: Pa
     page.clock.run_for(30000)
     expect(page.locator("#finish-publication-message")).to_have_text(pending)
     expect(button).to_have_attribute("aria-disabled", "true")
+    svn = page.locator("#finish-svn-publish")
+    expect(page.locator("#finish-svn-publishing")).to_have_count(0)
+    expect(svn).to_have_text("Published to SVN dist as r123" if published else "Publication failed")
+    if not published:
+        svn.locator("input").fill("edited")
     page.clock.run_for(30000)
+    expect(page.locator("#finish-publication-message")).to_have_text(final_message)
+    expect(svn).not_to_contain_text("Must not replace this section")
+    if not published:
+        expect(svn.locator("input")).to_have_value("edited")
+        expect(button).to_have_attribute("aria-disabled", "true")
+        expect(page.locator("#finish-publication-refresh")).to_be_visible()
+        assert requests.count("https://atr.test/downloads") == 2
+        return
     expect(button).to_have_attribute("href", "/announce/example/1.0")
     expect(button).to_have_attribute("aria-disabled", "false")
     expect(button).not_to_have_class("disabled")
