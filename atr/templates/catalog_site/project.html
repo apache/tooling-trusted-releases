@@ -6,7 +6,7 @@
   {%- if summary.release_count -%}
     {{ summary.release_count }} release{{ "s" if summary.release_count != 1 else "" }}{% if summary.latest_date %} · latest {{ summary.latest_date.strftime("%Y-%m-%d") }}{% endif %}
   {%- elif summary.has_archived -%}
-    All releases are archived
+    Last release{% if summary.last_archived_date %}: {{ summary.last_archived_date.strftime("%Y-%m-%d") }}{% endif %}
   {%- else -%}
     No releases
   {%- endif -%}

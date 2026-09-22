@@ -182,6 +182,8 @@ class _SubprojectSummary:
     release_count: int
     latest_date: datetime.datetime | None
     has_archived: bool
+    # The most recent archived release's date, for a subproject with nothing current left
+    last_archived_date: datetime.datetime | None
 
 
 @dataclasses.dataclass
@@ -675,19 +677,25 @@ async def _subproject_summaries(data: db.Session, subprojects: Sequence[sql.Proj
 
 
 async def _subproject_summary(data: db.Session, project: sql.Project) -> _SubprojectSummary:
-    releases = await data.release(project_key=project.key, phase=sql.ReleasePhase.RELEASE).all()
-    release_count = 0
-    latest_date: datetime.datetime | None = None
-    has_archived = False
-    for release in releases:
-        if release.is_archived:
-            has_archived = True
-            continue
-        release_count += 1
-        released = release.released or release.created
-        if (latest_date is None) or (released > latest_date):
-            latest_date = released
-    return _SubprojectSummary(release_count=release_count, latest_date=latest_date, has_archived=has_archived)
+    # Count from the same assembled view the subproject's own page uses, so the parent
+    # summary and that page can't disagree over what counts as a release. A version whose
+    # release sits in a stale draft phase still counts, the way it does on that page.
+    now = datetime.datetime.now(datetime.UTC)
+    artifacts = await data.artifact(project_key=project.key, _release=True).all()
+    project_cycles = await data.project_cycle(project_key=project.key).all()
+    assembled = catalog.assemble(project.version_method, artifacts, project_cycles, now)
+    current = [version for version in assembled.versions if version.status == "released"]
+    archived = [version for version in assembled.versions if version.status == "archived"]
+    return _SubprojectSummary(
+        release_count=len(current),
+        latest_date=_latest_release_date(current),
+        has_archived=bool(archived),
+        last_archived_date=_latest_release_date(archived),
+    )
+
+
+def _latest_release_date(versions: Sequence[api.CatalogVersion]) -> datetime.datetime | None:
+    return max((version.released for version in versions if version.released is not None), default=None)
 
 
 def _unique(pairs: list[tuple[str, str]]) -> Iterator[tuple[str, str]]:
