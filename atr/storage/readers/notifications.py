@@ -35,17 +35,18 @@ class FoundationCommitter:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def pending(self, limit: int = 50) -> list[sql.Notification]:
+    async def pending(self, limit: int = 50, *, include_admin: bool = True) -> list[sql.Notification]:
         if self.__asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
-        return await self.__list_for_uid(limit)
+        return await self.__list_for_uid(limit, include_admin)
 
-    async def __list_for_uid(self, limit: int) -> list[sql.Notification]:
+    async def __list_for_uid(self, limit: int, include_admin: bool) -> list[sql.Notification]:
         via = sql.validate_instrumented_attribute
         stmt = (
             sqlmodel.select(sql.Notification)
             .where(sql.Notification.asf_uid == self.__asf_uid)
             .order_by(via(sql.Notification.created), via(sql.Notification.id))
-            .limit(limit)
         )
-        return await self.__data.query_all(stmt)
+        if not include_admin:
+            stmt = stmt.where(via(sql.Notification.is_admin).is_(False))
+        return await self.__data.query_all(stmt.limit(limit))
