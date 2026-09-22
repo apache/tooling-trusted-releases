@@ -114,9 +114,9 @@ def _render_page(
         page.p(".text-muted")["This revision contains no files."]
         return page.collect()
     page.p[
-        "Each content digest includes its hash algorithm, such as ",
-        htm.code["blake3:"],
-        ". Select a digest to copy it for comparison with a downloaded file.",
+        "SHA3-256 identifies the downloaded file. Select a digest to copy it for comparison. ",
+        "An archive's SWHID identifies its extracted inner directory. ",
+        "Values absent from this revision's record are shown as Not recorded.",
     ]
     missing_sizes = sum(content_hash not in recorded.hashes for content_hash in path_hashes.values())
     if missing_sizes:
@@ -146,14 +146,19 @@ def _render_table(page: htm.Block, entries: list[tuple[str, str]], recorded: mod
                 htm.tr[
                     htm.th(scope="col")["Path"],
                     htm.th(".text-end", scope="col")["Size (bytes)"],
-                    htm.th(scope="col")["Content digest"],
+                    htm.th(scope="col")["SHA3-256"],
+                    htm.th(scope="col")["Inner-directory SWHID"],
                 ]
             ]
             with table.block(htm.tbody) as body:
                 for path, content_hash in entries:
                     entry = recorded.hashes.get(content_hash)
+                    sha3_256 = attestable.path_sha3_256(recorded, path)
+                    digest = f"sha3-256:{sha3_256}" if (sha3_256 is not None) else "Not recorded"
+                    swhid = attestable.path_swhid_dir(recorded, path)
                     body.tr[
                         htm.td[htm.code(".atr-word-wrap")[path]],
                         htm.td(".text-end.text-nowrap")[str(entry.size) if (entry is not None) else "Unknown"],
-                        htm.td[htm.code(".atr-word-wrap.user-select-all")[content_hash]],
+                        htm.td[htm.code(".atr-word-wrap.user-select-all")[digest]],
+                        htm.td[htm.code(".atr-word-wrap.user-select-all")[swhid or "Not recorded"]],
                     ]

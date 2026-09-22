@@ -15,12 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import hashlib
 import json
 import pathlib
 
 import pytest
 
 import atr.attestable as attestable
+import atr.hashes as hashes
 import atr.models.attestable as models
 import atr.models.safe as safe
 
@@ -82,6 +84,41 @@ def test_attestable_v2_round_trip_with_provenance():
     assert entry.provenance.generator == models.GeneratorV2.SHA512_FROM_SIGNATURE
     assert entry.provenance.metadata["signature_path"] == "a.tar.gz.asc"
     assert loaded.paths["a.tar.gz"].provenance is None
+
+
+@pytest.mark.parametrize("version", [1, 2])
+async def test_compute_sha3_hashes_records_content_metadata(tmp_path, version):
+    (tmp_path / "a.txt").write_bytes(b"new content")
+    (tmp_path / "b.txt").write_bytes(b"new content")
+    content_hash = await hashes.compute_file_hash(tmp_path / "a.txt")
+    previous = (
+        models.AttestableV1(hashes={content_hash: models.HashEntryV1(size=11, uploaders=[])})
+        if version == 1
+        else models.AttestableV2(hashes={content_hash: models.HashEntryV2(size=11, uploaders=[])})
+    )
+    path_to_hash = {safe.RelPath("b.txt"): content_hash, safe.RelPath("a.txt"): content_hash}
+    computed = await attestable.compute_sha3_hashes(path_to_hash, previous, safe.StatePath(tmp_path))
+
+    assert computed == {content_hash: hashlib.sha3_256(b"new content").hexdigest()}
+    assert (
+        await attestable.compute_sha3_hashes(path_to_hash, None, safe.StatePath(tmp_path / "absent"), computed)
+        == computed
+    )
+    recorded = await attestable._generate_files_data(
+        path_to_hash,
+        dict.fromkeys(path_to_hash, 11),
+        safe.RevisionNumber("00002"),
+        None,
+        "alice",
+        previous,
+        safe.StatePath(tmp_path),
+        classifications=dict.fromkeys(path_to_hash, "docs"),
+        sha3_hashes=computed,
+    )
+    loaded = attestable._parse_attestable(recorded.model_dump_json())
+    assert attestable.path_sha3_256(loaded, "a.txt") == computed[content_hash]
+    assert attestable.path_sha3_256(loaded, "missing.txt") is None
+    assert attestable.path_sha3_256(previous, "a.txt") is None
 
 
 def test_effective_path_provenance_caller_wins():

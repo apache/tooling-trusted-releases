@@ -87,7 +87,7 @@ async def file_sha3(path: str) -> str:
     """Compute SHA3-256 hash of a file."""
     sha3 = hashlib.sha3_256()
     async with aiofiles.open(path, "rb") as f:
-        while chunk := await f.read(4096):
+        while chunk := await f.read(_HASH_CHUNK_SIZE):
             sha3.update(chunk)
     return sha3.hexdigest()
 

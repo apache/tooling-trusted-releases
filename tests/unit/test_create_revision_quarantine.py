@@ -133,6 +133,7 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",
@@ -190,6 +191,7 @@ async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",
@@ -269,6 +271,7 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",
@@ -349,6 +352,7 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",
@@ -438,6 +442,7 @@ async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",

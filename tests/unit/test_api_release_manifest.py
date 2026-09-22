@@ -105,10 +105,11 @@ async def test_exact_revision_with_no_rows_or_candidate_files(app, tmp_path):
     assert not (tmp_path / "unfinished").exists()
 
 
-@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize(("version", "digests"), [(1, False), (2, False), (2, True)])
 @pytest.mark.parametrize("phase", list(sql.ReleasePhase))
-async def test_manifest_projects_only_public_file_identity(app, tmp_path, version, phase):
-    _write_manifest(tmp_path, version=version)
+async def test_manifest_projects_only_public_file_identity(app, tmp_path, version, digests, phase):
+    _write_manifest(tmp_path, version=version, digests=digests)
+    recorded = (tmp_path / "example" / "1.0" / "00001.json").read_bytes()
     async with db.session() as data:
         release = await data.release(project_key="example", version="1.0").demand(RuntimeError("missing release"))
         release.phase = phase
@@ -123,11 +124,16 @@ async def test_manifest_projects_only_public_file_identity(app, tmp_path, versio
         "version": "1.0",
         "revision": "00001",
         "files": [
-            {"path": "bundle.zip", "size": 102, "digest": "blake3:" + "2" * 64},
-            {"path": "bundle.zip.asc", "size": 101, "digest": "blake3:" + "1" * 64},
-            {"path": "bundle.zip.sha512", "size": 100, "digest": "blake3:" + "0" * 64},
+            {
+                "path": path,
+                "size": 100 + index,
+                "digest": "sha3-256:" + str(index) * 64 if digests else None,
+                "swhid_dir_inner": "swh:1:dir:" + "d" * 40 if digests and (path == "bundle.zip") else None,
+            }
+            for index, path in reversed(list(enumerate(("bundle.zip.sha512", "bundle.zip.asc", "bundle.zip"))))
         ],
     }
+    assert (tmp_path / "example" / "1.0" / "00001.json").read_bytes() == recorded
 
 
 @pytest.mark.parametrize("payload", [None, "{bad", '{"version": 2, "paths": []}', "[]"])
@@ -154,7 +160,9 @@ async def test_no_pagination_or_truncation(app, tmp_path, query):
     response = await app.test_client().get(f"/api/release/manifest/example/1.0/00001{query}")
     assert response.status_code == 200
     body = await response.get_json()
-    assert body["files"] == [{"path": f"file-{index:04}.txt", "size": 7, "digest": digest} for index in range(1251)]
+    assert body["files"] == [
+        {"path": f"file-{index:04}.txt", "size": 7, "digest": None, "swhid_dir_inner": None} for index in range(1251)
+    ]
 
 
 async def test_openapi_declares_required_revision_and_response(app):
@@ -173,7 +181,9 @@ async def test_openapi_declares_required_revision_and_response(app):
     components = document["components"]["schemas"]
     assert set(schema["properties"]) == {"endpoint", "project", "version", "revision", "files"}
     assert schema["properties"]["files"]["items"]["$ref"].endswith("/ReleaseManifestFile")
-    assert set(components["ReleaseManifestFile"]["properties"]) == {"path", "size", "digest"}
+    properties = components["ReleaseManifestFile"]["properties"]
+    assert set(properties) == {"path", "size", "digest", "swhid_dir_inner"}
+    assert {entry["type"] for entry in properties["digest"]["anyOf"]} == {"string", "null"}
 
 
 async def test_unknown_release_does_not_load_manifest(app, monkeypatch):
@@ -191,10 +201,12 @@ async def test_unknown_size_and_unusual_paths_preserve_values(app, tmp_path):
     _write_manifest(tmp_path, payload={"version": 1, "paths": {path: digest}, "hashes": {}})
     response = await app.test_client().get("/api/release/manifest/example/1.0/00001")
     assert response.status_code == 200
-    assert (await response.get_json())["files"] == [{"path": path, "size": None, "digest": digest}]
+    assert (await response.get_json())["files"] == [
+        {"path": path, "size": None, "digest": None, "swhid_dir_inner": None}
+    ]
 
 
-def _write_manifest(tmp_path, *, version=2, revision="00001", payload=None):
+def _write_manifest(tmp_path, *, version=2, revision="00001", payload=None, digests=False):
     if payload is None:
         path_hashes = {
             name: "blake3:" + str(index) * 64
@@ -219,6 +231,11 @@ def _write_manifest(tmp_path, *, version=2, revision="00001", payload=None):
             "policy": {"private-policy": True},
         }
         payload["hashes"]["blake3:" + "a" * 64] = {"size": 1, "uploaders": [], "basenames": ["obsolete.zip"]}
+        if digests:
+            for index, (path, content_hash) in enumerate(path_hashes.items()):
+                payload["hashes"][content_hash]["sha3_256"] = str(index) * 64
+                if path == "bundle.zip":
+                    payload["hashes"][content_hash]["swhid_dir_inner"] = "swh:1:dir:" + "d" * 40
     directory = tmp_path / "example" / "1.0"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{revision}.json").write_text(json.dumps(payload))

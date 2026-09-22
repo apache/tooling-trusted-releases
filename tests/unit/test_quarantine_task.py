@@ -406,6 +406,7 @@ async def test_mark_failed_persists_on_managed_instance():
 async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: pathlib.Path):
     quarantine_dir_path = tmp_path / "quarantine"
     quarantine_dir_path.mkdir()
+    (quarantine_dir_path / "file.txt").write_bytes(b"file content")
     quarantine_dir = str(quarantine_dir_path)
 
     release = mock.MagicMock()

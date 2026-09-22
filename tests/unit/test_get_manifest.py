@@ -171,15 +171,16 @@ async def test_manifest_escapes_paths_and_reports_unknown_size(app, tmp_path):
     assert response.status_code == 200
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
     assert "<script>" not in body
-    assert "sha256:" + "b" * 64 in body
+    assert "sha256:" not in body
+    assert "Not recorded" in body
     assert "Recorded sizes are unavailable for 1 file." in body
     assert "Unknown" in body
 
 
-@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize(("version", "digests"), [(1, False), (2, False), (2, True)])
 @pytest.mark.parametrize("phase", list(sql.ReleasePhase))
-async def test_manifest_lists_every_path_without_private_metadata(app, tmp_path, version, phase):
-    _write_manifest(tmp_path, version=version)
+async def test_manifest_lists_every_path_without_private_metadata(app, tmp_path, version, digests, phase):
+    _write_manifest(tmp_path, version=version, digests=digests)
     async with db.session() as data:
         release = await data.release(project_key="example", version="1.0").demand(RuntimeError("missing release"))
         release.phase = phase
@@ -196,7 +197,9 @@ async def test_manifest_lists_every_path_without_private_metadata(app, tmp_path,
     for index, path in enumerate(("bundle.zip.sha512", "bundle.zip.asc", "bundle.zip")):
         row = next(row for row in rows if f">{path}</code>" in row)
         assert str(123456789 + index) in row
-        assert "blake3:" + str(index) * 64 in row
+        assert ("sha3-256:" + str(index) * 64 if digests else "Not recorded") in row
+        assert ("swh:1:dir:" in row) == (digests and (path == "bundle.zip"))
+    assert "blake3:" not in body
     assert (
         body.index("bundle.zip</code>") < body.index("bundle.zip.asc</code>") < body.index("bundle.zip.sha512</code>")
     )
@@ -291,7 +294,7 @@ def _error_response(error):
     return str(error), error.errorcode
 
 
-def _write_manifest(tmp_path, *, version=2, revision="00001", payload=None):
+def _write_manifest(tmp_path, *, version=2, revision="00001", payload=None, digests=False):
     if payload is None:
         path_hashes = {
             name: "blake3:" + str(index) * 64
@@ -319,6 +322,11 @@ def _write_manifest(tmp_path, *, version=2, revision="00001", payload=None):
             "policy": {"private-policy": True},
         }
         payload["hashes"]["blake3:" + "a" * 64] = {"size": 1, "uploaders": [], "basenames": ["obsolete.zip"]}
+        if digests:
+            for index, (path, content_hash) in enumerate(path_hashes.items()):
+                payload["hashes"][content_hash]["sha3_256"] = str(index) * 64
+                if path == "bundle.zip":
+                    payload["hashes"][content_hash]["swhid_dir_inner"] = "swh:1:dir:" + "d" * 40
     directory = tmp_path / "example" / "1.0"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{revision}.json").write_text(json.dumps(payload))

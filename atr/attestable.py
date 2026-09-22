@@ -166,6 +166,28 @@ def compute_file_state_rows(
     return rows
 
 
+async def compute_sha3_hashes(
+    path_to_hash: dict[safe.RelPath, str],
+    previous: models.Attestable | None,
+    base_path: safe.StatePath,
+    precomputed: dict[str, str] | None = None,
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    previous_hashes = previous.hashes if isinstance(previous, models.AttestableV2) else {}
+    precomputed = precomputed or {}
+    for path_key, content_hash in sorted(path_to_hash.items(), key=lambda item: str(item[0])):
+        if content_hash in result:
+            continue
+        entry = previous_hashes.get(content_hash)
+        digest = entry.sha3_256 if (entry is not None) else None
+        if digest is None:
+            digest = precomputed.get(content_hash)
+        if digest is None:
+            digest = await hashes.file_sha3(str(base_path / path_key))
+        result[content_hash] = digest
+    return result
+
+
 def compute_swhid_dirs(
     path_to_hash: dict[safe.RelPath, str],
     previous: models.Attestable | None,
@@ -401,6 +423,16 @@ def path_provenance(attestable: models.Attestable, path_key: str) -> models.Prov
     return None
 
 
+def path_sha3_256(attestable: models.Attestable, path_key: str) -> str | None:
+    if not isinstance(attestable, models.AttestableV2):
+        return None
+    entry = attestable.paths.get(path_key)
+    if entry is None:
+        return None
+    hash_entry = attestable.hashes.get(entry.content_hash)
+    return hash_entry.sha3_256 if (hash_entry is not None) else None
+
+
 def path_swhid_dir(attestable: models.Attestable, path_key: str) -> str | None:
     if not isinstance(attestable, models.AttestableV2):
         return None
@@ -492,6 +524,7 @@ async def write_files_data(
     classifications: dict[safe.RelPath, str] | None = None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
     swhid_dirs: dict[str, str] | None = None,
+    sha3_hashes: dict[str, str] | None = None,
 ) -> None:
     result = await _generate_files_data(
         path_to_hash,
@@ -504,6 +537,7 @@ async def write_files_data(
         classifications=classifications,
         effective_path_provenance=effective_path_provenance,
         swhid_dirs=swhid_dirs,
+        sha3_hashes=sha3_hashes,
     )
     file_path = attestable_path(project_key, version_key, revision_number)
     await _atomic_write_readonly(file_path.path, result.model_dump_json(indent=2))
@@ -578,6 +612,7 @@ async def _generate_files_data(
     classifications: dict[safe.RelPath, str] | None = None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
     swhid_dirs: dict[str, str] | None = None,
+    sha3_hashes: dict[str, str] | None = None,
 ) -> models.AttestableV2:
     current_hash_to_paths: dict[str, set[safe.RelPath]] = {}
     for path_key, hash_ref in path_to_hash.items():
@@ -586,6 +621,9 @@ async def _generate_files_data(
     new_hashes = _compute_hashes_with_attribution(
         current_hash_to_paths, path_to_size, previous, uploader_uid, revision_number
     )
+    for hash_ref, sha3_256 in (sha3_hashes or {}).items():
+        if (entry := new_hashes.get(hash_ref)) is not None:
+            entry.sha3_256 = sha3_256
     for hash_ref, swhid_dir_inner in (swhid_dirs or {}).items():
         if (entry := new_hashes.get(hash_ref)) is not None:
             entry.swhid_dir_inner = swhid_dir_inner

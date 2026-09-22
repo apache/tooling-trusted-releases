@@ -1461,11 +1461,13 @@ async def release_manifest(
     files = []
     for path, content_hash in sorted(attestable.path_hashes(recorded).items()):
         entry = recorded.hashes.get(content_hash)
+        sha3_256 = attestable.path_sha3_256(recorded, path)
         files.append(
             models.api.ReleaseManifestFile(
                 path=path,
                 size=entry.size if (entry is not None) else None,
-                digest=content_hash,
+                digest=f"sha3-256:{sha3_256}" if (sha3_256 is not None) else None,
+                swhid_dir_inner=attestable.path_swhid_dir(recorded, path),
             )
         )
     return models.api.ReleaseManifestResults(

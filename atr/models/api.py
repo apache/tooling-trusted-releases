@@ -812,7 +812,10 @@ class ReleaseGetResults(schema.Strict):
 class ReleaseManifestFile(schema.Strict):
     path: str
     size: int | None = schema.description("File size in bytes, or null when unavailable in the retained manifest.")
-    digest: str = schema.description("Content digest including its algorithm prefix, such as blake3:.")
+    digest: str | None = schema.description("SHA3-256 digest prefixed with sha3-256:, or null when not recorded.")
+    swhid_dir_inner: str | None = schema.description(
+        "SWHID of the archive's extracted inner directory, or null when not recorded."
+    )
 
 
 class ReleaseManifestResults(schema.Strict):

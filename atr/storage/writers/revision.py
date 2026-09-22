@@ -94,6 +94,7 @@ async def finalise_revision(
     was_quarantined: bool = False,
     path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
     extracted_swhids: dict[str, str] | None = None,
+    sha3_hashes: dict[str, str] | None = None,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -132,6 +133,7 @@ async def finalise_revision(
         was_quarantined=was_quarantined,
         path_provenance=path_provenance,
         extracted_swhids=extracted_swhids,
+        sha3_hashes=sha3_hashes,
     )
 
 
@@ -152,6 +154,7 @@ async def _commit_new_revision(
     was_quarantined: bool = False,
     path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
     extracted_swhids: dict[str, str] | None = None,
+    sha3_hashes: dict[str, str] | None = None,
 ) -> sql.Revision:
     try:
         # This is the only place where models.Revision is constructed
@@ -211,6 +214,7 @@ async def _commit_new_revision(
         path_to_hash, policy_dict, new_revision_dir, archives_base
     )
     swhid_dirs = attestable.compute_swhid_dirs(path_to_hash, previous_attestable, extracted_swhids)
+    sha3_hashes = await attestable.compute_sha3_hashes(path_to_hash, previous_attestable, new_revision_dir, sha3_hashes)
     effective_provenance = attestable.effective_path_provenance(path_provenance, path_to_hash, previous_attestable)
 
     await attestable.write_files_data(
@@ -226,6 +230,7 @@ async def _commit_new_revision(
         classifications=classifications,
         effective_path_provenance=effective_provenance,
         swhid_dirs=swhid_dirs,
+        sha3_hashes=sha3_hashes,
     )
 
     if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):
@@ -316,6 +321,8 @@ async def _lock_and_merge(
         # This won't be None because prior_revision_key is not None here
         prior_number = latest.safe_number
         prior_dir = paths.release_directory_base(merged_release) / str(prior_number)
+        merged_hashes = {str(k): v for k, v in path_to_hash.items()}
+        merged_sizes = {str(k): v for k, v in path_to_size.items()}
         await merge.merge(
             data,
             base_inodes,
@@ -326,9 +333,13 @@ async def _lock_and_merge(
             latest.seq,
             temp_dir_path,
             n_inodes,
-            {str(k): v for k, v in path_to_hash.items()},
-            {str(k): v for k, v in path_to_size.items()},
+            merged_hashes,
+            merged_sizes,
         )
+        path_to_hash.clear()
+        path_to_hash.update((safe.RelPath(k), v) for k, v in merged_hashes.items())
+        path_to_size.clear()
+        path_to_size.update((safe.RelPath(k), v) for k, v in merged_sizes.items())
         previous_attestable = await attestable.load(project_key, version_key, prior_number)
 
     return previous_attestable, merge_base_revision_key, prior_revision_key, merged_release
@@ -527,6 +538,7 @@ class CommitteeParticipant(FoundationCommitter):
             previous_attestable = None
             if parent_revision_number is not None:
                 previous_attestable = await attestable.load(project_key, version_key, parent_revision_number)
+            sha3_hashes = await attestable.compute_sha3_hashes(path_to_hash, previous_attestable, temp_dir_path)
             base_inodes: dict[str, int] = {}
             base_hashes: dict[str, str] = {}
             if merge_enabled and (old_revision is not None):
@@ -627,6 +639,7 @@ class CommitteeParticipant(FoundationCommitter):
                 temp_dir=temp_dir,
                 version_key=version_key,
                 path_provenance=path_provenance,
+                sha3_hashes=sha3_hashes,
             )
 
     async def set_tag(

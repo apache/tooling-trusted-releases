@@ -207,6 +207,9 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
     base_dir = safe.StatePath(tmp_path)
     temp_dir = tmp_path / "interim"
     temp_dir.mkdir()
+    (temp_dir / "README.txt").write_bytes(b"release notes")
+    path_hashes, path_sizes = await revision.attestable.paths_to_hashes_and_sizes(temp_dir)
+    sha3_hashes = await revision.attestable.compute_sha3_hashes(path_hashes, None, safe.StatePath(temp_dir))
     release_key = sql.release_key("proj", "1.0")
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_PREVIEW
@@ -219,7 +222,8 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
 
     with (
         mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
-        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock) as write_files_data,
+        mock.patch.object(revision.attestable, "compute_file_state_rows", return_value=[]),
         mock.patch.object(revision.paths, "get_archives_dir", return_value=base_dir / "archives"),
         mock.patch.object(revision.paths, "release_directory", return_value=base_dir / "rev" / "00006"),
         mock.patch.object(revision.storage, "audit", side_effect=lambda **kwargs: calls.append(kwargs)),
@@ -230,16 +234,18 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
             asf_uid="test",
             description="Upload of 2 files through web interface",
             merge_base_revision_key=None,
-            path_to_hash={},
-            path_to_size={},
+            path_to_hash=path_hashes,
+            path_to_size=path_sizes,
             previous_attestable=None,
             project_key=safe.ProjectKey("proj"),
             release=release,
             release_key=release_key,
             temp_dir=str(temp_dir),
             version_key=safe.VersionKey("1.0"),
+            sha3_hashes=sha3_hashes,
         )
 
+    assert write_files_data.await_args.kwargs["sha3_hashes"] == sha3_hashes
     assert calls == [
         "commit",
         {
@@ -516,6 +522,7 @@ async def test_intervening_revision_with_path_provenance_verifies_sources(tmp_pa
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
         mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=mock.MagicMock()),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",
@@ -581,6 +588,51 @@ async def test_intervening_revision_with_path_provenance_verifies_sources(tmp_pa
     assert verify_mock.await_args is not None
     assert verify_mock.await_args.kwargs["path_provenance"] == provenance_map
     assert verify_mock.await_args.kwargs["pre_merge_inodes"] == {"example.tar.gz": 1}
+
+
+async def test_merge_updates_manifest_paths_and_content_hashes(tmp_path, monkeypatch):
+    base = tmp_path / "base"
+    prior = tmp_path / "00002"
+    incoming = tmp_path / "incoming"
+    for directory in (base, prior, incoming):
+        directory.mkdir()
+    for name in ("changed.txt", "deleted.txt", "unchanged.txt"):
+        (base / name).write_bytes(name.encode())
+        os.link(base / name, incoming / name)
+    (prior / "changed.txt").write_bytes(b"changed by prior")
+    (prior / "added.txt").write_bytes(b"added by prior")
+    os.link(base / "unchanged.txt", prior / "unchanged.txt")
+    path_hashes, path_sizes = await revision.attestable.paths_to_hashes_and_sizes(incoming)
+    base_hashes = {str(k): v for k, v in path_hashes.items()}
+    prior_hashes, prior_sizes = await revision.attestable.paths_to_hashes_and_sizes(prior)
+    release = mock.MagicMock()
+    data = MockSafeData(parent_key="proj-1.0 00002")
+    data.release_file_hashes_at = mock.AsyncMock(return_value={str(k): v for k, v in prior_hashes.items()})
+    latest = mock.MagicMock(key="proj-1.0 00002", safe_number=safe.RevisionNumber("00002"), seq=2)
+    monkeypatch.setattr(revision.interaction, "latest_revision", mock.AsyncMock(return_value=latest))
+    monkeypatch.setattr(revision.paths, "release_directory_base", lambda release: safe.StatePath(tmp_path))
+    monkeypatch.setattr(revision.attestable, "load", mock.AsyncMock(return_value=None))
+
+    await revision._lock_and_merge(
+        data,
+        base_hashes=base_hashes,
+        base_inodes=revision.util.paths_to_inodes(base),
+        merge_enabled=True,
+        n_inodes=revision.util.paths_to_inodes(incoming),
+        old_revision=mock.MagicMock(key="proj-1.0 00001"),
+        path_to_hash=path_hashes,
+        path_to_size=path_sizes,
+        previous_attestable=None,
+        project_key=safe.ProjectKey("proj"),
+        release=release,
+        _release_key=safe.ReleaseKey("proj-1.0"),
+        temp_dir_path=incoming,
+        version_key=safe.VersionKey("1.0"),
+    )
+
+    assert path_hashes == prior_hashes
+    assert path_sizes == prior_sizes
+    assert not (incoming / "deleted.txt").exists()
 
 
 @pytest.mark.asyncio
@@ -661,6 +713,7 @@ async def test_modify_path_provenance_flows_into_write_files_data(tmp_path: path
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
         mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=None),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",
@@ -805,6 +858,7 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
         mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=v1_attestable),
+        mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(
             revision.attestable,
             "paths_to_hashes_and_sizes",

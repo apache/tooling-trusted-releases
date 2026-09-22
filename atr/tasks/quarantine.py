@@ -363,6 +363,9 @@ async def _promote(
     previous_attestable = None
     if old_revision is not None:
         previous_attestable = await attestable.load(project_key, version_key, old_revision.safe_number)
+    sha3_hashes = await attestable.compute_sha3_hashes(
+        path_to_hash, previous_attestable, safe.StatePath(quarantine_dir_path)
+    )
 
     base_inodes: dict[str, int] = {}
     base_hashes: dict[str, str] = {}
@@ -393,6 +396,7 @@ async def _promote(
             version_key=version_key,
             was_quarantined=True,
             extracted_swhids=swhid_dirs,
+            sha3_hashes=sha3_hashes,
         )
 
     async with db.session() as data:
