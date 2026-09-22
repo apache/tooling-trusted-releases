@@ -41,10 +41,11 @@ class FoundationCommitter:
         level: sql.NotificationLevel = sql.NotificationLevel.ERROR,
         link: str | None = None,
         link_text: str | None = None,
+        is_admin: bool = False,
     ) -> sql.Notification | None:
-        stmt = sql.notification_insert(self.__asf_uid, _normalised_message(message), level, link, link_text).returning(
-            sql.Notification
-        )
+        stmt = sql.notification_insert(
+            self.__asf_uid, _normalised_message(message), level, link, link_text, is_admin=is_admin
+        ).returning(sql.Notification)
         notification = (await self.__data.execute(stmt)).scalars().one_or_none()
         await self.__data.commit()
         if notification is None:
@@ -79,6 +80,7 @@ class FoundationCommitter:
         link: str,
         link_text: str | None = None,
         level: sql.NotificationLevel = sql.NotificationLevel.ERROR,
+        is_admin: bool = False,
     ) -> None:
         message = _normalised_message(message) if message is not None else None
         via = sql.validate_instrumented_attribute
@@ -92,9 +94,9 @@ class FoundationCommitter:
         result = await self.__data.execute(delete_stmt)
         notification = None
         if message is not None:
-            insert_stmt = sql.notification_insert(self.__asf_uid, message, level, link, link_text).returning(
-                sql.Notification
-            )
+            insert_stmt = sql.notification_insert(
+                self.__asf_uid, message, level, link, link_text, is_admin=is_admin
+            ).returning(sql.Notification)
             notification = (await self.__data.execute(insert_stmt)).scalars().one_or_none()
         await self.__data.commit()
         removed = getattr(result, "rowcount", 0) or 0

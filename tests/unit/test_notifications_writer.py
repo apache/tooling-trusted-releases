@@ -42,7 +42,8 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
     await engine.dispose()
 
 
-async def test_create_dedupes_and_audits_once(sqlite_sessionmaker) -> None:
+@pytest.mark.parametrize("is_admin", [False, True])
+async def test_create_dedupes_and_audits_once(sqlite_sessionmaker, is_admin: bool) -> None:
     async with sqlite_sessionmaker() as data:
         write_as = mock.MagicMock()
         writer = object.__new__(notifications.FoundationCommitter)
@@ -51,15 +52,35 @@ async def test_create_dedupes_and_audits_once(sqlite_sessionmaker) -> None:
         writer._FoundationCommitter__data = data
         writer._FoundationCommitter__asf_uid = "alice"
 
-        first = await writer.create("The  SVN dist repository was not reachable")
-        second = await writer.create("The SVN dist repository was not reachable")
+        first = await writer.create("The  SVN dist repository was not reachable", is_admin=is_admin)
+        second = await writer.create("The SVN dist repository was not reachable", is_admin=is_admin)
 
         assert first is not None
         assert second is None
         notification = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
         assert notification.id == first.id
         assert notification.message == "The SVN dist repository was not reachable"
+        assert notification.is_admin is is_admin
         write_as.append_to_audit_log.assert_called_once_with(asf_uid="alice", notification_id=first.id, level="error")
+
+
+@pytest.mark.parametrize("is_admin", [False, True])
+async def test_create_updates_admin_classification(sqlite_sessionmaker, is_admin: bool) -> None:
+    async with sqlite_sessionmaker() as data:
+        writer = notifications.FoundationCommitter(mock.MagicMock(), mock.MagicMock(asf_uid="alice"), data)
+        first = await writer.create("Service unavailable", is_admin=not is_admin)
+        assert first is not None
+        original = (first.id, first.created, first.dedup_hash)
+
+        updated = await writer.create("Service unavailable", is_admin=is_admin)
+
+        assert updated is not None
+        assert (updated.id, updated.created, updated.dedup_hash) == original
+        assert updated.is_admin is is_admin
+        assert await writer.create("Service unavailable", is_admin=is_admin) is None
+        stored = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
+        assert stored.message == "Service unavailable"
+        assert stored.is_admin is is_admin
 
 
 async def test_replace_dedupes_normalised_message(sqlite_sessionmaker) -> None:
@@ -69,10 +90,16 @@ async def test_replace_dedupes_normalised_message(sqlite_sessionmaker) -> None:
         link = "/admin/data?tab=validation"
 
         await writer.replace("Integrity  check failed", link)
-        await writer.replace("Integrity check failed", link)
+        first = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
+        original = (first.id, first.created)
+        write_as.append_to_audit_log.reset_mock()
+        await writer.replace("Integrity check failed", link, is_admin=True)
+        await writer.replace("Integrity check failed", link, is_admin=True)
 
         notification = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
+        assert (notification.id, notification.created) == original
         assert notification.message == "Integrity check failed"
+        assert notification.is_admin
         write_as.append_to_audit_log.assert_called_once_with(
             asf_uid="alice", link=link, removed=0, notification_id=notification.id
         )

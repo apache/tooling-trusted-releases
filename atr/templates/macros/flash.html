@@ -22,6 +22,7 @@
         <div class="alert alert-{{ alert_kind }} alert-dismissible atr-notification"
              role="alert"
              data-notification-id="{{ notification.id }}">
+          {% if notification.is_admin %}<strong>Admin alert:</strong>{% endif %}
           {{ notification.message }}
           {% if notification.link and notification.link.startswith("/") and not notification.link.startswith("//") %}
             <a href="{{ notification.link }}" class="alert-link ms-1">{{ notification.link_text or "Open" }}</a>

@@ -56,4 +56,6 @@ async def check(task_args: args.IntegrityCheckArgs) -> None:
 async def _notify_admins(message: str | None) -> None:
     for asf_uid in sorted(await cache.admins_get_async()):
         async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications_replace(message, link="/admin/data?tab=validation", link_text="View checks")
+            await waus.notifications_replace(
+                message, link="/admin/data?tab=validation", link_text="View checks", is_admin=True
+            )

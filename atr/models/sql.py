@@ -778,6 +778,7 @@ class Notification(sqlmodel.SQLModel, table=True):
     link: str | None = sqlmodel.Field(default=None)
     link_text: str | None = sqlmodel.Field(default=None)
     dedup_hash: str = sqlmodel.Field()
+    is_admin: bool = sqlmodel.Field(default=False)
 
     __table_args__ = (
         sqlalchemy.Index("ix_notification_asf_uid_created", "asf_uid", "created"),
@@ -2461,6 +2462,7 @@ def notification_insert(
     level: NotificationLevel,
     link: str | None = None,
     link_text: str | None = None,
+    is_admin: bool = False,
 ) -> sqlite.Insert:
     return (
         sqlite.insert(Notification)
@@ -2472,8 +2474,14 @@ def notification_insert(
             link=link,
             link_text=link_text,
             dedup_hash=notification_dedup_hash(level, message, link, link_text),
+            is_admin=is_admin,
         )
-        .on_conflict_do_nothing(index_elements=["asf_uid", "dedup_hash"])
+        .on_conflict_do_update(
+            index_elements=["asf_uid", "dedup_hash"],
+            set_={"is_admin": is_admin},
+            where=validate_instrumented_attribute(Notification.is_admin) != is_admin,
+        )
+        .execution_options(populate_existing=True)
     )
 
 

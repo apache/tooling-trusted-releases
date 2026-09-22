@@ -96,6 +96,7 @@ async def test_integrity_check(sqlite_sessionmaker, monkeypatch: pytest.MonkeyPa
     assert len(notifications) == 2
     assert all(notification.level == sql.NotificationLevel.ERROR for notification in notifications)
     assert all(notification.link == "/admin/data?tab=validation" for notification in notifications)
+    assert all(notification.is_admin for notification in notifications)
     if outcome == "exception":
         assert all("could not complete" in notification.message for notification in notifications)
         return
@@ -165,6 +166,7 @@ async def test_integrity_notifications_follow_current_result(
             assert not current
             continue
         assert len(current) == 2
+        assert all(row.is_admin for row in current)
         assert {row.asf_uid for row in current} == admins
         expected = "Integrity check could not complete."
         if count is not None:

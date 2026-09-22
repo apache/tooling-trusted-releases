@@ -1312,7 +1312,7 @@ async def _svn_publish_unreachable_notify(description: str, reason: str) -> None
     try:
         for asf_uid in sorted(cache.admins_get()):
             async with storage.write_as_user_service(asf_uid) as waus:
-                await waus.notifications_create(message)
+                await waus.notifications_create(message, is_admin=True)
     except Exception:
         log.exception("Failed to record SVN publish reachability notifications")
 
