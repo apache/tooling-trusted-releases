@@ -99,6 +99,9 @@
             <a href="{{ as_url(get.release.finished, project_key=project.key) }}"
                class="text-decoration-none">Finished releases</a>
           {% endif %}
+          <span class="text-muted me-2">/</span>
+          <a href="{{ release_catalog_url + project.key }}"
+             class="text-decoration-none" target="_blank">Release catalog</a>
         </p>
 
         <div class="d-flex flex-wrap gap-3">
