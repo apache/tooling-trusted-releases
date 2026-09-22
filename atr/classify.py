@@ -59,8 +59,9 @@ _BIN_DISTRIBUTION_TOKENS: Final[frozenset[str]] = frozenset(
     {"classic", "cli", "debug", "lib", "plugin", "plugins", "portable", "sdk", "vagrant", "war"}
 )
 
-# 41.6%
-_BIN_PATH_PARTS: Final[frozenset[str]] = frozenset({"bin", "binaries", "binary"})
+# 41.6% (bin/binaries/binary). "distribution" isn't from the corpus - it's the dir groovy and
+# grails drop their binary bundles in, and nothing source-only sits under one in the mirror
+_BIN_PATH_PARTS: Final[frozenset[str]] = frozenset({"bin", "binaries", "binary", "distribution"})
 
 # 0.9% (path), 28.2% (filename)
 # OS and CPU-architecture tokens marking a binary distribution, as {token: canonical} so a
@@ -156,7 +157,7 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
     source_count = release + source + _src_path_source(ptokens)
     binary_count = (
         _bin_binary_token(name)
-        + _bin_distribution_token(tokens, explicit)
+        + _bin_distribution_token(name, explicit)
         + _bin_path_binary(ptokens)
         + _bin_platform_token(tokens)
         + _bin_path_platform(ptokens)
@@ -215,7 +216,12 @@ def classify_from_counts(path_str: str, source_count: int, binary_count: int, do
             return FileType.BINARY
         return FileType.SOURCE
     if source_count >= binary_count:
+        # source keeps priority, so a docs marker never demotes an archive that also reads as source
         return FileType.SOURCE
+    if docs_count >= binary_count:
+        # a docs marker (javadoc, -docs, a docs/ dir) outweighs a binary one, so doc bundles that
+        # sit under a binaries dir or carry a platform token still read as docs rather than binary
+        return FileType.DOCS
     return FileType.BINARY
 
 
@@ -272,10 +278,15 @@ def _bin_binary_token(name: str) -> bool:
     return bool(_BIN_BINARY_RE.search(name))
 
 
-def _bin_distribution_token(tokens: frozenset[str], explicit_source: bool) -> bool:
+def _bin_distribution_token(name: str, explicit_source: bool) -> bool:
     if explicit_source:
         return False
-    return bool(tokens & _BIN_DISTRIBUTION_TOKENS)
+    # A distribution flavour (foo-1.0-sdk) sits after the version; the same word inside the project
+    # name (apache-airflow-task-sdk-1.3.2) is not a flavour. Only the tail, from the first version
+    # token on, can mark the archive binary, so a name that merely contains "sdk" stays source.
+    version = re.search(r"[-_.]v?\d", name)
+    tail = name[version.end() :] if (version is not None) else name
+    return bool(_get_stem_tokens(tail) & _BIN_DISTRIBUTION_TOKENS)
 
 
 def _bin_path_binary(ptokens: frozenset[str]) -> bool:

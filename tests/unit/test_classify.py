@@ -64,21 +64,63 @@ async def test_binary_stem_heuristic():
     assert (await classify.classify(path)) == classify.FileType.BINARY
 
 
+async def test_distribution_dir_docs_bundle_classifies_docs():
+    # A docs bundle under a distribution dir keeps its docs marker over the dir's binary one
+    path = safe.RelPath("groovy/2.4.10/distribution/apache-groovy-docs-2.4.10.zip")
+    assert (await classify.classify(path)) == classify.FileType.DOCS
+
+
+async def test_distribution_dir_marks_binary():
+    # A file under a distribution dir is a binary bundle even with no binary token in its name
+    path = safe.RelPath("groovy/2.4.10/distribution/apache-groovy-sdk-2.4.10.zip")
+    assert (await classify.classify(path)) == classify.FileType.BINARY
+
+
+async def test_distribution_word_in_project_name_stays_source():
+    # A distribution word (sdk, cli, ...) before the version is part of the project name, not a
+    # binary flavour, so the source archive must not be read as binary
+    assert (await classify.classify(safe.RelPath("apache_airflow_task_sdk-1.3.2.tar.gz"))) == classify.FileType.SOURCE
+    assert (await classify.classify(safe.RelPath("apache-widget-cli-2.0.tar.gz"))) == classify.FileType.SOURCE
+
+
+async def test_distribution_word_after_version_stays_binary():
+    # The same word after the version is a binary distribution flavour
+    assert (await classify.classify(safe.RelPath("apache-widget-1.0-sdk.zip"))) == classify.FileType.BINARY
+    assert (await classify.classify(safe.RelPath("apache-widget-2.0-cli.zip"))) == classify.FileType.BINARY
+
+
+def test_counts_docs_beats_binary():
+    assert classify.classify_from_counts("", 0, 1, 1) == classify.FileType.DOCS
+
+
 def test_counts_docs_only():
     assert classify.classify_from_counts("", 0, 0, 1) == classify.FileType.DOCS
-
-
-def test_counts_docs_with_binary():
-    assert classify.classify_from_counts("", 0, 1, 1) == classify.FileType.BINARY
 
 
 def test_counts_docs_with_source():
     assert classify.classify_from_counts("", 1, 0, 1) == classify.FileType.SOURCE
 
 
+def test_counts_source_beats_docs():
+    # source outranks docs even when the docs markers outnumber it
+    assert classify.classify_from_counts("", 1, 1, 5) == classify.FileType.SOURCE
+
+
 async def test_disallowed_files_detected():
     path = safe.RelPath("desktop.ini")
     assert (await classify.classify(path)) == classify.FileType.DISALLOWED
+
+
+async def test_docs_marker_does_not_demote_source():
+    # docs never wins over a source marker, so a sources jar under a docs-flavoured dir stays source
+    path = safe.RelPath("jspwiki/2.12.5/wikipages/jspwiki-wikipages-en-2.12.5-sources.jar")
+    assert (await classify.classify(path)) == classify.FileType.SOURCE
+
+
+async def test_docs_marker_outweighs_binary_dir():
+    # A javadoc jar sitting under a binaries dir reads as docs, not binary
+    path = safe.RelPath("jspwiki/2.11.0/binaries/webapp/jspwiki-api-2.11.0-javadoc.jar")
+    assert (await classify.classify(path)) == classify.FileType.DOCS
 
 
 async def test_docs_stem_heuristic():

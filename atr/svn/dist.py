@@ -51,6 +51,16 @@ _SEMVER_FILE_RE: Final[re.Pattern[str]] = re.compile(
 # Calver dates (2026-01-27 or 20050330), limited to 19xx/20xx
 _CALVER_FILE_RE: Final[re.Pattern[str]] = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2}|(?:19|20)\d{6})(?!\d)")
 
+# A bare-integer or OSGi r-number version (commons-parent-105, felix-dependencymanager-r16), only
+# when a release classifier or the extension follows it, so a stray number in a name is not read as
+# a version. Tried last, so a dotted semver or a calver date always wins.
+_BARE_VERSION_FILE_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?<=[-_])(r?\d+)"
+    r"(?=[-_](?:src|source|source-release|bin|binary|native|dist|distribution|javadoc|docs?|assembly|project)\b"
+    r"|\.[A-Za-z]|$)",
+    re.IGNORECASE,
+)
+
 # Airflow ships its providers as flat calver batches: a dated source alongside every provider
 # package, in one dir with no version subdir. These spot the batch source and the per-provider
 # packages so the watcher and cataloguer can collapse them into one project keyed by calver. The
@@ -115,6 +125,11 @@ class DistRules:
             # subproject and version both live in the filename, as in the flat layout
             return self._filename_only(committee, filename)
         subproject, dir_version, dir_source = _subproject_and_dir_version(committee, parts)
+        # A language flavour dir under a <committee>-<version> release (avro/avro-1.11.5/rust) names
+        # its own project only when a remap says so; otherwise it stays flattened onto the TLP, the
+        # way avro's cpp/java/py bindings do, so this can't split a binding off from its release
+        if (subproject is None) and (len(parts) > 1) and (self.project_remap(committee, parts[-1]) is not None):
+            subproject = parts[-1]
         version, source = _choose_version(dir_version, dir_source, filename)
         return Decomposed(subproject=subproject, version=version, source=source)
 
@@ -207,6 +222,9 @@ def version_from_filename(filename: str) -> str | None:
     calver = _CALVER_FILE_RE.search(filename)
     if calver is not None:
         return calver.group(1)
+    bare = _BARE_VERSION_FILE_RE.search(filename)
+    if bare is not None:
+        return bare.group(1)
     return None
 
 

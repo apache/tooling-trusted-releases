@@ -31,6 +31,7 @@ _BINARY = classify.FileType.BINARY
 _RULES = dist.DistRules(
     project_remaps={
         ("activemq", "activemq-artemis"): "artemis",
+        ("avro", "rust"): "avro-rs",
         ("apr", None): "apr-portable-runtime",
         ("httpd", None): "httpd-http-server",
         ("sis", None): "sis-spatial-information-system",
@@ -190,6 +191,14 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     # The version qualifier is lowercased so a RC1/rc1 case split merges to one release
     ("turbine", ("2.2-RC1",), None, None, "2.2-rc1", None),
     ("turbine", (), "turbine-2.2-RC2.tar.gz", None, "2.2-rc2", _SOURCE),
+    # A bare-integer version parses when a release classifier follows it (commons parent POMs
+    # version as plain integers, and felix's gogo parent as a single digit)
+    ("commons", ("parent", "source"), "commons-parent-105-src.tar.gz", "parent", "105", _SOURCE),
+    ("felix", (), "gogo-parent-5-source-release.tar.gz", "gogo-parent", "5", _SOURCE),
+    # A language flavour under a <committee>-<version> release becomes its own project only when a
+    # remap says so: avro/rust splits off to avro-rs, but avro/cpp stays flattened onto the TLP
+    ("avro", ("avro-1.11.5", "rust"), "apache-avro.tgz", "rust", "1.11.5", _SOURCE),
+    ("avro", ("avro-1.12.2", "cpp"), "avro-cpp-1.12.2.tar.gz", None, "1.12.2", _SOURCE),
 ]
 
 
