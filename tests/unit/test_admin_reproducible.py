@@ -97,8 +97,17 @@ async def database(monkeypatch):
 
 async def test_keys_preserve_recognition_and_primary_dates(database):
     async with database() as data:
-        data.add_all([sql.Committee(key=key) for key in ("good", "missing", "other", "deleted", "secondary")])
+        data.add_all(
+            [sql.Committee(key=key) for key in ("asyncband", "good", "missing", "other", "deleted", "secondary")]
+        )
         await data.flush()
+        await _add_key(
+            data,
+            "asyncband",
+            "1" * 40,
+            2026,
+            uid="Apache Asyncband automated release signing key <private@asyncband.apache.org>",
+        )
         await _add_key(data, "good", "a" * 40, 2020, uid="Services RM <private@good.apache.org>")
         await _add_key(data, "missing", "b" * 40, None)
         await _add_key(data, "other", "c" * 40, 2026, uid="Automated Release Signing <private@good.apache.org>")
@@ -132,13 +141,20 @@ async def test_keys_preserve_recognition_and_primary_dates(database):
         await data.commit()
 
     keys = await interaction.automated_release_signing_keys()
-    assert len(keys) == 2
+    assert len(keys) == 3
     assert all(key.created.tzinfo is datetime.UTC for key in keys if key.created)
     assert {(key.committee.key, key.fingerprint, key.created.year if key.created else None) for key in keys} == {
+        ("asyncband", "1" * 40, 2026),
         ("good", "a" * 40, 2020),
         ("missing", "b" * 40, None),
     }
-    assert await interaction.automated_release_signing_committees() == {"good", "missing", "test", "tooling"}
+    assert await interaction.automated_release_signing_committees() == {
+        "asyncband",
+        "good",
+        "missing",
+        "test",
+        "tooling",
+    }
 
 
 async def test_reproducible_tab_empty_and_lazy(app, monkeypatch):

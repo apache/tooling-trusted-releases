@@ -1047,7 +1047,7 @@ def intersect_algs(policy: dict[str, Any], policy_key: str, supported: set[bytes
 def is_automated_release_signing_uid(uid: str | None, committee_key: str) -> bool:
     if not uid:
         return False
-    if not any(label in uid for label in AUTOMATED_RELEASE_SIGNING_LABELS):
+    if not any(label.lower() in uid.lower() for label in AUTOMATED_RELEASE_SIGNING_LABELS):
         return False
     return email_from_uid(uid) == f"private@{committee_key}.apache.org"
 

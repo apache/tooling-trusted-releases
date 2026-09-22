@@ -29,7 +29,7 @@ Contact the ASF Security team and demonstrate to them that your project's builds
 
 ### Step 2: Request a project signing key
 
-Ask ASF Infrastructure to generate a GPG keypair for your project. The key must follow a specific naming convention for ATR to recognise it as an automated release key. The primary UID must contain either "Automated Release Signing" (we also recognise "Services RM", but that form is deprecated), and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
+Ask ASF Infrastructure to generate a GPG keypair for your project. The key must follow a specific naming convention for ATR to recognise it as an automated release key. The primary UID must contain "Automated Release Signing" or the deprecated "Services RM", ignoring case, and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
 
 ```text
 Example Automated Release Signing <private@example.apache.org>
@@ -90,12 +90,12 @@ ATR identifies automated release keys in two ways, at two different levels.
 
 ### Signature verification
 
-When ATR verifies an `.asc` signature file, it loads all public signing keys that are linked to the release committee and checks each one. For personal committer keys, the key has an ASF UID field in ATR behind the scenes that ties it to a specific ASF account. Automated project keys do not have an ASF UID because they belong to the project rather than to a person. Instead, ATR checks the key's primary UID against the automated release key naming convention: the UID must contain "Automated Release Signing" or "Services RM", and its email address must be exactly `private@`_committee_`.apache.org`. A key following the convention acts as a kind of committee key. A signature made by either kind of key, i.e. personal with an ASF UID or a committee key following the naming convention, will pass signature verification.
+When ATR verifies an `.asc` signature file, it loads all public signing keys that are linked to the release committee and checks each one. For personal committer keys, the key has an ASF UID field in ATR behind the scenes that ties it to a specific ASF account. Automated project keys do not have an ASF UID because they belong to the project rather than to a person. Instead, ATR checks the key's primary UID against the automated release key naming convention: the UID must contain "Automated Release Signing" or "Services RM" (ignoring case), and its email address must be exactly `private@`_committee_`.apache.org`. A key following the convention acts as a kind of committee key. A signature made by either kind of key, i.e. personal with an ASF UID or a committee key following the naming convention, will pass signature verification.
 
 You can read more about [signature verification](checks#signature-verification) on the checks page.
 
 ### Committee eligibility
 
-Separately, ATR determines which committees are eligible for Trusted Publishing by querying for keys whose primary UID contains "Automated Release Signing" or "Services RM" and whose email is exactly `private@`_committee_`.apache.org` for the committee that the key is linked to. A committee must have at least one such key before ATR will accept releases triggered by GitHub workflows for projects in that committee.
+Separately, ATR determines which committees are eligible for Trusted Publishing by querying for keys whose primary UID contains "Automated Release Signing" or "Services RM" (ignoring case) and whose email is exactly `private@`_committee_`.apache.org` for the committee that the key is linked to. A committee must have at least one such key before ATR will accept releases triggered by GitHub workflows for projects in that committee.
 
 Registering a correctly named key therefore does two things at once: it enables signature verification for artifacts signed by that key, and it marks the committee as eligible for Trusted Publishing.

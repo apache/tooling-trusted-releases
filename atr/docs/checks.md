@@ -50,7 +50,7 @@ The checker key is `atr.tasks.checks.file_hash.check`.
 
 ### Signature verification
 
-For each `.asc` signature file, ATR verifies the signature against the matching artifact using the public keys stored for the release committee. The signature is accepted only when it verifies and when the signing key is associated with an ASF UID or is the committee's automated release signing key, with a primary UID containing "Automated Release Signing" or "Services RM" and the email address `private@`[_committee name_]`.apache.org`. If no suitable key is found or the signature does not match the artifact, the check fails.
+For each `.asc` signature file, ATR verifies the signature against the matching artifact using the public keys stored for the release committee. The signature is accepted only when it verifies and when the signing key is associated with an ASF UID or is the committee's automated release signing key, with a primary UID containing "Automated Release Signing" or "Services RM" (ignoring case) and the email address `private@`[_committee name_]`.apache.org`. If no suitable key is found or the signature does not match the artifact, the check fails.
 
 ATR also raises a concern when the ASF UID of the signing key is not one of the ASF UIDs recorded as having uploaded the artifact, because an artifact is expected to be signed by the person who uploaded it. The automated release signing key is exempt. The concern does not block a vote, but it must be acknowledged before one is started.
 
@@ -132,7 +132,7 @@ You can [read more about license check exclusions](license-checks#project-policy
 
 ### Committee signing keys
 
-Signature verification depends on the public signing keys registered for the project's committee. ATR verifies each `.asc` signature against the set of keys linked to the committee, and accepts a signature only when the signing key has a valid ASF UID association or follows the automated release key naming convention, containing "Automated Release Signing" or "Services RM" in its primary UID with the email address `private@`_committee_`.apache.org`.
+Signature verification depends on the public signing keys registered for the project's committee. ATR verifies each `.asc` signature against the set of keys linked to the committee, and accepts a signature only when the signing key has a valid ASF UID association or follows the automated release key naming convention, containing "Automated Release Signing" or "Services RM" (ignoring case) in its primary UID with the email address `private@`_committee_`.apache.org`.
 
 If a key has not been imported for the committee, or if it lacks both an ASF UID and the naming convention, signature checks will fail for artifacts signed with that key. Committee members manage these keys through the committee keys page, or through the `KEYS` file in SVN, depending on the committee's KEYS management mode, described in [Promoting to release](promoting-to-release#the-keys-file). See [signing artifacts](signing-artifacts) for background on how to create and register keys.
 
