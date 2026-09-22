@@ -50,7 +50,7 @@ Often these are called sub-projects. Some projects have active releases on multi
 When using ATR it will be important for PMCs to acknowledge their *true number of projects*.
 
 Projects are initially defined based on ***DOAP files*** and observed release activity. Once a PMC uses the ATR then projects are defined both within
-the platform and via `.asf.yaml`. The tooling team will work with PMCs to properly update their projects.
+the platform and via `.asf.yaml`. See [Project configuration](project-configuration) for the metadata fields and naming requirements. The tooling team will work with PMCs to properly update their projects.
 
 ## Releases
 

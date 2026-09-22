@@ -201,7 +201,7 @@ The [`project`](/ref/atr/validate.py) (project) function checks:
 * `created_by`, if set, must look like an ASF UID
 * `cycle_match`, if set, must be a regex with at least one capture group
 * `calver_format`, if set, must be a valid date format with at least one calendar field
-* `full_name` must be set and start with "Apache "
+* `name` must be set and start with "Apache "
 * `programming_languages` must use comma-separated labels without colons
 * `version_pattern`, if set, must be a compilable regex
 
@@ -210,7 +210,7 @@ Per-field coverage:
 | Field | Input layer | Data integrity |
 | --- | --- | --- |
 | `key` | `safe.ProjectKey` (charset, lowercase) + `AddProjectForm` (committee-prefixed) | valid project key |
-| `name` | `AddProjectForm` (Apache prefix, case rules) | set, "Apache " prefix |
+| `name` | `AddProjectForm` and `EditMetadataForm` (Apache prefix, case rules); configuration API currently accepts names without the prefix | set, "Apache " prefix |
 | `status` | none (enum) | type-enforced (enum) |
 | `description` | `EditMetadataForm` (free text) | none |
 | `category` | `AddCategoryForm` (free text) | comma-separated, no colons |

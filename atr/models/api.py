@@ -532,7 +532,14 @@ class PolicyUpdateResults(schema.Strict):
 
 
 class ProjectConfigProjectArgs(schema.Strict):
-    name: str | None = None
+    name: str | None = schema.Field(
+        default=None,
+        description=(
+            "Full project display name, including the 'Apache ' prefix. Required when creating a project; "
+            "omit when updating to preserve the current name. The prefix is not added automatically."
+        ),
+        json_schema_extra={"example": "Apache Maven Filtering"},
+    )
     description: str | None = None
     short_description: str | None = None
     homepage: pydantic.HttpUrl | None = None
