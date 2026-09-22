@@ -177,8 +177,10 @@ class FoundationAdmin:
                     " are gone and it can't be restored to current; republish it to bring it back.",
                     status=409,
                 )
-            # Clear the source with the flag, so a later archival records its own reason.
+            # Clear the source and date with the flag, so a later archival records its own
+            # reason and time.
             release.is_archived = False
+            release.archived = None
             release.archive_source = None
             await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
             await self.__data.commit()

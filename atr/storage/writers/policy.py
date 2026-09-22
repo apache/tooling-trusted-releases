@@ -203,14 +203,12 @@ class ReleaseManager(CommitteeParticipant):
                 ).scalar_one_or_none()
                 if prior_event_id is not None:
                     self.__data.add(
-                        models.sql.LifecycleEvent(
+                        models.sql.LifecycleEvent.withdrawing(
+                            prior_event_id,
                             project_key=cycle.project_key,
                             cycle_key=cycle.cycle_key,
                             version_key=None,
-                            event=models.sql.LifecycleEventType.WITHDRAW,
-                            effective=now,
-                            published=now,
-                            target_event_id=prior_event_id,
+                            when=now,
                         )
                     )
 

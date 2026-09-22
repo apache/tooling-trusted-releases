@@ -1709,14 +1709,20 @@ class FoundationAdmin(FoundationCommitter):
         """Catalogue a release found published in the dist area.
 
         Records a release ATR didn't itself publish, so the artifacts are left
-        unmanaged. The project must already exist - an already-catalogued
-        release is left alone.
+        unmanaged. The project must already exist. A version still held as current is
+        left alone; one we'd archived and now see back in dist is restored, with its
+        files refreshed to the ones this commit carries.
         """
         project = await self.__data.project(key=str(project_key)).get()
         if project is None:
             return f"Project {project_key!s} not found"
         release_key = f"{project.key}-{version!s}"
-        if await self.__data.release(project_key=project.key, version=str(version)).get() is not None:
+        existing = await self.__data.release(project_key=project.key, version=str(version)).get()
+        if (existing is not None) and existing.is_archived:
+            # Archived when its files left the dist area, now seen back: restore it
+            return await self.__restore_catalogued_release(existing, released, artifacts)
+        if existing is not None:
+            # Already catalogued and still current - nothing to reconcile
             return None
 
         try:
@@ -1756,22 +1762,7 @@ class FoundationAdmin(FoundationCommitter):
                     effective=released,
                 )
             )
-            for artifact in artifacts:
-                self.__data.add(
-                    sql.Artifact(
-                        project_key=project.key,
-                        version=str(version),
-                        release_key=release_key,
-                        artifact_path=artifact.artifact_path,
-                        classification=artifact.classification,
-                        signature_path=artifact.signature_path,
-                        checksum_path=artifact.checksum_path,
-                        sbom_path=artifact.sbom_path,
-                        download_path_suffix=artifact.download_path_suffix,
-                        managed=False,
-                        dated=released,
-                    )
-                )
+            self.__add_catalogued_artifacts(release_key, project.key, str(version), artifacts, released)
             # A newly catalogued release adds a page to the static site.
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, project.key)
             await self.__data.commit()
@@ -1788,6 +1779,89 @@ class FoundationAdmin(FoundationCommitter):
             artifacts=len(artifacts),
         )
         log.info(f"Catalogued dist release {release_key} with {util.plural(len(artifacts), 'artifact')}")
+        return None
+
+    def __add_catalogued_artifacts(
+        self,
+        release_key: str,
+        project_key: str,
+        version: str,
+        artifacts: Sequence[ArtifactInput],
+        dated: datetime.datetime,
+    ) -> None:
+        # The unmanaged artifact rows for a dist-catalogued release, shared by the first
+        # catalogue and by a later restore that swaps them for the files it now sees
+        for artifact in artifacts:
+            self.__data.add(
+                sql.Artifact(
+                    project_key=project_key,
+                    version=version,
+                    release_key=release_key,
+                    artifact_path=artifact.artifact_path,
+                    classification=artifact.classification,
+                    signature_path=artifact.signature_path,
+                    checksum_path=artifact.checksum_path,
+                    sbom_path=artifact.sbom_path,
+                    download_path_suffix=artifact.download_path_suffix,
+                    managed=False,
+                    dated=dated,
+                )
+            )
+
+    async def __restore_catalogued_release(
+        self,
+        release: sql.Release,
+        released: datetime.datetime,
+        artifacts: Sequence[ArtifactInput],
+    ) -> str | None:
+        # We archived this version when its files left the dist area, and now they're
+        # back under the same version - a release briefly pulled and restored, or re-cut
+        # in place. Clear the archive stamp, swap in the files this commit carries, and
+        # retract the archive event rather than deleting it, since the lifecycle trail is
+        # append-only - the same reversal revert_failed_archive makes. The files come back
+        # unmanaged on purpose: only a non-ATR SVN commit reaches here, so ATR no longer
+        # vouches for them and the managed guarantee is dropped rather than kept.
+        release_key = release.key
+        via = sql.validate_instrumented_attribute
+        try:
+            prior_event_id = (
+                await self.__data.execute(
+                    sqlmodel.select(via(sql.LifecycleEvent.id))
+                    .where(
+                        via(sql.LifecycleEvent.version_key) == release_key,
+                        via(sql.LifecycleEvent.event) == sql.LifecycleEventType.ARCHIVE,
+                    )
+                    .order_by(via(sql.LifecycleEvent.published).desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            release.is_archived = False
+            release.archived = None
+            release.archive_source = None
+            await self.__data.execute(sqlmodel.delete(sql.Artifact).where(via(sql.Artifact.release_key) == release_key))
+            await self.__data.flush()
+            self.__add_catalogued_artifacts(release_key, release.project_key, release.version, artifacts, released)
+            if prior_event_id is not None:
+                self.__data.add(
+                    sql.LifecycleEvent.withdrawing(
+                        prior_event_id,
+                        project_key=release.project_key,
+                        cycle_key=release.cycle_key,
+                        version_key=release_key,
+                        when=datetime.datetime.now(datetime.UTC),
+                    )
+                )
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, release.project_key)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            restored_release=release_key,
+            artifacts=len(artifacts),
+        )
+        log.info(f"Restored dist release {release_key} with {util.plural(len(artifacts), 'artifact')}")
         return None
 
     async def delete(
@@ -1958,18 +2032,14 @@ class FoundationAdmin(FoundationCommitter):
         release.is_archived = False
         release.archived = None
         release.archive_source = None
-        self.__data.add(release)
         if prior_event_id is not None:
-            now = datetime.datetime.now(datetime.UTC)
             self.__data.add(
-                sql.LifecycleEvent(
+                sql.LifecycleEvent.withdrawing(
+                    prior_event_id,
                     project_key=release.project_key,
                     cycle_key=release.cycle_key,
                     version_key=release.key,
-                    event=sql.LifecycleEventType.WITHDRAW,
-                    effective=now,
-                    published=now,
-                    target_event_id=prior_event_id,
+                    when=datetime.datetime.now(datetime.UTC),
                 )
             )
         await self.__data.commit()

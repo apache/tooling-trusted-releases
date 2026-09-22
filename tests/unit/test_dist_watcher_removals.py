@@ -159,6 +159,46 @@ async def test_the_same_release_is_only_archived_once_across_several_deleted_sou
     assert len(archives) == 1
 
 
+# Resolving an added release decides whether it reaches catalogue_release at all
+
+
+def _data_for_release(project: object, existing: object) -> mock.MagicMock:
+    data = mock.MagicMock()
+    data.project = mock.MagicMock(return_value=_Query(project))
+    data.release = mock.MagicMock(return_value=_Query(existing))
+    return data
+
+
+def _source_bundle() -> catalog._ReleaseFiles:
+    bundle = catalog._ReleaseFiles("skywalking", "banyandb", "0.11.0")
+    bundle.files.append(("skywalking/banyandb/0.11.0", "banyandb-0.11.0-src.tar.gz", catalog.classify.FileType.SOURCE))
+    bundle.has_source = True
+    return bundle
+
+
+@pytest.mark.asyncio
+async def test_republishing_an_archived_release_resolves_to_a_restore() -> None:
+    # An archived version seen back in dist has to reach catalogue_release, which restores it;
+    # resolution must not skip it the way it skips a version that is still current
+    project = SimpleNamespace(key="skywalking-banyandb")
+    archived = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE, is_archived=True)
+    data = _data_for_release(project, archived)
+    resolution = await catalog._resolve_release(dist_rules.empty(), data, _source_bundle())
+    assert resolution.supersede is None
+    assert resolution.catalogue is not None
+    project_key, version_key, _artifacts = resolution.catalogue
+    assert (str(project_key), str(version_key)) == ("skywalking-banyandb", "0.11.0")
+
+
+@pytest.mark.asyncio
+async def test_republishing_a_current_release_stays_a_no_op() -> None:
+    project = SimpleNamespace(key="skywalking-banyandb")
+    current = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE, is_archived=False)
+    data = _data_for_release(project, current)
+    resolution = await catalog._resolve_release(dist_rules.empty(), data, _source_bundle())
+    assert resolution == catalog._ReleaseResolution(None, None)
+
+
 # ATR's own publishes carry the asf:tool=atr revprop, so the watcher skips them rather than
 # re-cataloguing a managed release the publish already recorded
 

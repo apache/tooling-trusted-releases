@@ -462,8 +462,12 @@ async def _resolve_release(rules: dist.DistRules, data: db.Session, rel_files: _
     supersede: _SupersededDraft | None = None
     if existing is not None:
         if existing.phase == sql.ReleasePhase.RELEASE:
-            # Already catalogued as released, whether by ATR or an earlier watcher pass
-            return _ReleaseResolution(None, None)
+            if not existing.is_archived:
+                # Already catalogued as a current release, whether by ATR or an earlier watcher pass
+                return _ReleaseResolution(None, None)
+            # Archived when its files left dist, now published again: catalogue over the top so
+            # catalogue_release restores it and refreshes its files
+            return _ReleaseResolution((project_key, version_key, _artifacts(rel_files)), None)
         # ATR still holds an in-progress draft of a version that has now been published
         # outside ATR. The draft is stale, so flag it to be wiped and its author told,
         # then catalogue the published release over the top

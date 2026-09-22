@@ -1884,6 +1884,30 @@ class LifecycleEvent(sqlmodel.SQLModel, table=True):
         sqlalchemy.Index("ix_lifecycleevent_version_event", "version_key", "event"),
     )
 
+    @classmethod
+    def withdrawing(
+        cls,
+        target_event_id: int,
+        *,
+        project_key: str,
+        cycle_key: str | None,
+        version_key: str | None,
+        when: datetime.datetime,
+    ) -> "LifecycleEvent":
+        # A withdraw row retracts an earlier event in the append-only trail, pointing back
+        # at it by id. effective and published share one instant, since a withdraw records
+        # itself rather than standing in for a planned date. The caller finds the prior
+        # event and hands its id in, keeping the differing lookups at the call sites.
+        return cls(
+            project_key=project_key,
+            cycle_key=cycle_key,
+            version_key=version_key,
+            event=LifecycleEventType.WITHDRAW,
+            effective=when,
+            published=when,
+            target_event_id=target_event_id,
+        )
+
 
 # BallotPaper: Release
 class BallotPaper(sqlmodel.SQLModel, table=True):
