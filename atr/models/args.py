@@ -19,7 +19,7 @@ from typing import Annotated, Any
 
 import pydantic
 
-from . import mail, safe, schema
+from . import github, mail, safe, schema
 
 
 class CapApprovalResolveArgs(schema.Strict):
@@ -164,6 +164,7 @@ class QuarantineValidate(schema.Strict):
 
     quarantined_id: int
     archives: list[QuarantineArchiveEntry]
+    github_payload: github.TrustedPublisherPayload | None = None
 
 
 def _ensure_footer_enum(value: Any) -> mail.MailFooterCategory | None:

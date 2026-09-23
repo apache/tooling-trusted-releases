@@ -97,6 +97,7 @@ async def finalise_revision(
     path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
     extracted_swhids: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
+    github_payload: github.TrustedPublisherPayload | None = None,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -136,6 +137,7 @@ async def finalise_revision(
         path_provenance=path_provenance,
         extracted_swhids=extracted_swhids,
         sha3_hashes=sha3_hashes,
+        github_payload=github_payload,
     )
 
 
@@ -236,8 +238,10 @@ async def _commit_new_revision(
         sha3_hashes=sha3_hashes,
     )
 
+    previous_commit_hash = release.commit_hash
     if github_payload is not None:
         await attestable.github_tp_payload_write(project_key, version_key, new_revision.safe_number, github_payload)
+        release.commit_hash = github_payload.sha
 
     if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):
         for row in attestable.compute_file_state_rows(
@@ -264,6 +268,16 @@ async def _commit_new_revision(
         description=description,
         was_quarantined=was_quarantined,
     )
+
+    if github_payload is not None:
+        storage.audit(
+            action="atr.storage.writers.release.CommitteeParticipant.set_commit_hash",
+            asf_uid=asf_uid,
+            project_key=str(project_key),
+            version=str(version_key),
+            previous_commit_hash=previous_commit_hash,
+            commit_hash=github_payload.sha,
+        )
 
     async with data.begin():
         # Run checks if in DRAFT phase
@@ -630,6 +644,7 @@ class CommitteeParticipant(FoundationCommitter):
                         release_key=release_key,
                         temp_dir=temp_dir,
                         version_key=version_key,
+                        github_payload=github_payload,
                     )
 
             return await _commit_new_revision(
@@ -713,6 +728,7 @@ class CommitteeParticipant(FoundationCommitter):
         release_key: str,
         temp_dir: str,
         version_key: safe.VersionKey,
+        github_payload: github.TrustedPublisherPayload | None = None,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
@@ -756,6 +772,9 @@ class CommitteeParticipant(FoundationCommitter):
                 task_type=sql.TaskType.QUARANTINE_VALIDATE,
                 task_args={
                     "quarantined_id": quarantined.id,
+                    "github_payload": (
+                        github_payload.model_dump(exclude={"exp", "nbf"}) if (github_payload is not None) else None
+                    ),
                     "archives": [
                         {"rel_path": entry.rel_path, "content_hash": entry.content_hash} for entry in file_metadata
                     ],

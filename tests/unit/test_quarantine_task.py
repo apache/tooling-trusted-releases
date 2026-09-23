@@ -28,6 +28,7 @@ import pytest
 
 import atr.archives as archives
 import atr.models.args as args
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
@@ -403,7 +404,11 @@ async def test_mark_failed_persists_on_managed_instance():
 
 
 @pytest.mark.asyncio
-async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("has_github_payload", [False, True])
+async def test_promote_finalises_revision_and_deletes_quarantined(
+    tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload, has_github_payload: bool
+):
+    payload = github_payload if has_github_payload else None
     quarantine_dir_path = tmp_path / "quarantine"
     quarantine_dir_path.mkdir()
     (quarantine_dir_path / "file.txt").write_bytes(b"file content")
@@ -448,10 +453,18 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
         ),
         mock.patch.object(quarantine.util, "paths_to_inodes", return_value={"file.txt": 12345}),
         mock.patch.object(quarantine.revision, "SafeSession", return_value=mock_safe_ctx),
-        mock.patch.object(quarantine.revision, "finalise_revision", new_callable=mock.AsyncMock) as mock_finalise,
+        mock.patch.object(
+            quarantine.revision, "finalise_revision", wraps=quarantine.revision.finalise_revision
+        ) as mock_finalise,
+        mock.patch.object(
+            revision, "_lock_and_merge", new_callable=mock.AsyncMock, return_value=(None, None, None, release)
+        ),
+        mock.patch.object(revision, "_commit_new_revision", new_callable=mock.AsyncMock) as mock_commit,
         mock.patch.object(quarantine.db, "session", side_effect=session_calls),
     ):
-        await quarantine._promote(quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir, {})
+        await quarantine._promote(
+            quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir, {}, github_payload=payload
+        )
 
     mock_release_data.release.assert_called_once_with(
         key="proj-1.0", _release_policy=True, _project_release_policy=True
@@ -459,6 +472,7 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
     mock_finalise.assert_awaited_once()
     call_kwargs = mock_finalise.call_args.kwargs
     assert call_kwargs["was_quarantined"] is True
+    assert mock_commit.await_args.kwargs["github_payload"] is payload
     assert call_kwargs["project_key"] == "proj"
     assert call_kwargs["release"] is release
     assert call_kwargs["path_to_hash"] == {"file.txt": "hash1"}
@@ -552,7 +566,9 @@ async def test_set_tag_updates_untagged_revision():
 
 
 @pytest.mark.asyncio
-async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path: pathlib.Path):
+async def test_validate_extraction_failure_marks_failed_and_deletes_dir(
+    tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload
+):
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
 
@@ -577,10 +593,15 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
             side_effect=RuntimeError("Extraction failure"),
         ),
         mock.patch.object(quarantine, "_mark_failed", new_callable=mock.AsyncMock) as mock_mark,
+        mock.patch.object(quarantine, "_promote", new_callable=mock.AsyncMock) as mock_promote,
         mock.patch.object(quarantine.aioshutil, "rmtree", new_callable=mock.AsyncMock) as mock_rmtree,
     ):
         result = await quarantine.validate(
-            {"quarantined_id": 1, "archives": [{"rel_path": "ok.tar.gz", "content_hash": "abc"}]}
+            {
+                "quarantined_id": 1,
+                "archives": [{"rel_path": "ok.tar.gz", "content_hash": "abc"}],
+                "github_payload": github_payload.model_dump(exclude={"exp", "nbf"}),
+            }
         )
 
     assert result is None
@@ -592,6 +613,8 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
         version_key="1.0",
     )
     mock_rmtree.assert_awaited_once_with(quarantine_dir)
+
+    mock_promote.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -628,7 +651,15 @@ async def test_validate_non_pending_status():
 
 
 @pytest.mark.asyncio
-async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("has_github_payload", [False, True])
+async def test_validate_success_calls_promote(
+    tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload, has_github_payload: bool
+):
+    task_args = {"quarantined_id": 1, "archives": [{"rel_path": "ok.tar.gz", "content_hash": "abc"}]}
+    payload = None
+    if has_github_payload:
+        task_args["github_payload"] = github_payload.model_dump(exclude={"exp", "nbf"})
+        payload = github.TrustedPublisherPayload.model_validate(task_args["github_payload"])
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
 
@@ -650,13 +681,17 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
         mock.patch.object(quarantine, "_promote", new_callable=mock.AsyncMock) as mock_promote,
         mock.patch.object(quarantine, "_mark_failed", new_callable=mock.AsyncMock) as mock_mark,
     ):
-        result = await quarantine.validate(
-            {"quarantined_id": 1, "archives": [{"rel_path": "ok.tar.gz", "content_hash": "abc"}]}
-        )
+        result = await quarantine.validate(task_args)
 
     assert result is None
     mock_promote.assert_awaited_once_with(
-        row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.key, str(quarantine_dir), {}
+        row,
+        safe.ProjectKey("proj"),
+        safe.VersionKey("1.0"),
+        row.release.key,
+        str(quarantine_dir),
+        {},
+        github_payload=payload,
     )
     mock_mark.assert_not_awaited()
 

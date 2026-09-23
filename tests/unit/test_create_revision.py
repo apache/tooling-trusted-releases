@@ -205,7 +205,9 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("has_github_payload", [False, True])
-async def test_commit_new_revision_writes_metadata_before_checks(tmp_path: pathlib.Path, has_github_payload: bool):
+async def test_commit_new_revision_writes_metadata_before_checks(
+    tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload, has_github_payload: bool
+):
     base_dir = safe.StatePath(tmp_path)
     temp_dir = tmp_path / "interim"
     temp_dir.mkdir()
@@ -215,13 +217,14 @@ async def test_commit_new_revision_writes_metadata_before_checks(tmp_path: pathl
     release_key = sql.release_key("proj", "1.0")
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.commit_hash = "a" * 40
     release.release_policy = None
     release.project.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     safe_data = MockSafeData(parent_key=None)
-    github_payload = mock.Mock(spec=github.TrustedPublisherPayload) if has_github_payload else None
+    payload = github_payload if has_github_payload else None
     calls: list[object] = []
-    safe_data.commit.side_effect = lambda: calls.append("commit")
+    safe_data.commit.side_effect = lambda: calls.append(("commit", release.commit_hash))
 
     with (
         mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
@@ -258,18 +261,32 @@ async def test_commit_new_revision_writes_metadata_before_checks(tmp_path: pathl
             temp_dir=str(temp_dir),
             version_key=safe.VersionKey("1.0"),
             sha3_hashes=sha3_hashes,
-            github_payload=github_payload,
+            github_payload=payload,
         )
 
     assert write_files_data.await_args.kwargs["sha3_hashes"] == sha3_hashes
     expected_payload_calls = (
-        [("payload", (safe.ProjectKey("proj"), safe.VersionKey("1.0"), safe.RevisionNumber("00006"), github_payload))]
+        [("payload", (safe.ProjectKey("proj"), safe.VersionKey("1.0"), safe.RevisionNumber("00006"), payload))]
+        if has_github_payload
+        else []
+    )
+    expected_hash_audit = (
+        [
+            {
+                "action": "atr.storage.writers.release.CommitteeParticipant.set_commit_hash",
+                "asf_uid": "test",
+                "project_key": "proj",
+                "version": "1.0",
+                "previous_commit_hash": "a" * 40,
+                "commit_hash": github_payload.sha,
+            }
+        ]
         if has_github_payload
         else []
     )
     assert calls == [
         *expected_payload_calls,
-        "commit",
+        ("commit", github_payload.sha if has_github_payload else "a" * 40),
         {
             "action": "revision_create",
             "asf_uid": "test",
@@ -279,6 +296,7 @@ async def test_commit_new_revision_writes_metadata_before_checks(tmp_path: pathl
             "description": "Upload of 2 files through web interface",
             "was_quarantined": False,
         },
+        *expected_hash_audit,
         "checks",
     ]
 

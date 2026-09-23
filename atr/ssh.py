@@ -710,8 +710,6 @@ async def _step_07b_process_validated_rsync_write(
                 log.info(f"rsync upload quarantined for release {release_key}")
                 message = f"\nATR: Upload received for {project_key} {version_key}. Archive validation in progress.\n"
             else:
-                if github_payload is not None:
-                    await wacp.release.set_commit_hash(project_key, version_key, github_payload.sha)
                 log.info(f"rsync upload successful for revision {result.number}")
                 host = config.get().APP_HOST
                 message = f"\nATR: Created revision {result.number} of {project_key} {version_key}\n"

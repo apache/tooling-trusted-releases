@@ -16,12 +16,15 @@
 # under the License.
 
 import contextlib
+import json
 import pathlib
 import unittest.mock as mock
 from typing import Final
 
 import pytest
 
+import atr.models.args as args
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.datatypes as datatypes
@@ -250,7 +253,11 @@ async def test_phase_gate_rejects_mismatched_phase():
 
 
 @pytest.mark.asyncio
-async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("has_github_payload", [False, True])
+async def test_quarantine_branch_returns_quarantined_when_archives_detected(
+    tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload, has_github_payload: bool
+):
+    payload = github_payload if has_github_payload else None
     temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
@@ -313,6 +320,7 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
             safe.VersionKey("1.0"),
             "test",
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            github_payload=payload,
         )
 
     assert isinstance(result, FakeQuarantined)
@@ -328,6 +336,20 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
         (sql.QuarantineStatus.STAGING, 0),
         (sql.QuarantineStatus.PENDING, 1),
     ]
+
+    task = safe_data._added_objects[-1]
+    if has_github_payload:
+        assert task.task_args["github_payload"] == github_payload.model_dump(exclude={"exp", "nbf"})
+    with mock.patch.object(github.time, "time", return_value=2**40 + 1):
+        restored = args.QuarantineValidate.model_validate_json(json.dumps(task.task_args))
+    if has_github_payload:
+        assert restored.github_payload is not None
+        assert restored.github_payload.sha == github_payload.sha
+        assert restored.github_payload.repository == github_payload.repository
+        assert restored.github_payload.exp is None
+        assert restored.github_payload.nbf is None
+    else:
+        assert restored.github_payload is None
 
 
 @pytest.mark.asyncio

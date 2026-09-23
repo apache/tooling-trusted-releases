@@ -25,6 +25,7 @@ import pathlib
 import shutil
 import time
 import uuid
+from typing import TYPE_CHECKING
 
 import aiofiles.os
 import aioshutil
@@ -48,6 +49,9 @@ import atr.storage.writers.revision as revision
 import atr.swhid as swhid
 import atr.tasks.checks as checks
 import atr.util as util
+
+if TYPE_CHECKING:
+    import atr.models.github as github
 
 
 def backfill_archive_cache() -> list[tuple[str, safe.StatePath, float]]:
@@ -139,7 +143,15 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
         await aioshutil.rmtree(quarantine_dir)
         return None
 
-    await _promote(quarantined, project_key, version_key, release.key, str(quarantine_dir), swhid_dirs)
+    await _promote(
+        quarantined,
+        project_key,
+        version_key,
+        release.key,
+        str(quarantine_dir),
+        swhid_dirs,
+        github_payload=task_args.github_payload,
+    )
     return None
 
 
@@ -344,6 +356,7 @@ async def _promote(
     release_key: str,
     quarantine_dir: str,
     swhid_dirs: dict[str, str],
+    github_payload: github.TrustedPublisherPayload | None = None,
 ) -> None:
     quarantine_dir_path = pathlib.Path(quarantine_dir)
 
@@ -397,6 +410,7 @@ async def _promote(
             was_quarantined=True,
             extracted_swhids=swhid_dirs,
             sha3_hashes=sha3_hashes,
+            github_payload=github_payload,
         )
 
     async with db.session() as data:

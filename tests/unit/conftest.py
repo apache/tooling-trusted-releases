@@ -21,6 +21,7 @@ from typing import NamedTuple
 import pytest
 
 import atr.cache as cache
+import atr.models.github as github
 
 
 class EmailUidCacheSnapshot(NamedTuple):
@@ -57,6 +58,42 @@ def _snapshot(path: pathlib.Path) -> EmailUidCacheSnapshot:
     except FileNotFoundError:
         return EmailUidCacheSnapshot(False, None, None, None)
     return EmailUidCacheSnapshot(True, stat.st_size, stat.st_mode & 0o777, stat.st_mtime_ns)
+
+
+@pytest.fixture
+def github_payload() -> github.TrustedPublisherPayload:
+    return github.TrustedPublisherPayload(
+        actor="testuser",
+        actor_id=12345,
+        aud="https://atr.example/",
+        base_ref="",
+        check_run_id="1",
+        enterprise="the-asf",
+        enterprise_id="212555",
+        event_name="workflow_dispatch",
+        exp=2**40,
+        head_ref="",
+        iat=0,
+        iss="https://token.actions.githubusercontent.com",
+        job_workflow_ref="apache/test/.github/workflows/release.yml@refs/heads/main",
+        job_workflow_sha="a" * 40,
+        jti="test-jti",
+        nbf=1,
+        ref="refs/heads/main",
+        ref_protected="false",
+        ref_type="branch",
+        repository="apache/test",
+        repository_owner="apache",
+        repository_visibility="public",
+        run_attempt="1",
+        run_number="1",
+        runner_environment="github-hosted",
+        sha="b" * 40,
+        sub="repo:apache/test:ref:refs/heads/main",
+        workflow="release",
+        workflow_ref="apache/test/.github/workflows/release.yml@refs/heads/main",
+        workflow_sha="a" * 40,
+    )
 
 
 @pytest.fixture(autouse=True)
