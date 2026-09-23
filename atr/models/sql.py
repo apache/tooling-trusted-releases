@@ -1306,7 +1306,7 @@ can be found at:
 The release artifacts are signed with one or more OpenPGP keys from:
 
   {{KEYS_FILE}}
-
+{{COMMIT_PARAGRAPH}}
 Please review the release candidate and vote accordingly.
 
 [ ] +1 Release this package

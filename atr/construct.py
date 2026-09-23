@@ -96,6 +96,7 @@ class _VoteValues(TypedDict):
     BUG_DATABASE: str
     CHECKLIST_URL: str
     COMMIT: str
+    COMMIT_PARAGRAPH: str
     COMMITTEE: str
     DURATION: str
     HOMEPAGE: str
@@ -125,6 +126,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "BUG_DATABASE": "Bug database URL",
     "CHECKLIST_URL": "URL to the release checklist",
     "COMMIT": "Source commit hash, if recorded",
+    "COMMIT_PARAGRAPH": "Source commit paragraph, if recorded",
     "COMMITTEE": "Committee name",
     "DOWNLOAD_PAGE": "Download page URL",
     "DOWNLOAD_URL": "URL to download the release",
@@ -170,7 +172,7 @@ can be found at:
 The release artifacts are signed with one or more OpenPGP keys from:
 
   {{KEYS_FILE}}
-
+{{COMMIT_PARAGRAPH}}
 Please review the release candidate and cast your vote on ATR at the URL
 above. Votes are recorded by ATR, so replies to this email are not counted.
 
@@ -478,6 +480,9 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "BUG_DATABASE": project.bug_database or "",
         "CHECKLIST_URL": checklist_url,
         "COMMIT": release.commit_hash or "",
+        "COMMIT_PARAGRAPH": (
+            f"\nThe recorded source commit is:\n\n  {release.commit_hash}\n" if release.commit_hash else ""
+        ),
         "COMMITTEE": committee.display_name,
         "DURATION": str(options.vote_duration or "an unlimited number of"),
         "HOMEPAGE": project.homepage or "",

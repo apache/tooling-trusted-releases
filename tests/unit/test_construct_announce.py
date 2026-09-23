@@ -182,8 +182,9 @@ async def test_announce_release_subject_and_body_uses_top_level_canonical_downlo
 @pytest.mark.parametrize(
     "template", [sql.Project(key="x").policy_start_vote_default, construct.START_VOTE_EXPEDITED_DEFAULT]
 )
-async def test_start_vote_subject_and_body_uses_canonical_keys_url(
-    monkeypatch, is_podling: bool, expected_url: str, template: str
+@pytest.mark.parametrize("commit_hash", ["1a2b3c4d5e6f", None])
+async def test_start_vote_subject_and_body_renders_defaults(
+    monkeypatch, is_podling: bool, expected_url: str, template: str, commit_hash: str | None
 ) -> None:
     committee = SimpleNamespace(key="myproject", is_podling=is_podling, display_name="Apache MyProject")
     project = SimpleNamespace(
@@ -193,7 +194,7 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
         homepage=None,
         repositories=[],
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=None)
+    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=commit_hash)
     revision = SimpleNamespace(number="1", tag=None)
 
     async def no_release_policy(_data, _project_key):
@@ -223,6 +224,11 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
     assert "https://atr.example.invalid/example/1" in body
     assert "ATR revision 1" in body
     assert "Beta version" in body
+    if commit_hash:
+        assert f"{expected_url}\n\nThe recorded source commit is:\n\n  {commit_hash}\n\nPlease review" in body
+    else:
+        assert "The recorded source commit is:" not in body
+        assert f"{expected_url}\n\nPlease review" in body
 
 
 @pytest.mark.asyncio
