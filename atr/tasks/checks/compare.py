@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import Final
 
 import aiofiles
 import aiofiles.os
@@ -35,14 +35,14 @@ import dulwich.objectspec
 import dulwich.porcelain
 import dulwich.refs
 
-import atr.attestable as attestable
 import atr.config as config
 import atr.log as log
-import atr.models.github as github_models
+import atr.models.attestable
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.paths as paths
 import atr.sandbox as sandbox
+import atr.source as source
 import atr.tasks.checks as checks
 import atr.tasks.task as task
 import atr.util as util
@@ -96,10 +96,10 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         )
         return None
 
-    payload = await attestable.github_tp_payload_read(args.project_key, args.version_key, args.revision_number)
+    payload = await source.read(args.project_key, args.version_key, args.revision_number)
     checkout_dir: str | None = None
     archive_dir: str | None = None
-    if payload is not None:
+    if payload.repository and payload.sha:
         try:
             outcome = await _compare_checkout_and_archive(args, recorder, payload)
         except OSError as e:
@@ -110,23 +110,20 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         if outcome is None:
             return None
         checkout_dir, archive_dir = outcome
-    payload_summary = _payload_summary(payload)
     log.info(
         "Ran compare.source_trees successfully",
         project=args.project_key,
         version=args.version_key,
         revision=args.revision_number,
         path=args.primary_rel_path,
-        github_payload=payload_summary,
+        source_commit=payload.model_dump(),
         github_checkout=checkout_dir,
         archive_checkout=archive_dir,
     )
     return None
 
 
-async def _checkout_github_source(
-    payload: github_models.TrustedPublisherPayload, checkout_dir: safe.StatePath
-) -> str | None:
+async def _checkout_github_source(payload: atr.models.attestable.SourceV2, checkout_dir: safe.StatePath) -> str | None:
     repo_url = f"https://github.com/{payload.repository}.git"
     started_ns = time.perf_counter_ns()
     try:
@@ -207,7 +204,7 @@ def _clone_repo(repo_url: str, sha: str, checkout_dir: safe.StatePath) -> None:
 async def _compare_checkout_and_archive(  # noqa: C901
     args: checks.FunctionArguments,
     recorder: checks.Recorder,
-    payload: github_models.TrustedPublisherPayload,
+    payload: atr.models.attestable.SourceV2,
 ) -> tuple[str, str] | None:
     if not (primary_abs_path := await recorder.abs_path()):
         return None
@@ -376,17 +373,3 @@ async def _find_archive_root(archive_path: safe.StatePath, extract_dir: safe.Sta
         extra_entries=extra_entries,
     )
     return ArchiveRootResult(root=found_root, extra_entries=extra_entries)
-
-
-def _payload_summary(payload: github_models.TrustedPublisherPayload | None) -> dict[str, Any]:
-    if payload is None:
-        return {"present": False}
-    return {
-        "present": True,
-        "repository": payload.repository,
-        "ref": payload.ref,
-        "sha": payload.sha,
-        "workflow_ref": payload.workflow_ref,
-        "actor": payload.actor,
-        "actor_id": payload.actor_id,
-    }

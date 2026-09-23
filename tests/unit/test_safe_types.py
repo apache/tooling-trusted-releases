@@ -74,14 +74,14 @@ def test_safe_version_types_reject_too_long():
         safe.VersionKey("1" * (safe.MAX_VERSION_LENGTH + 1))
 
 
-@pytest.mark.parametrize("value", ["abc1234", "0123456789abcdef", "a" * 7, "f" * 64])
+@pytest.mark.parametrize("value", ["0123456789abcdef" + "a" * 24, "f" * 40])
 def test_commit_hash_accepts_valid_hex(value: str):
     assert str(safe.CommitHash(value)) == value
 
 
-@pytest.mark.parametrize("bad", ["abc", "abcdef", "a" * 65])
+@pytest.mark.parametrize("bad", ["abc1234", "a" * 39, "a" * 41, "a" * 64])
 def test_commit_hash_rejects_bad_length(bad: str):
-    with pytest.raises(ValueError, match="7 and 64"):
+    with pytest.raises(ValueError, match="exactly 40"):
         safe.CommitHash(bad)
 
 
@@ -91,7 +91,7 @@ def test_commit_hash_rejects_non_hex(bad: str):
         safe.CommitHash(bad)
 
 
-@pytest.mark.parametrize(("value", "expected"), [("ABC1234", "abc1234"), ("DeadBeef12", "deadbeef12")])
+@pytest.mark.parametrize(("value", "expected"), [("A" * 40, "a" * 40), ("DeadBeef12" * 4, "deadbeef12" * 4)])
 def test_optional_commit_hash_lowercases(value: str, expected: str):
     result = pydantic.TypeAdapter(safe.OptionalCommitHash).validate_python(value)
     assert str(result) == expected

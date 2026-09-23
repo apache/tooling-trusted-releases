@@ -42,6 +42,7 @@ import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.source as source
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.tasks as tasks
@@ -160,8 +161,14 @@ async def _commit_new_revision(
     extracted_swhids: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
     github_payload: github.TrustedPublisherPayload | None = None,
+    source_override: db.Opt[str | None] = db.NOT_SET,
 ) -> sql.Revision:
     try:
+        source_record = source.advance(
+            await source.initial(release, previous_attestable),
+            github_payload,
+            source_override,
+        )
         # This is the only place where models.Revision is constructed
         # That makes models.populate_revision_sequence_and_name safe against races
         # Because that event is called when data.add is called below
@@ -236,12 +243,13 @@ async def _commit_new_revision(
         effective_path_provenance=effective_provenance,
         swhid_dirs=swhid_dirs,
         sha3_hashes=sha3_hashes,
+        source=source_record,
     )
 
     previous_commit_hash = release.commit_hash
     if github_payload is not None:
         await attestable.github_tp_payload_write(project_key, version_key, new_revision.safe_number, github_payload)
-        release.commit_hash = github_payload.sha
+    release.commit_hash = source_record.sha or None
 
     if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):
         for row in attestable.compute_file_state_rows(
@@ -269,14 +277,14 @@ async def _commit_new_revision(
         was_quarantined=was_quarantined,
     )
 
-    if github_payload is not None:
+    if (release.commit_hash != previous_commit_hash) or (not isinstance(source_override, db.NotSet)):
         storage.audit(
             action="atr.storage.writers.release.CommitteeParticipant.set_commit_hash",
             asf_uid=asf_uid,
             project_key=str(project_key),
             version=str(version_key),
             previous_commit_hash=previous_commit_hash,
-            commit_hash=github_payload.sha,
+            commit_hash=release.commit_hash,
         )
 
     async with data.begin():
@@ -480,6 +488,7 @@ class CommitteeParticipant(FoundationCommitter):
         clone_from: safe.RevisionNumber | None = None,
         expected_revision: safe.RevisionNumber | None = None,
         github_payload: github.TrustedPublisherPayload | None = None,
+        source_override: db.Opt[str | None] = db.NOT_SET,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
         async with db.session() as data:
@@ -605,6 +614,14 @@ class CommitteeParticipant(FoundationCommitter):
                     f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
                 )
 
+            if (
+                (not isinstance(source_override, db.NotSet))
+                and (old_revision is None)
+                and (prior_revision_key is not None)
+            ):
+                await aioshutil.rmtree(temp_dir)
+                raise datatypes.RevisionMismatchError("The release has changed, please refresh and try again")
+
             if expected_revision is not None:
                 expected_key = sql.revision_key(release_key, str(expected_revision))
                 if prior_revision_key != expected_key:
@@ -631,6 +648,9 @@ class CommitteeParticipant(FoundationCommitter):
 
             archive_paths = detection.detect_archives_requiring_quarantine(path_to_hash, previous_attestable)
             if archive_paths:
+                if not isinstance(source_override, db.NotSet):
+                    await aioshutil.rmtree(temp_dir)
+                    raise datatypes.FailedError("Source archives need validation before the source commit can be set.")
                 deduped = detection.deduplicate_quarantine_archives(archive_paths, path_to_hash)
                 if deduped:
                     return await self._quarantine_archives(
@@ -663,6 +683,7 @@ class CommitteeParticipant(FoundationCommitter):
                 path_provenance=path_provenance,
                 sha3_hashes=sha3_hashes,
                 github_payload=github_payload,
+                source_override=source_override,
             )
 
     async def set_tag(

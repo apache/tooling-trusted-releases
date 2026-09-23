@@ -71,11 +71,22 @@ class PathEntryV2(schema.Strict):
     provenance: ProvenanceV2 | None = None
 
 
+class SourceV2(schema.Strict):
+    repository: str = ""
+    default: str | None = None
+    override: str | None = None
+
+    @property
+    def sha(self) -> str:
+        return self.override or self.default or ""
+
+
 class AttestableV2(schema.Strict):
     version: Literal[2] = 2
     hashes: dict[str, HashEntryV2] = schema.factory(dict)
     paths: dict[str, PathEntryV2] = schema.factory(dict)
     policy: dict[str, Any] = schema.factory(dict)
+    source: SourceV2 | None = None
 
 
 # Attestable, any version

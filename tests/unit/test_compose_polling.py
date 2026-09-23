@@ -16,8 +16,14 @@
 # under the License.
 
 import pathlib
+import unittest.mock as mock
+
+import htpy
+import pytest
 
 import atr.get.compose as compose
+import atr.models.attestable as attestable
+import atr.models.sql as sql
 
 
 def test_banner_html_ongoing_only():
@@ -30,6 +36,24 @@ def test_banner_html_pending_quarantine_only():
     html = compose._banner_html(quarantine_pending=1, ongoing=0)
     assert "Archive validation is in progress" in html
     assert 'id="ongoing-tasks-count"' in html
+
+
+@pytest.mark.parametrize("override", [None, "b" * 40])
+async def test_commit_hash_form_shows_default_and_submits_only_override(
+    monkeypatch: pytest.MonkeyPatch, override: str | None
+):
+    release = sql.Release(project_key="test", version="1.0")
+    selected = attestable.SourceV2(repository="apache/test", default="a" * 40, override=override)
+    monkeypatch.setattr(compose.source, "current", mock.AsyncMock(return_value=selected))
+    monkeypatch.setattr(compose.util, "as_url", mock.Mock(return_value="/compose/test/1.0"))
+    render = mock.AsyncMock(return_value=htpy.div["form"])
+    monkeypatch.setattr(compose.form, "render", render)
+    await compose._commit_hash_form_html(release)
+    options = render.await_args.kwargs
+    submitted = options["model_cls"](csrf_token="test", **options["defaults"])
+    assert str(submitted.commit_hash or "") == (override or "")
+    details = str(options["pre_submit"])
+    assert ("Explicitly supplied" if override else "Assumed from workflow") in details
 
 
 def test_compose_polling_active_neither():

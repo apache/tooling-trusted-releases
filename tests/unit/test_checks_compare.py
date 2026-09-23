@@ -19,6 +19,7 @@ import datetime
 import pathlib
 import shutil
 import subprocess
+import unittest.mock as mock
 from collections.abc import Callable, Iterable, Mapping
 
 import aiofiles.os
@@ -28,6 +29,7 @@ import dulwich.refs
 import pytest
 
 import atr.attestable
+import atr.models.attestable
 import atr.models.github
 import atr.models.safe
 import atr.models.safe as safe
@@ -40,14 +42,16 @@ import atr.tasks.task as task
 class CheckoutRecorder:
     def __init__(self, return_value: str | None = None) -> None:
         self.checkout_dir: safe.StatePath | None = None
+        self.source: atr.models.attestable.SourceV2 | None = None
         self.return_value = return_value
 
     async def __call__(
         self,
-        payload: atr.models.github.TrustedPublisherPayload,
+        payload: atr.models.attestable.SourceV2,
         checkout_dir: safe.StatePath,
     ) -> str | None:
         self.checkout_dir = checkout_dir
+        self.source = payload
         assert await aiofiles.os.path.exists(checkout_dir)
         if self.return_value is not None:
             return self.return_value
@@ -660,8 +664,9 @@ async def test_find_archive_root_returns_none_when_no_directories(tmp_path: path
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("override", [None, "c" * 40])
 async def test_source_trees_creates_temp_workspace_and_cleans_up(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, override: str | None
 ) -> None:
     temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
@@ -675,6 +680,14 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
+    recorded = (
+        atr.models.attestable.AttestableV2(
+            source=atr.models.attestable.SourceV2(repository=payload.repository, default=payload.sha, override=override)
+        )
+        if override
+        else None
+    )
+    monkeypatch.setattr(atr.attestable, "load", mock.AsyncMock(return_value=recorded))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -684,6 +697,8 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     await atr.tasks.checks.compare.source_trees(args)
 
     assert checkout.checkout_dir is not None
+    assert checkout.source is not None
+    assert checkout.source.sha == (override or payload.sha)
     checkout_dir = checkout.checkout_dir
     assert checkout_dir.path.name == "github"
     assert checkout_dir.parent.path.parent == tmp_root.path

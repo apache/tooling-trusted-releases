@@ -22,6 +22,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.models.attestable
 import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -218,6 +219,9 @@ async def test_commit_new_revision_writes_metadata_before_checks(
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.commit_hash = "a" * 40
+    previous = atr.models.attestable.AttestableV2(
+        source=atr.models.attestable.SourceV2(repository="apache/test", default=release.commit_hash)
+    )
     release.release_policy = None
     release.project.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
@@ -254,7 +258,7 @@ async def test_commit_new_revision_writes_metadata_before_checks(
             merge_base_revision_key=None,
             path_to_hash=path_hashes,
             path_to_size=path_sizes,
-            previous_attestable=None,
+            previous_attestable=previous,
             project_key=safe.ProjectKey("proj"),
             release=release,
             release_key=release_key,
@@ -265,6 +269,7 @@ async def test_commit_new_revision_writes_metadata_before_checks(
         )
 
     assert write_files_data.await_args.kwargs["sha3_hashes"] == sha3_hashes
+    assert write_files_data.await_args.kwargs["source"].sha == (github_payload.sha if has_github_payload else "a" * 40)
     expected_payload_calls = (
         [("payload", (safe.ProjectKey("proj"), safe.VersionKey("1.0"), safe.RevisionNumber("00006"), payload))]
         if has_github_payload
@@ -1147,6 +1152,8 @@ def _make_release_participant() -> release.CommitteeParticipant:
 
 def _mock_db_session(release: mock.MagicMock, selected_revision: mock.MagicMock | None = None) -> mock.MagicMock:
     release.project.committee_key = "test"
+    release.project.policy_github_repository_name = "test"
+    release.commit_hash = None
     mock_query = mock.MagicMock()
     mock_query.demand = mock.AsyncMock(return_value=release)
     mock_selected_query = mock.MagicMock()

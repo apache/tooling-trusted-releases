@@ -525,6 +525,7 @@ async def write_files_data(
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
     swhid_dirs: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
+    source: models.SourceV2 | None = None,
 ) -> None:
     result = await _generate_files_data(
         path_to_hash,
@@ -539,6 +540,7 @@ async def write_files_data(
         swhid_dirs=swhid_dirs,
         sha3_hashes=sha3_hashes,
     )
+    result.source = source
     file_path = attestable_path(project_key, version_key, revision_number)
     await _atomic_write_readonly(file_path.path, result.model_dump_json(indent=2))
     checks_file_path = attestable_checks_path(project_key, version_key, revision_number)

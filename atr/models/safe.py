@@ -215,9 +215,8 @@ class CommitHash(SafeType):
         return _HEX_LOWER
 
     def _additional_validations(self, value: str) -> None:
-        # Wide enough for a short hash through to a full SHA-256 object name
-        if not (7 <= len(value) <= 64):
-            raise ValueError("A commit hash must be between 7 and 64 hexadecimal characters")
+        if len(value) != 40:
+            raise ValueError("A commit hash must be exactly 40 hexadecimal characters")
 
 
 class CommitteeKey(Alphanumeric):

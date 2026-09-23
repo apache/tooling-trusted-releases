@@ -36,6 +36,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
+import atr.source as source
 import atr.tasks.cap as cap
 import atr.tasks.catalog_site as catalog_site
 import atr.tasks.checks as checks
@@ -592,7 +593,7 @@ async def tar_gz_checks(
         compare.INPUT_POLICY_KEYS,
         release,
         revision,
-        await checks.resolve_extra_args(compare.INPUT_EXTRA_ARGS, release),
+        await source.inputs(release.safe_project_key, release.safe_version_key, revision),
         file=path,
     )
     license_h_ck = await checks.resolve_cache_key(
@@ -693,7 +694,7 @@ async def zip_checks(
         compare.INPUT_POLICY_KEYS,
         release,
         revision,
-        await checks.resolve_extra_args(compare.INPUT_EXTRA_ARGS, release),
+        await source.inputs(release.safe_project_key, release.safe_version_key, revision),
         file=path,
     )
     license_h_ck = await checks.resolve_cache_key(

@@ -19,7 +19,6 @@ from typing import Literal
 
 import quart
 
-import atr.attestable as attestable
 import atr.blueprints.post as post
 import atr.errors as errors
 import atr.get as get
@@ -57,15 +56,6 @@ async def _set_commit_hash(
     commit_hash: safe.CommitHash | None,
 ) -> web.WerkzeugResponse:
     submitted = str(commit_hash) if (commit_hash is not None) else None
-    # Trusted Publishing is authoritative, so a hand-entered value has to agree with its attestation
-    payload = await attestable.latest_github_tp_payload(project_key, version_key)
-    if (payload is not None) and (submitted != payload.sha):
-        return await session.redirect(
-            get.compose.selected,
-            project_key=str(project_key),
-            version_key=str(version_key),
-            error="The commit hash was set via Trusted Publishing and cannot be edited.",
-        )
     try:
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)

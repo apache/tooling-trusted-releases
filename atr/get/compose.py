@@ -26,7 +26,6 @@ import htpy
 import quart
 from quart_wtf import utils
 
-import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
@@ -44,6 +43,7 @@ import atr.render as render
 import atr.shared as shared
 import atr.shared.activity as activity
 import atr.shared.draft as draft
+import atr.source as source
 import atr.storage as storage
 import atr.strings as strings
 import atr.template as template
@@ -298,21 +298,22 @@ async def _commit_hash_form_html(release: sql.Release) -> str:
     action = util.as_url(
         post.compose.selected, project_key=release.safe_project_key, version_key=release.safe_version_key
     )
-    payload = await attestable.latest_github_tp_payload(release.safe_project_key, release.safe_version_key)
-    if payload is not None:
-        # GitHub has attested the commit, so we show it locked rather than as an editable form
-        locked = htm.div(".mb-3")[
-            htpy.label(".form-label")["Commit hash"],
-            htpy.input(type="text", class_="form-control", value=payload.sha, readonly=True, disabled=True),
-            htm.div(".form-text")["Set by GitHub via Trusted Publishing; it cannot be changed here."],
-        ]
-        return str(locked)
+    selected_source = await source.current(release)
+    details = htm.Block(classes=".mb-3")
+    if selected_source.sha:
+        basis = "Explicitly supplied" if selected_source.override else "Assumed from workflow"
+        details.append(htpy.p[f"{basis}: ", htpy.code[selected_source.sha]])
+    if selected_source.repository:
+        details.append(htpy.p[f"Source repository: {selected_source.repository}"])
+    else:
+        details.append(htpy.p["Configure one GitHub repository for this project to compare its source commit."])
     commit_hash_form = await form.render(
         model_cls=shared.compose.SetCommitHashForm,
         action=action,
         submit_label="Save commit hash",
         submit_classes="btn-outline-primary",
-        defaults={"commit_hash": release.commit_hash or ""},
+        pre_submit=details.collect(),
+        defaults={"commit_hash": selected_source.override or ""},
     )
     return str(commit_hash_form)
 

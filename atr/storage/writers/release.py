@@ -506,35 +506,25 @@ class CommitteeParticipant(FoundationCommitter):
         version_key: safe.VersionKey,
         commit_hash: str | None,
     ) -> sql.Release:
-        # Shared by the Trusted Publishing auto-fill and the manual recording form
-        release = await self.__data.release(
-            project_key=str(project_key), version=str(version_key), _committee=True, _project=True
-        ).demand(storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404))
-        storage.ensure_project_active(release.project)
-        self.__write.ensure_release_writable(release)
-        previous_commit_hash = release.commit_hash
-        via = sql.validate_instrumented_attribute
-        result = await self.__data.execute(
-            sqlmodel.update(sql.Release)
-            .where(
-                via(sql.Release.key) == release.key,
-                via(sql.Release.phase) == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        try:
+            if commit_hash is not None:
+                commit_hash = str(safe.CommitHash(commit_hash))
+            await self.__write_as.revision.create_revision_with_quarantine(
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description="Source commit updated through Compose",
+                source_override=commit_hash,
             )
-            .values(commit_hash=commit_hash)
+        except datatypes.FailedError as e:
+            raise storage.AccessError(str(e), status=409) from e
+        except ValueError as e:
+            raise storage.AccessError(str(e), status=400) from e
+        self.__data.expire_all()
+        return await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
+            storage.AccessError("Release not found", status=404)
         )
-        if getattr(result, "rowcount", 0) != 1:
-            await self.__data.rollback()
-            raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
-        await self.__data.refresh(release)
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            project_key=str(project_key),
-            version=str(version_key),
-            previous_commit_hash=previous_commit_hash,
-            commit_hash=commit_hash,
-        )
-        return release
 
     async def delete(
         self,

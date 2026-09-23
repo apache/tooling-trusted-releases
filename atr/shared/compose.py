@@ -52,7 +52,8 @@ class SetCommitHashForm(form.Form):
     variant: SET_COMMIT_HASH = form.value(SET_COMMIT_HASH)
     commit_hash: safe.OptionalCommitHash = form.label(
         "Commit hash",
-        "The source commit hash for this release. Disabled when GitHub has set it via Trusted Publishing.",
+        "Enter the full 40-character source commit for the displayed repository. "
+        "Leave blank to use the workflow default, if available.",
         widget=form.Widget.TEXT,
         default="",
     )
