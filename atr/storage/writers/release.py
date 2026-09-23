@@ -515,7 +515,12 @@ class CommitteeParticipant(FoundationCommitter):
         previous_commit_hash = release.commit_hash
         via = sql.validate_instrumented_attribute
         result = await self.__data.execute(
-            sqlmodel.update(sql.Release).where(via(sql.Release.key) == release.key).values(commit_hash=commit_hash)
+            sqlmodel.update(sql.Release)
+            .where(
+                via(sql.Release.key) == release.key,
+                via(sql.Release.phase) == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            )
+            .values(commit_hash=commit_hash)
         )
         if getattr(result, "rowcount", 0) != 1:
             await self.__data.rollback()
