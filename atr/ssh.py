@@ -36,7 +36,6 @@ import asyncssh.kex as kex
 import asyncssh.mac as mac
 import ssh_audit.builtin_policies as builtin_policies
 
-import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
 import atr.ldap as ldap
@@ -697,6 +696,7 @@ async def _step_07b_process_validated_rsync_write(
                 raise datatypes.FailedError(f"rsync upload failed with exit status {exit_status} for {for_revision}")
 
         try:
+            github_payload = server._get_github_payload(process)
             result = await wacp.revision.create_revision_with_quarantine(
                 project_key,
                 version_key,
@@ -704,16 +704,13 @@ async def _step_07b_process_validated_rsync_write(
                 allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
                 description=description,
                 modify=modify,
+                github_payload=github_payload,
             )
             if isinstance(result, sql.Quarantined):
                 log.info(f"rsync upload quarantined for release {release_key}")
                 message = f"\nATR: Upload received for {project_key} {version_key}. Archive validation in progress.\n"
             else:
-                github_payload = server._get_github_payload(process)
                 if github_payload is not None:
-                    await attestable.github_tp_payload_write(
-                        project_key, version_key, result.safe_number, github_payload
-                    )
                     await wacp.release.set_commit_hash(project_key, version_key, github_payload.sha)
                 log.info(f"rsync upload successful for revision {result.number}")
                 host = config.get().APP_HOST

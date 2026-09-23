@@ -50,6 +50,8 @@ import atr.util as util
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    import atr.models.github as github
+
 _QUARANTINE_TOKEN_ALPHABET: Final[str] = "qpzry9x8gf2tvdw0s3jn54khce6mua7b"
 _QUARANTINE_TOKEN_LENGTH: Final[int] = 24
 
@@ -155,6 +157,7 @@ async def _commit_new_revision(
     path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
     extracted_swhids: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
+    github_payload: github.TrustedPublisherPayload | None = None,
 ) -> sql.Revision:
     try:
         # This is the only place where models.Revision is constructed
@@ -232,6 +235,9 @@ async def _commit_new_revision(
         swhid_dirs=swhid_dirs,
         sha3_hashes=sha3_hashes,
     )
+
+    if github_payload is not None:
+        await attestable.github_tp_payload_write(project_key, version_key, new_revision.safe_number, github_payload)
 
     if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):
         for row in attestable.compute_file_state_rows(
@@ -459,6 +465,7 @@ class CommitteeParticipant(FoundationCommitter):
         | None = None,
         clone_from: safe.RevisionNumber | None = None,
         expected_revision: safe.RevisionNumber | None = None,
+        github_payload: github.TrustedPublisherPayload | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
         async with db.session() as data:
@@ -640,6 +647,7 @@ class CommitteeParticipant(FoundationCommitter):
                 version_key=version_key,
                 path_provenance=path_provenance,
                 sha3_hashes=sha3_hashes,
+                github_payload=github_payload,
             )
 
     async def set_tag(

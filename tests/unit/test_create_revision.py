@@ -22,6 +22,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.datatypes as datatypes
@@ -203,7 +204,8 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
 
 
 @pytest.mark.asyncio
-async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("has_github_payload", [False, True])
+async def test_commit_new_revision_writes_metadata_before_checks(tmp_path: pathlib.Path, has_github_payload: bool):
     base_dir = safe.StatePath(tmp_path)
     temp_dir = tmp_path / "interim"
     temp_dir.mkdir()
@@ -212,11 +214,12 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
     sha3_hashes = await revision.attestable.compute_sha3_hashes(path_hashes, None, safe.StatePath(temp_dir))
     release_key = sql.release_key("proj", "1.0")
     release = mock.MagicMock()
-    release.phase = sql.ReleasePhase.RELEASE_PREVIEW
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.release_policy = None
     release.project.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     safe_data = MockSafeData(parent_key=None)
+    github_payload = mock.Mock(spec=github.TrustedPublisherPayload) if has_github_payload else None
     calls: list[object] = []
     safe_data.commit.side_effect = lambda: calls.append("commit")
 
@@ -224,9 +227,21 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
         mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
         mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock) as write_files_data,
         mock.patch.object(revision.attestable, "compute_file_state_rows", return_value=[]),
+        mock.patch.object(
+            revision.attestable,
+            "github_tp_payload_write",
+            new_callable=mock.AsyncMock,
+            side_effect=lambda *args: calls.append(("payload", args)),
+        ),
         mock.patch.object(revision.paths, "get_archives_dir", return_value=base_dir / "archives"),
         mock.patch.object(revision.paths, "release_directory", return_value=base_dir / "rev" / "00006"),
         mock.patch.object(revision.storage, "audit", side_effect=lambda **kwargs: calls.append(kwargs)),
+        mock.patch.object(
+            revision.tasks,
+            "draft_checks",
+            new_callable=mock.AsyncMock,
+            side_effect=lambda *args, **kwargs: calls.append("checks"),
+        ),
         mock.patch.object(revision.util, "chmod_directories"),
     ):
         await revision._commit_new_revision(
@@ -243,10 +258,17 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
             temp_dir=str(temp_dir),
             version_key=safe.VersionKey("1.0"),
             sha3_hashes=sha3_hashes,
+            github_payload=github_payload,
         )
 
     assert write_files_data.await_args.kwargs["sha3_hashes"] == sha3_hashes
+    expected_payload_calls = (
+        [("payload", (safe.ProjectKey("proj"), safe.VersionKey("1.0"), safe.RevisionNumber("00006"), github_payload))]
+        if has_github_payload
+        else []
+    )
     assert calls == [
+        *expected_payload_calls,
         "commit",
         {
             "action": "revision_create",
@@ -257,6 +279,7 @@ async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
             "description": "Upload of 2 files through web interface",
             "was_quarantined": False,
         },
+        "checks",
     ]
 
 
