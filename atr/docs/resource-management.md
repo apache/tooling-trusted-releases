@@ -2,7 +2,7 @@
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.19.` [ASFQuart usage](asfquart-usage)
+**Prev**: `3.19.` [ASF modules](asf-modules)
 
 **Next**: `3.21.` [SBOM architecture](sbom-architecture)
 

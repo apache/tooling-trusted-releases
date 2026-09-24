@@ -1,4 +1,4 @@
-# 3.19. ASFQuart usage
+# 3.19. ASF modules
 
 **Up**: `3.` [Developer guide](developer-guide)
 
@@ -9,24 +9,22 @@
 **Sections**:
 
 * [Overview](#overview)
-* [Application construction](#application-construction)
-* [Session management](#session-management)
-* [OAuth authentication](#oauth-authentication)
-* [Authentication decorators](#authentication-decorators)
-* [Exception handling](#exception-handling)
-* [Application secret and session encryption](#application-secret-and-session-encryption)
-* [JWT signing key storage](#jwt-signing-key-storage)
-* [Application extensions](#application-extensions)
-* [What ATR does not use from ASFQuart](#what-atr-does-not-use-from-asfquart)
-* [Security considerations for auditors](#security-considerations-for-auditors)
+* [ASFQuart](#asfquart)
+* [asfpy](#asfpy)
 
 ## Overview
 
+ATR makes use of source modules maintained by ASF, rather than only on third-party packages from PyPI. This page records which ASF-maintained modules ATR depends on, and how ATR uses each of them.
+
+At present there is a single direct dependency of this kind: [ASFQuart](https://github.com/apache/infrastructure-asfquart), which forms the foundation of ATR's web application. ASFQuart in turn brings in [asfpy](https://github.com/apache/infrastructure-asfpy) as a transitive dependency, but ATR does not use asfpy directly. The two are covered in turn below.
+
+## ASFQuart
+
 [ASFQuart](https://github.com/apache/infrastructure-asfquart) is a shared framework library maintained by ASF Infrastructure that provides common functionality for ASF web applications built on [Quart](https://quart.palletsprojects.com/) (an async Python web framework). ATR uses ASFQuart as the foundation of its web application, relying on it for application construction, session management, OAuth integration with the ASF identity provider, and authentication enforcement.
 
-ASFQuart is not an ATR dependency in the usual sense — it is infrastructure-level code shared across multiple ASF services. ATR does not modify or vendor ASFQuart; it uses the library as published. This document describes what ATR uses from ASFQuart and what security-relevant behaviour is inherited from it.
+ASFQuart is not an ATR dependency in the usual sense — it is infrastructure-level code shared across multiple ASF services. ATR does not modify or vendor ASFQuart; it uses the library as published. This section describes what ATR uses from ASFQuart and what security-relevant behaviour is inherited from it.
 
-## Application construction
+### Application construction
 
 ATR creates its application instance via `asfquart.construct()` in [`server.py`](/ref/atr/server.py). This call produces a `QuartApp` instance (a subclass of `quart.Quart`) with ASF-standard defaults applied:
 
@@ -44,11 +42,11 @@ The `construct()` function performs the following setup that ATR inherits:
 
 ATR then overrides the OAuth URLs to use the non-OIDC ASF OAuth endpoints and applies its own configuration via `app.config.from_object()`, taking care to preserve the ASFQuart-generated secret key.
 
-## Session management
+### Session management
 
 ATR uses ASFQuart's session module (`asfquart.session`) for all cookie-based user sessions. ASFQuart sessions are cookie-based Quart sessions keyed by the application ID, which means multiple ASFQuart applications on the same host do not share sessions.
 
-### Reading sessions
+#### Reading sessions
 
 ATR calls `asfquart.session.read()` throughout the codebase to obtain the current user's session. This function:
 
@@ -62,11 +60,11 @@ The returned `ClientSession` object provides: `uid` (ASF user ID), `dn` (disting
 
 ATR uses the `metadata` dict to track admin impersonation state (the `admin` key stores the original admin's UID when browsing as another user).
 
-### Writing and clearing sessions
+#### Writing and clearing sessions
 
 ATR calls `asfquart.session.write()` to create sessions after OAuth login and during admin impersonation. The write function stores the session data with creation (`cts`) and last-update (`uts`) timestamps. ATR calls `asfquart.session.clear()` to destroy sessions on logout, session expiry, and when ending admin impersonation.
 
-### Session expiry
+#### Session expiry
 
 ASFQuart enforces two expiry checks within `session.read()`:
 
@@ -75,7 +73,7 @@ ASFQuart enforces two expiry checks within `session.read()`:
 
 ATR additionally enforces its own absolute session maximum via `ABSOLUTE_SESSION_MAX_SECONDS` in a `before_request` hook in [`server.py`](/ref/atr/server.py), which is independent of ASFQuart's expiry.
 
-## OAuth authentication
+### OAuth authentication
 
 ATR uses ASFQuart's generic OAuth endpoint (`asfquart.generics.setup_oauth`) to handle the ASF OAuth login flow. The endpoint is registered at `/auth` and handles:
 
@@ -95,11 +93,11 @@ The OAuth flow has a configurable workflow timeout (default 15 minutes) after wh
 
 ASFQuart also sets up a login enforcement handler (`enforce_login`) that intercepts `AuthenticationFailed` exceptions and redirects unauthenticated users to the OAuth flow. This handler respects the `X-No-Redirect` header and `Authorization` headers, so API clients receive error responses rather than HTML redirects.
 
-### Open redirect prevention
+#### Open redirect prevention
 
 The OAuth endpoint validates redirect URIs in both login and logout flows: URIs must start with a single `/` and must not start with `//`. This prevents open redirect attacks where an attacker crafts a login URL that redirects to an external site after authentication.
 
-## Authentication decorators
+### Authentication decorators
 
 ATR uses ASFQuart's `auth.require` decorator to enforce authentication on web routes. The decorator is applied in ATR's blueprint modules ([`blueprints/get.py`](/ref/atr/blueprints/get.py) and [`blueprints/post.py`](/ref/atr/blueprints/post.py)):
 
@@ -109,13 +107,13 @@ decorated = wrapper if public else auth.require(auth.Requirements.committer)(wra
 
 The `auth.require` decorator reads the current session via `asfquart.session.read()` and raises `AuthenticationFailed` (HTTP 403) if no valid session exists or if the specified requirement is not met. ATR uses only the `Requirements.committer` check, which verifies that any authenticated session exists. Further authorization (PMC membership, project participation) is handled by ATR's own [`principal`](/ref/atr/principal.py) module and storage layer.
 
-## Exception handling
+### Exception handling
 
 ATR uses ASFQuart's `ASFQuartException` class as a general-purpose HTTP error exception throughout its codebase. The exception carries a message and an HTTP status code. ATR raises it for authentication failures (401), authorization failures (403), validation errors, and other HTTP error conditions.
 
 ATR registers error handlers for `ASFQuartException` in both the main application ([`server.py`](/ref/atr/server.py)) and the API blueprint ([`blueprints/api.py`](/ref/atr/blueprints/api.py)). The API handler returns JSON error responses; the main handler renders HTML error pages.
 
-## Application secret and session encryption
+### Application secret and session encryption
 
 ASFQuart manages the Quart `secret_key`, which is used to sign session cookies. The `QuartApp` constructor either reads the secret from a token file or generates a new one:
 
@@ -125,15 +123,15 @@ ASFQuart manages the Quart `secret_key`, which is used to sign session cookies. 
 
 ASFQuart warns (to stderr) if the token file has permissions other than `0o600`. ATR preserves the ASFQuart-generated secret key when applying its own configuration, since `app.config.from_object()` would otherwise overwrite it.
 
-## JWT signing key storage
+### JWT signing key storage
 
 ATR stores its JWT signing key in the Quart application's `extensions` dict, which is provided by the `QuartApp` instance from ASFQuart. The [`jwtoken`](/ref/atr/jwtoken.py) module calls `asfquart.APP.extensions` to read and write the signing key. This is standard Quart functionality exposed through ASFQuart's application instance.
 
-## Application extensions
+### Application extensions
 
 ATR uses the `QuartApp.extensions` dict (a standard Quart feature inherited from ASFQuart) to store application-wide cached data including the admin user set, project version cache, and JWT signing key. These are accessed via `asfquart.APP.extensions` throughout the codebase.
 
-## What ATR does not use from ASFQuart
+### What ATR does not use from ASFQuart
 
 ASFQuart provides several capabilities that ATR does not use:
 
@@ -143,7 +141,7 @@ ASFQuart provides several capabilities that ATR does not use:
 * **YAML configuration** (`asfquart.config`): ASFQuart provides a YAML config reader. ATR uses its own [`config`](/ref/atr/config.py) module with Python class-based configuration.
 * **Development server** (`app.runx()`): ASFQuart provides an extended development server with hot reloading. ATR uses Hypercorn directly.
 
-## Security considerations for auditors
+### Security considerations for auditors
 
 When auditing ATR's authentication and session handling, be aware that several security-critical behaviours originate in ASFQuart rather than in ATR's own code:
 
@@ -155,3 +153,14 @@ When auditing ATR's authentication and session handling, be aware that several s
 * **Authentication gating** on web routes uses `asfquart.auth.require`, which reads the session and raises `AuthenticationFailed`.
 
 The source code for ASFQuart is maintained at [github.com/apache/infrastructure-asfquart](https://github.com/apache/infrastructure-asfquart).
+
+## asfpy
+
+[asfpy](https://github.com/apache/infrastructure-asfpy) is ASF Infrastructure's general-purpose Python utility library, offering helpers for LDAP, messaging, and PubSub among other things. It reaches ATR only as a transitive dependency of ASFQuart, which requires it — ATR declares no direct dependency on asfpy and imports nothing from it.
+
+Two parts of ATR cover ground that asfpy also covers, and in both cases ATR uses its own implementation rather than asfpy's:
+
+* **Mail**: ATR sends signed mail through its own [`mail`](/ref/atr/mail.py) module. As the code notes, this is deliberately very different from the asfpy version — it is typed and built on `asyncio`, and ATR's need to sign a message before sending does not fit asfpy's design.
+* **PubSub**: ATR consumes the ASF PubSub stream through its own [`pubsub`](/ref/atr/pubsub.py) module rather than through `asfpy.pubsub`.
+
+Because ATR does not call into asfpy, it would be unaffected if ASFQuart were to drop asfpy from its own dependencies in future.

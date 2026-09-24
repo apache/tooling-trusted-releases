@@ -40,6 +40,6 @@ NOTE: This documentation is a work in progress.
   * `3.16.` [Dependency updates](dependency-updates)
   * `3.17.` [TLS security configuration](tls-security-configuration)
   * `3.18.` [API documentation policy](api-documentation-policy)
-  * `3.19.` [ASFQuart usage](asfquart-usage)
+  * `3.19.` [ASF modules](asf-modules)
   * `3.20.` [Resource management](resource-management)
   * `3.21.` [SBOM architecture](sbom-architecture)

@@ -4,7 +4,7 @@
 
 **Prev**: `3.17.` [TLS security configuration](tls-security-configuration)
 
-**Next**: `3.19.` [ASFQuart usage](asfquart-usage)
+**Next**: `3.19.` [ASF modules](asf-modules)
 
 **Sections**:
 
