@@ -1550,7 +1550,7 @@ async def dist_rule_delete_post(
     async with storage.write(session) as write:
         await write.as_foundation_admin().dist_rule.delete(action_form.rule_id)
     await quart.flash("Deleted the rule.", "success")
-    return await session.redirect(dist_rules_get)
+    return await session.redirect(catalog_get, tab="dist-rules")
 
 
 @admin.typed
@@ -1563,7 +1563,7 @@ async def dist_rule_disable_post(
     async with storage.write(session) as write:
         await write.as_foundation_admin().dist_rule.set_enabled(action_form.rule_id, False)
     await quart.flash("Disabled the rule.", "success")
-    return await session.redirect(dist_rules_get)
+    return await session.redirect(catalog_get, tab="dist-rules")
 
 
 @admin.typed
@@ -1576,7 +1576,7 @@ async def dist_rule_enable_post(
     async with storage.write(session) as write:
         await write.as_foundation_admin().dist_rule.set_enabled(action_form.rule_id, True)
     await quart.flash("Enabled the rule.", "success")
-    return await session.redirect(dist_rules_get)
+    return await session.redirect(catalog_get, tab="dist-rules")
 
 
 @admin.typed
@@ -1586,7 +1586,7 @@ async def dist_rules_add_post(
     error = _dist_rule_validation_error(add_form)
     if error is not None:
         await quart.flash(error, "error")
-        return await session.redirect(dist_rules_get)
+        return await session.redirect(catalog_get, tab="dist-rules")
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
         await wafa.dist_rule.add(
@@ -1598,70 +1598,7 @@ async def dist_rules_add_post(
             note=_blank_to_none(add_form.note),
         )
     await quart.flash("Added the rule.", "success")
-    return await session.redirect(dist_rules_get)
-
-
-@admin.typed
-async def dist_rules_get(session: web.Committer, _dist_rules: Literal["dist-rules"]) -> str:
-    """
-    URL: GET /dist-rules
-
-    List the dist watcher's decomposition rules and add, disable or delete them.
-    """
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        rules = await wafa.dist_rule.all_rules()
-
-    action_rows = []
-    for rule in rules:
-        if rule.enabled:
-            toggle = await form.render(
-                model_cls=DistRuleActionForm,
-                action=util.as_url(dist_rule_disable_post),
-                form_classes=".mb-0.d-inline",
-                submit_classes="btn-sm btn-outline-secondary",
-                submit_label="Disable",
-                defaults={"rule_id": rule.id},
-                empty=True,
-            )
-        else:
-            toggle = await form.render(
-                model_cls=DistRuleActionForm,
-                action=util.as_url(dist_rule_enable_post),
-                form_classes=".mb-0.d-inline",
-                submit_classes="btn-sm btn-outline-secondary",
-                submit_label="Enable",
-                defaults={"rule_id": rule.id},
-                empty=True,
-            )
-        delete = await form.render(
-            model_cls=DistRuleActionForm,
-            action=util.as_url(dist_rule_delete_post),
-            form_classes=".mb-0.d-inline.ms-1",
-            submit_classes="btn-sm btn-outline-danger",
-            submit_label="Delete",
-            defaults={"rule_id": rule.id},
-            empty=True,
-            confirm="Delete this rule?",
-        )
-        action_rows.append((rule, toggle, delete))
-
-    add_form = await form.render(
-        model_cls=AddDistRuleForm,
-        action=util.as_url(dist_rules_add_post),
-        submit_label="Add rule",
-    )
-
-    page = htm.Block()
-    page.h1["Dist watcher rules"]
-    page.p[
-        "The dist watcher reads these when it decomposes a dist.apache.org path into a project and version. "
-        "Disable a rule to park it without losing its note; delete removes it for good."
-    ]
-    page.append(_dist_rules_table(action_rows))
-    page.h2(".mt-4")["Add a rule"]
-    page.append(add_form)
-    return await template.blank(title="Dist watcher rules", content=page.collect())
+    return await session.redirect(catalog_get, tab="dist-rules")
 
 
 @admin.typed
@@ -2000,6 +1937,7 @@ async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
         htm.Tab("update-projects", "Update", _catalog_projects_update_tab),
         htm.Tab("releases", "Current releases", lambda: _catalog_releases_tab(query_args)),
         htm.Tab("admin", "Catalog admin", _catalog_admin_tab),
+        htm.Tab("dist-rules", "Dist watcher rules", _catalog_dist_rules_tab),
         htm.Tab("reproducible-builds", "Reproducible builds", _catalog_reproducible_builds_tab),
         htm.Tab("rebuild", "Rebuild catalog", _catalog_rebuild_tab),
     ]
@@ -2242,6 +2180,66 @@ async def _catalog_admin_tab() -> htm.Element:
     ]
     block.append(listing)
     block.p(".mt-3")[htm.a(href="/admin/catalog/dump")["Dump full catalog contents"]]
+    return block.collect()
+
+
+async def _catalog_dist_rules_tab() -> htm.Element:
+    # Listing rules is a read, so we go through db.session() rather than opening a
+    # foundation-admin write transaction; the add, toggle and delete forms post to
+    # their own routes, which do the audited writes
+    via = sql.validate_instrumented_attribute
+    async with db.session() as data:
+        rules = await data.dist_rule().order_by(via(sql.DistRule.kind), via(sql.DistRule.id)).all()
+
+    action_rows = []
+    for rule in rules:
+        if rule.enabled:
+            toggle = await form.render(
+                model_cls=DistRuleActionForm,
+                action=util.as_url(dist_rule_disable_post),
+                form_classes=".mb-0.d-inline",
+                submit_classes="btn-sm btn-outline-secondary",
+                submit_label="Disable",
+                defaults={"rule_id": rule.id},
+                empty=True,
+            )
+        else:
+            toggle = await form.render(
+                model_cls=DistRuleActionForm,
+                action=util.as_url(dist_rule_enable_post),
+                form_classes=".mb-0.d-inline",
+                submit_classes="btn-sm btn-outline-secondary",
+                submit_label="Enable",
+                defaults={"rule_id": rule.id},
+                empty=True,
+            )
+        delete = await form.render(
+            model_cls=DistRuleActionForm,
+            action=util.as_url(dist_rule_delete_post),
+            form_classes=".mb-0.d-inline.ms-1",
+            submit_classes="btn-sm btn-outline-danger",
+            submit_label="Delete",
+            defaults={"rule_id": rule.id},
+            empty=True,
+            confirm="Delete this rule?",
+        )
+        action_rows.append((rule, toggle, delete))
+
+    add_form = await form.render(
+        model_cls=AddDistRuleForm,
+        action=util.as_url(dist_rules_add_post),
+        submit_label="Add rule",
+    )
+
+    block = htm.Block()
+    block.h2["Dist watcher rules"]
+    block.p[
+        "The dist watcher reads these when it decomposes a dist.apache.org path into a project and version. "
+        "Disable a rule to park it without losing its note; delete removes it for good."
+    ]
+    block.append(_dist_rules_table(action_rows))
+    block.h3(".mt-4")["Add a rule"]
+    block.append(add_form)
     return block.collect()
 
 
