@@ -25,6 +25,9 @@ RESET_INACTIVITY_CLOCK_BUTTON: Final = "Reset inactivity clock"
 RESOLVE_VOTE_BUTTON: Final = "Resolve vote"
 VERIFY_DISTRIBUTION_BUTTON: Final = "Verify a third-party distribution"
 
+# Release information labels
+COMMIT_HASH_LABEL: Final = "Commit hash"
+
 # File classification labels
 FILE_CLASS_BINARY: Final = "Binary artifact"
 FILE_CLASS_DIRECTORY: Final = "Directory"

@@ -17,6 +17,7 @@
 
 import collections
 import re
+import urllib.parse
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Final, Literal
 
@@ -26,7 +27,9 @@ import atr.get as get
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.source as source
 import atr.storage.datatypes as datatypes
+import atr.strings as strings
 import atr.util as util
 
 type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
@@ -101,6 +104,23 @@ def archived_project_banner(project: sql.Project, message: str = "") -> htm.Elem
     if project.status != sql.ProjectStatus.RETIRED:
         return None
     return htm.div(".alert.alert-warning.mb-4")[f"This project is archived. {message}"]
+
+
+def commit_hash(release: sql.Release) -> htm.Element | None:
+    if (link := commit_link(release)) is None:
+        return None
+    return htm.p[htm.strong[f"{strings.COMMIT_HASH_LABEL}:"], " ", link]
+
+
+def commit_link(release: sql.Release) -> htm.Element | None:
+    # Needs the project's release policy loaded, because that's where the repository comes from
+    if not release.commit_hash:
+        return None
+    sha = htm.code[release.commit_hash]
+    if repository := source.repository(release.project):
+        commit_url = f"https://github.com/{urllib.parse.quote(repository)}/commit/{release.commit_hash}"
+        return htm.a(href=commit_url)[sha]
+    return sha
 
 
 def embargoed_badge(release: sql.Release) -> htm.Element | None:

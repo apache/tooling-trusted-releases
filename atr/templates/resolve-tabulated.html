@@ -16,6 +16,8 @@
     <p><span class="badge text-bg-danger">Embargoed release</span></p>
   {% endif %}
 
+  {{ commit_hash_html|safe }}
+
   {% if vote_task_error %}
     <div class="alert alert-danger">Starting this vote failed: {{ vote_task_error }}</div>
   {% endif %}

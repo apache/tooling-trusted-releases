@@ -61,7 +61,7 @@ async def selected(
     URL: /file/<project_key>/<version_key>
     View all the files in a release (any phase).
     """
-    release = await session.release(project_key, version_key, phase=None)
+    release = await session.release(project_key, version_key, phase=None, with_project_release_policy=True)
     approval = await _archival_approval(release)
 
     block = htm.Block()
@@ -88,6 +88,7 @@ async def selected(
                 htm.div(".col-md-6")[
                     htm.p[htm.strong["Project:"], " ", release.project.display_name],
                     htm.p[htm.strong["Label:"], " ", release.key],
+                    render.commit_hash(release),
                 ],
                 htm.div(".col-md-6")[
                     htm.p[htm.strong["Created:"], " ", release.created.strftime("%Y-%m-%d %H:%M:%S")],

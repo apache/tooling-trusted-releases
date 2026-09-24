@@ -162,6 +162,9 @@ async def render_vote_closed_page(release: sql.Release) -> str:
         htm.div[message],
     ]
 
+    if (commit_hash := render.commit_hash(release)) is not None:
+        page.append(commit_hash)
+
     page.p["If you are an ASF committer, you can log in to view the current status of this release."]
 
     redirect_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
@@ -429,11 +432,13 @@ def _render_header(
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     voting_committee_name = _vote_committee_name(release)
+    commit_link = render.commit_link(release)
     page.p[
         "The ",
         htm.strong[voting_committee_name],
         " committee is currently voting on the release candidate for"
         f" {release.project.display_name} {release.version}.",
+        [" This release was cut from SHA ", commit_link, "."] if (commit_link is not None) else "",
     ]
 
     vote_end = interaction.vote_end_get(latest_vote_task)

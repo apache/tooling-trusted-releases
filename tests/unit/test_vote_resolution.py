@@ -1543,6 +1543,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
         vote_resolved=datetime.datetime.now(datetime.UTC),
         current_vote_seq=None,
         podling_thread_id=podling_thread_id,
+        commit_hash=None,
         version="1.0.0",
         latest_revision_number="00001",
         committee=SimpleNamespace(

@@ -375,9 +375,11 @@ async def selected(  # noqa: C901
         pre_submit=pre_submit,
     )
 
+    commit_hash = render.commit_hash(release)
     return await template.render(
         "resolve-tabulated.html",
         release=release,
+        commit_hash_html=str(commit_hash) if (commit_hash is not None) else "",
         tabulated_votes=details.votes if (details is not None) else {},
         summary=details.summary if (details is not None) else {},
         outcome=details.outcome if (details is not None) else "",
