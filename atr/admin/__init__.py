@@ -71,6 +71,7 @@ import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage as storage
+import atr.strings as strings
 import atr.tasks as tasks
 import atr.template as template
 import atr.util as util
@@ -2239,6 +2240,7 @@ async def _catalog_dist_rules_tab() -> htm.Element:
     ]
     block.append(_dist_rules_table(action_rows))
     block.h3(".mt-4")["Add a rule"]
+    block.append(_dist_rule_kinds_reference())
     block.append(add_form)
     return block.collect()
 
@@ -2528,6 +2530,18 @@ def _dist_rule_cell(value: str | None) -> htm.Element:
     return htpy.span(".text-muted")["—"]
 
 
+def _dist_rule_kinds_reference() -> htm.Element:
+    # A glossary so the Kind dropdown's bare enum names have a plain meaning to hand while adding a rule
+    rows: list[htm.Element] = []
+    for kind in sql.DistRuleKind:
+        rows.append(htpy.dt[htpy.code[str(kind)]])
+        rows.append(htpy.dd(".text-muted")[strings.DIST_RULE_KIND_DESCRIPTIONS.get(str(kind), "")])
+    return htpy.details(".mb-3.small")[
+        htpy.summary["What the rule kinds mean"],
+        htpy.dl(".mt-2.mb-0")[rows],
+    ]
+
+
 def _dist_rule_validation_error(add_form: AddDistRuleForm) -> str | None:
     # A project remap rewrites a committee/subproject to a target; the rest key on a pattern. A
     # committee bucket also names the committee it's scoped to
@@ -2556,6 +2570,9 @@ def _dist_rules_table(action_rows: list[tuple[sql.DistRule, htm.Element, htm.Ele
     sections: list[htm.Element] = []
     for kind in sorted(by_kind):
         sections.append(htpy.h3(".mt-4.h5")[kind])
+        description = strings.DIST_RULE_KIND_DESCRIPTIONS.get(kind)
+        if description is not None:
+            sections.append(htpy.p(".text-muted.small.mb-2")[description])
         sections.append(
             htpy.table(".table.table-sm")[
                 htpy.thead[

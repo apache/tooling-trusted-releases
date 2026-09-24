@@ -35,3 +35,24 @@ FILE_CLASS_DISALLOWED: Final = "Disallowed file"
 FILE_CLASS_METADATA: Final = "Metadata file"
 FILE_CLASS_SBOM: Final = "SBOM"
 FILE_CLASS_SOURCE: Final = "Source artifact"
+
+# Dist watcher rule kinds, keyed by DistRuleKind value, in plain terms for the admin who edits them
+DIST_RULE_KIND_DESCRIPTIONS: Final[dict[str, str]] = {
+    "project_remap": (
+        "Sends a release to a named project when its dist path would otherwise land on the wrong key, or on none."
+    ),
+    "grouping_bucket": (
+        "Marks a directory that only groups projects together, for any committee. The project name is read from "
+        "the file, not from this directory."
+    ),
+    "committee_bucket": (
+        "A grouping directory scoped to one committee - used when the same word is a real project somewhere else."
+    ),
+    "excluded_part": "Marks a path segment that never holds a release, so anything beneath it is skipped.",
+    "name_build_suffix": (
+        "A trailing word to drop from a release name when working out the project, like -incubating or -bin."
+    ),
+    "airflow_provider_area": (
+        "An Airflow directory whose per-provider packages are rolled up into one dated bundle release."
+    ),
+}
