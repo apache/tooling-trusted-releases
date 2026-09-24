@@ -77,8 +77,16 @@ async def test_every_artifact_is_checked_in_bounded_batches(monkeypatch) -> None
     assert [path for batch in probe.calls[1:] for path in batch] == paths
 
 
-@pytest.mark.parametrize("area", ["atr", "release"])
-async def test_monitor_checks_downloads_regardless_of_svn_target(monkeypatch, tmp_path, area) -> None:
+@pytest.mark.parametrize(
+    ("area", "target", "public_url"),
+    [
+        ("atr", util.SvnPublishTarget.ATR, "https://dist.apache.org/repos/dist/atr/example/1.0"),
+        ("release", util.SvnPublishTarget.RELEASE, PUBLIC_URL),
+    ],
+)
+async def test_monitor_checks_the_configured_publication_target(
+    monkeypatch, tmp_path, area: str, target: util.SvnPublishTarget, public_url: str
+) -> None:
     monkeypatch.setattr(config, "svn_publish_kind", lambda: config.SvnPublishKind.ASF_DISTRIBUTION)
     monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", f"https://dist.apache.org/repos/dist/{area}")
     (tmp_path / "a.tar.gz").write_bytes(b"artifact")
@@ -105,7 +113,7 @@ async def test_monitor_checks_downloads_regardless_of_svn_target(monkeypatch, tm
     progress = await downloads.check({"publish_task_id": 42}, task_id=43)
 
     assert progress.available
-    probe.assert_awaited_with(util.SvnPublishTarget.RELEASE, PUBLIC_URL, ["a.tar.gz"])
+    probe.assert_awaited_with(target, public_url, ["a.tar.gz"])
 
 
 async def test_waited_url_moves_and_each_recovery_rechecks_the_set(monkeypatch) -> None:

@@ -165,9 +165,19 @@ async def test_commit_failure_keeps_unfinished_files(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("area", ["atr", "release"])
+@pytest.mark.parametrize(
+    ("area", "target", "public_url"),
+    [
+        ("atr", announce.util.SvnPublishTarget.ATR, "https://dist.apache.org/repos/dist/atr/alpha"),
+        ("release", announce.util.SvnPublishTarget.RELEASE, "https://downloads.apache.org/alpha"),
+    ],
+)
 async def test_finalise_queues_task_and_keeps_files(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, area: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    area: str,
+    target: announce.util.SvnPublishTarget,
+    public_url: str,
 ) -> None:
     calls: list[str] = []
     release_manager = announcing_writer(monkeypatch, tmp_path, calls)
@@ -177,8 +187,8 @@ async def test_finalise_queues_task_and_keeps_files(
 
     release_manager._ReleaseManager__check_publication_artifacts.assert_awaited_once_with(
         tmp_path / "unfinished" / "example" / "2.0.0" / "00003",
-        announce.util.SvnPublishTarget.RELEASE,
-        "https://downloads.apache.org/alpha",
+        target,
+        public_url,
         False,
     )
     assert calls == ["flush", "finalise", "commit"]

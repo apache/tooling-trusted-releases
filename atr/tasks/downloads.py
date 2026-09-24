@@ -54,9 +54,8 @@ async def check(task_args: args.DownloadsCheck, *, task_id: int) -> results.Down
     committee = release.committee
     if committee is None:
         raise ValueError("Release has no committee")
-    public_url = util.download_url_for_path(
-        paths.committee_dist_relpath(committee, identity.download_path_suffix), util.DownloadFile.METADATA
-    )
+    # Files published to dist/atr never reach the download area, so check wherever they were published
+    public_url = util.publication_check_url(committee, identity.download_path_suffix, util.DownloadFile.METADATA)
     rel_paths = sorted(
         [
             str(rel)
@@ -108,7 +107,7 @@ async def _check_paths(
 
 
 async def _probe(public_url: str, rel_paths: list[str], progress: results.DownloadsCheck) -> None:
-    summary = await util.check_propagation(util.SvnPublishTarget.RELEASE, public_url, rel_paths)
+    summary = await util.check_propagation(util.svn_publish_target(), public_url, rel_paths)
     failed = next((outcome for outcome in summary.outcomes if not outcome.ok), None)
     if failed is None:
         return
