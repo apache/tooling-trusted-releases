@@ -27,14 +27,46 @@ import atr.models.sql as sql
 import atr.source as source
 
 
+@pytest.mark.parametrize("repository", ["apache/other", ""])
+def test_advance_rejects_payload_from_other_repository(repository: str, github_payload: github.TrustedPublisherPayload):
+    selected = atr.models.attestable.SourceV2(repository=repository, default="a" * 40, override="c" * 40)
+    with pytest.raises(ValueError, match="but the upload came from apache/test"):
+        source.advance(selected, github_payload, declared=safe.CommitHash("e" * 40))
+
+
+def test_advance_keeps_override_without_payload():
+    selected = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, override="c" * 40)
+    result = source.advance(selected, None)
+    assert result.override == "c" * 40
+    assert result.sha == "c" * 40
+
+
 @pytest.mark.parametrize("override", [None, "c" * 40])
-def test_advance_keeps_source_choice(override: str | None, github_payload: github.TrustedPublisherPayload):
+def test_advance_payload_replaces_override(override: str | None, github_payload: github.TrustedPublisherPayload):
     selected = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, override=override)
     result = source.advance(selected, github_payload)
     assert result.default == github_payload.sha
-    assert result.override == override
-    assert result.sha == (override or github_payload.sha)
+    assert result.override is None
+    assert result.sha == github_payload.sha
     assert selected.default == "a" * 40
+    assert selected.override == override
+
+
+def test_advance_prefers_declared_commit_over_payload(github_payload: github.TrustedPublisherPayload):
+    selected = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40)
+    result = source.advance(selected, github_payload, declared=safe.CommitHash("d" * 40))
+    assert result.default == github_payload.sha
+    assert result.declared == "d" * 40
+    assert result.sha == "d" * 40
+    assert source.advance(result, None, "c" * 40).sha == "c" * 40
+
+
+def test_advance_without_declaration_clears_earlier_one(github_payload: github.TrustedPublisherPayload):
+    selected = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, declared="d" * 40)
+    assert source.advance(selected, None).declared == "d" * 40
+    result = source.advance(selected, github_payload)
+    assert result.declared is None
+    assert result.sha == github_payload.sha
 
 
 async def test_initial_accepts_repository_configured_after_first_revision():
@@ -45,6 +77,22 @@ async def test_initial_accepts_repository_configured_after_first_revision():
     selected = await source.initial(release, previous)
     assert selected.repository == "apache/test"
     assert previous.source.repository == ""
+
+
+async def test_initial_prefers_policy_repository_over_recorded_one():
+    project = sql.Project(
+        key="test",
+        name="Test",
+        repositories=["https://github.com/apache/test"],
+        release_policy=sql.ReleasePolicy(github_repository_name="moved"),
+    )
+    release = sql.Release(project=project, version="1.0")
+    recorded = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, override="c" * 40)
+    previous = atr.models.attestable.AttestableV2(source=recorded)
+    selected = await source.initial(release, previous)
+    assert selected.repository == "apache/moved"
+    assert selected.override == "c" * 40
+    assert recorded.repository == "apache/test"
 
 
 @pytest.mark.parametrize("recorded_hash", ["b" * 40, "c" * 40])

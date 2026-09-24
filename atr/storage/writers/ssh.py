@@ -104,6 +104,8 @@ class CommitteeParticipant(FoundationCommitter):
         project_key: safe.ProjectKey,
         key: str,
         github_payload: github.TrustedPublisherPayload,
+        *,
+        source_commit: safe.CommitHash | None = None,
     ) -> tuple[str, int]:
         now = int(time.time())
         # Twenty minutes to upload all files
@@ -114,6 +116,7 @@ class CommitteeParticipant(FoundationCommitter):
         fingerprint = util.key_ssh_fingerprint(key)
         # Exclude nbf and exp as we've already validated this key - now protected by workflowkey "expires"
         json_payload = github_payload.model_dump(exclude={"exp", "nbf"})
+        wsk_source_commit = str(source_commit) if (source_commit is not None) else None
         wsk = sql.WorkflowSSHKey(
             fingerprint=fingerprint,
             key=key,
@@ -122,6 +125,7 @@ class CommitteeParticipant(FoundationCommitter):
             github_uid=github_uid,
             github_nid=github_nid,
             github_payload=json_payload,
+            source_commit=wsk_source_commit,
             expires=expires,
         )
         self.__data.add(wsk)
@@ -132,6 +136,7 @@ class CommitteeParticipant(FoundationCommitter):
             project_key=str(project_key),
             github_uid=github_uid,
             github_nid=github_nid,
+            source_commit=wsk_source_commit,
             expires=expires,
         )
         return fingerprint, expires

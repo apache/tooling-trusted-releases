@@ -409,6 +409,7 @@ async def test_promote_finalises_revision_and_deletes_quarantined(
     tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload, has_github_payload: bool
 ):
     payload = github_payload if has_github_payload else None
+    source_commit = safe.CommitHash("d" * 40) if has_github_payload else None
     quarantine_dir_path = tmp_path / "quarantine"
     quarantine_dir_path.mkdir()
     (quarantine_dir_path / "file.txt").write_bytes(b"file content")
@@ -463,7 +464,14 @@ async def test_promote_finalises_revision_and_deletes_quarantined(
         mock.patch.object(quarantine.db, "session", side_effect=session_calls),
     ):
         await quarantine._promote(
-            quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir, {}, github_payload=payload
+            quarantined_row,
+            "proj",
+            "1.0",
+            "proj-1.0",
+            quarantine_dir,
+            {},
+            github_payload=payload,
+            source_commit=source_commit,
         )
 
     mock_release_data.release.assert_called_once_with(
@@ -473,6 +481,7 @@ async def test_promote_finalises_revision_and_deletes_quarantined(
     call_kwargs = mock_finalise.call_args.kwargs
     assert call_kwargs["was_quarantined"] is True
     assert mock_commit.await_args.kwargs["github_payload"] is payload
+    assert mock_commit.await_args.kwargs["source_commit"] == source_commit
     assert call_kwargs["project_key"] == "proj"
     assert call_kwargs["release"] is release
     assert call_kwargs["path_to_hash"] == {"file.txt": "hash1"}
@@ -657,9 +666,12 @@ async def test_validate_success_calls_promote(
 ):
     task_args = {"quarantined_id": 1, "archives": [{"rel_path": "ok.tar.gz", "content_hash": "abc"}]}
     payload = None
+    source_commit = None
     if has_github_payload:
         task_args["github_payload"] = github_payload.model_dump(exclude={"exp", "nbf"})
+        task_args["source_commit"] = "d" * 40
         payload = github.TrustedPublisherPayload.model_validate(task_args["github_payload"])
+        source_commit = safe.CommitHash("d" * 40)
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
 
@@ -692,6 +704,7 @@ async def test_validate_success_calls_promote(
         str(quarantine_dir),
         {},
         github_payload=payload,
+        source_commit=source_commit,
     )
     mock_mark.assert_not_awaited()
 

@@ -99,6 +99,7 @@ async def finalise_revision(
     extracted_swhids: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
     github_payload: github.TrustedPublisherPayload | None = None,
+    source_commit: safe.CommitHash | None = None,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -139,6 +140,7 @@ async def finalise_revision(
         extracted_swhids=extracted_swhids,
         sha3_hashes=sha3_hashes,
         github_payload=github_payload,
+        source_commit=source_commit,
     )
 
 
@@ -161,6 +163,7 @@ async def _commit_new_revision(
     extracted_swhids: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
     github_payload: github.TrustedPublisherPayload | None = None,
+    source_commit: safe.CommitHash | None = None,
     source_override: db.Opt[str | None] = db.NOT_SET,
 ) -> sql.Revision:
     try:
@@ -168,6 +171,7 @@ async def _commit_new_revision(
             await source.initial(release, previous_attestable),
             github_payload,
             source_override,
+            declared=source_commit,
         )
         # This is the only place where models.Revision is constructed
         # That makes models.populate_revision_sequence_and_name safe against races
@@ -488,6 +492,7 @@ class CommitteeParticipant(FoundationCommitter):
         clone_from: safe.RevisionNumber | None = None,
         expected_revision: safe.RevisionNumber | None = None,
         github_payload: github.TrustedPublisherPayload | None = None,
+        source_commit: safe.CommitHash | None = None,
         source_override: db.Opt[str | None] = db.NOT_SET,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
@@ -513,6 +518,10 @@ class CommitteeParticipant(FoundationCommitter):
                 )
             else:
                 old_revision = await interaction.latest_revision(release)
+
+        # Checked again when the revision is recorded, but this rejects the upload before any files arrive
+        if github_payload is not None:
+            source.ensure_payload_repository(await source.current(release), github_payload)
 
         if clone_from is not None:
             old_release_dir = paths.release_directory_base(release) / str(clone_from)
@@ -665,6 +674,7 @@ class CommitteeParticipant(FoundationCommitter):
                         temp_dir=temp_dir,
                         version_key=version_key,
                         github_payload=github_payload,
+                        source_commit=source_commit,
                     )
 
             return await _commit_new_revision(
@@ -683,6 +693,7 @@ class CommitteeParticipant(FoundationCommitter):
                 path_provenance=path_provenance,
                 sha3_hashes=sha3_hashes,
                 github_payload=github_payload,
+                source_commit=source_commit,
                 source_override=source_override,
             )
 
@@ -750,6 +761,7 @@ class CommitteeParticipant(FoundationCommitter):
         temp_dir: str,
         version_key: safe.VersionKey,
         github_payload: github.TrustedPublisherPayload | None = None,
+        source_commit: safe.CommitHash | None = None,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
@@ -796,6 +808,7 @@ class CommitteeParticipant(FoundationCommitter):
                     "github_payload": (
                         github_payload.model_dump(exclude={"exp", "nbf"}) if (github_payload is not None) else None
                     ),
+                    "source_commit": source_commit,
                     "archives": [
                         {"rel_path": entry.rel_path, "content_hash": entry.content_hash} for entry in file_metadata
                     ],

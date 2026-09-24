@@ -151,6 +151,7 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
         str(quarantine_dir),
         swhid_dirs,
         github_payload=task_args.github_payload,
+        source_commit=task_args.source_commit,
     )
     return None
 
@@ -357,6 +358,7 @@ async def _promote(
     quarantine_dir: str,
     swhid_dirs: dict[str, str],
     github_payload: github.TrustedPublisherPayload | None = None,
+    source_commit: safe.CommitHash | None = None,
 ) -> None:
     quarantine_dir_path = pathlib.Path(quarantine_dir)
 
@@ -411,6 +413,7 @@ async def _promote(
             extracted_swhids=swhid_dirs,
             sha3_hashes=sha3_hashes,
             github_payload=github_payload,
+            source_commit=source_commit,
         )
 
     async with db.session() as data:

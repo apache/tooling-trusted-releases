@@ -21,6 +21,9 @@ from typing import TYPE_CHECKING
 import asyncssh
 import pytest
 
+import atr.db.interaction as interaction
+import atr.models.github as github
+import atr.models.safe as safe
 import atr.ssh as ssh
 
 if TYPE_CHECKING:
@@ -95,6 +98,59 @@ async def test_step_02_rejects_disabled_account():
 
 
 @pytest.mark.asyncio
+async def test_step_04_allows_workflow_key_for_its_own_project(monkeypatch: "MonkeyPatch"):
+    server = _make_workflow_server("test")
+    mock_data = mock.MagicMock()
+    mock_data.project.return_value.get = mock.AsyncMock(return_value=None)
+    mock_session = mock.AsyncMock()
+    mock_session.__aenter__.return_value = mock_data
+    monkeypatch.setattr("atr.db.session", lambda: mock_session)
+    process = _make_process(username="github")
+    # Reaching the project lookup means the workflow key's project binding was satisfied
+    with pytest.raises(ssh.RsyncArgsError, match="Project 'test' does not exist"):
+        await ssh._step_04_command_validate(process, [".", "/test/1.0/"], False, server)
+
+
+@pytest.mark.asyncio
+async def test_step_04_allows_read_only_workflow_key_to_download(monkeypatch: "MonkeyPatch"):
+    server = _make_workflow_server("test")
+    server._github_read_only = True
+    mock_data = mock.MagicMock()
+    mock_data.project.return_value.get = mock.AsyncMock(return_value=None)
+    mock_session = mock.AsyncMock()
+    mock_session.__aenter__.return_value = mock_data
+    monkeypatch.setattr("atr.db.session", lambda: mock_session)
+    process = _make_process(username="github")
+    # Reaching the project lookup means the read-only restriction was satisfied
+    with pytest.raises(ssh.RsyncArgsError, match="Project 'test' does not exist"):
+        await ssh._step_04_command_validate(process, [".", "/test/1.0/"], True, server)
+
+
+@pytest.mark.asyncio
+async def test_step_04_rejects_read_only_workflow_key_upload(monkeypatch: "MonkeyPatch"):
+    server = _make_workflow_server("test")
+    server._github_read_only = True
+    session = mock.MagicMock()
+    monkeypatch.setattr("atr.db.session", session)
+    process = _make_process(username="github")
+    with pytest.raises(ssh.RsyncArgsError, match="can only be used to download files"):
+        await ssh._step_04_command_validate(process, [".", "/test/1.0/"], False, server)
+    session.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_read_request", [True, False])
+async def test_step_04_rejects_workflow_key_for_other_project(monkeypatch: "MonkeyPatch", is_read_request: bool):
+    server = _make_workflow_server("test")
+    session = mock.MagicMock()
+    monkeypatch.setattr("atr.db.session", session)
+    process = _make_process(username="github")
+    with pytest.raises(ssh.RsyncArgsError, match="can only be used for project 'test'"):
+        await ssh._step_04_command_validate(process, [".", "/other/1.0/"], is_read_request, server)
+    session.assert_not_called()
+
+
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_active")
 async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "MonkeyPatch"):
     server = _make_server()
@@ -104,6 +160,9 @@ async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "Mon
     mock_workflow_key.asf_uid = "alice"
     mock_workflow_key.revoked = False
     mock_workflow_key.expires = 9999999999
+    mock_workflow_key.github_nid = 1
+    mock_workflow_key.project_key = "test"
+    mock_workflow_key.source_commit = None
     mock_workflow_key.github_payload = {
         "actor": "alice",
         "actor_id": 1,
@@ -141,6 +200,8 @@ async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "Mon
     monkeypatch.setattr("atr.db.session", lambda: mock_session)
     result = await server.validate_public_key("github", key)
     assert result is True
+    assert server._github_project_key == safe.ProjectKey("test")
+    assert server._github_read_only is False
 
 
 @pytest.mark.asyncio
@@ -153,6 +214,9 @@ async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "M
     mock_workflow_key.asf_uid = "alice"
     mock_workflow_key.revoked = False
     mock_workflow_key.expires = 9999999999
+    mock_workflow_key.github_nid = 1
+    mock_workflow_key.project_key = "test"
+    mock_workflow_key.source_commit = None
     mock_workflow_key.github_payload = {
         "actor": "alice",
         "actor_id": 1,
@@ -205,6 +269,28 @@ async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "M
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_patch_ldap_active")
+async def test_validate_public_key_marks_trusted_role_key_read_only(
+    monkeypatch: "MonkeyPatch", github_payload: github.TrustedPublisherPayload
+):
+    server = _make_server()
+    key = mock.MagicMock(spec=asyncssh.SSHKey)
+    key.get_fingerprint.return_value = "SHA256:abc"
+    mock_workflow_key = mock.MagicMock()
+    mock_workflow_key.asf_uid = "alice"
+    mock_workflow_key.revoked = False
+    mock_workflow_key.expires = 9999999999
+    mock_workflow_key.github_nid = interaction.GITHUB_TRUSTED_ROLE_NID
+    mock_workflow_key.project_key = "test"
+    mock_workflow_key.source_commit = None
+    mock_workflow_key.github_payload = github_payload.model_dump(exclude={"exp", "nbf"})
+    monkeypatch.setattr("atr.db.session", lambda: WorkflowKeySession(mock_workflow_key, lambda: None))
+    result = await server.validate_public_key("github", key)
+    assert result is True
+    assert server._github_read_only is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_disabled")
 async def test_validate_public_key_rejects_disabled_workflow_user(monkeypatch: "MonkeyPatch"):
     server = _make_server()
@@ -242,6 +328,16 @@ def _make_server() -> ssh.SSHServer:
     server = ssh.SSHServer.__new__(ssh.SSHServer)
     server._github_asf_uid = None
     server._github_payload = None
+    server._github_project_key = None
+    server._github_read_only = False
+    server._github_source_commit = None
+    return server
+
+
+def _make_workflow_server(project_key: str) -> ssh.SSHServer:
+    server = _make_server()
+    server._github_asf_uid = "alice"
+    server._github_project_key = safe.ProjectKey(project_key)
     return server
 
 

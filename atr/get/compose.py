@@ -301,7 +301,11 @@ async def _commit_hash_form_html(release: sql.Release) -> str:
     selected_source = await source.current(release)
     details = htm.Block(classes=".mb-3")
     if selected_source.sha:
-        basis = "Explicitly supplied" if selected_source.override else "Assumed from workflow"
+        basis = "Assumed from workflow"
+        if selected_source.override:
+            basis = "Explicitly supplied"
+        elif selected_source.declared:
+            basis = "Declared by workflow"
         details.append(htpy.p[f"{basis}: ", htpy.code[selected_source.sha]])
     if selected_source.repository:
         details.append(htpy.p[f"Source repository: {selected_source.repository}"])

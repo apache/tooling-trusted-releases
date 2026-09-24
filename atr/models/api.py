@@ -724,6 +724,7 @@ class PublisherSshRegisterArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
+    source_commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
 
 
 class PublisherSshRegisterResults(schema.Strict):

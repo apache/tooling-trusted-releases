@@ -1228,6 +1228,7 @@ async def publisher_ssh_register(
             project.safe_key,
             data.ssh_key,
             payload,
+            source_commit=data.source_commit,
         )
 
     return models.api.PublisherSshRegisterResults(

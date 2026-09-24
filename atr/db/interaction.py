@@ -45,14 +45,14 @@ import atr.user as user
 import atr.util as util
 import atr.web as web
 
+# Infra-provided service account with permission to run ATR workflows
+# audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
+GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
     "Archive validation is still in progress. Please wait for it to complete before starting a vote."
 )
 
 _ATR_DEV_VOTE_RESOLUTION_BYPASS_HOST: Final[str] = "tooling-vm-ec2-de.apache.org"
-# Infra-provided service account with permission to run ATR workflows
-# audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
-_GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 _NO_EXPECTED_VOTE_ROUND: Final[object] = object()
 _TOOLING_COMMITTEE_KEY: Final[str] = "tooling"
 
@@ -1200,7 +1200,7 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
     if publisher != "github":
         raise InteractionError(f"Publisher {publisher} not supported")
     payload = await jwtoken.verify_github_oidc(jwt)
-    if payload.actor_id != _GITHUB_TRUSTED_ROLE_NID:
+    if payload.actor_id != GITHUB_TRUSTED_ROLE_NID:
         try:
             asf_uid = await ldap.github_to_apache(payload.actor_id)
         except ldap.LookupError as e:

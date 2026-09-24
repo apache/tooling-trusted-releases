@@ -24,6 +24,7 @@ from typing import Final
 import pytest
 
 import atr.models.args as args
+import atr.models.attestable as attestable_models
 import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -272,10 +273,12 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(
     mock_session = _mock_db_session(release)
     participant = _make_participant()
     safe_data = MockQuarantineData(latest_revision_key=None)
+    recorded_source = attestable_models.SourceV2(repository=github_payload.repository)
 
     quarantine_dir = temp_dir / "quarantine" / "proj" / "1.0" / "testtoken"
 
     patches = [
+        mock.patch.object(revision.source, "current", new_callable=mock.AsyncMock, return_value=recorded_source),
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
         mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
         mock.patch.object(revision.attestable, "compute_sha3_hashes", new_callable=mock.AsyncMock, return_value={}),

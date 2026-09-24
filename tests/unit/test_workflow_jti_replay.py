@@ -31,6 +31,24 @@ _DISTANT_EXPIRY = 2**31 - 1
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source_commit", [None, safe.CommitHash("d" * 40)])
+async def test_declared_source_commit_is_stored_with_the_key(
+    monkeypatch: pytest.MonkeyPatch, source_commit: safe.CommitHash | None
+) -> None:
+    monkeypatch.setattr(ssh.util, "key_ssh_fingerprint", lambda _key: "SHA256:fingerprint")
+    data = _data()
+    writer = _writer(data)
+
+    await writer.add_workflow_key(
+        "test-user", 12345, safe.ProjectKey("alpha-one"), "ssh-ed25519 AAAA", _payload(), source_commit=source_commit
+    )
+
+    key = _added_of_type(data, sql.WorkflowSSHKey)[0]
+    assert key.source_commit == (str(source_commit) if (source_commit is not None) else None)
+    assert "source_commit" not in key.github_payload
+
+
+@pytest.mark.asyncio
 async def test_recorded_token_expiry_follows_the_token_rather_than_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ssh.util, "key_ssh_fingerprint", lambda _key: "SHA256:fingerprint")
     data = _data()

@@ -1027,6 +1027,8 @@ class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     github_payload: dict[str, Any] = sqlmodel.Field(
         default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
+    # Declared by the workflow rather than signed by GitHub, so kept out of github_payload
+    source_commit: str | None = sqlmodel.Field(default=None)
     expires: int = sqlmodel.Field()
     revoked: bool = sqlmodel.Field(default=False)
 

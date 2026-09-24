@@ -224,6 +224,7 @@ async def test_commit_new_revision_writes_metadata_before_checks(
     )
     release.release_policy = None
     release.project.release_policy = None
+    release.project.policy_github_repository_name = "test"
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     safe_data = MockSafeData(parent_key=None)
     payload = github_payload if has_github_payload else None
@@ -870,6 +871,38 @@ async def test_open_for_replace_silently_replaces_readonly_hardlink(tmp_path: pa
     assert target.read_bytes() == b"new bytes"
     assert prior_file.read_bytes() == b"original bytes"
     assert target.stat().st_ino != prior_file.stat().st_ino
+
+
+@pytest.mark.asyncio
+async def test_payload_from_other_repository_rejected_before_modify(
+    tmp_path: pathlib.Path, github_payload: github.TrustedPublisherPayload
+):
+    modify = mock.AsyncMock()
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project.status = sql.ProjectStatus.ACTIVE
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    recorded = atr.models.attestable.SourceV2(repository="apache/other")
+
+    with (
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
+        mock.patch.object(revision.source, "current", new_callable=mock.AsyncMock, return_value=recorded),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=safe.StatePath(tmp_path)),
+    ):
+        with pytest.raises(ValueError, match="but the upload came from apache/test"):
+            await participant.create_revision_with_quarantine(
+                safe.ProjectKey("proj"),
+                safe.VersionKey("1.0"),
+                "test",
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                modify=modify,
+                github_payload=github_payload,
+            )
+
+    modify.assert_not_awaited()
+    assert not os.listdir(tmp_path)
 
 
 @pytest.mark.asyncio

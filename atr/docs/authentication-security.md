@@ -186,7 +186,7 @@ ATR uses a separate set of endpoints to orchestrate distribution to third-party 
 
 **Trust chain.** An authenticated committer initiates a release distribution through ATR. ATR dispatches the workflow via the ASF Infrastructure service account, passing the required context (including the SSH public key) into the workflow. The workflow runs on GitHub Actions and calls back to ATR with a GitHub OIDC token.
 
-**Actor requirement.** `interaction.trusted_jwt_for_dist` checks that `actor_id` matches `_GITHUB_TRUSTED_ROLE_NID`, the hardcoded numeric ID of the ASF Infrastructure service account. If `actor_id` belongs to a human committer instead, the request is rejected. The check uses the numeric ID, which is stable across account renames.
+**Actor requirement.** `interaction.trusted_jwt_for_dist` checks that `actor_id` matches `GITHUB_TRUSTED_ROLE_NID`, the hardcoded numeric ID of the ASF Infrastructure service account. If `actor_id` belongs to a human committer instead, the request is rejected. The check uses the numeric ID, which is stable across account renames.
 
 The OIDC token proves that the callback came from a workflow ATR itself started. The original authorization is inherited from the committer who initiated the distribution in ATR — the service account carries no privileges of its own beyond triggering the workflow.
 
@@ -194,7 +194,8 @@ The workflow also carries the originating committer's ASF UID as a parameter. AT
 
 ### SSH key scope
 
-In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/ssh/register` for project TP, `/distribute/ssh/register` for distribution workflows), which generates a temporary SSH key bound to the specific project. The key cannot be used for any other project. The identity attached to the key differs: for project TP it is the committer resolved via LDAP from the OIDC `actor_id`; for distribution workflows it is the committer's ASF UID passed through the workflow, trusted because only the service account — which only ATR can trigger — could have put it there.
+In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/ssh/register` for project TP, `/distribute/ssh/register` for distribution workflows), which generates a temporary SSH key bound to the specific project. The key cannot be used for any other project, and `ssh.SSHServer` checks this before it looks anything up, so a key can't be used to find out what exists in other projects. Distribution workflows only download, so their keys are read-only: a key whose `github_nid` is `GITHUB_TRUSTED_ROLE_NID` can't be used to upload, because only the distribution registration endpoint accepts that actor.
+The identity attached to the key differs: for project TP it is the committer resolved via LDAP from the OIDC `actor_id`; for distribution workflows it is the committer's ASF UID passed through the workflow, trusted because only the service account — which only ATR can trigger — could have put it there.
 
 **Single-use registration.** An OIDC token registers a key once. `storage.writers.ssh.add_workflow_key` records the token's `jti` in `workflowjti` before it inserts the key, so a token replayed within its validity window fails on the primary key and mints nothing. Rows are pruned once the token's own `exp` has passed. Tokens are not single-use across the other OIDC endpoints, because a workflow mints one token per job and presents it to several of them.
 

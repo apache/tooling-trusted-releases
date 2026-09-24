@@ -31,11 +31,18 @@ def advance(
     source: atr.models.attestable.SourceV2,
     payload: github.TrustedPublisherPayload | None,
     override: db.Opt[str | None] = db.NOT_SET,
+    *,
+    declared: safe.CommitHash | None = None,
 ) -> atr.models.attestable.SourceV2:
     source = source.model_copy()
-    if (payload is not None) and ((not source.override) or (source.repository == payload.repository)):
-        source.repository = payload.repository
+    if payload is not None:
+        ensure_payload_repository(source, payload)
         source.default = payload.sha
+        # The payload sha is only the commit the run started from, so the workflow can tell us what it checked out
+        # An upload that doesn't say should clear any earlier value, otherwise it'd be stale
+        source.declared = str(declared) if (declared is not None) else None
+        # Any manual override described the earlier files, so the upload should win until someone corrects it again
+        source.override = None
     if not isinstance(override, db.NotSet):
         if override and (not source.repository):
             raise ValueError("Configure a GitHub repository for this project before setting its source commit.")
@@ -52,12 +59,20 @@ async def current(release: sql.Release) -> atr.models.attestable.SourceV2:
     return await initial(release, previous)
 
 
+def ensure_payload_repository(source: atr.models.attestable.SourceV2, payload: github.TrustedPublisherPayload) -> None:
+    # A payload from some other repository says nothing about this release's source
+    if source.repository != payload.repository:
+        expected = source.repository or "no configured repository"
+        raise ValueError(f"This release's source is {expected}, but the upload came from {payload.repository}")
+
+
 async def initial(
     release: sql.Release, previous: atr.models.attestable.Attestable | None
 ) -> atr.models.attestable.SourceV2:
     if isinstance(previous, atr.models.attestable.AttestableV2) and (previous.source is not None):
         source = previous.source.model_copy()
-        if not source.repository:
+        # The release policy says where the source lives, so it wins over whatever an earlier revision recorded
+        if release.project.policy_github_repository_name or (not source.repository):
             source.repository = repository(release.project)
         return source
     source = atr.models.attestable.SourceV2(repository=repository(release.project))

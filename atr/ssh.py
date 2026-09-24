@@ -38,6 +38,7 @@ import ssh_audit.builtin_policies as builtin_policies
 
 import atr.config as config
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
@@ -91,6 +92,9 @@ class SSHServer(asyncssh.SSHServer):
         self._conn = conn
         self._github_asf_uid: str | None = None
         self._github_payload: github.TrustedPublisherPayload | None = None
+        self._github_project_key: safe.ProjectKey | None = None
+        self._github_read_only = False
+        self._github_source_commit: safe.CommitHash | None = None
         peer_addr = conn.get_extra_info("peername")[0]
         log.info(f"SSH connection received from {peer_addr}")
         if not _rate_limit_check(global_ip_rate_buckets, peer_addr, _RATE_LIMIT_IP):
@@ -211,6 +215,11 @@ class SSHServer(asyncssh.SSHServer):
             return False
 
         self._github_payload = github.TrustedPublisherPayload.model_validate(workflow_key.github_payload)
+        self._github_project_key = safe.ProjectKey(workflow_key.project_key)
+        # Only distribution workflows run as the trusted role, and they only need to download
+        self._github_read_only = workflow_key.github_nid == interaction.GITHUB_TRUSTED_ROLE_NID
+        if workflow_key.source_commit is not None:
+            self._github_source_commit = safe.CommitHash(workflow_key.source_commit)
         return True
 
     def _get_asf_uid(self, process: asyncssh.SSHServerProcess) -> str:
@@ -226,6 +235,20 @@ class SSHServer(asyncssh.SSHServer):
         if username != "github":
             return None
         return self._github_payload
+
+    def _get_github_project_key(self, process: asyncssh.SSHServerProcess) -> safe.ProjectKey | None:
+        username = process.get_extra_info("username")
+        if username != "github":
+            return None
+        if self._github_project_key is None:
+            raise RsyncArgsError("GitHub authentication did not resolve a project")
+        return self._github_project_key
+
+    def _get_github_source_commit(self, process: asyncssh.SSHServerProcess) -> safe.CommitHash | None:
+        username = process.get_extra_info("username")
+        if username != "github":
+            return None
+        return self._github_source_commit
 
 
 async def rate_limit_cleanup_loop() -> None:
@@ -445,9 +468,16 @@ async def _step_04_command_validate(
     ### Calls _step_05a/b_command_path_validate ###
     ############################################
     if is_read_request:
-        project_key, version_key, tag = await _step_05a_command_path_validate_read(argv[-1])
+        project_key, version_key, tag = _step_05a_command_path_validate_read(argv[-1])
     else:
-        project_key, version_key, tag = await _step_05b_command_path_validate_write(argv[-1])
+        project_key, version_key, tag = _step_05b_command_path_validate_write(argv[-1])
+
+    # A workflow key is registered for one project, and the ASF UID behind it may well have access to others
+    workflow_project_key = server._get_github_project_key(process)
+    if (workflow_project_key is not None) and (project_key != workflow_project_key):
+        raise RsyncArgsError(f"This workflow key can only be used for project '{workflow_project_key}'")
+    if (not is_read_request) and server._github_read_only:
+        raise RsyncArgsError("This workflow key can only be used to download files")
 
     ssh_uid = server._get_asf_uid(process)
     async with db.session() as data:
@@ -475,7 +505,7 @@ async def _step_04_command_validate(
     return project_key, version_key, None, None
 
 
-async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, str | None]:
+def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, str | None]:
     """Validate the path argument for rsync read commands, returning safe datatypes."""
     # READ: rsync --server --sender -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
@@ -495,18 +525,10 @@ async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectK
         raise RsyncArgsError("Version is invalid")
     if tag:
         _validate_tag_segment(tag)
-
-    async with db.session() as data:
-        release = await data.release(
-            project_key=str(project_key),
-            version=str(version_key),
-        ).get()
-        if release is None:
-            raise RsyncArgsError(f"Release '{path_project}-{path_version}' does not exist")
     return project_key, version_key, tag
 
 
-async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, None]:
+def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, None]:
     """Validate the path argument for rsync write commands, returning safe datatypes."""
     # WRITE: rsync --server -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
@@ -523,12 +545,6 @@ async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.Project
         version_key = safe.VersionKey(path_version)
     except ValueError:
         raise RsyncArgsError("Version is invalid")
-
-    async with db.session() as data:
-        project = await data.project(key=str(project_key)).get()
-        if project is None:
-            raise RsyncArgsError(f"Project '{project_key}' does not exist")
-
     return project_key, version_key, None
 
 
@@ -697,6 +713,7 @@ async def _step_07b_process_validated_rsync_write(
 
         try:
             github_payload = server._get_github_payload(process)
+            source_commit = server._get_github_source_commit(process)
             result = await wacp.revision.create_revision_with_quarantine(
                 project_key,
                 version_key,
@@ -705,6 +722,7 @@ async def _step_07b_process_validated_rsync_write(
                 description=description,
                 modify=modify,
                 github_payload=github_payload,
+                source_commit=source_commit,
             )
             if isinstance(result, sql.Quarantined):
                 log.info(f"rsync upload quarantined for release {release_key}")

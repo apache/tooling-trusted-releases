@@ -165,6 +165,7 @@ class QuarantineValidate(schema.Strict):
     quarantined_id: int
     archives: list[QuarantineArchiveEntry]
     github_payload: github.TrustedPublisherPayload | None = None
+    source_commit: safe.CommitHash | None = None
 
 
 def _ensure_footer_enum(value: Any) -> mail.MailFooterCategory | None:

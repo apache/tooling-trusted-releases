@@ -74,11 +74,12 @@ class PathEntryV2(schema.Strict):
 class SourceV2(schema.Strict):
     repository: str = ""
     default: str | None = None
+    declared: str | None = None
     override: str | None = None
 
     @property
     def sha(self) -> str:
-        return self.override or self.default or ""
+        return self.override or self.declared or self.default or ""
 
 
 class AttestableV2(schema.Strict):
