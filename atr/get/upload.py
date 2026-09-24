@@ -31,6 +31,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.render as render
 import atr.shared as shared
+import atr.source as source
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -48,7 +49,7 @@ async def selected(
     """
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
-        release = await session.release(project_key, version_key, data=data)
+        release = await session.release(project_key, version_key, data=data, with_project_release_policy=True)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
         svn_base_path = shared.upload.svn_import_base_path(release.project, shared.upload.SvnArea.DEV)
 
@@ -67,6 +68,9 @@ async def selected(
         " ",
         htm.em[release.version],
     ]
+
+    if warning := await _workflow_upload_warning(release):
+        block.append(warning)
 
     block.p[
         htm.a(".btn.btn-outline-primary.me-2", href="#file-upload")["Use the browser"],
@@ -248,3 +252,30 @@ def _render_ssh_keys_info(block: htm.Block, user_ssh_keys: Sequence[sql.SSHKey])
             htm.a(href=util.as_url(keys.ssh_add))["add another SSH key"],
             ".",
         ]
+
+
+async def _workflow_upload_warning(release: sql.Release) -> htm.Element | None:
+    selected_source = await source.current(release)
+    # Only workflow uploads set these, so they tell us this release has had one
+    if not (selected_source.declared or selected_source.default):
+        return None
+    warning = htm.Block(htm.div, classes=".alert.alert-warning")
+    warning.p[
+        htm.strong["This release has files uploaded by a GitHub Trusted Publishing workflow."],
+        " Uploading files by hand will add to or replace them, which is unusual for a release built by a workflow. ",
+        "If you meant to update the release, re-running the workflow is probably the better route.",
+    ]
+    # An override means someone has already said which commit the files come from
+    if not selected_source.override:
+        compose_url = util.as_url(
+            compose.selected, project_key=release.safe_project_key, version_key=release.safe_version_key
+        )
+        warning.p(".mb-0")[
+            "The workflow recorded the source commit as ",
+            htm.code[selected_source.sha],
+            f" in {selected_source.repository}, and files you upload here will be compared against it. ",
+            "If they were built from a different commit, ",
+            htm.a(href=f"{compose_url}#commit-hash")["set the commit hash on the compose page"],
+            " after uploading.",
+        ]
+    return warning.collect()
