@@ -368,7 +368,7 @@ async def committee_keys(
         )
     return models.api.CommitteeKeysResults(
         endpoint="/committee/keys",
-        keys=committee.signing_certificates,
+        keys=[_key_for_response(key) for key in committee.signing_certificates],
     ).model_dump(mode="json"), 200
 
 
@@ -827,7 +827,7 @@ async def key_get(
         )
     return models.api.KeyGetResults(
         endpoint="/key/get",
-        key=key,
+        key=_key_for_response(key),
     ).model_dump(mode="json"), 200
 
 
@@ -922,7 +922,7 @@ async def keys_user(
         keys = await data.signing_certificate(apache_uid=str(asf_uid)).all()
     return models.api.KeysUserResults(
         endpoint="/keys/user",
-        keys=keys,
+        keys=[_key_for_response(key) for key in keys],
     ).model_dump(mode="json"), 200
 
 
@@ -1799,10 +1799,14 @@ async def signature_provenance(
     if not signing_keys:
         raise exceptions.NotFound("No signing keys found")
 
+    armored = key.ascii_armored_key
+    if isinstance(armored, bytes):
+        armored = armored.decode("utf-8", errors="replace")
+
     return models.api.SignatureProvenanceResults(
         endpoint="/signature/provenance",
         fingerprint=signer_fingerprint,
-        key_asc_text=key.ascii_armored_key,
+        key_asc_text=pgp.certificate_rearmored(armored),
         committees_with_artifact=signing_keys,
     ).model_dump(mode="json"), 200
 
@@ -2345,6 +2349,18 @@ def _jwt_asf_uid() -> str:
     if not isinstance(asf_uid, str):
         raise base.ASFQuartException(f"Invalid token subject: {asf_uid!r}, type: {type(asf_uid)}", errorcode=401)
     return asf_uid
+
+
+def _key_for_response(key: sql.SigningCertificate) -> sql.SigningCertificate:
+    armored = key.ascii_armored_key
+    if isinstance(armored, bytes):
+        armored = armored.decode("utf-8", errors="replace")
+    values = key.model_dump(exclude={"ascii_armored_key"})
+    try:
+        values["ascii_armored_key"] = pgp.certificate_rearmored(armored)
+    except ValueError as e:
+        raise ValueError(f"Cannot armor certificate {key.fingerprint}: {e}") from e
+    return sql.SigningCertificate.model_validate(values)
 
 
 async def _ldap_fullname(asf_uid: str) -> str:

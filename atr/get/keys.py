@@ -30,6 +30,7 @@ import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.pgp as pgp
 import atr.post as post
 import atr.shared as shared
 import atr.storage as storage
@@ -124,8 +125,9 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
             .all()
         )
 
-    if isinstance(key.ascii_armored_key, bytes):
-        key.ascii_armored_key = key.ascii_armored_key.decode("utf-8", errors="replace")
+    armored_key = key.ascii_armored_key
+    if isinstance(armored_key, bytes):
+        armored_key = armored_key.decode("utf-8", errors="replace")
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(keys))["← Back to Manage keys"]]
@@ -197,7 +199,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
     _add_signing_keys(page, signing_keys)
 
     page.h2["ASCII armored key"]
-    page.pre(".mt-3.border.border-2.p-3")[key.ascii_armored_key]
+    page.pre(".mt-3.border.border-2.p-3")[pgp.certificate_rearmored(armored_key)]
 
     return await template.blank(
         "OpenPGP key details",

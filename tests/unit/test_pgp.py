@@ -24,20 +24,6 @@ import pytest
 import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
 
-_RFC9580_V6_CERTIFICATE = """-----BEGIN PGP PUBLIC KEY BLOCK-----
-
-xioGY4d/4xsAAAAg+U2nu0jWCmHlZ3BqZYfQMxmZu52JGggkLq2EVD34laPCsQYf
-GwoAAABCBYJjh3/jAwsJBwUVCg4IDAIWAAKbAwIeCSIhBssYbE8GCaaX5NUt+mxy
-KwwfHifBilZwj2Ul7Ce62azJBScJAgcCAAAAAK0oIBA+LX0ifsDm185Ecds2v8lw
-gyU2kCcUmKfvBXbAf6rhRYWzuQOwEn7E/aLwIwRaLsdry0+VcallHhSu4RN6HWaE
-QsiPlR4zxP/TP7mhfVEe7XWPxtnMUMtf15OyA51YBM4qBmOHf+MZAAAAIIaTJINn
-+eUBXbki+PSAld2nhJh/LVmFsS+60WyvXkQ1wpsGGBsKAAAALAWCY4d/4wKbDCIh
-BssYbE8GCaaX5NUt+mxyKwwfHifBilZwj2Ul7Ce62azJAAAAAAQBIKbpGG2dWTX8
-j+VjFM21J0hqWlEg+bdiojWnKfA5AQpWUWtnNwDEM0g12vYxoWM8Y81W+bHBw805
-I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUrk0mXubZvyl4GBg==
------END PGP PUBLIC KEY BLOCK-----
-"""
-
 
 def _block_with_grafted_signature(target_block: str, source_block: str, signature_type: int, after_tag: int) -> str:
     # Lift a signature packet out of one certificate and splice it into another, just after the first
@@ -68,7 +54,7 @@ def test_armored_rejects_missing_or_empty_primary_packets(data: bytes) -> None:
 
 @pytest.mark.parametrize(("versions", "checksum"), [((6,), False), ((6, 6), False), ((4, 6), True), ((6, 4), True)])
 def test_armored_selects_checksums_for_all_primary_versions(versions: tuple[int, ...], checksum: bool) -> None:
-    certificates = {4: pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, 6: _RFC9580_V6_CERTIFICATE}
+    certificates = {4: pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, 6: pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC}
     data = b"".join(pgp._dearmored(certificates[version]) for version in versions)
 
     armored = pgp._armored(data)
@@ -191,15 +177,26 @@ def test_certificate_rearmored_preserves_packets_and_restores_checksum(original:
     assert "Version:" not in armored
 
 
+def test_certificate_rearmored_preserves_repeated_packets_and_order() -> None:
+    raw = pgp._dearmored(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+    packets = [raw[start:end] for _, start, _, end in pgp._frame_offsets(raw)]
+    unusual = b"".join([packets[0], packets[2], packets[2], packets[1], *packets[3:]])
+    armored = pgp._armored(unusual)
+
+    assert pgp._dearmored(pgp.certificate_rearmored(armored)) == unusual
+
+
 @pytest.mark.parametrize(
     "block",
     [
         "",
-        _RFC9580_V6_CERTIFICATE * 2,
-        "prefix\n" + _RFC9580_V6_CERTIFICATE,
-        _RFC9580_V6_CERTIFICATE + "suffix",
-        _RFC9580_V6_CERTIFICATE.replace("-----END PGP PUBLIC KEY BLOCK-----", "-----END PGP PUBLIC KEY BLOCK-"),
-        _RFC9580_V6_CERTIFICATE.replace("\n\n", "\n\n-----END PGP PUBLIC KEY BLOCK-\n", 1),
+        pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC * 2,
+        "prefix\n" + pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC,
+        pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC + "suffix",
+        pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC.replace(
+            "-----END PGP PUBLIC KEY BLOCK-----", "-----END PGP PUBLIC KEY BLOCK-"
+        ),
+        pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC.replace("\n\n", "\n\n-----END PGP PUBLIC KEY BLOCK-\n", 1),
     ],
     ids=["empty", "multiple", "prefix", "suffix", "incomplete", "interior-end"],
 )
@@ -259,13 +256,14 @@ def test_certificate_spans_are_the_raw_bytes_of_the_upload() -> None:
     ]
 
 
-@pytest.mark.parametrize("footer", ["=AAAA", "=xyz"])
+@pytest.mark.parametrize("footer", ["", "=AAAA", "=xyz"])
 def test_dearmored_ignores_the_checksum_footer(footer: str) -> None:
     block = pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC
     lines = block.splitlines()
     index = next(i for i, line in enumerate(lines) if line.startswith("="))
     altered = "\n".join([*lines[:index], footer, *lines[index + 1 :]]) + "\n"
     assert pgp._dearmored(altered) == pgp._dearmored(block)
+    assert pgp.certificate_rearmored(altered) == pgp.certificate_rearmored(block)
 
 
 def test_delta_fragments_are_minimal_and_fold_back_to_the_result() -> None:

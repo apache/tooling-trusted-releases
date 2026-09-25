@@ -271,6 +271,23 @@ async def test_database_add_models_links_a_stored_key_whose_reimport_is_a_subset
     assert [(link[0].committee_key, link[0].key_fingerprint) for link in links] == [("alpha", fingerprint)]
 
 
+async def test_database_add_models_preserves_stored_armor_on_unchanged_reimport(sqlite_data):
+    stored = "\n".join(line for line in _ALPHA_BLOCK.splitlines() if not line.startswith("=")) + "\n"
+    await _seed_committee_key(sqlite_data, "alpha", _ALPHA_FINGERPRINT, stored)
+    writer, _write_as = _make_committee_member(sqlite_data, "alpha")
+    outcomes = outcome.List[datatypes.Key]()
+    outcomes.append_result(_parsed_key(_ALPHA_BLOCK))
+
+    outcomes, publications = await writer._CommitteeParticipant__database_add_models(outcomes, "web:req-2")
+
+    assert outcomes.results()[0].status == datatypes.KeyStatus.PARSED
+    assert publications == {}
+    certificate = await sqlite_data.signing_certificate(fingerprint=_ALPHA_FINGERPRINT).demand(RuntimeError("missing"))
+    assert certificate.ascii_armored_key == stored
+    rows = await sqlite_data.key_attestable(fingerprint=_ALPHA_FINGERPRINT).all()
+    assert [(row.seq, row.source) for row in rows] == [(1, "web:seed")]
+
+
 @pytest.mark.asyncio
 async def test_database_add_models_stores_the_other_keys_when_one_fails(sqlite_data):
     sqlite_data.add(keys_writer.sql.Committee(key="alpha"))

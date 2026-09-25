@@ -34,6 +34,7 @@ import atr.db as db
 import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
 
 _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC = """-----BEGIN PGP PUBLIC KEY BLOCK-----
@@ -459,12 +460,15 @@ async def test_signature_provenance_requires_matched_committee(monkeypatch: pyte
 
 
 @pytest.mark.asyncio
-async def test_signature_provenance_returns_database_committees(monkeypatch: pytest.MonkeyPatch) -> None:
-    result, status = await _call_signature_provenance(monkeypatch, matched=True)
+@pytest.mark.parametrize("stored_as_bytes", [False, True])
+async def test_signature_provenance_returns_database_committees(
+    monkeypatch: pytest.MonkeyPatch, stored_as_bytes: bool
+) -> None:
+    result, status = await _call_signature_provenance(monkeypatch, matched=True, stored_as_bytes=stored_as_bytes)
 
     assert status == 200
     assert result["committees_with_artifact"] == [{"committee": "example"}]
-    assert result["key_asc_text"] == _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC
+    assert result["key_asc_text"] == pgp.certificate_rearmored(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
 
 
 @pytest.mark.asyncio
@@ -527,12 +531,15 @@ async def test_unscoped_returns_empty_when_no_match(tmp_path: pathlib.Path) -> N
 async def _call_signature_provenance(
     monkeypatch: pytest.MonkeyPatch,
     matched: bool,
+    stored_as_bytes: bool = False,
 ) -> tuple[dict, int]:
     parsed_key, _ = atr.api.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
     committee = SimpleNamespace(key="example", is_podling=False)
     stored = SimpleNamespace(
         fingerprint=parsed_key.fingerprint.lower(),
-        ascii_armored_key=_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC,
+        ascii_armored_key=(
+            _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC.encode() if stored_as_bytes else _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC
+        ),
         committees=[committee],
     )
     signature = SimpleNamespace(
