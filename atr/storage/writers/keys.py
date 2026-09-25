@@ -438,6 +438,10 @@ class FoundationCommitter(GeneralPublic):
             if isinstance(armored_key, bytes):
                 # TODO: This should not happen, but it does
                 armored_key = armored_key.decode("utf-8", errors="replace")
+            try:
+                armored_key = pgp.certificate_rearmored(armored_key)
+            except ValueError as e:
+                raise ValueError(f"Cannot armor certificate {key.fingerprint}: {e}") from e
             armored_key = armored_key.replace("BLOCK-----", "BLOCK-----\n" + comment_lines, 1)
             keys_content_list.append(armored_key)
 

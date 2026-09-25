@@ -34,6 +34,7 @@ import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
+import atr.util as util
 import tests.unit.pgp_fixtures as pgp_fixtures
 
 _ALPHA_BLOCK = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
@@ -673,6 +674,44 @@ def test_key_length_returns_dsa_bits() -> None:
     assert length == 3072
 
 
+async def test_keys_file_text_rearmors_stored_unpadded_certificates(sqlite_data):
+    originals = [pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_PRIMARY_UID_PUBLIC_KEY_ASC]
+    stored = ["\n".join(line for line in block.splitlines() if not line.startswith("=")) + "\n" for block in originals]
+    fingerprints = [pgp.certificate_block_fingerprint(block) for block in originals]
+    sqlite_data.add(sql.Committee(key="alpha"))
+    for fingerprint, block in zip(fingerprints, stored, strict=True):
+        sqlite_data.add(_signing_certificate(fingerprint, apache_uid="alice", armored=block))
+        sqlite_data.add(sql.KeyLink(committee_key="alpha", key_fingerprint=fingerprint))
+    await sqlite_data.commit()
+    writer, _write_as = _make_committee_member(sqlite_data, "alpha")
+
+    rendered = util.parse_key_blocks(await writer.keys_file_text("alpha"))
+
+    assert len(rendered) == len(originals)
+    assert len(pgp._dearmored(stored[0])) % 3 == 0
+    assert [pgp.certificate_block_fingerprint(block) for block in rendered] == fingerprints
+    assert [block.splitlines()[-2] for block in rendered] == ["=mT6V", "=UwRL"]
+    for fingerprint, original, block in zip(fingerprints, originals, rendered, strict=True):
+        assert pgp._dearmored(block) == pgp._dearmored(original)
+        assert f"Comment: {fingerprint.upper()}\nComment: alice@example.org (alice)\n" in block
+    assert not sqlite_data.dirty
+    certificates = await sqlite_data.signing_certificate().all()
+    assert {key.fingerprint: key.ascii_armored_key for key in certificates} == dict(
+        zip(fingerprints, stored, strict=True)
+    )
+
+
+async def test_keys_file_text_rejects_invalid_stored_armor_before_publication():
+    certificate = _public_key("bad-key", ascii_armored_key=_ALPHA_BLOCK * 2)
+    data = MockData(None, {"alpha": _committee("alpha", [certificate])})
+    writer, _write_as = _make_committee_member(data, "alpha")
+
+    with mock.patch.object(writer, "_publish_keys_to_svn", new_callable=mock.AsyncMock) as publish:
+        with pytest.raises(ValueError, match="bad-key: Expected exactly one complete"):
+            await writer._sync_committee_keys_file("alpha")
+    publish.assert_not_awaited()
+
+
 def test_certificate_records_its_latest_self_signature() -> None:
     key, _ = keys_writer.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
     data = MockData(None, committees_after_commit={})
@@ -889,7 +928,7 @@ async def test_update_committee_associations_removal_publishes_empty_keys_file()
 @pytest.mark.asyncio
 async def test_update_committee_associations_removal_republishes_remaining_keys():
     owned_key = SimpleNamespace(fingerprint="fp1", committees=[SimpleNamespace(key="alpha")])
-    remaining_key = _public_key("bbbbccccdddd1111")
+    remaining_key = _public_key(_ALPHA_FINGERPRINT, ascii_armored_key=_ALPHA_BLOCK)
     data = MockData(
         owned_key,
         committees_after_commit={"alpha": _committee("alpha", [remaining_key])},

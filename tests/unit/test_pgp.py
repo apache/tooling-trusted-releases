@@ -24,6 +24,20 @@ import pytest
 import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
 
+_RFC9580_V6_CERTIFICATE = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+xioGY4d/4xsAAAAg+U2nu0jWCmHlZ3BqZYfQMxmZu52JGggkLq2EVD34laPCsQYf
+GwoAAABCBYJjh3/jAwsJBwUVCg4IDAIWAAKbAwIeCSIhBssYbE8GCaaX5NUt+mxy
+KwwfHifBilZwj2Ul7Ce62azJBScJAgcCAAAAAK0oIBA+LX0ifsDm185Ecds2v8lw
+gyU2kCcUmKfvBXbAf6rhRYWzuQOwEn7E/aLwIwRaLsdry0+VcallHhSu4RN6HWaE
+QsiPlR4zxP/TP7mhfVEe7XWPxtnMUMtf15OyA51YBM4qBmOHf+MZAAAAIIaTJINn
++eUBXbki+PSAld2nhJh/LVmFsS+60WyvXkQ1wpsGGBsKAAAALAWCY4d/4wKbDCIh
+BssYbE8GCaaX5NUt+mxyKwwfHifBilZwj2Ul7Ce62azJAAAAAAQBIKbpGG2dWTX8
+j+VjFM21J0hqWlEg+bdiojWnKfA5AQpWUWtnNwDEM0g12vYxoWM8Y81W+bHBw805
+I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUrk0mXubZvyl4GBg==
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
 
 def _block_with_grafted_signature(target_block: str, source_block: str, signature_type: int, after_tag: int) -> str:
     # Lift a signature packet out of one certificate and splice it into another, just after the first
@@ -44,6 +58,24 @@ def _block_with_grafted_signature(target_block: str, source_block: str, signatur
             kept += grafted
             inserted = True
     return openpgp.composed.SignedPublicKey.from_bytes(bytes(kept)).to_armored()
+
+
+@pytest.mark.parametrize("data", [b"", b"\xcd\x01x", b"\xc6\x00", b"\xc6\x01\x04\xc6\x00"])
+def test_armored_rejects_missing_or_empty_primary_packets(data: bytes) -> None:
+    with pytest.raises(ValueError, match="primary key packet"):
+        pgp._armored(data)
+
+
+@pytest.mark.parametrize(("versions", "checksum"), [((6,), False), ((6, 6), False), ((4, 6), True), ((6, 4), True)])
+def test_armored_selects_checksums_for_all_primary_versions(versions: tuple[int, ...], checksum: bool) -> None:
+    certificates = {4: pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, 6: _RFC9580_V6_CERTIFICATE}
+    data = b"".join(pgp._dearmored(certificates[version]) for version in versions)
+
+    armored = pgp._armored(data)
+
+    assert any(line.startswith("=") for line in armored.splitlines()) is checksum
+    assert pgp._dearmored(armored) == data
+    assert pgp.certificate_rearmored(armored) == armored
 
 
 def test_certificate_block_shape_names_every_shape() -> None:
@@ -136,6 +168,44 @@ def test_certificate_parts_refuse_a_block_over_a_limit() -> None:
         pgp.certificate_parts(block, packet_limit=packets - 1)
     with pytest.raises(pgp.LimitError, match="certificates"):
         pgp.certificate_parts(block, certificate_limit=1)
+
+
+@pytest.mark.parametrize(
+    ("original", "checksum"),
+    [(pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, "=mT6V"), (pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC, "=P9R1")],
+    ids=["unpadded", "old-framing"],
+)
+def test_certificate_rearmored_preserves_packets_and_restores_checksum(original: str, checksum: str) -> None:
+    lines = original.splitlines()
+    stored = "\n".join(line for line in lines if not line.startswith("="))
+    stored = stored.replace("BLOCK-----\n", "BLOCK-----\nVersion: legacy\n", 1)
+    stored = "\n\t" + stored.replace("-----END", " \t-----END") + "\t\n"
+    raw = pgp._dearmored(original)
+
+    armored = pgp.certificate_rearmored(stored)
+
+    assert armored.splitlines()[-2] == checksum
+    assert pgp._dearmored(armored) == raw
+    assert pgp._armored(raw) == armored
+    assert pgp.certificate_rearmored(armored) == armored
+    assert "Version:" not in armored
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "",
+        _RFC9580_V6_CERTIFICATE * 2,
+        "prefix\n" + _RFC9580_V6_CERTIFICATE,
+        _RFC9580_V6_CERTIFICATE + "suffix",
+        _RFC9580_V6_CERTIFICATE.replace("-----END PGP PUBLIC KEY BLOCK-----", "-----END PGP PUBLIC KEY BLOCK-"),
+        _RFC9580_V6_CERTIFICATE.replace("\n\n", "\n\n-----END PGP PUBLIC KEY BLOCK-\n", 1),
+    ],
+    ids=["empty", "multiple", "prefix", "suffix", "incomplete", "interior-end"],
+)
+def test_certificate_rearmored_requires_one_complete_envelope(block: str) -> None:
+    with pytest.raises(ValueError, match="exactly one complete"):
+        pgp.certificate_rearmored(block)
 
 
 def test_latest_self_signature_skips_uid_revocations() -> None:

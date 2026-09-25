@@ -18,6 +18,7 @@
 import base64
 import dataclasses
 import datetime
+import io
 import itertools
 from collections.abc import Iterable
 from typing import Final, Literal
@@ -194,6 +195,19 @@ def certificate_parts(
 
 def certificate_placements(block: str) -> frozenset[Placement]:
     return fragment_placements(_dearmored(block))
+
+
+def certificate_rearmored(block: str) -> str:
+    text = block.strip()
+    lines = text.splitlines()
+    if (
+        (not lines)
+        or (lines[0].strip() != _ARMOR_BEGIN)
+        or (lines[-1].strip() != _ARMOR_END)
+        or any(line.strip().startswith(("-----BEGIN", "-----END")) for line in lines[1:-1])
+    ):
+        raise ValueError("Expected exactly one complete public key armor block")
+    return _armored(_dearmored(text))
 
 
 def certificate_spans(text: str) -> list[bytes]:
@@ -460,9 +474,18 @@ def user_id_texts(block: str) -> list[str]:
 
 
 def _armored(data: bytes) -> str:
-    encoded = base64.b64encode(data).decode("ascii")
-    lines = [encoded[index : index + 64] for index in range(0, len(encoded), 64)]
-    return "\n".join([_ARMOR_BEGIN, "", *lines, _ARMOR_END]) + "\n"
+    versions: set[int] = set()
+    for tag, _, body, end in _frame_offsets(data):
+        if tag != _PRIMARY_KEY_TAG:
+            continue
+        if body == end:
+            raise ValueError("The primary key packet is empty")
+        versions.add(data[body])
+    if not versions:
+        raise ValueError("The block contains no primary key packet")
+    output = io.StringIO()
+    openpgp.armor.write(data, openpgp.armor.BlockType.PublicKey, output, include_checksum=versions != {6})
+    return output.getvalue()
 
 
 def _attribute_label(attribute: openpgp.packet.UserAttribute) -> str:
