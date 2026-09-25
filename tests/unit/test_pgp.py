@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+import itertools
 from types import SimpleNamespace
 
 import openpgp
@@ -52,7 +53,10 @@ def test_armored_rejects_missing_or_empty_primary_packets(data: bytes) -> None:
         pgp._armored(data)
 
 
-@pytest.mark.parametrize(("versions", "checksum"), [((6,), False), ((6, 6), False), ((4, 6), True), ((6, 4), True)])
+@pytest.mark.parametrize(
+    ("versions", "checksum"),
+    [(versions, 4 in versions) for length in range(1, 5) for versions in itertools.product((4, 6), repeat=length)],
+)
 def test_armored_selects_checksums_for_all_primary_versions(versions: tuple[int, ...], checksum: bool) -> None:
     certificates = {4: pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, 6: pgp_fixtures.RFC9580_V6_PUBLIC_KEY_ASC}
     data = b"".join(pgp._dearmored(certificates[version]) for version in versions)
