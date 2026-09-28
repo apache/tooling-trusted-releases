@@ -34,6 +34,13 @@ class SvnArea(enum.Enum):
 class AddFilesForm(form.Form):
     variant: ADD_FILES = form.value(ADD_FILES)
     file_data: form.FileList = form.label("Files", "Select the files to upload.")
+    commit_hash: safe.OptionalCommitHash = form.label(
+        "Source commit hash",
+        "The full 40-character source commit these files were built from. "
+        "Required if this project has a GitHub source repository.",
+        widget=form.Widget.TEXT,
+        default="",
+    )
 
 
 class SvnImportForm(form.Form):

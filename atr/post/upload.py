@@ -26,6 +26,7 @@ import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
 import atr.shared as shared
+import atr.source as source
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
@@ -62,11 +63,12 @@ async def _add_files(
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     try:
         file_data = add_form.file_data
+        source_override = await _upload_source_override(session, add_form, project_key, version_key)
 
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
             creation_error, number_of_files, was_quarantined = await wacp.release.upload_files(
-                project_key, version_key, file_data
+                project_key, version_key, file_data, source_override=source_override
             )
 
         if creation_error is not None:
@@ -181,3 +183,21 @@ async def _svn_import(
             project_key=project_key,
             version_key=version_key,
         )
+
+
+async def _upload_source_override(
+    session: web.Committer,
+    add_form: shared.upload.AddFilesForm,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> db.Opt[str | None]:
+    commit_hash = add_form.commit_hash
+    async with db.session() as data:
+        release = await session.release(project_key, version_key, data=data, with_project_release_policy=True)
+        repository = source.repository(release.project)
+    # The commit hash only means something for a GitHub source, so we insist on it there
+    if repository and (commit_hash is None):
+        raise storage.AccessError(
+            "This project has a GitHub source repository, so a source commit hash is required.", status=400
+        )
+    return str(commit_hash) if (commit_hash is not None) else db.NOT_SET

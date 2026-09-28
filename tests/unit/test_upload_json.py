@@ -21,6 +21,7 @@ import unittest.mock as mock
 import pytest
 import quart
 
+import atr.models.safe as safe
 import atr.post.upload as upload
 
 
@@ -40,7 +41,10 @@ async def test_add_files_html_redirect_on_success(app):
 
     storage_write = _mock_storage_write(None, 2, False)
 
-    with mock.patch.object(upload.storage, "write", storage_write):
+    with (
+        mock.patch.object(upload.storage, "write", storage_write),
+        mock.patch.object(upload, "_upload_source_override", mock.AsyncMock(return_value=upload.db.NOT_SET)),
+    ):
         async with app.test_request_context("/upload/test/1.0"):
             result = await upload._add_files(
                 session,
@@ -58,7 +62,10 @@ async def test_add_files_html_redirect_on_success(app):
 async def test_add_files_json_creation_error(app):
     storage_write = _mock_storage_write("No files provided", 0, False)
 
-    with mock.patch.object(upload.storage, "write", storage_write):
+    with (
+        mock.patch.object(upload.storage, "write", storage_write),
+        mock.patch.object(upload, "_upload_source_override", mock.AsyncMock(return_value=upload.db.NOT_SET)),
+    ):
         async with app.test_request_context("/upload/test/1.0"):
             result = await upload._add_files(
                 mock.AsyncMock(),
@@ -82,6 +89,7 @@ async def test_add_files_json_success(app):
     with (
         mock.patch.object(upload.storage, "write", storage_write),
         mock.patch.object(upload.util, "as_url", return_value="/compose/test/1.0"),
+        mock.patch.object(upload, "_upload_source_override", mock.AsyncMock(return_value=upload.db.NOT_SET)),
     ):
         async with app.test_request_context("/upload/test/1.0"):
             result = await upload._add_files(
@@ -104,7 +112,10 @@ async def test_add_files_json_success(app):
 async def test_add_files_json_unexpected_error_includes_traceback(app):
     storage_write = mock.MagicMock(side_effect=RuntimeError("Storage unavailable"))
 
-    with mock.patch.object(upload.storage, "write", storage_write):
+    with (
+        mock.patch.object(upload.storage, "write", storage_write),
+        mock.patch.object(upload, "_upload_source_override", mock.AsyncMock(return_value=upload.db.NOT_SET)),
+    ):
         async with app.test_request_context("/upload/test/1.0"):
             result = await upload._add_files(
                 mock.AsyncMock(),
@@ -121,6 +132,71 @@ async def test_add_files_json_unexpected_error_includes_traceback(app):
     assert data["message"] == "Error adding file: Storage unavailable"
     assert data["exception_type"] == "RuntimeError"
     assert "Storage unavailable" in data["traceback"]
+
+
+@pytest.mark.asyncio
+async def test_upload_source_override_requires_hash_with_github_repo():
+    session = mock.AsyncMock()
+    add_form = mock.MagicMock()
+    add_form.commit_hash = None
+    with (
+        mock.patch.object(upload.db, "session", _mock_db_session()),
+        mock.patch.object(upload.source, "repository", mock.Mock(return_value="apache/test")),
+    ):
+        with pytest.raises(upload.storage.AccessError) as exc:
+            await upload._upload_source_override(session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0"))
+    assert exc.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_source_override_returns_hash_with_github_repo():
+    session = mock.AsyncMock()
+    add_form = mock.MagicMock()
+    add_form.commit_hash = safe.CommitHash("a" * 40)
+    with (
+        mock.patch.object(upload.db, "session", _mock_db_session()),
+        mock.patch.object(upload.source, "repository", mock.Mock(return_value="apache/test")),
+    ):
+        result = await upload._upload_source_override(
+            session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0")
+        )
+    assert result == "a" * 40
+
+
+@pytest.mark.asyncio
+async def test_upload_source_override_optional_without_repo():
+    session = mock.AsyncMock()
+    add_form = mock.MagicMock()
+    add_form.commit_hash = None
+    with (
+        mock.patch.object(upload.db, "session", _mock_db_session()),
+        mock.patch.object(upload.source, "repository", mock.Mock(return_value="")),
+    ):
+        result = await upload._upload_source_override(
+            session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0")
+        )
+    assert result is upload.db.NOT_SET
+
+
+@pytest.mark.asyncio
+async def test_upload_source_override_records_hash_without_repo():
+    session = mock.AsyncMock()
+    add_form = mock.MagicMock()
+    add_form.commit_hash = safe.CommitHash("b" * 40)
+    with (
+        mock.patch.object(upload.db, "session", _mock_db_session()),
+        mock.patch.object(upload.source, "repository", mock.Mock(return_value="")),
+    ):
+        result = await upload._upload_source_override(
+            session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0")
+        )
+    assert result == "b" * 40
+
+
+def _mock_db_session():
+    cm = mock.AsyncMock()
+    cm.__aenter__.return_value = mock.AsyncMock()
+    return mock.MagicMock(return_value=cm)
 
 
 def _mock_storage_write(creation_error, number_of_files, was_quarantined):

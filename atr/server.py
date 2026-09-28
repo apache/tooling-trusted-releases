@@ -865,7 +865,9 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
         test_project.description = "Test project for the end-to-end suite."
         test_project.homepage = "https://test.apache.org/"
         test_project.download_page = "https://test.apache.org/download"
-        test_project.repositories = ["https://github.com/apache/test"]
+        # A non-GitHub repository, so the project metadata is complete but manual uploads
+        # in the test suites are not forced to supply a commit hash (there's no GitHub source to compare against)
+        test_project.repositories = ["https://gitbox.apache.org/repos/asf/test.git"]
         await data.commit()
 
         test_client_project = await data.project(key="test-client").get()

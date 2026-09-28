@@ -1052,6 +1052,7 @@ class CommitteeParticipant(FoundationCommitter):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         files: Sequence[datastructures.FileStorage],
+        source_override: db.Opt[str | None] = db.NOT_SET,
     ) -> tuple[str | None, int, bool]:
         """Process and save the uploaded files into a new draft revision."""
         number_of_files = len(files)
@@ -1074,6 +1075,7 @@ class CommitteeParticipant(FoundationCommitter):
                 allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
                 description=description,
                 modify=modify,
+                source_override=source_override,
             )
         except datatypes.FailedError as e:
             return str(e), len(files), False

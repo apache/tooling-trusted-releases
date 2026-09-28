@@ -117,8 +117,10 @@ def test_override_can_be_set_or_cleared():
     assert confirmed.sha == "b" * 40
     assert cleared.sha == "a" * 40
     assert cleared.override is None
-    with pytest.raises(ValueError, match="Configure a GitHub repository"):
-        source.advance(atr.models.attestable.SourceV2(), None, "b" * 40)
+    # An override is recorded even with no configured repository
+    recorded = source.advance(atr.models.attestable.SourceV2(), None, "b" * 40)
+    assert recorded.override == "b" * 40
+    assert recorded.sha == "b" * 40
 
 
 async def test_read_and_cache_inputs_use_requested_snapshot(

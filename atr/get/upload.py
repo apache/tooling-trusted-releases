@@ -27,6 +27,7 @@ import atr.form as form
 import atr.get.compose as compose
 import atr.get.keys as keys
 import atr.htm as htm
+import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.render as render
@@ -69,7 +70,8 @@ async def selected(
         htm.em[release.version],
     ]
 
-    if warning := await _workflow_upload_warning(release):
+    selected_source = await source.current(release)
+    if warning := _workflow_upload_warning(selected_source):
         block.append(warning)
 
     block.p[
@@ -87,6 +89,7 @@ async def selected(
         model_cls=shared.upload.AddFilesForm,
         submit_label="Add files",
         form_classes=".atr-canary.py-4.px-5",
+        defaults={"commit_hash": selected_source.override or ""},
     )
 
     block.append(htpy.div("#upload-progress-container.d-none"))
@@ -254,8 +257,7 @@ def _render_ssh_keys_info(block: htm.Block, user_ssh_keys: Sequence[sql.SSHKey])
         ]
 
 
-async def _workflow_upload_warning(release: sql.Release) -> htm.Element | None:
-    selected_source = await source.current(release)
+def _workflow_upload_warning(selected_source: atr.models.attestable.SourceV2) -> htm.Element | None:
     # Only workflow uploads set these, so they tell us this release has had one
     if not (selected_source.declared or selected_source.default):
         return None
@@ -267,15 +269,10 @@ async def _workflow_upload_warning(release: sql.Release) -> htm.Element | None:
     ]
     # An override means someone has already said which commit the files come from
     if not selected_source.override:
-        compose_url = util.as_url(
-            compose.selected, project_key=release.safe_project_key, version_key=release.safe_version_key
-        )
         warning.p(".mb-0")[
             "The workflow recorded the source commit as ",
             htm.code[selected_source.sha],
             f" in {selected_source.repository}, and files you upload here will be compared against it. ",
-            "If they were built from a different commit, ",
-            htm.a(href=f"{compose_url}#commit-hash")["set the commit hash on the compose page"],
-            " after uploading.",
+            "Give the commit these files were built from in the upload form below.",
         ]
     return warning.collect()

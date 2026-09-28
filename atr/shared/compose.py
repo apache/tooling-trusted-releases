@@ -16,7 +16,7 @@
 # under the License.
 
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Literal
+from typing import Literal
 
 import pydantic
 
@@ -27,7 +27,6 @@ import atr.web as web
 type Respond = Callable[[int, str], Awaitable[tuple[web.QuartResponse, int] | web.WerkzeugResponse]]
 
 type MOVE_FILE = Literal["MOVE_FILE"]
-type SET_COMMIT_HASH = Literal["SET_COMMIT_HASH"]
 
 
 class MoveFileForm(form.Form):
@@ -46,17 +45,3 @@ class MoveFileForm(form.Form):
             if source.parent == target_dir_path:
                 raise ValueError(f"Target directory cannot be the same as the source directory for {source.name}.")
         return self
-
-
-class SetCommitHashForm(form.Form):
-    variant: SET_COMMIT_HASH = form.value(SET_COMMIT_HASH)
-    commit_hash: safe.OptionalCommitHash = form.label(
-        "Commit hash",
-        "Enter the full 40-character source commit for the displayed repository. "
-        "Leave blank to use the workflow default, if available.",
-        widget=form.Widget.TEXT,
-        default="",
-    )
-
-
-type ComposeForm = Annotated[MoveFileForm | SetCommitHashForm, form.DISCRIMINATOR]

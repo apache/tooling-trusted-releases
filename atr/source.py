@@ -44,8 +44,8 @@ def advance(
         # Any manual override described the earlier files, so the upload should win until someone corrects it again
         source.override = None
     if not isinstance(override, db.NotSet):
-        if override and (not source.repository):
-            raise ValueError("Configure a GitHub repository for this project before setting its source commit.")
+        # An override is kept even with no configured repository - there's then nothing
+        # to compare it against, but the recorded commit is still worth having.
         source.override = override
     return source
 
