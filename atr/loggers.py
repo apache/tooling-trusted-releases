@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import logging.handlers
@@ -97,7 +98,7 @@ def shared_processors() -> list[structlog.types.Processor]:
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
+        _timestamp,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]
@@ -116,4 +117,14 @@ def _parse_json_event(
             event_dict["event"] = json.loads(event)
         except json.JSONDecodeError:
             pass
+    return event_dict
+
+
+def _timestamp(
+    _logger: structlog.types.WrappedLogger,
+    _method_name: str,
+    event_dict: structlog.types.EventDict,
+) -> structlog.types.EventDict:
+    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds")
+    event_dict["timestamp"] = now.replace("+00:00", "Z")
     return event_dict
