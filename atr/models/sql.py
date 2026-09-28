@@ -911,13 +911,13 @@ class Task(sqlmodel.SQLModel, table=True):
             self.status = TaskStatus(self.status)
 
         if isinstance(self.added, str):
-            self.added = datetime.datetime.fromisoformat(self.added.rstrip("Z"))
+            self.added = datetime.datetime.fromisoformat(self.added)
 
         if isinstance(self.started, str):
-            self.started = datetime.datetime.fromisoformat(self.started.rstrip("Z"))
+            self.started = datetime.datetime.fromisoformat(self.started)
 
         if isinstance(self.completed, str):
-            self.completed = datetime.datetime.fromisoformat(self.completed.rstrip("Z"))
+            self.completed = datetime.datetime.fromisoformat(self.completed)
 
         if isinstance(self.result, dict):
             self.result = results.ResultsAdapter.validate_python(self.result)
@@ -1803,7 +1803,7 @@ class Release(sqlmodel.SQLModel, table=True):
         for name in ("activity_at", "archived", "created", "released", "vote_resolved", "vote_started"):
             value = getattr(self, name)
             if isinstance(value, str):
-                setattr(self, name, datetime.datetime.fromisoformat(value.rstrip("Z")))
+                setattr(self, name, datetime.datetime.fromisoformat(value))
 
         if isinstance(self.phase, str):
             self.phase = ReleasePhase(self.phase)
@@ -1939,7 +1939,7 @@ class BallotPaper(sqlmodel.SQLModel, table=True):
             self.choice = VoteChoice(self.choice)
 
         if isinstance(self.created, str):
-            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+            self.created = datetime.datetime.fromisoformat(self.created)
 
     @property
     def safe_revision_number_at_cast(self) -> safe.RevisionNumber:
@@ -2020,7 +2020,7 @@ class CheckResultIgnore(sqlmodel.SQLModel, table=True):
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
-            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+            self.created = datetime.datetime.fromisoformat(self.created)
 
 
 # Distribution: Release
@@ -2128,7 +2128,7 @@ class SigningCertificate(sqlmodel.SQLModel, table=True):
 
     def model_post_init(self, _context):
         if isinstance(self.latest_self_signature, str):
-            self.latest_self_signature = datetime.datetime.fromisoformat(self.latest_self_signature.rstrip("Z"))
+            self.latest_self_signature = datetime.datetime.fromisoformat(self.latest_self_signature)
 
 
 # SigningKey: SigningCertificate
@@ -2168,10 +2168,10 @@ class SigningKey(sqlmodel.SQLModel, table=True):
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
-            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+            self.created = datetime.datetime.fromisoformat(self.created)
 
         if isinstance(self.expires, str):
-            self.expires = datetime.datetime.fromisoformat(self.expires.rstrip("Z"))
+            self.expires = datetime.datetime.fromisoformat(self.expires)
 
 
 # Quarantined: Release
@@ -2212,10 +2212,10 @@ class Quarantined(sqlmodel.SQLModel, table=True):
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
-            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+            self.created = datetime.datetime.fromisoformat(self.created)
 
         if isinstance(self.completed, str):
-            self.completed = datetime.datetime.fromisoformat(self.completed.rstrip("Z"))
+            self.completed = datetime.datetime.fromisoformat(self.completed)
 
         if isinstance(self.status, str):
             self.status = QuarantineStatus(self.status)
@@ -2446,7 +2446,7 @@ class Revision(sqlmodel.SQLModel, table=True):
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
-            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+            self.created = datetime.datetime.fromisoformat(self.created)
 
         if isinstance(self.phase, str):
             self.phase = ReleasePhase(self.phase)
