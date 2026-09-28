@@ -1,8 +1,8 @@
-# 3.21. SBOM architecture
+# 7.21. SBOM architecture
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.20.` [Resource management](resource-management)
+**Prev**: `7.20.` [Resource management](resource-management)
 
 **Next**: (none)
 

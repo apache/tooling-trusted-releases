@@ -1,10 +1,10 @@
-# 2.6. SBOM workflows
+# 5.1.4. SBOM workflows
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `5.1.` [Compose phase](compose-phase)
 
-**Prev**: `2.5.` [Trusted Publishing](trusted-publishing)
+**Prev**: `5.1.3.` [License checks](license-checks)
 
-**Next**: `2.7.` [Staging and voting](staging-and-voting)
+**Next**: `5.2.` [Vote phase](vote-phase)
 
 **Sections**:
 

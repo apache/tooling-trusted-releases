@@ -107,17 +107,9 @@ def build_navigation(entries: list[TocEntry]) -> dict[str, Navigation]:
             parent_entry = next(e for e in entries if e.number.rstrip(".") == entry.parent)
             up = (f"{parent_entry.number} {parent_entry.title}", parent_entry.path)
 
-        prev_entry = None
-        for j in range(i - 1, -1, -1):
-            if entries[j].level == entry.level:
-                prev_entry = entries[j]
-                break
-
-        next_entry = None
-        for j in range(i + 1, len(entries)):
-            if entries[j].level == entry.level:
-                next_entry = entries[j]
-                break
+        # Prev and next follow the reading order of the TOC, i.e. depth first
+        prev_entry = entries[i - 1] if (i > 0) else None
+        next_entry = entries[i + 1] if (i + 1 < len(entries)) else None
 
         if prev_entry:
             prev = (prev_entry.number, prev_entry.title, prev_entry.path)

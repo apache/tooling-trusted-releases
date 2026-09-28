@@ -1,10 +1,10 @@
-# 2.5. Trusted Publishing
+# 4.2. Trusted Publishing
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `4.` [Release managers](release-manager-setup)
 
-**Prev**: `2.4.` [License checks](license-checks)
+**Prev**: `4.1.` [Signing artifacts](signing-artifacts)
 
-**Next**: `2.6.` [SBOM workflows](sbom-workflows)
+**Next**: `5.` [Making releases](release-process-description)
 
 **Sections**:
 
@@ -45,7 +45,7 @@ Tell the ASF Security team that your project intends to request a CI signing key
 
 ### Step 2: Request a project signing key
 
-Open a Jira ticket with ASF Infrastructure asking for a signing key. Infrastructure generates a 4096-bit RSA key that can only be used for signing, and puts an encrypted revocation key in your project's private repository. The private key is never shared with the project, or with anyone outside the Infrastructure root team. The public key is either sent to your project or added to your `KEYS` file for you.
+Open a Jira ticket with ASF Infrastructure asking for a signing key. Infrastructure generates the key and keeps the private half, and the public key is either sent to your project or added to your `KEYS` file for you. Infrastructure's [automated release signing](https://infra.apache.org/release-signing.html#automated-release-signing) documentation describes the key and how it is held.
 
 The key must follow a specific naming convention for ATR to recognise it as an automated release key, so it is worth asking for this in your ticket. The primary UID must contain "Automated Release Signing" or the deprecated "Services RM", ignoring case, and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
 

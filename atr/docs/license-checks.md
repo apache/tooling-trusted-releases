@@ -1,10 +1,10 @@
-# 2.4. License checks
+# 5.1.3. License checks
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `5.1.` [Compose phase](compose-phase)
 
-**Prev**: `2.3.` [Checks](checks)
+**Prev**: `5.1.2.` [Checks](checks)
 
-**Next**: `2.5.` [Trusted Publishing](trusted-publishing)
+**Next**: `5.1.4.` [SBOM workflows](sbom-workflows)
 
 **Sections**:
 

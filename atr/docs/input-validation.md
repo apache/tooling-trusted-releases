@@ -1,10 +1,10 @@
-# 3.15. Input validation
+# 7.15. Input validation
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.14.` [Authorization security](authorization-security)
+**Prev**: `7.14.` [Authorization security](authorization-security)
 
-**Next**: `3.16.` [Dependency updates](dependency-updates)
+**Next**: `7.16.` [Dependency updates](dependency-updates)
 
 **Sections**:
 

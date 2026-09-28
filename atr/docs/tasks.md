@@ -1,10 +1,10 @@
-# 3.11. Tasks
+# 7.11. Tasks
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.10.` [User interface](user-interface)
+**Prev**: `7.10.` [User interface](user-interface)
 
-**Next**: `3.12.` [Authentication security](authentication-security)
+**Next**: `7.12.` [Authentication security](authentication-security)
 
 **Sections**:
 

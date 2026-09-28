@@ -1,10 +1,10 @@
-# 3.10. User interface
+# 7.10. User interface
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.9.` [Storage interface](storage-interface)
+**Prev**: `7.9.` [Storage interface](storage-interface)
 
-**Next**: `3.11.` [Tasks](tasks)
+**Next**: `7.11.` [Tasks](tasks)
 
 **Sections**:
 

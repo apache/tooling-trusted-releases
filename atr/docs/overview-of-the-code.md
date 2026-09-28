@@ -1,10 +1,10 @@
-# 3.1. Overview of the code
+# 7.1. Overview of the code
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `2.8.` [Promoting to release](promoting-to-release)
+**Prev**: `7.` [Developer guide](developer-guide)
 
-**Next**: `3.2.` [How to contribute](how-to-contribute)
+**Next**: `7.2.` [How to contribute](how-to-contribute)
 
 **Sections**:
 

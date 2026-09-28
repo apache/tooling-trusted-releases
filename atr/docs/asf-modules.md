@@ -1,10 +1,10 @@
-# 3.19. ASF modules
+# 7.19. ASF modules
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.18.` [API documentation policy](api-documentation-policy)
+**Prev**: `7.18.` [API documentation policy](api-documentation-policy)
 
-**Next**: `3.20.` [Resource management](resource-management)
+**Next**: `7.20.` [Resource management](resource-management)
 
 **Sections**:
 

@@ -1,10 +1,10 @@
-# 3.5. Build processes
+# 7.5. Build processes
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.4.` [Code policies](code-policies)
+**Prev**: `7.4.` [Code policies](code-policies)
 
-**Next**: `3.6.` [Running the server](running-the-server)
+**Next**: `7.6.` [Running the server](running-the-server)
 
 **Sections**:
 

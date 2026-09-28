@@ -1,10 +1,10 @@
-# 3.8. Database
+# 7.8. Database
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.7.` [Running and creating tests](running-and-creating-tests)
+**Prev**: `7.7.` [Running and creating tests](running-and-creating-tests)
 
-**Next**: `3.9.` [Storage interface](storage-interface)
+**Next**: `7.9.` [Storage interface](storage-interface)
 
 **Sections**:
 

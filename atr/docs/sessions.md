@@ -1,10 +1,10 @@
-# 3.13. Sessions
+# 7.13. Sessions
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.12.` [Authentication security](authentication-security)
+**Prev**: `7.12.` [Authentication security](authentication-security)
 
-**Next**: `3.14.` [Authorization security](authorization-security)
+**Next**: `7.14.` [Authorization security](authorization-security)
 
 **Sections**:
 

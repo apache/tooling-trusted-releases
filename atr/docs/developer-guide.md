@@ -1,34 +1,34 @@
-# 3. Developer guide
+# 7. Developer guide
 
 **Up**: [Documentation](.)
 
-**Prev**: `2.` [User guide](user-guide)
+**Prev**: `6.` [Release catalog](release-catalog)
 
-**Next**: (none)
+**Next**: `7.1.` [Overview of the code](overview-of-the-code)
 
 **Pages**:
 
-* `3.1.` [Overview of the code](overview-of-the-code)
-* `3.2.` [How to contribute](how-to-contribute)
-* `3.3.` [Code conventions](code-conventions)
-* `3.4.` [Code policies](code-policies)
-* `3.5.` [Build processes](build-processes)
-* `3.6.` [Running the server](running-the-server)
-* `3.7.` [Running and creating tests](running-and-creating-tests)
-* `3.8.` [Database](database)
-* `3.9.` [Storage interface](storage-interface)
-* `3.10.` [User interface](user-interface)
-* `3.11.` [Tasks](tasks)
-* `3.12.` [Authentication security](authentication-security)
-* `3.13.` [Sessions](sessions)
-* `3.14.` [Authorization security](authorization-security)
-* `3.15.` [Input validation](input-validation)
-* `3.16.` [Dependency updates](dependency-updates)
-* `3.17.` [TLS security configuration](tls-security-configuration)
-* `3.18.` [API documentation policy](api-documentation-policy)
-* `3.19.` [ASF modules](asf-modules)
-* `3.20.` [Resource management](resource-management)
-* `3.21.` [SBOM architecture](sbom-architecture)
+* `7.1.` [Overview of the code](overview-of-the-code)
+* `7.2.` [How to contribute](how-to-contribute)
+* `7.3.` [Code conventions](code-conventions)
+* `7.4.` [Code policies](code-policies)
+* `7.5.` [Build processes](build-processes)
+* `7.6.` [Running the server](running-the-server)
+* `7.7.` [Running and creating tests](running-and-creating-tests)
+* `7.8.` [Database](database)
+* `7.9.` [Storage interface](storage-interface)
+* `7.10.` [User interface](user-interface)
+* `7.11.` [Tasks](tasks)
+* `7.12.` [Authentication security](authentication-security)
+* `7.13.` [Sessions](sessions)
+* `7.14.` [Authorization security](authorization-security)
+* `7.15.` [Input validation](input-validation)
+* `7.16.` [Dependency updates](dependency-updates)
+* `7.17.` [TLS security configuration](tls-security-configuration)
+* `7.18.` [API documentation policy](api-documentation-policy)
+* `7.19.` [ASF modules](asf-modules)
+* `7.20.` [Resource management](resource-management)
+* `7.21.` [SBOM architecture](sbom-architecture)
 
 **Sections**:
 

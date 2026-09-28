@@ -1,10 +1,10 @@
-# 3.6. Running the server
+# 7.6. Running the server
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.5.` [Build processes](build-processes)
+**Prev**: `7.5.` [Build processes](build-processes)
 
-**Next**: `3.7.` [Running and creating tests](running-and-creating-tests)
+**Next**: `7.7.` [Running and creating tests](running-and-creating-tests)
 
 **Sections**:
 

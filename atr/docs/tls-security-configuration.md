@@ -1,10 +1,10 @@
-# 3.17. TLS security configuration
+# 7.17. TLS security configuration
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.16.` [Dependency updates](dependency-updates)
+**Prev**: `7.16.` [Dependency updates](dependency-updates)
 
-**Next**: `3.18.` [API documentation policy](api-documentation-policy)
+**Next**: `7.18.` [API documentation policy](api-documentation-policy)
 
 **Sections**:
 

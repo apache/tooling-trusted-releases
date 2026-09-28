@@ -1,10 +1,10 @@
-# 2.7. Staging and voting
+# 5.2.1. Staging and voting
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `5.2.` [Vote phase](vote-phase)
 
-**Prev**: `2.6.` [SBOM workflows](sbom-workflows)
+**Prev**: `5.2.` [Vote phase](vote-phase)
 
-**Next**: `2.8.` [Promoting to release](promoting-to-release)
+**Next**: `5.3.` [Finish phase](finish-phase)
 
 **Sections**:
 
@@ -42,16 +42,7 @@ ATR also runs its own [checks](checks) over every revision, and the results are 
 
 ## How files reach ATR
 
-There are many ways to get files into a candidate:
-
-* upload through the browser,
-* upload over rsync,
-* import from the committee's `dist/dev` area in SVN,
-* upload with `atr` CLI ([Trusted Releases Client](https://github.com/apache/tooling-releases-client)),
-* upload with [ATR Maven Plugin](https://github.com/apache/tooling-atr-maven-plugin),
-* upload from a GitHub Actions workflow using [Trusted Publishing](trusted-publishing).
-
-The SVN `dist/dev` import is one option among others, and we expect most release managers to use other options and bypass SVN `dist/dev`. SVN should not be thought of as an intrinsic part of the ATR release process. It becomes involved only at final publication, when the approved artifacts are committed to the distribution `dist/release` repository for [ASF download area](https://downloads.apache.org/) sync.
+Files are added to a candidate during the compose phase, and there are many ways to do so. They are listed under [How files reach ATR](compose-phase#how-files-reach-atr) in the compose phase documentation.
 
 ## The earlier dist/dev workflow
 

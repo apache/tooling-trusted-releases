@@ -1,10 +1,10 @@
-# 3.2. How to contribute
+# 7.2. How to contribute
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.1.` [Overview of the code](overview-of-the-code)
+**Prev**: `7.1.` [Overview of the code](overview-of-the-code)
 
-**Next**: `3.3.` [Code conventions](code-conventions)
+**Next**: `7.3.` [Code conventions](code-conventions)
 
 **Sections**:
 

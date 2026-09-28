@@ -1,10 +1,10 @@
-# 2.2. Signing artifacts
+# 4.1. Signing artifacts
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `4.` [Release managers](release-manager-setup)
 
-**Prev**: `2.1.` [Terminology](terminology)
+**Prev**: `4.` [Release managers](release-manager-setup)
 
-**Next**: `2.3.` [Checks](checks)
+**Next**: `4.2.` [Trusted Publishing](trusted-publishing)
 
 **Sections**:
 

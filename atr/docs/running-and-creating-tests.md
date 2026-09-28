@@ -1,10 +1,10 @@
-# 3.7. Running and creating tests
+# 7.7. Running and creating tests
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.6.` [Running the server](running-the-server)
+**Prev**: `7.6.` [Running the server](running-the-server)
 
-**Next**: `3.8.` [Database](database)
+**Next**: `7.8.` [Database](database)
 
 **Sections**:
 

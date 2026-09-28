@@ -1,10 +1,10 @@
-# 2.3. Checks
+# 5.1.2. Checks
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `5.1.` [Compose phase](compose-phase)
 
-**Prev**: `2.2.` [Signing artifacts](signing-artifacts)
+**Prev**: `5.1.1.` [Uploading files](uploading-files)
 
-**Next**: `2.4.` [License checks](license-checks)
+**Next**: `5.1.3.` [License checks](license-checks)
 
 **Sections**:
 

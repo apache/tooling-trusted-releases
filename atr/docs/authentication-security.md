@@ -1,10 +1,10 @@
-# 3.12. Authentication security
+# 7.12. Authentication security
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.11.` [Tasks](tasks)
+**Prev**: `7.11.` [Tasks](tasks)
 
-**Next**: `3.13.` [Sessions](sessions)
+**Next**: `7.13.` [Sessions](sessions)
 
 **Sections**:
 

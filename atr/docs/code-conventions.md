@@ -1,10 +1,10 @@
-# 3.3. Code conventions
+# 7.3. Code conventions
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.2.` [How to contribute](how-to-contribute)
+**Prev**: `7.2.` [How to contribute](how-to-contribute)
 
-**Next**: `3.4.` [Code policies](code-policies)
+**Next**: `7.4.` [Code policies](code-policies)
 
 **Sections**:
 

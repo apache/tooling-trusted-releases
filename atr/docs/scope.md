@@ -1,18 +1,10 @@
-# 1. Introduction to ATR
+# 1. Scope
 
 **Up**: [Documentation](.)
 
 **Prev**: (none)
 
-**Next**: `2.` [User guide](user-guide)
-
-**Pages**:
-
-* `1.1.` [Getting started](getting-started)
-* `1.2.` [Project configuration](project-configuration)
-* `1.3.` [Release manager setup](release-manager-setup)
-* `1.4.` [Making releases with ATR](release-process-description)
-* `1.5.` [Release catalog](release-catalog)
+**Next**: `2.` [Getting started](getting-started)
 
 **Sections**:
 
@@ -24,7 +16,7 @@
 ## What is ATR?
 
 ATR is the Apache Trusted Releases platform. The Project Management Committees (PMCs) of
-[The Apache Software Foundation](https://www.apache.org/)(ASF) make official ASF software releases. These official ASF releases are endorsed as an
+[The Apache Software Foundation](https://www.apache.org/) (ASF) make official ASF software releases. These official ASF releases are endorsed as an
 "[act of the Foundation](https://www.apache.org/legal/release-policy.html#release-definition)". It is important that the foundation -
 its board, members, committees, and contributors - and the general public have confidence in these software releases.
 
@@ -52,7 +44,7 @@ When a Software Bill of Materials (SBOM) is provided dependency risks are also a
 
 ## Who are ATR users?
 
-There are two kinds of ATR user: our participants from our PMCs  who use ATR to publish software, and ASF software end users who use ATR to
+There are two kinds of ATR user: our participants from our PMCs who use ATR to publish software, and ASF software end users who use ATR to
 obtain that software. This guide is primarily written for the former, our participants who are publishing their software. Skilled end users
 may be interested in reading this guide for the purpose of learning the purported security claims that we make, reviewing the implementation
 strategies that we picked to achieve them, and ascertaining the likelihood that those claims were achieved.

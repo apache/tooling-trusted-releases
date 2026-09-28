@@ -1,10 +1,10 @@
-# 3.18. API documentation policy
+# 7.18. API documentation policy
 
-**Up**: `3.` [Developer guide](developer-guide)
+**Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `3.17.` [TLS security configuration](tls-security-configuration)
+**Prev**: `7.17.` [TLS security configuration](tls-security-configuration)
 
-**Next**: `3.19.` [ASF modules](asf-modules)
+**Next**: `7.19.` [ASF modules](asf-modules)
 
 **Sections**:
 

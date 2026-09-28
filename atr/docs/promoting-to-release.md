@@ -1,10 +1,10 @@
-# 2.8. Promoting to release
+# 5.3.1. Promoting to release
 
-**Up**: `2.` [User guide](user-guide)
+**Up**: `5.3.` [Finish phase](finish-phase)
 
-**Prev**: `2.7.` [Staging and voting](staging-and-voting)
+**Prev**: `5.3.` [Finish phase](finish-phase)
 
-**Next**: `3.1.` [Overview of the code](overview-of-the-code)
+**Next**: `5.4.` [Archiving and lifecycle](archiving-releases)
 
 **Sections**:
 
@@ -50,9 +50,7 @@ The files should soon become visible at `https://downloads.apache.org/<committee
 
 ## Removing superseded releases
 
-Apache distribution policy is that `/dist/release/` should hold only the current release of each line, with everything older moved to `archive.apache.org`. Releases committed to `/dist/release/` are picked up by the archive automatically, so you do not have to copy them there yourself.
-
-Archiving a release in ATR updates the release catalog and removes its files from the distribution area in the background. If enabled in the project settings, select "Auto archive prior release" to do this for the previous release in the same cycle when you announce the new release. ATR warns you if leftover files need manual cleanup.
+Once a release has been superseded, it should be archived, which removes its files from the distribution area. If enabled in the project settings, select "Auto archive prior release" to do this for the previous release in the same cycle when you announce the new release. See [Archiving and lifecycle](archiving-releases) for the policy behind this, the other ways to archive a release, and what archiving does.
 
 ## The KEYS file
 
