@@ -36,13 +36,13 @@ import sqlalchemy
 import sqlmodel
 
 import atr.cache as cache
-import atr.config as config
 import atr.constants as constants
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.loggers as loggers
 import atr.metadata as metadata
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
 import atr.registry as registry
@@ -749,10 +749,9 @@ def _sanity(certificates: list[sql.SigningCertificate], existing_rows: int, arti
 
 
 def _setup_audit_logging() -> logging.handlers.QueueListener:
-    conf = config.get()
     shared_processors = loggers.shared_processors()
     loggers.configure_structlog(shared_processors)
-    return loggers.setup_dedicated_file_logger("atr.storage.audit", conf.STORAGE_AUDIT_LOG_FILE, shared_processors)
+    return loggers.setup_audit_logger(paths.get_audit_log_dir().path)
 
 
 def _stored_head_check(

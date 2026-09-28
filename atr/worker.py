@@ -42,6 +42,7 @@ import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.tasks.downloads as downloads
@@ -189,7 +190,6 @@ def _setup_logging() -> list[logging.handlers.QueueListener]:
 
     worker_log_path = os.path.join(conf.STATE_DIR, "logs", "atr-worker.log")
     os.makedirs(os.path.dirname(worker_log_path), exist_ok=True)
-    os.makedirs(os.path.dirname(conf.STORAGE_AUDIT_LOG_FILE), exist_ok=True)
     os.makedirs(os.path.dirname(conf.TASK_LOG_FILE), exist_ok=True)
 
     shared_processors = loggers.shared_processors()
@@ -201,11 +201,7 @@ def _setup_logging() -> list[logging.handlers.QueueListener]:
     loggers.configure_structlog(shared_processors)
 
     # Audit logger
-    storage_audit_listener = loggers.setup_dedicated_file_logger(
-        "atr.storage.audit",
-        conf.STORAGE_AUDIT_LOG_FILE,
-        shared_processors,
-    )
+    audit_listener = loggers.setup_audit_logger(paths.get_audit_log_dir().path)
 
     # Completed recurring tasks
     task_log_listener = loggers.setup_dedicated_file_logger(
@@ -213,7 +209,7 @@ def _setup_logging() -> list[logging.handlers.QueueListener]:
         conf.TASK_LOG_FILE,
         shared_processors,
     )
-    return [storage_audit_listener, task_log_listener]
+    return [audit_listener, task_log_listener]
 
 
 def _task_args_for_log(

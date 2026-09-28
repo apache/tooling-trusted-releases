@@ -16,9 +16,13 @@
 # under the License.
 
 import collections.abc as abc
+import contextlib
 import datetime
+import fcntl
 import json
+import os
 import pathlib
+import tempfile
 from typing import Any, Final
 
 import rfc8785
@@ -28,13 +32,24 @@ import atr.sealing as sealing
 FIELDS: Final = frozenset({"event", "level", "logger", "timestamp"})
 
 
+def append(directory: pathlib.Path, logger: str, level: str, event: Any) -> None:
+    with lock(directory):
+        timestamp, path = _current(directory)
+        _, content = _entry({"event": event, "level": level, "logger": logger, "timestamp": timestamp})
+        with path.open("a+b") as handle:
+            if handle.tell():
+                handle.seek(-1, os.SEEK_END)
+                if handle.read(1) != b"\n":
+                    raise ValueError(f"Unterminated JSONL line: {path}")
+            handle.write(content)
+
+
 def backfill(source_dir: pathlib.Path, target_dir: pathlib.Path, through: datetime.date) -> None:
     records = []
     for name in ("auth-audit.log", "keys-submitted.log", "storage-audit.log"):
-        records.extend(_read(source_dir / name))
-    if not records:
-        raise ValueError("No historical audit entries establish a starting day")
-    first = datetime.date.fromisoformat(min(record["timestamp"] for record in records)[:10])
+        with contextlib.suppress(FileNotFoundError):
+            records.extend(_read(source_dir / name, historical=True))
+    first = min((datetime.date.fromisoformat(record["timestamp"][:10]) for record in records), default=through)
     days = build(records, first, through)
     for day in days:
         target = target_dir / f"{day}.jsonl"
@@ -57,6 +72,78 @@ def build(records: abc.Iterable[Any], first: datetime.date, last: datetime.date)
             raise ValueError(f"Audit entry outside the requested day range: {timestamp}")
         days[day].append(line)
     return {day: b"".join(lines) for day, lines in days.items()}
+
+
+def close(directory: pathlib.Path, through: datetime.date) -> None:
+    with lock(directory) as descriptor:
+        if through >= datetime.datetime.now(datetime.UTC).date():
+            raise ValueError("Only completed UTC days may be closed")
+        closed = _closed(directory)
+        if closed is not None:
+            if through <= closed:
+                return
+            first = closed + datetime.timedelta(days=1)
+        else:
+            oldest = min(directory.glob("????-??-??.jsonl"), default=None)
+            if oldest is None:
+                return
+            first = datetime.date.fromisoformat(oldest.stem)
+        if first > through:
+            return
+        for offset in range((through - first).days + 1):
+            day = first + datetime.timedelta(days=offset)
+            path = directory / f"{day}.jsonl"
+            if path.with_suffix(".seal.json").exists(follow_symlinks=False):
+                raise FileExistsError(path.with_suffix(".seal.json"))
+            records = _read(path, historical=False) if path.exists() else []
+            content = build(records, day, day)[day.isoformat()]
+            _replace(path, content, descriptor)
+        _replace(directory / "closed", (through.isoformat() + "\n").encode("ascii"), descriptor)
+
+
+def initialise(directory: pathlib.Path) -> None:
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    with lock(directory.parent) as descriptor:
+        if any(directory.glob("????-??-??.jsonl")):
+            return
+        with tempfile.TemporaryDirectory(dir=directory.parent, prefix=f".{directory.name}-") as name:
+            pending = pathlib.Path(name)
+            backfill(directory.parent, pending, datetime.datetime.now(datetime.UTC).date())
+            os.rename(pending, directory)
+            os.fsync(descriptor)
+
+
+@contextlib.contextmanager
+def lock(directory: pathlib.Path) -> abc.Iterator[int]:
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _closed(directory: pathlib.Path) -> datetime.date | None:
+    try:
+        content = (directory / "closed").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return None
+    day = datetime.date.fromisoformat(content.removesuffix("\n"))
+    if content != day.isoformat() + "\n":
+        raise ValueError("Invalid closed audit day")
+    return day
+
+
+def _current(directory: pathlib.Path) -> tuple[str, pathlib.Path]:
+    closed = _closed(directory)
+    now = datetime.datetime.now(datetime.UTC)
+    if (closed is not None) and (now.date() <= closed):
+        raise ValueError("Cannot append to a closed audit day")
+    timestamp = now.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    path = directory / f"{now.date()}.jsonl"
+    if path.with_suffix(".seal.json").exists(follow_symlinks=False):
+        raise FileExistsError(path.with_suffix(".seal.json"))
+    return timestamp, path
 
 
 def _entry(record: Any) -> tuple[tuple[str, str, str, bytes], bytes]:
@@ -96,7 +183,7 @@ def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _read(source: pathlib.Path) -> list[dict[str, Any]]:
+def _read(source: pathlib.Path, *, historical: bool) -> list[dict[str, Any]]:
     records = []
     with source.open("rb") as handle:
         for number, line in enumerate(handle, 1):
@@ -104,11 +191,26 @@ def _read(source: pathlib.Path) -> list[dict[str, Any]]:
                 if not line.endswith(b"\n"):
                     raise ValueError("Unterminated JSONL line")
                 record = json.loads(line.decode("utf-8"), object_pairs_hook=_object)
-                record = _historical(record, source.name == "storage-audit.log")
+                if historical:
+                    record = _historical(record, source.name == "storage-audit.log")
             except ValueError as error:
                 raise ValueError(f"{source}:{number}: {error}") from error
             records.append(record)
     return records
+
+
+def _replace(path: pathlib.Path, content: bytes, directory: int) -> None:
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(name, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(name)
+    os.fsync(directory)
 
 
 def _timestamp(value: Any) -> str:

@@ -252,11 +252,11 @@ Browser sign in is delegated to `oauth.apache.org`, so ATR does not process pass
 
 There is one automatic containment step that goes beyond a simple reject: when LDAP marks an account as inactive, ATR revokes that user's sessions, PATs, and SSH keys.
 
-ATR also does not ship with built in alert thresholds or automatic blocking rules for repeated failures. Instead it writes authentication events to `<STATE_DIR>/audit/auth-audit.log` and request summaries to `<STATE_DIR>/logs/requests.log`.
+ATR also does not ship with built in alert thresholds or automatic blocking rules for repeated failures. Instead it writes authentication events to `<STATE_DIR>/audit/daily/YYYY-MM-DD.jsonl` and request summaries to `<STATE_DIR>/logs/requests.log`.
 
 ## Audit Logging
 
-An audit log, at `<STATE_DIR>/audit/auth-audit.log`, contains a log of all auth-adjacent operations. This should include authentication success/failures, token issuance/revocation,
+The daily audit logs at `<STATE_DIR>/audit/daily/YYYY-MM-DD.jsonl` contain authentication events under the logger `atr.auth`, alongside storage and submitted-key events. Authentication events include authentication success/failures, token issuance/revocation,
 and anything else that would be relevant to authentication when investigating a potential security issue.
 
 Each entry is also tagged with the `request_id` and `source_ip` of the originating request, where one is in scope, so auth events can be correlated with the request summaries in `<STATE_DIR>/logs/requests.log`. Both are pulled from the request log context rather than passed at the call site.

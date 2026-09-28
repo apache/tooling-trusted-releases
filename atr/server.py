@@ -477,27 +477,7 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
     logging.getLogger("asyncio").addFilter(ssl_shutdown_filter)
 
     # Audit logger - JSON to dedicated file via queue
-    storage_audit_listener = loggers.setup_dedicated_file_logger(
-        "atr.storage.audit",
-        app_config.STORAGE_AUDIT_LOG_FILE,
-        shared_processors,
-    )
-    app.extensions["storage_audit_listener"] = storage_audit_listener
-
-    # Auth audit logger - JSON to dedicated file via queue
-    auth_audit_listener = loggers.setup_dedicated_file_logger(
-        "atr.auth",
-        app_config.AUTH_AUDIT_LOG_FILE,
-        shared_processors,
-    )
-    app.extensions["auth_audit_listener"] = auth_audit_listener
-
-    keys_submitted_listener = loggers.setup_dedicated_file_logger(
-        "atr.keys.submitted",
-        app_config.KEYS_SUBMITTED_LOG_FILE,
-        shared_processors,
-    )
-    app.extensions["keys_submitted_listener"] = keys_submitted_listener
+    app.extensions["audit_listener"] = loggers.setup_audit_logger(paths.get_audit_log_dir().path)
 
     # Request logs
     request_listener = loggers.setup_dedicated_file_logger(
@@ -667,12 +647,8 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
 
 
 async def _app_shutdown_log_listeners(app):
-    if storage_audit_listener := app.extensions.get("storage_audit_listener"):
-        storage_audit_listener.stop()
-    if auth_audit_listener := app.extensions.get("auth_audit_listener"):
-        auth_audit_listener.stop()
-    if keys_submitted_listener := app.extensions.get("keys_submitted_listener"):
-        keys_submitted_listener.stop()
+    if audit_listener := app.extensions.get("audit_listener"):
+        audit_listener.stop()
     if request_listener := app.extensions.get("request_listener"):
         request_listener.stop()
     if listener := app.extensions.get("logging_listener"):

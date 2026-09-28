@@ -16,14 +16,40 @@
 # under the License.
 
 import datetime
+import fcntl
+import functools
 import json
+import logging
+import os
 import pathlib
+import types
+import unittest.mock as mock
 from typing import Any
 
 import pytest
 import rfc8785
 
 import atr.daylog as daylog
+import atr.log as log
+import atr.loggers as loggers
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> mock.Mock:
+    value = mock.Mock(wraps=datetime.datetime)
+    monkeypatch.setattr(daylog, "datetime", types.SimpleNamespace(**(vars(datetime) | {"datetime": value})))
+    return value.now
+
+
+def locked_now(directory: pathlib.Path, instant: datetime.datetime, zone: datetime.tzinfo) -> datetime.datetime:
+    assert zone == datetime.UTC
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        os.close(descriptor)
+    return instant
 
 
 def record(
@@ -42,6 +68,87 @@ def sources(tmp_path: pathlib.Path) -> pathlib.Path:
     for name in ("auth-audit.log", "keys-submitted.log", "storage-audit.log"):
         (source / name).write_bytes(b"")
     return source
+
+
+def test_append(clock: mock.Mock, tmp_path: pathlib.Path) -> None:
+    instant = datetime.datetime(2026, 9, 29, 0, 0, 0, 1, tzinfo=datetime.UTC)
+    clock.side_effect = functools.partial(locked_now, tmp_path, instant)
+    event = {"datetime": "1999-01-01T00:00:00.000Z", "timestamp": "caller supplied"}
+    daylog.append(tmp_path, "atr.auth", "info", event)
+    daylog.append(tmp_path, "atr.keys.submitted", "warning", "string event")
+    expected = [
+        record(event, "2026-09-29T00:00:00.000001Z"),
+        record("string event", "2026-09-29T00:00:00.000001Z", "atr.keys.submitted", "warning"),
+    ]
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == {
+        "2026-09-29.jsonl": b"".join(rfc8785.dumps(entry) + b"\n" for entry in expected)
+    }
+
+
+@pytest.mark.parametrize("failure", ["closed", "sealed", "partial"])
+def test_append_refuses(failure: str, clock: mock.Mock, tmp_path: pathlib.Path) -> None:
+    clock.return_value = datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC)
+    match failure:
+        case "closed":
+            (tmp_path / "closed").write_bytes(b"2026-09-29\n")
+        case "sealed":
+            (tmp_path / "2026-09-29.seal.json").write_bytes(b"sealed")
+        case "partial":
+            (tmp_path / "2026-09-29.jsonl").write_bytes(b'{"unfinished":')
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    with pytest.raises((ValueError, FileExistsError)):
+        daylog.append(tmp_path, "atr.auth", "info", {})
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+
+
+def test_audit_logger(clock: mock.Mock, sources: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = sources / "daily"
+    names = ("atr.auth", "atr.keys.submitted", "atr.storage.audit")
+    for name in names:
+        logger = logging.getLogger(name)
+        monkeypatch.setattr(logger, "handlers", [])
+        monkeypatch.setattr(logger, "level", logger.level)
+        monkeypatch.setattr(logger, "propagate", logger.propagate)
+    clock.return_value = datetime.datetime(2026, 9, 28, 23, 59, 59, 999999, tzinfo=datetime.UTC)
+    listener = loggers.setup_audit_logger(directory)
+    errors = mock.Mock()
+    monkeypatch.setattr(listener.handlers[0], "handleError", errors)
+    try:
+        clock.reset_mock()
+        with daylog.lock(directory):
+            for name in names:
+                logging.getLogger(name).warning('{"datetime":"1999-01-01T00:00:00.000Z"}', extra={"timestamp": "old"})
+            assert not clock.called
+            clock.return_value = datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC)
+        log.audit_flush()
+        content = (directory / "2026-09-29.jsonl").read_bytes()
+        entries = [json.loads(line) for line in content.splitlines()]
+        assert [entry["logger"] for entry in entries] == list(names)
+        assert all(entry["timestamp"] == "2026-09-29T00:00:00.000000Z" for entry in entries)
+        assert all((frozenset(entry) == daylog.FIELDS) and (entry["level"] == "warning") for entry in entries)
+        assert (directory / "2026-09-28.jsonl").read_bytes() == b""
+        logging.getLogger("atr.auth").info(json.dumps({"unsafe": 2**53}))
+        log.audit_flush()
+        errors.assert_called_once()
+        assert (directory / "2026-09-29.jsonl").read_bytes() == content
+        logging.getLogger("atr.auth").info("{not json")
+        log.audit_flush()
+        assert json.loads((directory / "2026-09-29.jsonl").read_bytes().splitlines()[-1])["event"] == "{not json"
+    finally:
+        listener.stop()
+
+
+def test_audit_logger_rejects_invalid_history(tmp_path: pathlib.Path) -> None:
+    directory = tmp_path / "daily"
+    for name in ("auth-audit.log", "keys-submitted.log", "storage-audit.log"):
+        source = tmp_path / name
+        source.write_bytes(b"historical\n")
+        with pytest.raises(ValueError, match=rf"{name}:1:"):
+            loggers.setup_audit_logger(directory)
+        assert not directory.exists()
+        assert source.read_bytes() == b"historical\n"
+        assert all(path.is_file() for path in tmp_path.iterdir())
+        source.write_bytes(b"")
 
 
 def test_backfill(sources: pathlib.Path, tmp_path: pathlib.Path) -> None:
@@ -85,12 +192,15 @@ def test_backfill(sources: pathlib.Path, tmp_path: pathlib.Path) -> None:
     assert {path.name: path.read_bytes() for path in target.iterdir()} == expected
 
 
-def test_backfill_rejects_empty_history(sources: pathlib.Path, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("missing", [False, True])
+def test_backfill_empty_history(sources: pathlib.Path, tmp_path: pathlib.Path, missing: bool) -> None:
+    if missing:
+        for source in sources.iterdir():
+            source.unlink()
     target = tmp_path / "days"
     target.mkdir()
-    with pytest.raises(ValueError, match="No historical audit entries"):
-        daylog.backfill(sources, target, datetime.date(2026, 9, 28))
-    assert not list(target.iterdir())
+    daylog.backfill(sources, target, datetime.date(2026, 9, 28))
+    assert {path.name: path.read_bytes() for path in target.iterdir()} == {"2026-09-28.jsonl": b""}
 
 
 @pytest.mark.parametrize(
@@ -171,3 +281,135 @@ def test_build_rejects_invalid_records(value: Any) -> None:
 def test_build_rejects_reversed_range() -> None:
     with pytest.raises(ValueError, match="first day must not follow"):
         daylog.build([], datetime.date(2026, 9, 29), datetime.date(2026, 9, 28))
+
+
+def test_close(clock: mock.Mock, tmp_path: pathlib.Path) -> None:
+    clock.return_value = datetime.datetime(2026, 10, 2, tzinfo=datetime.UTC)
+    first, through = datetime.date(2026, 9, 28), datetime.date(2026, 10, 1)
+    entries = [record({"n": 2}), record({"n": 10}), record({"n": 2})]
+    later = record({}, "2026-09-30T00:00:00.000000Z")
+    (tmp_path / "2026-09-28.jsonl").write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+    (tmp_path / "2026-09-30.jsonl").write_text(json.dumps(later) + "\n")
+    expected = {f"{day}.jsonl": content for day, content in daylog.build([*entries, later], first, through).items()}
+    expected["closed"] = b"2026-10-01\n"
+
+    daylog.close(tmp_path, through)
+
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == expected
+    inodes = {path.name: path.stat().st_ino for path in tmp_path.iterdir()}
+    daylog.close(tmp_path, through)
+    assert {path.name: path.stat().st_ino for path in tmp_path.iterdir()} == inodes
+    with pytest.raises(ValueError, match="Only completed UTC days"):
+        daylog.close(tmp_path, through + datetime.timedelta(days=1))
+    clock.return_value = datetime.datetime(2026, 10, 4, tzinfo=datetime.UTC)
+    daylog.close(tmp_path, datetime.date(2026, 10, 3))
+    expected.update({"2026-10-02.jsonl": b"", "2026-10-03.jsonl": b"", "closed": b"2026-10-03\n"})
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == expected
+
+
+@pytest.mark.parametrize("completed_replacements", [0, 1])
+def test_close_interrupted(
+    clock: mock.Mock, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, completed_replacements: int
+) -> None:
+    clock.return_value = datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC)
+    path = tmp_path / "2026-09-28.jsonl"
+    original = json.dumps(record({})).encode() + b"\n"
+    path.write_bytes(original)
+    canonical = rfc8785.dumps(record({})) + b"\n"
+    with monkeypatch.context() as failure:
+        replace = mock.Mock(
+            wraps=os.replace, side_effect=[mock.DEFAULT] * completed_replacements + [OSError("interrupted")]
+        )
+        failure.setattr(daylog.os, "replace", replace)
+        with pytest.raises(OSError, match="interrupted"):
+            daylog.close(tmp_path, datetime.date(2026, 9, 28))
+    assert {entry.name for entry in tmp_path.iterdir()} == {path.name}
+    assert path.read_bytes() == (canonical if completed_replacements else original)
+    daylog.close(tmp_path, datetime.date(2026, 9, 28))
+    assert path.read_bytes() == canonical
+    assert (tmp_path / "closed").read_bytes() == b"2026-09-28\n"
+
+
+def test_close_refuses_invalid_or_sealed(clock: mock.Mock, tmp_path: pathlib.Path) -> None:
+    clock.return_value = datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC)
+    path = tmp_path / "2026-09-28.jsonl"
+    path.write_bytes(b"not json\n")
+    with pytest.raises(ValueError, match=r"2026-09-28\.jsonl:1:"):
+        daylog.close(tmp_path, datetime.date(2026, 9, 28))
+    assert path.read_bytes() == b"not json\n"
+    assert not (tmp_path / "closed").exists()
+    path.with_suffix(".seal.json").write_bytes(b"sealed")
+    with pytest.raises(FileExistsError):
+        daylog.close(tmp_path, datetime.date(2026, 9, 28))
+    assert path.read_bytes() == b"not json\n"
+
+
+@pytest.mark.parametrize("empty_daily", [False, True])
+def test_cutover(clock: mock.Mock, sources: pathlib.Path, empty_daily: bool) -> None:
+    day = datetime.date(2026, 9, 28)
+    historical = record({"source": "historical"}, "2026-09-28T00:00:00.000000Z")
+    source = sources / "auth-audit.log"
+    original = json.dumps(historical).encode() + b"\n"
+    source.write_bytes(original)
+    (sources / "keys-submitted.log").unlink()
+    (sources / "storage-audit.log").unlink()
+    target = sources / "daily"
+    if empty_daily:
+        target.mkdir()
+    clock.return_value = datetime.datetime(2026, 9, 28, 12, tzinfo=datetime.UTC)
+    daylog.initialise(target)
+    daylog.append(target, "atr.storage.audit", "info", {"source": "live"})
+    clock.return_value = datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC)
+    daylog.close(target, day)
+    live = record({"source": "live"}, "2026-09-28T12:00:00.000000Z", "atr.storage.audit")
+    assert (target / f"{day}.jsonl").read_bytes() == daylog.build([historical, live], day, day)[str(day)]
+    assert source.read_bytes() == original
+
+
+def test_initialise(clock: mock.Mock, tmp_path: pathlib.Path) -> None:
+    clock.return_value = datetime.datetime(2026, 9, 28, tzinfo=datetime.UTC)
+    directory = tmp_path / "daily"
+    daylog.initialise(directory)
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == {"2026-09-28.jsonl": b""}
+    clock.return_value = datetime.datetime(2026, 9, 30, tzinfo=datetime.UTC)
+    daylog.initialise(directory)
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == {"2026-09-28.jsonl": b""}
+    daylog.close(directory, datetime.date(2026, 9, 29))
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == {
+        "2026-09-28.jsonl": b"",
+        "2026-09-29.jsonl": b"",
+        "closed": b"2026-09-29\n",
+    }
+
+
+@pytest.mark.parametrize("failure", ["publish", "rename"])
+def test_initialise_interrupted(
+    clock: mock.Mock, sources: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    clock.side_effect = functools.partial(locked_now, sources, datetime.datetime(2026, 9, 30, tzinfo=datetime.UTC))
+    (sources / "auth-audit.log").write_bytes(json.dumps(record({})).encode() + b"\n")
+    originals = {path.name: path.read_bytes() for path in sources.iterdir()}
+    directory = sources / "daily"
+    with monkeypatch.context() as interrupted:
+        if failure == "publish":
+            publish = mock.Mock(wraps=daylog.sealing.publish, side_effect=[mock.DEFAULT, OSError("interrupted")])
+            interrupted.setattr(daylog.sealing, "publish", publish)
+        else:
+            interrupted.setattr(daylog.os, "rename", mock.Mock(side_effect=OSError("interrupted")))
+        with pytest.raises(OSError, match="interrupted"):
+            daylog.initialise(directory)
+    assert not directory.exists()
+    assert {path.name: path.read_bytes() for path in sources.iterdir()} == originals
+
+    daylog.initialise(directory)
+
+    expected = {
+        "2026-09-28.jsonl": rfc8785.dumps(record({})) + b"\n",
+        "2026-09-29.jsonl": b"",
+        "2026-09-30.jsonl": b"",
+    }
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == expected
+    assert {name: (sources / name).read_bytes() for name in originals} == originals
+    inodes = {path.name: path.stat().st_ino for path in directory.iterdir()}
+    daylog.initialise(directory)
+    assert {path.name: path.stat().st_ino for path in directory.iterdir()} == inodes

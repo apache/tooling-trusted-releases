@@ -20,7 +20,7 @@ import json
 import pathlib
 from typing import Any, Final
 
-import atr.config as config
+import atr.daylog as daylog
 import atr.log as log
 import atr.models.safe as safe
 import atr.paths as paths
@@ -36,21 +36,15 @@ async def write_release_log(
     until: str | None = None,
     marker: dict[str, Any] | None = None,
 ) -> int:
-    source = pathlib.Path(config.get().STORAGE_AUDIT_LOG_FILE)
+    source = paths.get_audit_log_dir().path
     events = await asyncio.to_thread(_matching_events, source, str(project_key), str(version_key), until)
     if (marker is not None) and (not _marker_present(events, marker)):
-        await asyncio.to_thread(_append_event, source, marker)
+        await asyncio.to_thread(daylog.append, source, "atr.storage.audit", "info", marker)
         events.append(_normalise(marker, str(project_key), str(version_key)))
     target = paths.audit_release_log_file(project_key, version_key)
     content = "".join(json.dumps(event, allow_nan=False) + "\n" for event in events)
     await util.atomic_write_file(target.path, content, mode=0o444)
     return len(events)
-
-
-def _append_event(source: pathlib.Path, event: dict[str, Any]) -> None:
-    line = json.dumps({"event": event, "level": "info", "logger": "atr.storage.audit"}, allow_nan=False)
-    with source.open("a", encoding="utf-8") as handle:
-        handle.write(line + "\n")
 
 
 def _marker_present(events: list[dict[str, Any]], marker: dict[str, Any]) -> bool:
@@ -73,25 +67,30 @@ def _matching_events(
     release_key = f"{project_key}-{version_key}"
     events: list[dict[str, Any]] = []
     unparseable = 0
-    with source.open(encoding="utf-8") as handle:
-        for line in handle:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                record = json.loads(stripped)
-            except json.JSONDecodeError:
-                unparseable += 1
-                continue
-            event = record.get("event") if isinstance(record, dict) else None
-            if not isinstance(event, dict):
-                unparseable += 1
-                continue
-            if not _matches(event, project_key, version_key, release_key):
-                continue
-            if (until is not None) and (str(event.get("datetime", "")) > until):
-                continue
-            events.append(_normalise(event, project_key, version_key))
+    with daylog.lock(source):
+        lines = []
+        for path in sorted(source.glob("????-??-??.jsonl")):
+            lines.extend(path.read_text(encoding="utf-8").split("\n"))
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            unparseable += 1
+            continue
+        if isinstance(record, dict) and (record.get("logger") != "atr.storage.audit"):
+            continue
+        event = record.get("event") if isinstance(record, dict) else None
+        if not isinstance(event, dict):
+            unparseable += 1
+            continue
+        if not _matches(event, project_key, version_key, release_key):
+            continue
+        if (until is not None) and (str(event.get("datetime", "")) > until):
+            continue
+        events.append(_normalise(event, project_key, version_key))
     if unparseable:
         log.warning(f"Skipped {unparseable} unparseable audit log lines while compiling {release_key}")
     events.sort(key=lambda entry: str(entry.get("datetime", "")))

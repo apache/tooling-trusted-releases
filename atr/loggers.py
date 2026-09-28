@@ -22,12 +22,27 @@ import json
 import logging
 import logging.handlers
 import queue
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+import atr.daylog as daylog
+
 if TYPE_CHECKING:
+    import pathlib
     from collections.abc import Sequence
+
+
+class AuditHandler(logging.Handler):
+    def __init__(self, directory: pathlib.Path) -> None:
+        super().__init__()
+        self.directory = directory
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            daylog.append(self.directory, record.name, record.levelname.lower(), _json_event(record.getMessage()))
+        except Exception:
+            self.handleError(record)
 
 
 def configure_structlog(shared_processors: Sequence[structlog.types.Processor]) -> None:
@@ -70,6 +85,21 @@ def create_output_formatter(
     )
 
 
+def setup_audit_logger(directory: pathlib.Path) -> logging.handlers.QueueListener:
+    daylog.initialise(directory)
+    log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
+    listener = logging.handlers.QueueListener(log_queue, AuditHandler(directory))
+    listener.start()
+    queue_handler = logging.handlers.QueueHandler(log_queue)
+    for name in ("atr.auth", "atr.keys.submitted", "atr.storage.audit"):
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.INFO)
+        logger.handlers.clear()
+        logger.addHandler(queue_handler)
+        logger.propagate = False
+    return listener
+
+
 def setup_dedicated_file_logger(
     logger_name: str,
     file_path: str,
@@ -104,19 +134,23 @@ def shared_processors() -> list[structlog.types.Processor]:
     ]
 
 
+def _json_event(event: Any) -> Any:
+    if isinstance(event, str) and event.startswith("{"):
+        try:
+            return json.loads(event)
+        except json.JSONDecodeError:
+            pass
+    return event
+
+
 def _parse_json_event(
     _logger: structlog.types.WrappedLogger,
     _method_name: str,
     event_dict: structlog.types.EventDict,
 ) -> structlog.types.EventDict:
-    if event_dict.get("logger") not in ["atr.auth", "atr.keys.submitted", "atr.storage.audit", "atr.tasks.log"]:
+    if event_dict.get("logger") != "atr.tasks.log":
         return event_dict
-    event = event_dict.get("event")
-    if isinstance(event, str) and event.startswith("{"):
-        try:
-            event_dict["event"] = json.loads(event)
-        except json.JSONDecodeError:
-            pass
+    event_dict["event"] = _json_event(event_dict.get("event"))
     return event_dict
 
 

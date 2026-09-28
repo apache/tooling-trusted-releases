@@ -86,6 +86,10 @@ def get_attestable_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR))
 
 
+def get_audit_log_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().STATE_DIR) / "audit" / "daily")
+
+
 def get_catalog_site_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().CATALOG_SITE_DIR))
 

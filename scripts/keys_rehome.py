@@ -39,10 +39,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import sqlmodel
 
-import atr.config as config
 import atr.db as db
 import atr.loggers as loggers
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
@@ -276,10 +276,9 @@ async def _run(args: argparse.Namespace) -> None:
 
 
 def _setup_audit_logging() -> logging.handlers.QueueListener:
-    conf = config.get()
     shared_processors = loggers.shared_processors()
     loggers.configure_structlog(shared_processors)
-    return loggers.setup_dedicated_file_logger("atr.storage.audit", conf.STORAGE_AUDIT_LOG_FILE, shared_processors)
+    return loggers.setup_audit_logger(paths.get_audit_log_dir().path)
 
 
 async def _state(data: db.Session) -> State:

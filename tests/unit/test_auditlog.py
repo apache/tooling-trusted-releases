@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import json
 import pathlib
 import stat
@@ -36,7 +37,7 @@ def read_events(path: pathlib.Path) -> list[dict[str, Any]]:
 
 
 async def test_write_release_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    write_source(
+    source = write_source(
         tmp_path,
         monkeypatch,
         [
@@ -47,6 +48,7 @@ async def test_write_release_log(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
                     "asf_uid": "sbp",
                     "project_key": "proj",
                     "version": "1.0",
+                    "description": "first\u0085second\u2028third\u2029fourth",
                 }
             ),
             wrap(
@@ -73,6 +75,10 @@ async def test_write_release_log(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
             "",
         ],
     )
+    unrelated = {"datetime": "2026-08-10T12:00:01.000Z", "project_key": "proj", "version_key": "1.0"}
+    (source.parent / "2026-08-11.jsonl").write_text(
+        wrap(unrelated, "atr.auth") + "\n" + wrap(unrelated, "atr.keys.submitted") + "\n", encoding="utf-8"
+    )
 
     count = await auditlog.write_release_log(safe.ProjectKey("proj"), safe.VersionKey("1.0"))
 
@@ -88,6 +94,7 @@ async def test_write_release_log(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     assert all(event["version_key"] == "1.0" for event in events)
     assert all("version" not in event for event in events)
     assert events[2]["release_key"] == "proj-1.0"
+    assert events[1]["description"] == "first\u0085second\u2028third\u2029fourth"
     assert file_mode(target) == 0o444
 
 
@@ -104,6 +111,7 @@ async def test_write_release_log_appends_missing_marker(
         "email_to": "announce@proj.apache.org",
     }
 
+    before = datetime.datetime.now(datetime.UTC)
     count = await auditlog.write_release_log(
         safe.ProjectKey("proj"), safe.VersionKey("1.0"), until="2026-08-10T12:00:02.000Z", marker=marker
     )
@@ -113,7 +121,19 @@ async def test_write_release_log_appends_missing_marker(
     assert count == 2
     assert [event["action"] for event in events] == ["announce", "announce"]
     assert events[1]["email_to"] == "announce@proj.apache.org"
-    assert json.loads(source.read_text(encoding="utf-8").splitlines()[-1])["event"] == marker
+    assert len(read_events(source)) == 1
+    records = [entry for path in source.parent.glob("????-??-??.jsonl") for entry in read_events(path)]
+    written = next(entry for entry in records if entry["event"] == marker)
+    assert before <= datetime.datetime.fromisoformat(written["timestamp"]) <= datetime.datetime.now(datetime.UTC)
+    assert len(written["timestamp"]) == 27
+    assert written["timestamp"].endswith("Z")
+    assert (
+        await auditlog.write_release_log(
+            safe.ProjectKey("proj"), safe.VersionKey("1.0"), until="2026-08-10T12:00:02.000Z", marker=marker
+        )
+        == 2
+    )
+    assert sum(len(read_events(path)) for path in source.parent.glob("????-??-??.jsonl")) == 2
 
 
 async def test_write_release_log_boundary_and_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,13 +172,16 @@ async def test_write_release_log_replaces_readonly(tmp_path: pathlib.Path, monke
     assert file_mode(target) == 0o444
 
 
-def wrap(event: dict[str, Any]) -> str:
-    return json.dumps({"event": event, "level": "info", "logger": "atr.storage.audit"})
+def wrap(event: dict[str, Any], logger: str = "atr.storage.audit") -> str:
+    return json.dumps(
+        {"event": event, "level": "info", "logger": logger, "timestamp": "2026-08-10T12:00:00.000000Z"},
+        ensure_ascii=False,
+    )
 
 
 def write_source(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, lines: list[str]) -> pathlib.Path:
-    source = tmp_path / "storage-audit.log"
+    source = tmp_path / "audit" / "daily" / "2026-08-10.jsonl"
+    source.parent.mkdir(parents=True)
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     monkeypatch.setattr(config.get(), "STATE_DIR", str(tmp_path), raising=False)
-    monkeypatch.setattr(config.get(), "STORAGE_AUDIT_LOG_FILE", str(source), raising=False)
     return source
