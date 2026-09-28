@@ -50,6 +50,7 @@ dependencies = [
   "quart-schema[pydantic]>=0.21,<1.0.0",
   "quart-wtforms>=1.0.3,<2.0.0",
   "requests>=2.33.0",
+  "rfc8785>=0.1.4",
   "rich>=14.0.0",
   "rpgp-py==0.20.0",
   "semver>=3.0.4",

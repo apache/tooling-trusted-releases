@@ -305,6 +305,8 @@ rfc3986-validator==0.1.1
     # via jsonschema
 rfc3987-syntax==1.1.0
     # via jsonschema
+rfc8785==0.1.4
+    # via tooling-trusted-releases
 rich==15.0.0
     # via tooling-trusted-releases
 rpds-py==2026.6.3

@@ -127,6 +127,7 @@ RUN apk update && \
       gpg-agent \
       icu-libs \
       openjdk17 \
+      openssl \
       re2 \
       rsync \
       setpriv \
