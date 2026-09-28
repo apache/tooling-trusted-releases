@@ -221,7 +221,7 @@ def distribution_upload_date(  # noqa: C901
         case sql.DistributionPlatform.DOCKER_HUB:
             if not (pushed_at := distribution.DockerResponse.model_validate(data).tag_last_pushed):
                 return None
-            return datetime.datetime.fromisoformat(pushed_at.rstrip("Z"))
+            return datetime.datetime.fromisoformat(pushed_at)
         # case models.sql.DistributionPlatform.GITHUB:
         #     if not (published_at := GitHubResponse.model_validate(data).published_at):
         #         return None
@@ -241,13 +241,13 @@ def distribution_upload_date(  # noqa: C901
             # Versions can be in the form "1.2.3" or "v1.2.3", so we check for both
             if not (upload_time := times.get(version) or times.get(f"v{version}")):
                 return None
-            return datetime.datetime.fromisoformat(upload_time.rstrip("Z"))
+            return datetime.datetime.fromisoformat(upload_time)
         case sql.DistributionPlatform.PYPI:
             if not (urls := distribution.PyPIResponse.model_validate(data).urls):
                 return None
             if not (upload_time := urls[0].upload_time_iso_8601):
                 return None
-            return datetime.datetime.fromisoformat(upload_time.rstrip("Z"))
+            return datetime.datetime.fromisoformat(upload_time)
     raise NotImplementedError(f"Platform {platform.name} is not yet supported")
 
 
