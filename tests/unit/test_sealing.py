@@ -80,8 +80,8 @@ def test_seal_chain(tmp_path: pathlib.Path) -> None:
     keys = tmp_path / "keys"
     root = sealing.initialise(keys)
     first, second = tmp_path / "1.jsonl", tmp_path / "2.jsonl"
-    for data in (first, second):
-        data.write_bytes(b"{}\n")
+    for data, content in ((first, b""), (second, b"{}\n")):
+        data.write_bytes(content)
         sealing.seal(keys, data)
     assert {path.name for path in keys.iterdir()} == {"current.pem"}
     assert stat.S_IMODE((keys / "current.pem").stat().st_mode) == 0o400

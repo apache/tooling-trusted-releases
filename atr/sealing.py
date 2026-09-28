@@ -39,6 +39,19 @@ def initialise(key_dir: pathlib.Path) -> bytes:
     return _generate(key_dir / "current.pem")
 
 
+def publish(path: pathlib.Path, content: bytes) -> None:
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(name, path)
+    finally:
+        os.unlink(name)
+    _sync_directory(path.parent)
+
+
 def seal(key_dir: pathlib.Path, data: pathlib.Path) -> None:
     target = data.with_suffix(".seal.json")
     if target.exists():
@@ -54,7 +67,7 @@ def seal(key_dir: pathlib.Path, data: pathlib.Path) -> None:
     current = key_dir / "current.pem"
     record["signature"] = _encode(_sign(current, rfc8785.dumps(record)))
     _verify_signature(_public(current), record)
-    _publish(target, rfc8785.dumps(record) + b"\n")
+    publish(target, rfc8785.dumps(record) + b"\n")
     os.replace(successor, current)
     _sync_directory(key_dir)
 
@@ -105,19 +118,6 @@ def _public(path: pathlib.Path) -> bytes:
     public = _openssl("pkey", "-in", str(path), "-pubout", "-outform", "DER")
     _validate_public(public)
     return public
-
-
-def _publish(path: pathlib.Path, content: bytes) -> None:
-    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.link(name, path)
-    finally:
-        os.unlink(name)
-    _sync_directory(path.parent)
 
 
 def _read(path: pathlib.Path) -> dict[str, str]:
