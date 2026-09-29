@@ -225,6 +225,8 @@ def _app_dirs_setup(state_dir_str: str) -> None:
         # Some directories need custom permissions
         if directory == archives_dir:
             _enforce_archives_permissions(archives_dir)
+        elif directory == pathlib.Path(state_dir_str) / "audit":
+            util.chmod_directories(directory, permissions=0o2750)
         elif directory in (unfinished_dir, embargoed_dir):
             # The embargoed tree holds the same immutable revision layout as unfinished
             _enforce_unfinished_permissions(directory)

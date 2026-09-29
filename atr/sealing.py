@@ -43,6 +43,7 @@ def publish(path: pathlib.Path, content: bytes) -> None:
     descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
         with os.fdopen(descriptor, "wb") as handle:
+            os.fchmod(handle.fileno(), 0o640)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())

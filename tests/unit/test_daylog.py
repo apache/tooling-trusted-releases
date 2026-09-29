@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import pathlib
+import stat
 import types
 import unittest.mock as mock
 from typing import Any
@@ -413,3 +414,26 @@ def test_initialise_interrupted(
     inodes = {path.name: path.stat().st_ino for path in directory.iterdir()}
     daylog.initialise(directory)
     assert {path.name: path.stat().st_ino for path in directory.iterdir()} == inodes
+
+
+@pytest.mark.parametrize("mask", [0o000, 0o077])
+def test_permissions(clock: mock.Mock, tmp_path: pathlib.Path, mask: int) -> None:
+    group = next((group for group in os.getgroups() if group != os.getgid()), os.getgid())
+    os.chown(tmp_path, -1, group)
+    tmp_path.chmod(0o2750)
+    directory = tmp_path / "daily"
+    previous = os.umask(mask)
+    try:
+        clock.return_value = datetime.datetime(2026, 9, 28, tzinfo=datetime.UTC)
+        daylog.initialise(directory)
+        clock.return_value = datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC)
+        daylog.append(directory, "atr.auth", "info", {})
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o2750
+        assert directory.stat().st_gid == group
+        assert all(stat.S_IMODE(path.stat().st_mode) == 0o640 for path in directory.iterdir())
+        clock.return_value = datetime.datetime(2026, 10, 1, tzinfo=datetime.UTC)
+        daylog.close(directory, datetime.date(2026, 9, 30))
+        assert all(stat.S_IMODE(path.stat().st_mode) == 0o640 for path in directory.iterdir())
+        assert all(path.stat().st_gid == group for path in directory.iterdir())
+    finally:
+        os.umask(previous)

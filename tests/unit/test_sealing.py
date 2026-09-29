@@ -83,7 +83,9 @@ def test_seal_chain(tmp_path: pathlib.Path) -> None:
     for data, content in ((first, b""), (second, b"{}\n")):
         data.write_bytes(content)
         sealing.seal(keys, data)
+        assert stat.S_IMODE(data.with_suffix(".seal.json").stat().st_mode) == 0o640
     assert {path.name for path in keys.iterdir()} == {"current.pem"}
+    assert stat.S_IMODE(keys.stat().st_mode) == 0o700
     assert stat.S_IMODE((keys / "current.pem").stat().st_mode) == 0o400
     public = sealing.verify(first, root)
     sealing.verify(second, public)

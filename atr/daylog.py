@@ -36,7 +36,9 @@ def append(directory: pathlib.Path, logger: str, level: str, event: Any) -> None
     with lock(directory):
         timestamp, path = _current(directory)
         _, content = _entry({"event": event, "level": level, "logger": logger, "timestamp": timestamp})
-        with path.open("a+b") as handle:
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o640)
+        with os.fdopen(descriptor, "a+b") as handle:
+            os.fchmod(handle.fileno(), 0o640)
             if handle.tell():
                 handle.seek(-1, os.SEEK_END)
                 if handle.read(1) != b"\n":
@@ -107,6 +109,7 @@ def initialise(directory: pathlib.Path) -> None:
         if any(directory.glob("????-??-??.jsonl")):
             return
         with tempfile.TemporaryDirectory(dir=directory.parent, prefix=f".{directory.name}-") as name:
+            os.chmod(name, 0o2750)
             pending = pathlib.Path(name)
             backfill(directory.parent, pending, datetime.datetime.now(datetime.UTC).date())
             os.rename(pending, directory)
@@ -203,6 +206,7 @@ def _replace(path: pathlib.Path, content: bytes, directory: int) -> None:
     descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
         with os.fdopen(descriptor, "wb") as handle:
+            os.fchmod(handle.fileno(), 0o640)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
