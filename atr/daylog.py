@@ -168,8 +168,6 @@ def _historical(record: Any, storage: bool) -> dict[str, Any]:
         if ("datetime" not in record) or (not isinstance(record.get("action"), str)):
             raise ValueError("Expected a legacy storage event")
         timestamp = _timestamp(record["datetime"])
-        if record["datetime"] != timestamp[:-4] + "Z":
-            raise ValueError("Expected a legacy UTC datetime with three fractional digits and Z")
         return {"event": record, "level": "info", "logger": "atr.storage.audit", "timestamp": timestamp}
     timestamp = _timestamp(record.get("timestamp"))
     if record["timestamp"] not in (timestamp, timestamp[:19] + "Z"):
@@ -193,7 +191,16 @@ def _read(source: pathlib.Path, *, historical: bool) -> list[dict[str, Any]]:
             try:
                 if not line.endswith(b"\n"):
                     raise ValueError("Unterminated JSONL line")
-                record = json.loads(line.decode("utf-8"), object_pairs_hook=_object)
+                content = line.decode("utf-8")
+                if (
+                    historical
+                    and (source.name == "storage-audit.log")
+                    and content[:1].isdigit()
+                    and (content[19:21] == "Z ")
+                ):
+                    _timestamp(content[:20])
+                    content = content[21:]
+                record = json.loads(content, object_pairs_hook=_object)
                 if historical:
                     record = _historical(record, source.name == "storage-audit.log")
             except ValueError as error:

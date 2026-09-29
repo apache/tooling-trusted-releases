@@ -152,10 +152,11 @@ def test_audit_logger_rejects_invalid_history(tmp_path: pathlib.Path) -> None:
         source.write_bytes(b"")
 
 
-def test_backfill(sources: pathlib.Path, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("storage_event", [{"datetime": "2025-08-05T12:34:56.789Z"}, "01234567Z x"])
+def test_backfill(sources: pathlib.Path, tmp_path: pathlib.Path, storage_event: Any) -> None:
     flat = {"datetime": "2025-08-05T12:34:56.789Z", "action": "old", "project_name": "example"}
     auth = record("historical string", timestamp="2025-08-08T00:00:00Z")
-    storage = record({"datetime": "2025-08-05T12:34:56.789Z"}, "2025-08-08T00:00:00.000001Z", "atr.storage.audit")
+    storage = record(storage_event, "2025-08-08T00:00:00.000001Z", "atr.storage.audit")
     (sources / "auth-audit.log").write_bytes(json.dumps(auth).encode() + b"\n")
     (sources / "storage-audit.log").write_bytes(
         json.dumps(flat).encode() + b"\n" + json.dumps(storage).encode() + b"\n"
@@ -204,6 +205,22 @@ def test_backfill_empty_history(sources: pathlib.Path, tmp_path: pathlib.Path, m
     assert {path.name: path.read_bytes() for path in target.iterdir()} == {"2026-09-28.jsonl": b""}
 
 
+@pytest.mark.parametrize("suffix", ["Z", "+00:00"])
+@pytest.mark.parametrize("prefix", ["", "2026-09-29T00:30:00Z "])
+def test_backfill_legacy_prefix(sources: pathlib.Path, tmp_path: pathlib.Path, suffix: str, prefix: str) -> None:
+    event = {"datetime": f"2026-09-28T23:30:00.123456{suffix}", "action": "example"}
+    original = (prefix + json.dumps(event) + "\n").encode()
+    source = sources / "storage-audit.log"
+    source.write_bytes(original)
+    target = tmp_path / "days"
+    target.mkdir()
+    daylog.backfill(sources, target, datetime.date(2026, 9, 29))
+    expected = record(event, "2026-09-28T23:30:00.123456Z", "atr.storage.audit")
+    assert (target / "2026-09-28.jsonl").read_bytes() == rfc8785.dumps(expected) + b"\n"
+    assert (target / "2026-09-29.jsonl").read_bytes() == b""
+    assert source.read_bytes() == original
+
+
 @pytest.mark.parametrize(
     ("name", "line"),
     [
@@ -218,7 +235,11 @@ def test_backfill_empty_history(sources: pathlib.Path, tmp_path: pathlib.Path, m
             b'{"event":{"datetime":"2026-09-28T00:00:00.000Z"},"logger":"atr.storage.audit","level":"info"}\n',
         ),
         ("storage-audit.log", b'{"datetime":"2025-08-05T12:34:56.789Z"}\n'),
-        ("storage-audit.log", b'{"datetime":"2025-08-05T12:34:56.789000Z","action":"old"}\n'),
+        ("storage-audit.log", b'{"datetime":"2025-08-05T12:34:56.789000","action":"old"}\n'),
+        ("storage-audit.log", b'{"datetime":"2025-08-05T12:34:56.789000+01:00","action":"old"}\n'),
+        ("auth-audit.log", b"2026-09-28T00:00:00Z " + json.dumps(record({})).encode() + b"\n"),
+        ("storage-audit.log", b"2026-99-28T00:00:00Z " + json.dumps(record({})).encode() + b"\n"),
+        ("storage-audit.log", b"2026-09-28T00:00:00Z not json\n"),
     ],
 )
 def test_backfill_rejects_invalid_lines(sources: pathlib.Path, tmp_path: pathlib.Path, name: str, line: bytes) -> None:
