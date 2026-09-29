@@ -57,6 +57,7 @@ CHECK_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
 # success they are logged to a file and dropped rather than kept in the table.
 RECURRING_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
     {
+        sql.TaskType.AUDIT_SEAL,
         sql.TaskType.CATALOG_SITE_GENERATE,
         sql.TaskType.DISTRIBUTION_STATUS,
         sql.TaskType.INTEGRITY_CHECK,

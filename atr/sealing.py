@@ -39,6 +39,21 @@ def initialise(key_dir: pathlib.Path) -> bytes:
     return _generate(key_dir / "current.pem")
 
 
+def prepare(key_dir: pathlib.Path, root: pathlib.Path, previous: pathlib.Path | None) -> None:
+    if not root.exists(follow_symlinks=False):
+        if previous is not None:
+            raise FileNotFoundError(root)
+        publish(root, initialise(key_dir))
+    expected = root.read_bytes()
+    _validate_public(expected)
+    if {path.name for path in key_dir.iterdir()} != {"current.pem"}:
+        raise ValueError("Expected only current.pem in the sealing key directory")
+    if previous is not None:
+        expected = _decode(_read(previous)["next"], 82)
+    if _public(key_dir / "current.pem") != expected:
+        raise ValueError("Current sealing key does not match the audit chain")
+
+
 def publish(path: pathlib.Path, content: bytes) -> None:
     descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
@@ -109,7 +124,7 @@ def _generate(path: pathlib.Path) -> bytes:
 
 
 def _openssl(*arguments: str) -> bytes:
-    result = subprocess.run(["openssl", *arguments], capture_output=True, check=False)
+    result = subprocess.run(["openssl", *arguments], capture_output=True, check=False, start_new_session=True)
     if result.returncode:
         raise ValueError(result.stderr.decode("utf-8", errors="replace").strip() or "OpenSSL operation failed")
     return result.stdout

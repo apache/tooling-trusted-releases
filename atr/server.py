@@ -1060,6 +1060,7 @@ async def _register_recurrent_tasks() -> None:
     await tasks.schedule_next(
         constants.SYSTEM_SERVICE_UID, tasks.INTEGRITY_CHECK_INTERVAL_SECONDS, tasks.integrity_check
     )
+    await tasks.audit_seal(asf_uid=constants.SYSTEM_SERVICE_UID)
     # Start other tasks 5 min after server start
     await asyncio.sleep(300)
     try:

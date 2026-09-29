@@ -275,6 +275,7 @@ class TaskStatus(enum.StrEnum):
 
 class TaskType(enum.StrEnum):
     ARCHIVE_COMPARISON = "archive_comparison"
+    AUDIT_SEAL = "audit_seal"
     CAP_APPROVAL_RESOLVE = "cap_approval_resolve"
     CATALOG_SITE_GENERATE = "catalog_site_generate"
     COMPARE_SOURCE_TREES = "compare_source_trees"
@@ -322,6 +323,8 @@ class TaskType(enum.StrEnum):
         match self:
             case TaskType.ARCHIVE_COMPARISON:
                 return "Archive comparison"
+            case TaskType.AUDIT_SEAL:
+                return "Audit log sealing"
             case TaskType.CAP_APPROVAL_RESOLVE:
                 return "CAP approval resolution"
             case TaskType.CATALOG_SITE_GENERATE:

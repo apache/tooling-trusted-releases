@@ -114,6 +114,10 @@ def get_runtime_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().STATE_DIR) / "runtime")
 
 
+def get_sealing_dir() -> pathlib.Path:
+    return pathlib.Path("/opt/atr/sealing")
+
+
 def get_tmp_dir() -> safe.StatePath:
     # This must be on the same filesystem as the other state subdirectories
     return safe.StatePath(pathlib.Path(config.get().STATE_DIR) / "temporary")

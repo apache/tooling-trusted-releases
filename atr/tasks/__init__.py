@@ -37,6 +37,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
 import atr.source as source
+import atr.tasks.audit as audit
 import atr.tasks.cap as cap
 import atr.tasks.catalog_site as catalog_site
 import atr.tasks.checks as checks
@@ -105,6 +106,20 @@ async def asc_checks(
         )
 
     return tasks
+
+
+async def audit_seal(asf_uid: str, schedule: datetime.datetime | None = None) -> None:
+    async with db.session() as data:
+        await data.begin_immediate()
+        await _clear_existing_scheduled(data, sql.TaskType.AUDIT_SEAL, asf_uid, include_unscheduled=True)
+        task = sql.Task(
+            task_type=sql.TaskType.AUDIT_SEAL,
+            task_args=args.AuditSealArgs(asf_uid=asf_uid).model_dump(),
+            asf_uid=asf_uid,
+            scheduled=schedule,
+        )
+        data.add(task)
+        await data.commit()
 
 
 async def cap_approval_resolve(
@@ -422,6 +437,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
     match task_type:
         case sql.TaskType.ARCHIVE_COMPARISON:
             return parity.across_formats
+        case sql.TaskType.AUDIT_SEAL:
+            return audit.seal
         case sql.TaskType.CAP_APPROVAL_RESOLVE:
             return cap.resolve
         case sql.TaskType.CATALOG_SITE_GENERATE:

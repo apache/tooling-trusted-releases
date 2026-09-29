@@ -22,6 +22,10 @@ import pydantic
 from . import github, mail, safe, schema
 
 
+class AuditSealArgs(schema.Strict):
+    asf_uid: str
+
+
 class CapApprovalResolveArgs(schema.Strict):
     approval_request_id: int = schema.description("The ApprovalRequest row to resolve")
     attempt: int = pydantic.Field(default=0, description="The current resolve attempt count")
