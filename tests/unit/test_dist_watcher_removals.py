@@ -17,6 +17,7 @@
 
 import unittest.mock as mock
 from types import SimpleNamespace
+from typing import Final
 
 import pytest
 
@@ -157,6 +158,46 @@ async def test_the_same_release_is_only_archived_once_across_several_deleted_sou
         removed_files=[("foo/1.2.0", "foo-1.2.0-src.tar.gz"), ("foo/1.2.0", "foo-1.2.0-src.zip")],
     )
     assert len(archives) == 1
+
+
+# A version directory added whole is listed from the repository, and its files have to key the same
+# way as files a commit names, or one release catalogues twice under two versions
+
+
+_INCUBATOR_FILES: Final[tuple[str, ...]] = (
+    "apache-asyncband-0.7.3-incubating-src.tar.gz",
+    "apache-asyncband-0.7.3-incubating-src.tar.gz.asc",
+    "apache-asyncband-0.7.3-incubating-src.tar.gz.sha512",
+)
+
+
+@pytest.mark.asyncio
+async def test_a_directory_whose_files_the_commit_names_is_catalogued_once(monkeypatch) -> None:
+    # svn import reports the directory and every file in it, so there is nothing to list
+    paths = {"release__incubator__asyncband__0.7.3__": "A "}
+    paths.update({f"release__incubator__asyncband__0.7.3__{name}": "A " for name in _INCUBATOR_FILES})
+    list_files = mock.AsyncMock(return_value=list(_INCUBATOR_FILES))
+    monkeypatch.setattr(catalog.svn, "list_files", list_files)
+    changes = catalog._structural_changes(dist_rules.empty(), _changed(**paths))
+    await catalog._expand_copied(dist_rules.empty(), changes.copied, changes.added)
+    list_files.assert_not_awaited()
+    assert list(changes.added) == [("incubator", "asyncband", "0.7.3-incubating")]
+    assert len(changes.added[("incubator", "asyncband", "0.7.3-incubating")].files) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_copied_directory_keys_its_files_like_named_ones(monkeypatch) -> None:
+    # svn cp reports only the directory; its listed files still refine its version by filename
+    monkeypatch.setattr(catalog.svn, "list_files", mock.AsyncMock(return_value=list(_INCUBATOR_FILES)))
+    changes = catalog._structural_changes(
+        dist_rules.empty(), _changed(**{"release__incubator__asyncband__0.7.3__": "A "})
+    )
+    await catalog._expand_copied(dist_rules.empty(), changes.copied, changes.added)
+    assert list(changes.added) == [("incubator", "asyncband", "0.7.3-incubating")]
+    bundle = changes.added[("incubator", "asyncband", "0.7.3-incubating")]
+    assert {(dirpath, name) for dirpath, name, _ in bundle.files} == {
+        ("incubator/asyncband/0.7.3", name) for name in _INCUBATOR_FILES
+    }
 
 
 # Resolving an added release decides whether it reaches catalogue_release at all

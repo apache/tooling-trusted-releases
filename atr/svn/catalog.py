@@ -103,7 +103,7 @@ async def catalogue_commit(commit: dict) -> None:
         rules = await dist_rules.load(data)
     changes = _structural_changes(rules, changed)
     added, removed = changes.added, changes.removed
-    await _expand_copied(changes.copied, added)
+    await _expand_copied(rules, changes.copied, added)
     added = _collapse_airflow_providers(rules, added)
     if not (added or removed or changes.removed_files):
         return
@@ -250,28 +250,37 @@ def _companion(siblings: set[str], artifact: str, suffixes: tuple[str, ...]) -> 
     return None
 
 
-async def _expand_copied(copied: dict[_ReleaseKey, str], added: dict[_ReleaseKey, _ReleaseFiles]) -> None:
+async def _expand_copied(
+    rules: dist.DistRules, copied: dict[_ReleaseKey, str], added: dict[_ReleaseKey, _ReleaseFiles]
+) -> None:
     # Publishing by copying a whole version directory across from dev is the common
     # release flow, and svn reports it as a single added directory. The files have to be
-    # listed from the repository, since the commit itself never names them
-    for key, relpath in copied.items():
-        if key in added:
+    # listed from the repository, since the commit itself never names them. A commit that
+    # adds the directory and names its files as well (svn import does) already has them in
+    # added, and listing them again would catalogue the same files twice
+    named_dirs = {dirpath for bundle in added.values() for dirpath, _, _ in bundle.files}
+    listed: dict[_ReleaseKey, _ReleaseFiles] = {}
+    for relpath in copied.values():
+        if any((named == relpath) or named.startswith(f"{relpath}/") for named in named_dirs):
             continue
-        committee, subproject, version = key
         try:
             names = await svn.list_files(f"{constants.SVN_DIST_ROOT_URL}/{_RELEASE_PREFIX}{relpath}")
         except Exception:
             log.exception(f"dist watcher could not list {relpath}, so it stays uncatalogued")
             continue
-        bundle = _ReleaseFiles(committee, subproject, version)
         for name in names:
-            rel = f"{relpath}/{name}"
-            dirpath, _, filename = rel.rpartition("/")
-            file_type = classify.classify_path(pathlib.PurePosixPath(rel))
-            bundle.files.append((dirpath, filename, file_type))
-            if file_type is classify.FileType.SOURCE:
-                bundle.has_source = True
-        if bundle.has_source:
+            # Each listed file is keyed the same way as a named one, so the filename can refine
+            # the directory's version and a release keys alike however it was published
+            path = f"{_RELEASE_PREFIX}{relpath}/{name}"
+            change = _decompose_change(rules, path)
+            if change is not None:
+                _record_decomposed(path, "A", change, listed, set(), {})
+    for key, bundle in listed.items():
+        existing = added.get(key)
+        if existing is not None:
+            existing.files.extend(bundle.files)
+            existing.has_source = existing.has_source or bundle.has_source
+        elif bundle.has_source:
             added[key] = bundle
 
 
