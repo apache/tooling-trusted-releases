@@ -86,6 +86,8 @@ def key_packet_ids(body: bytes) -> set[str]:
         fingerprint = hashlib.md5(modulus + exponent, usedforsecurity=False).hexdigest()
         return {fingerprint, modulus[-8:].hex()}
     if version == 4:
+        # RFC 4880 defines v4 fingerprints as SHA-1
+        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         digest = hashlib.sha1(b"\x99" + len(body).to_bytes(2, "big") + body, usedforsecurity=False).hexdigest()
         return {digest, digest[-16:]}
     if version in (5, 6):

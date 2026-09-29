@@ -1906,6 +1906,8 @@ async def validate_jwt_post(
         result["header_error"] = f"{type(exc).__name__}: {exc}"
 
     try:
+        # Decoding without verification is the point here, we show claims even when the signature fails
+        # nosemgrep: python.jwt.security.unverified-jwt-decode.unverified-jwt-decode
         result["claims_unverified"] = jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
     except jwt.PyJWTError as exc:
         result["claims_unverified_error"] = f"{type(exc).__name__}: {exc}"

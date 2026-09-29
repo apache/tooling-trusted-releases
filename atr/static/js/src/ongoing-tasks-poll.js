@@ -52,9 +52,10 @@
 	const filesCardHeaderText = document.getElementById("files-card-header-text");
 	const pollInterval = 3000;
 
-	const initialOngoing = parseInt(banner.dataset.ongoingCount || "0", 10) || 0;
+	const initialOngoing =
+		Math.trunc(Number(banner.dataset.ongoingCount || "0")) || 0;
 	const initialQuarantinePending =
-		parseInt(banner.dataset.quarantinePendingCount || "0", 10) || 0;
+		Math.trunc(Number(banner.dataset.quarantinePendingCount || "0")) || 0;
 	const initialPollingActive = banner.dataset.pollingActive === "true";
 
 	const shouldStart =

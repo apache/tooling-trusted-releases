@@ -20,7 +20,7 @@
 function initFinishDownloads() {
 	const status = document.getElementById("finish-publication-status");
 	const button = document.getElementById("finish-announce");
-	if (!status || !button || !button.classList.contains("disabled")) return;
+	if (!status || !button?.classList.contains("disabled")) return;
 	const message = document.getElementById("finish-publication-message");
 	const refresh = document.getElementById("finish-publication-refresh");
 

@@ -60,7 +60,7 @@ function toggleStatusVisibility(type, status) {
 	}
 	const filledClass = mapping.filled;
 	const outlineClass = mapping.outline;
-	const cntMatch = btn.textContent.match(/\((\d+)\)/);
+	const cntMatch = btn.textContent.match(/\((\d+)\)/u);
 	if (!cntMatch) {
 		console.error("Button text regex mismatch for:", btn.textContent);
 		return;

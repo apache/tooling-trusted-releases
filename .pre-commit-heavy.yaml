@@ -1,7 +1,7 @@
 exclude: ^node_modules/
 repos:
 - repo: https://github.com/oxipng/oxipng
-  rev: v9.1.5
+  rev: 36f3ef8aac65ecf1761739ea2f2e530281f1312b  # frozen: v10.2.1
   hooks:
     - id: oxipng
       name: run oxipng
@@ -10,7 +10,7 @@ repos:
       # types: [image]
       # files: \.png$
 - repo: https://github.com/semgrep/semgrep
-  rev: v1.145.0
+  rev: e279a884ad6f16b050de690bdfdc26e921c364dc  # frozen: v1.177.0
   hooks:
     - id: semgrep
       args:

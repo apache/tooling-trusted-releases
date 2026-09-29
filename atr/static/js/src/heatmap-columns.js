@@ -103,7 +103,7 @@ function bar(v) {
 
 export function esc(s) {
 	return String(s).replaceAll(
-		/[&<>"']/g,
+		/[&<>"']/gu,
 		(c) =>
 			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
 				c

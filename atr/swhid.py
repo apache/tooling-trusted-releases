@@ -147,6 +147,8 @@ def _as_bytes(value: Commit) -> bytes:
 
 
 def _blob_digest_of_file(path: Path, size: int) -> bytes:
+    # SWHIDs are defined over git object IDs, which are SHA-1
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     hasher = hashlib.sha1(b"blob %d\x00" % size, usedforsecurity=False)
     with open(path, "rb") as handle:
         while chunk := handle.read(_CHUNK):
@@ -182,6 +184,8 @@ def _entry_sort_key(entry: tuple[bytes, bytes, bytes]) -> bytes:
 
 
 def _git_object_digest(kind: bytes, payload: bytes) -> bytes:
+    # SWHIDs are defined over git object IDs, which are SHA-1
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     hasher = hashlib.sha1(b"%s %d\x00" % (kind, len(payload)), usedforsecurity=False)
     hasher.update(payload)
     return hasher.digest()

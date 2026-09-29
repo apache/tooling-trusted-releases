@@ -161,7 +161,7 @@ unit:
 	sh tests/run-unit.sh
 
 update-deps:
-	pre-commit autoupdate || :
+	pre-commit autoupdate --freeze || :
 	uv lock --upgrade
 	uv sync --frozen --all-groups
 	python3 -S scripts/check_pth_files.py

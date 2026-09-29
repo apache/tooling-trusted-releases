@@ -1336,6 +1336,8 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
 
     logging.info(f"Executing rsync command: {' '.join(rsync_cmd)}")
     try:
+        # The rsync arguments come from the test's own config, not from untrusted input
+        # nosemgrep
         result = subprocess.run(rsync_cmd, check=True, capture_output=True, text=True)
         logging.info(f"rsync completed successfully. stdout:\n{result.stdout}")
         if result.stderr:
