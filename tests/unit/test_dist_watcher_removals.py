@@ -191,6 +191,17 @@ async def test_republishing_an_archived_release_resolves_to_a_restore() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_published_release_awaiting_announcement_is_left_alone() -> None:
+    # A preview has passed its vote and expects its files on dist, so seeing them there is neither
+    # a new release to catalogue nor a reason to supersede it
+    project = SimpleNamespace(key="skywalking-banyandb")
+    preview = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE_PREVIEW, is_archived=False)
+    data = _data_for_release(project, preview)
+    resolution = await catalog._resolve_release(dist_rules.empty(), data, _source_bundle())
+    assert resolution == catalog._ReleaseResolution(None, None)
+
+
+@pytest.mark.asyncio
 async def test_republishing_a_current_release_stays_a_no_op() -> None:
     project = SimpleNamespace(key="skywalking-banyandb")
     current = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE, is_archived=False)
@@ -204,22 +215,29 @@ async def test_republishing_a_current_release_stays_a_no_op() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_commit_with_no_revision_is_treated_as_external(monkeypatch) -> None:
+async def test_a_commit_with_no_revision_is_treated_as_external() -> None:
     # Nothing to look a revprop up against, so it can't be recognised as ours - catalogue it
-    monkeypatch.setattr(catalog.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL="https://dist.example/release"))
     assert await catalog._committed_by_atr(None) is False
 
 
 @pytest.mark.asyncio
 async def test_a_commit_carrying_the_atr_tool_revprop_is_recognised_as_ours(monkeypatch) -> None:
-    monkeypatch.setattr(catalog.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL="https://dist.example/release"))
-    monkeypatch.setattr(catalog.svn, "committed_by_atr", mock.AsyncMock(return_value=True))
+    committed_by_atr = mock.AsyncMock(return_value=True)
+    monkeypatch.setattr(catalog.svn, "committed_by_atr", committed_by_atr)
     assert await catalog._committed_by_atr(87431) is True
+    # The publish credentials can't read revprops, so the lookup has to go to the public dist root
+    committed_by_atr.assert_awaited_once_with(f"{catalog.constants.SVN_DIST_ROOT_URL}/release/", "87431")
 
 
 @pytest.mark.asyncio
 async def test_a_revprop_read_failure_catalogues_rather_than_drops(monkeypatch) -> None:
     # A dropped release can't be recovered but a duplicate can, so a failed lookup falls to cataloguing
-    monkeypatch.setattr(catalog.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL="https://dist.example/release"))
     monkeypatch.setattr(catalog.svn, "committed_by_atr", mock.AsyncMock(side_effect=RuntimeError("svn unreachable")))
+    assert await catalog._committed_by_atr(87431) is False
+
+
+@pytest.mark.asyncio
+async def test_an_svn_error_reading_the_revprop_catalogues_rather_than_drops(monkeypatch) -> None:
+    error = catalog.svn.CommandExecutionError(1, "svn: E175013: Access to '/repos/dist/!svn/rev/87431' forbidden")
+    monkeypatch.setattr(catalog.svn, "committed_by_atr", mock.AsyncMock(side_effect=error))
     assert await catalog._committed_by_atr(87431) is False

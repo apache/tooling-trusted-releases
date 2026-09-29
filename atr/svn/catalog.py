@@ -227,12 +227,17 @@ def _commit_date(commit: dict) -> datetime.datetime:
 
 async def _committed_by_atr(revision: object) -> bool:
     # Our own publishes carry the asf:tool=atr revprop; a failed read catalogues rather than drops,
-    # since a duplicate release is recoverable and a missed one isn't
-    url = config.get().SVN_PUBLISH_URL
-    if (url is None) or (revision is None):
+    # since a duplicate release is recoverable and a missed one isn't. We read it from the public
+    # dist root rather than SVN_PUBLISH_URL, as the publish credentials are scoped to the release
+    # path and can't read the repository-level revision resource that revprops live on
+    if revision is None:
         return False
     try:
-        return await svn.committed_by_atr(url, str(revision))
+        return await svn.committed_by_atr(f"{constants.SVN_DIST_ROOT_URL}/{_RELEASE_PREFIX}", str(revision))
+    except svn.CommandExecutionError as exc:
+        reason = svn.error_message(exc)
+        log.error(f"dist watcher could not read asf:tool for r{revision}; treating it as external: {reason}")
+        return False
     except Exception:
         log.exception(f"dist watcher could not read asf:tool for r{revision}; treating it as external")
         return False
@@ -468,6 +473,10 @@ async def _resolve_release(rules: dist.DistRules, data: db.Session, rel_files: _
             # Archived when its files left dist, now published again: catalogue over the top so
             # catalogue_release restores it and refreshes its files
             return _ReleaseResolution((project_key, version_key, _artifacts(rel_files)), None)
+        if existing.phase == sql.ReleasePhase.RELEASE_PREVIEW:
+            # A preview is past its vote, so its files are expected on dist - most likely from ATR's
+            # own publish - and it's waiting to be announced. Leave it for the announce to finish
+            return _ReleaseResolution(None, None)
         # ATR still holds an in-progress draft of a version that has now been published
         # outside ATR. The draft is stale, so flag it to be wiped and its author told,
         # then catalogue the published release over the top
