@@ -22,6 +22,7 @@ import json
 import logging
 import logging.handlers
 import queue
+import sys
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -124,6 +125,7 @@ def setup_dedicated_file_logger(
 
 def shared_processors() -> list[structlog.types.Processor]:
     return [
+        _resolve_exc_info,
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -151,6 +153,19 @@ def _parse_json_event(
     if event_dict.get("logger") != "atr.tasks.log":
         return event_dict
     event_dict["event"] = _json_event(event_dict.get("event"))
+    return event_dict
+
+
+def _resolve_exc_info(
+    _logger: structlog.types.WrappedLogger,
+    _method_name: str,
+    event_dict: structlog.types.EventDict,
+) -> structlog.types.EventDict:
+    # exc_info=True means "the exception being handled", which only sys.exc_info on the logging
+    # thread can see. Our records are formatted later on a queue listener thread, where it would
+    # find nothing, so we capture the exception here while it's still in hand
+    if event_dict.get("exc_info") is True:
+        event_dict["exc_info"] = sys.exc_info()
     return event_dict
 
 
