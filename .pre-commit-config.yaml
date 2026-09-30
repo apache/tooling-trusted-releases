@@ -108,7 +108,7 @@ repos:
         - '--ignore-vuln'
         - 'PYSEC-2025-183'
 - repo: https://github.com/oxc-project/mirrors-oxlint
-  rev: 7ab19fc41bc7c63cb01d4322509971371c285e16  # frozen: v1.85.0
+  rev: 644689fa1b7bb5f57cade8e8869fae6d8fcfc1f0  # frozen: v1.60.0
   hooks:
     - id: oxlint
       name: lint JS files with Oxlint
