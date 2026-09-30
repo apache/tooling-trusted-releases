@@ -7,10 +7,22 @@
 {% block stylesheets %}
   {{ super() }}<style>
     img.tutorial-image {
-      border: 1px < !-- djlint:on -->solid #cccccc;
+      border: 1px solid #cccccc;
       box-shadow: 0 0 1rem rgba(0, 0, 0, 0.2);
       margin: 1rem 0;
       max-width: 50%;
+      height: auto;
+    }
+
+    @media (max-width: 760px) {
+      img.tutorial-image {
+        max-width: 100%;
+      }
+
+      .tutorial-sections {
+        display: flex;
+        flex-wrap: wrap;
+      }
     }
   </style>
 {% endblock stylesheets %}
@@ -18,9 +30,11 @@
 {% block content %}
   <h1>Tutorial for release managers</h1>
   <p>
-    The Apache Trusted Releases (ATR) platform is under development; the current version may not precisely match the screenshots below.
+    The Apache Trusted Releases (ATR) platform is under development; the current version may not precisely match the screenshots below. This tutorial follows an ordinary release of a non-podling project, with the vote held on a mailing list.
   </p>
-  <p class="btn-group my-3" role="group" aria-label="Tutorial sections">
+  <p class="btn-group my-3 tutorial-sections"
+     role="group"
+     aria-label="Tutorial sections">
     <a href="#compose" class="btn btn-outline-secondary">Compose</a>
     <a href="#vote" class="btn btn-outline-secondary">Vote</a>
     <a href="#finish" class="btn btn-outline-secondary">Finish</a>
@@ -30,139 +44,179 @@
 
   <h2 id="compose">Compose</h2>
   <p>
-    Use the <strong>Make releases</strong> sidebar link [<code>1</code>], then press the <strong>Start a new release</strong> button for any project [<code>2</code>].
+    Use <strong>Candidates</strong> in the <strong>Draft</strong> menu, then press the <strong>Start a new release</strong> button for any project.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-compose-01.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Follow the sidebar link, and use the button." />
+    <a href="{{ static_url('png/tutorial-compose-01.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-compose-01.png') }}"
+           alt="Illustration: Use the Start a new release button for your project."
+           class="tutorial-image" />
+    </a>
   </p>
+  <p>Press the <strong>Upload files</strong> button on the empty <em>Compose</em> page to add files.</p>
   <p>
-    Press the <strong>Upload files</strong> button on the empty <em>Compose</em> page to add files.
-  </p>
-  <p>
-    <img src="{{ static_url('png/tutorial-compose-02.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Use the Upload files button to add files." />
+    <a href="{{ static_url('png/tutorial-compose-02.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-compose-02.png') }}"
+           alt="Illustration: Use the Upload files button to add files."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
     Upload files via the browser, <code>svn</code>, or <code>rsync</code>. To use <code>rsync</code>, first submit an SSH key to ATR. We plan to read this from LDAP in future.
   </p>
   <p>
-    After upload, ATR checks your files. Review the check results on the <em>Compose</em> page [<code>1</code>]. Press the <strong>Show report</strong>, <strong>Show suggestions</strong>, or <strong>Show concerns</strong> buttons for a detailed review of the check results.
+    After upload, ATR checks your files. Review the check results on the <em>Compose</em> page. Press the <strong>Show details</strong> or <strong>Notes</strong> button beside a file for a detailed review of its check results.
   </p>
   <p>
-    When the files are present and the check results are satisfactory, press the <strong>Start voting</strong> button to proceed [<code>2</code>].
+    When the files are present, the checks have finished, and any blockers are fixed, press the <strong>Start voting</strong> button to proceed. You must acknowledge any remaining concerns on the vote form.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-compose-03.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Review the results of your checks, and use the Start voting button." />
+    <a href="{{ static_url('png/tutorial-compose-03.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-compose-03.png') }}"
+           alt="Illustration: Review the results of your checks, and use the Start voting button."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
-    This takes you to a form to start the vote. If necessary, use its ability to preview the vote announcement email body. When you submit the form, ATR sends an announcement message in your name to the chosen mailing list.
+    This takes you to a form to start the vote. The form shows the vote announcement email body, which you can review and edit if necessary. To publish manually in the <em>Finish</em> phase, clear <strong>Automatically publish to SVN distribution area when this vote resolves</strong>. When you submit the form, ATR sends an announcement message in your name to the chosen mailing list.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-compose-04.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Use the form to start a vote." />
+    <a href="{{ static_url('png/tutorial-compose-04.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-compose-04.png') }}"
+           alt="Illustration: Use the form to start a vote."
+           class="tutorial-image" />
+    </a>
   </p>
 
   <h2 id="vote">Vote</h2>
   <p>
-    The <em>Vote</em> page is available to all project participants, and displays the report results from the end of the <em>Compose</em> phase to help participants decide how to cast their votes [<code>1</code>]. Press the <strong>Download files</strong> button to download the release candidate files to review them before voting [<code>2</code>].
+    The <em>Vote</em> page is available to everyone, and displays the check results from the end of the <em>Compose</em> phase to help participants decide how to cast their votes. Use its download section to download the release candidate files to review them before voting.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-vote-01.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Anybody can review the reports." />
+    <a href="{{ static_url('png/tutorial-vote-01.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-vote-01.png') }}"
+           alt="Illustration: Anybody can review the check results."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
-    Several methods are available to download files: using the browser, <code>curl</code>, <code>rsync</code>, or <code>wget</code>. You must upload an SSH key before you can use <code>rsync</code>.
+    Several methods are available to download files: using the browser, a ZIP file, <code>rsync</code>, or <code>curl</code>. You must log in to use a ZIP file or <code>rsync</code>, and you must upload an SSH key before you can use <code>rsync</code>.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-vote-02.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Download the release candidate files." />
+    <a href="{{ static_url('png/tutorial-vote-02.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-vote-02.png') }}"
+           alt="Illustration: Download the release candidate files."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
-    A link allows review of the voting thread in the mailing list archives [<code>1</code>]. ATR will try to tally votes for you, but you must check the results manually. A form on the page allows you to cast your vote on the mailing list [<code>2</code>].
+    A link allows review of the voting thread in the mailing list archives. ATR will try to tally votes for you, but you must check the results manually. A form on the page allows you to cast your vote on the mailing list.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-vote-03.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Review the voting thread, and cast your own vote." />
+    <a href="{{ static_url('png/tutorial-vote-03.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-vote-03.png') }}"
+           alt="Illustration: Review the voting thread, and cast your own vote."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
     When the voting period concludes and the mandate is clear, record the outcome using the vote resolution form, accessed by pressing the <strong>Resolve vote</strong> button. Submitting this form also sends the outcome of the vote to the mailing list. A successful vote promotes the release candidate to the next phase; a failed or cancelled vote returns it to the <em>Compose</em> phase.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-vote-04.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Use the vote resolution form to progress to the next phase." />
+    <a href="{{ static_url('png/tutorial-vote-04.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-vote-04.png') }}"
+           alt="Illustration: Use the vote resolution form to progress to the next phase."
+           class="tutorial-image" />
+    </a>
   </p>
 
   <h2 id="finish">Finish</h2>
-  <p>
-    If the vote passes, the release enters the <em>Finish</em> phase. This phase may allow minor content adjustments before the announcement and final release. ATR currently supports moving files between directories, preserving filenames. We plan to support more types of adjustments in future.
-  </p>
+  <p>If the vote passes, the release enters the <em>Finish</em> phase.</p>
   <p>
     During this phase you should distribute release artifacts to your package distribution networks such as Maven Central, PyPI, or Docker Hub. You currently must do this manually, but you can record the results on ATR.
   </p>
   <p>
-    When the release is finished, press the <strong>Announce</strong> button.
+    When the release is finished, publish it using the <strong>Publish to ASF Distribution Area</strong> form. Complete the <strong>Download path suffix</strong> field to choose a specific location from which users can download your release artifacts. When publication is complete and the files are available for download, press the <strong>Announce</strong> button.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-finish-01.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Use the Announce button." />
+    <a href="{{ static_url('png/tutorial-finish-01.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-finish-01.png') }}"
+           alt="Illustration: Publish the release, then use the Announce button."
+           class="tutorial-image" />
+    </a>
   </p>
+  <p>Submitting the announcement form sends a message to your selected mailing list.</p>
   <p>
-    Submitting the announcement form sends a message to your selected mailing list. Complete the <strong>Download path suffix</strong> field to choose a specific location from which users can download your release artifacts.
-  </p>
-  <p>
-    <img src="{{ static_url('png/tutorial-finish-02.png') }}"
-         class="tutorial-image"
-         alt="Illustration: The announcement form sends a message to your selected mailing list." />
+    <a href="{{ static_url('png/tutorial-finish-02.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-finish-02.png') }}"
+           alt="Illustration: The announcement form sends a message to your selected mailing list."
+           class="tutorial-image" />
+    </a>
   </p>
 
   <h2 id="releases">Releases</h2>
   <p>When a release is finished, it is listed alongside any other finished releases for a project.</p>
   <p>
-    <img src="{{ static_url('png/tutorial-releases-01.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Finished releases are shown for each individual project." />
+    <a href="{{ static_url('png/tutorial-releases-01.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-releases-01.png') }}"
+           alt="Illustration: Finished releases are shown for each individual project."
+           class="tutorial-image" />
+    </a>
   </p>
-  <p>Each release entry provides a link to download the files in the release.</p>
-  <p>This completes the ATR workflow, from private draft to finished public release.</p>
+  <p>
+    Each release entry provides links to the details of the release, where you can download its files, and to its check results.
+  </p>
+  <p>This completes the ATR workflow, from draft to finished public release.</p>
 
   <h2 id="projects">Projects</h2>
   <p>
     ATR automatically imports as many projects as it can find, but it may still be necessary to create a project manually.
   </p>
   <p>
-    There is a <strong>Create project</strong> button under each committee in your <strong>Committee directory</strong>, accessible from the sidebar.
+    If you are a member of a committee, there is a <strong>Create project</strong> button under it in your <strong>Committee directory</strong>, accessible as <strong>Committees</strong> in the <strong>Configure</strong> menu.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-projects-01.png') }}"
-         class="tutorial-image"
-         alt="Illustration: Use the Create project button to create a new project." />
-  </p>
-  <p>Follow the instructions under each form input carefully, otherwise your new project will not be created.</p>
-  <p>
-    <img src="{{ static_url('png/tutorial-projects-02.png') }}"
-         class="tutorial-image"
-         alt="Illustration: The create project form has name and key fields." />
+    <a href="{{ static_url('png/tutorial-projects-01.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-projects-01.png') }}"
+           alt="Illustration: Use the Create project button to create a new project."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
-    Every successfully added project is listed on the <strong>Committee directory</strong> page. Press the project button, and the project page will be displayed with its release policy form. Edit the release policy form to your liking, and <strong>Save</strong> your changes.
+    Follow the instructions under each form input carefully, otherwise your new project will not be created. To create a sub-project of an existing project, start the new project key with the existing project key followed by a hyphen. ATR copies settings such as the description and release policy from the existing project once, when the new project is created.
   </p>
   <p>
-    <img src="{{ static_url('png/tutorial-projects-03.png') }}"
-         class="tutorial-image"
-         alt="Illustration: The release policy form is split into three sections." />
+    <a href="{{ static_url('png/tutorial-projects-02.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-projects-02.png') }}"
+           alt="Illustration: The create project form has name and key fields."
+           class="tutorial-image" />
+    </a>
   </p>
   <p>
-    Once your project has been created, you can <a href="#compose">compose releases</a> for it.
+    Every successfully added project is listed on the <strong>Committee directory</strong> page. Press the project button, and the project page will be displayed with its configuration tabs, such as <strong>Metadata</strong>, <strong>Compose</strong>, <strong>Vote</strong>, and <strong>Finish</strong>. Edit the settings in each tab to your liking, and <strong>Save</strong> your changes.
+  </p>
+  <p>
+    <a href="{{ static_url('png/tutorial-projects-03.png') }}"
+       title="Open full-size screenshot">
+      <img src="{{ static_url('png/tutorial-projects-03.png') }}"
+           alt="Illustration: The project page has a tab for each group of settings."
+           class="tutorial-image" />
+    </a>
+  </p>
+  <p>
+    Once your project has been created and its required metadata is complete, you can <a href="#compose">compose releases</a> for it. If anything required is missing, such as the homepage, download page, or repositories, ATR asks you to complete it when you start a release.
   </p>
 {% endblock content %}

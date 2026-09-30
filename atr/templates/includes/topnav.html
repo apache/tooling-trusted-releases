@@ -146,12 +146,10 @@
                   aria-expanded="false"
                   aria-controls="menuHelp">Help</button>
           <ul class="dropdown-menu" id="menuHelp" aria-labelledby="dropdownHelp">
-            {% if current_user %}
-              <li>
-                <a class="dropdown-item" href="{{ as_url(get.root.tutorial) }}"><i class="bi bi-book"></i>
-                  Tutorial</a>
-              </li>
-            {% endif %}
+            <li>
+              <a class="dropdown-item" href="{{ as_url(get.root.tutorial) }}"><i class="bi bi-book"></i>
+                Tutorial</a>
+            </li>
             <li>
               <a class="dropdown-item" href="{{ as_url(get.docs.index) }}"><i class="bi bi-book"></i>
                 Documentation</a>

@@ -177,7 +177,7 @@ async def resolved_json(
 
 
 @get.typed
-async def tutorial(_session: web.Committer, _tutorial: Literal["tutorial"]) -> str:
+async def tutorial(_session: web.Public, _tutorial: Literal["tutorial"]) -> str:
     """
     URL: /tutorial
     Tutorial page.
