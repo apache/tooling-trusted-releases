@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 from typing import TYPE_CHECKING, Any, Final, Literal
 
+import quart
 import sqlalchemy.exc
 
 import atr.blueprints.post as post
@@ -34,6 +35,7 @@ import atr.models.unsafe as unsafe
 import atr.notify as notify
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.util as util
 import atr.web as web
 
@@ -168,7 +170,14 @@ async def view(
     """
     URL: /projects/<name>
     """
-    return await _VIEW_HANDLERS[type(project_form)](session, project_form)
+    project_key = project_form.project_key
+    was_synced = await _is_synced_from_asf_yaml(project_key)
+    response = await _VIEW_HANDLERS[type(project_form)](session, project_form)
+    # A save marks the project as manually updated, so the change in
+    # state tells us the edit went in - and that the next push may well undo it
+    if was_synced and (not await _is_synced_from_asf_yaml(project_key)):
+        await quart.flash(strings.ASF_YAML_SYNC_NOTICE, "warning")
+    return response
 
 
 def _action_eligibility_error(
@@ -225,6 +234,12 @@ async def _complete_action(
                 if e.status != 404:
                     raise
         await wacm.project.archive(project_key, approval_request_id)
+
+
+async def _is_synced_from_asf_yaml(project_key: safe.ProjectKey) -> bool:
+    async with db.session() as data:
+        project = await data.project(key=str(project_key)).get()
+    return (project is not None) and (project.update_type == sql.UpdateType.ASFYAML)
 
 
 async def _persist_approval(

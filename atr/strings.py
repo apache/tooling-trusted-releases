@@ -36,6 +36,12 @@ FILE_CLASS_METADATA: Final = "Metadata file"
 FILE_CLASS_SBOM: Final = "SBOM"
 FILE_CLASS_SOURCE: Final = "Source artifact"
 
+# Project metadata notices
+ASF_YAML_SYNC_NOTICE: Final = (
+    "This project's metadata is synced from .asf.yaml. The next push to the repository's default branch"
+    " overwrites settings with any values the file sets, so make any permanent changes there."
+)
+
 # Dist watcher rule kinds, keyed by DistRuleKind value, in plain terms for the admin who edits them
 DIST_RULE_KIND_DESCRIPTIONS: Final[dict[str, str]] = {
     "project_remap": (

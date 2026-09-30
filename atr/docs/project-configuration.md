@@ -30,4 +30,6 @@ A name must be supplied when creating a project. When updating an existing proje
 
 Synchronization is enabled by default and runs from the repository's default branch. When enabled, the next push imports the supplied values, overwriting manual changes to those fields in ATR. Correct the name in `.asf.yaml` or its linked DOAP file so that subsequent imports preserve the correction.
 
+While the most recent update to a project came from `.asf.yaml`, ATR shows a notice on the project page to anyone who can edit it, and repeats it when they save a change there. The notice clears once somebody edits the project in ATR, and returns with the next push.
+
 See the [asfyaml project metadata reference](https://github.com/apache/infrastructure-asfyaml#project) for the complete configuration format, release policy settings, and synchronization options.

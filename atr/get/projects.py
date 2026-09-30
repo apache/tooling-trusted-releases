@@ -48,6 +48,7 @@ import atr.registry as registry
 import atr.render as render
 import atr.sessions as sessions
 import atr.shared as shared
+import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -337,6 +338,8 @@ async def view(
                 ]
             ]
         )
+    if can_edit_metadata and (project.update_type == sql.UpdateType.ASFYAML):
+        page.append(_render_asf_yaml_notice(project, can_export=can_manage_project_actions))
     page.append(
         await _render_header_cards(project, can_manage_project_actions, session, is_sole_active_project, is_privileged)
     )
@@ -791,6 +794,15 @@ async def _render_actions_card(
                     )["Export .asf.yaml"]
                 )
     return card.collect()
+
+
+def _render_asf_yaml_notice(project: sql.Project, *, can_export: bool) -> htm.Element:
+    export_link = (
+        htm.a(".alert-link.ms-1", href=util.as_url(project_yaml, project_key=project.key))["Export .asf.yaml"]
+        if can_export
+        else ""
+    )
+    return htm.div(".alert.alert-info", role="alert")[strings.ASF_YAML_SYNC_NOTICE, export_link]
 
 
 def _render_categories_section(project: sql.Project, *, readonly: bool) -> htm.Element:
