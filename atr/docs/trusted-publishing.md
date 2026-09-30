@@ -23,17 +23,17 @@ The process involves creating a dedicated GPG signing key for the project, stori
 
 ## What reproducible means
 
-The ASF Security team describes a build as [reproducible](https://cwiki.apache.org/confluence/display/SECURITY/Reproducible+Builds) when the build process is so deterministic that building the same sources twice, by different people, results in a bit-by-bit identical artifact. If two independent builds on different infrastructure produce the same bytes, it is very unlikely that either build was tampered with, which is what allows a signature made in CI to be trusted.
+The ASF Security team describes a build as [reproducible](https://cwiki.apache.org/confluence/display/SECURITY/Reproducible+Builds) when the build process is so deterministic that building the same sources twice, by different people, results in a bit-by-bit identical artifact. When two builds on independently managed infrastructure produce the same bits, it improves confidence that nothing was injected into the artifact by a compromise of either one, which is what allows a signature made in CI to be trusted.
 
 In practice, this means your artifacts must not contain anything that depends on the environment they were built in. Usernames, hostnames, timestamps, absolute file paths, tool versions, and CI build numbers are the usual culprits. The Security team's page has guidance for several ecosystems, including Maven, Python, Helm, and tarballs, for example setting `SOURCE_DATE_EPOCH` so that file timestamps are fixed.
 
-Being able to reproduce a build once is not quite enough. To be approved for signing in CI, your project has to show three things:
+It is good practice for every ASF release to be reproducible, but for projects that want to build and sign artifacts in CI it is required. Being able to reproduce a build once is not quite enough. Your project has to show three things:
 
-1. Independent builds of the same source produce byte-for-byte identical artifacts.
-2. The release process documents how and when artifacts are independently rebuilt and compared.
-3. That process is followed for every release, not just the first one.
+1. Independent builds of the same source produce bit-by-bit identical artifacts.
+2. The release process documents how and when artifacts are independently rebuilt and verified.
+3. That process is followed in practice for every release.
 
-If you have questions about making your build reproducible, ask on the [security-discuss](https://security.apache.org/mailinglist/) mailing list.
+If you have questions about making your build reproducible, ask on the [security-discuss](https://security.apache.org/mailinglist/) mailing list, or in the `#security-discuss` channel on the [ASF Slack](https://infra.apache.org/slack.html).
 
 ## How to set up Trusted Publishing
 
@@ -41,11 +41,13 @@ ATR Trusted Publishing is built on top of [Automated Release Signing](https://in
 
 ### Step 1: Get approval from the Security team
 
-Contact the ASF Security team and demonstrate that your project's builds are reproducible, as described [above](#what-reproducible-means). Your request should focus on the validation step, i.e. who rebuilds the artifacts, on what hardware, and how they compare the result against what CI produced. The rebuild must happen on trusted hardware, such as a release manager's own machine, and not on GitHub Actions. The Security team will review your build pipeline and must approve it before Infrastructure will issue a signing key.
+Tell the ASF Security team that your project intends to request a CI signing key, and show them that your builds are reproducible, as described [above](#what-reproducible-means). Your request should highlight the change to your release process that makes sure artifacts are validated on trusted hardware before release, i.e. who rebuilds the artifacts, where, and how they compare the result against what CI produced. Infrastructure defines trusted hardware as secure hardware under the direct control of the release manager, so the rebuild can't happen on GitHub Actions. The Security team should approve your workflow before you put it into use.
 
 ### Step 2: Request a project signing key
 
-Once the Security team has approved your project, open a Jira ticket with ASF Infrastructure asking for a signing key. Infrastructure generates a 4096-bit RSA key that can only be used for signing. The private key is held by Infrastructure, and the public key is given to your project. The key must follow a specific naming convention for ATR to recognise it as an automated release key. The primary UID must contain "Automated Release Signing" or the deprecated "Services RM", ignoring case, and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
+Open a Jira ticket with ASF Infrastructure asking for a signing key. Infrastructure generates a 4096-bit RSA key that can only be used for signing, and puts an encrypted revocation key in your project's private repository. The private key is never shared with the project, or with anyone outside the Infrastructure root team. The public key is either sent to your project or added to your `KEYS` file for you.
+
+The key must follow a specific naming convention for ATR to recognise it as an automated release key, so it is worth asking for this in your ticket. The primary UID must contain "Automated Release Signing" or the deprecated "Services RM", ignoring case, and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
 
 ```text
 Example Automated Release Signing <private@example.apache.org>
@@ -55,11 +57,11 @@ If the UID does not follow this pattern, ATR will not recognise the key as autom
 
 ### Step 3: Configure the GitHub repository
 
-Request ASF Infrastructure to store the private half of the key as a repository secret in your project's GitHub repository. Your GitHub Actions workflows can then reference this secret to sign artifacts during the build. The public half stays with ATR and your `KEYS` file.
+Although your project never sees the private key, Infrastructure makes it available to your CI system. For GitHub Actions, ask Infrastructure to store it as a repository secret in your project's GitHub repository. Your workflows can then reference this secret to sign artifacts during the build. The public half stays with ATR and your `KEYS` file.
 
 ### Step 4: Add the public key to your `KEYS` file
 
-Add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and it is kept in step with ATR as described in [Promoting to release](promoting-to-release#the-keys-file). Import the updated `KEYS` file through ATR, or commit it in SVN if your committee's file is managed there, rather than adding this key with the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
+If Infrastructure has not already done so, add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and it is kept in step with ATR as described in [Promoting to release](promoting-to-release#the-keys-file). Import the updated `KEYS` file through ATR, or commit it in SVN if your committee's file is managed there, rather than adding this key with the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
 
 ### Step 5: Check that your committee can use CI
 
@@ -73,7 +75,7 @@ In your GitHub Actions workflow, sign your release artifacts using the private k
 
 ### Step 7: Confirm reproducibility during the vote
 
-When the project starts a release vote, PMC members should independently rebuild the artifacts on trusted hardware and confirm that they match the ones uploaded to ATR. This is the trust model behind Trusted Publishing: the automated signature proves that the artifacts came from a specific GitHub workflow, and the reproducibility check by voters proves that the build output is genuine, matching what was built on the GitHub runners.
+When the project starts a release vote, the artifacts must be independently rebuilt from source on trusted hardware and confirmed to be bit-by-bit identical to the ones uploaded to ATR, following the process your project documented in step 1. This has to happen before the release is published. This is the trust model behind Trusted Publishing: the automated signature proves that the artifacts came from a specific GitHub workflow, and the independent rebuild proves that the build output is genuine, matching what was built on the GitHub runners.
 
 ## Configuring repository and workflow paths
 
