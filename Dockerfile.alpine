@@ -65,10 +65,10 @@ RUN set -eux; \
     rm -rf /tmp/apache-rat
 
 # WORKDIR /var/run
-ENV SYFT_VERSION=1.51.1
+ENV SYFT_VERSION=1.52.0
 ENV SYFT_INSTALL_SHA256=ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
-ENV SYFT_SHA256_amd64=abca2def61de9952fa06d3977bb1e064818facb9badfce502b450d3d6846a91f
-ENV SYFT_SHA256_arm64=617cef943234e0cae184b4901414ca4059ad6c6923a9c9decb46f49f6a2c6573
+ENV SYFT_SHA256_amd64=15a52d0122953081d16e6695f48055216a4de293bb005948663bb739a63880f9
+ENV SYFT_SHA256_arm64=27563e0bee8b2f4c938e1d5a8c3391cf7f4b2481aec2eb74778d0d9ec4fffadc
 # RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
 # Faster than a go-install; the resulting binary is pinned by SHA after install
 RUN case "$TARGETARCH" in \
