@@ -9,8 +9,10 @@
 **Sections**:
 
 * [Overview](#overview)
+* [What reproducible means](#what-reproducible-means)
 * [How to set up Trusted Publishing](#how-to-set-up-trusted-publishing)
 * [Configuring repository and workflow paths](#configuring-repository-and-workflow-paths)
+* [GitHub Actions for ATR](#github-actions-for-atr)
 * [How ATR detects automated release keys](#how-atr-detects-automated-release-keys)
 
 ## Overview
@@ -19,17 +21,31 @@ Trusted Publishing lets a project sign release artifacts automatically during a 
 
 The process involves creating a dedicated GPG signing key for the project, storing it as a GitHub repository secret, and registering the public half with ATR. When ATR sees a signature made by a key that follows the automated release key naming convention, it accepts the signature in the same way that it would accept one from an individual committer's key.
 
+## What reproducible means
+
+The ASF Security team describes a build as [reproducible](https://cwiki.apache.org/confluence/display/SECURITY/Reproducible+Builds) when the build process is so deterministic that building the same sources twice, by different people, results in a bit-by-bit identical artifact. If two independent builds on different infrastructure produce the same bytes, it is very unlikely that either build was tampered with, which is what allows a signature made in CI to be trusted.
+
+In practice, this means your artifacts must not contain anything that depends on the environment they were built in. Usernames, hostnames, timestamps, absolute file paths, tool versions, and CI build numbers are the usual culprits. The Security team's page has guidance for several ecosystems, including Maven, Python, Helm, and tarballs, for example setting `SOURCE_DATE_EPOCH` so that file timestamps are fixed.
+
+Being able to reproduce a build once is not quite enough. To be approved for signing in CI, your project has to show three things:
+
+1. Independent builds of the same source produce byte-for-byte identical artifacts.
+2. The release process documents how and when artifacts are independently rebuilt and compared.
+3. That process is followed for every release, not just the first one.
+
+If you have questions about making your build reproducible, ask on the [security-discuss](https://security.apache.org/mailinglist/) mailing list.
+
 ## How to set up Trusted Publishing
 
-ATR Trusted Publishing is build on top of [Automated Release Signing](https://infra.apache.org/release-signing.html#automated-release-signing) that define the 6 prerequisite steps.
+ATR Trusted Publishing is built on top of [Automated Release Signing](https://infra.apache.org/release-signing.html#automated-release-signing), which permits signing in CI provided that all signed artifacts can be built reproducibly, that CI deploys them to a staging area rather than straight to users, and that every artifact is rebuilt and compared on trusted hardware before it is published. ATR is the staging area in this model, and the vote is where the comparison happens. The steps below take you from a reproducible build to a workflow that ATR will accept.
 
-### Step 1: Demonstrate reproducibility
+### Step 1: Get approval from the Security team
 
-Contact the ASF Security team and demonstrate to them that your project's builds are reproducible. This means that, given the same source input, your build process produces bit-for-bit identical output regardless of where or when it runs. The security team will evaluate your build pipeline and confirm that it qualifies for Trusted Publishing.
+Contact the ASF Security team and demonstrate that your project's builds are reproducible, as described [above](#what-reproducible-means). Your request should focus on the validation step, i.e. who rebuilds the artifacts, on what hardware, and how they compare the result against what CI produced. The rebuild must happen on trusted hardware, such as a release manager's own machine, and not on GitHub Actions. The Security team will review your build pipeline and must approve it before Infrastructure will issue a signing key.
 
 ### Step 2: Request a project signing key
 
-Ask ASF Infrastructure to generate a GPG keypair for your project. The key must follow a specific naming convention for ATR to recognise it as an automated release key. The primary UID must contain "Automated Release Signing" or the deprecated "Services RM", ignoring case, and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
+Once the Security team has approved your project, open a Jira ticket with ASF Infrastructure asking for a signing key. Infrastructure generates a 4096-bit RSA key that can only be used for signing. The private key is held by Infrastructure, and the public key is given to your project. The key must follow a specific naming convention for ATR to recognise it as an automated release key. The primary UID must contain "Automated Release Signing" or the deprecated "Services RM", ignoring case, and the email address must be `private@`_committee_`.apache.org`, where _committee_ is the name of your PMC. For example, the following UID would be valid for a project named Example:
 
 ```text
 Example Automated Release Signing <private@example.apache.org>
@@ -45,13 +61,19 @@ Request ASF Infrastructure to store the private half of the key as a repository 
 
 Add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and it is kept in step with ATR as described in [Promoting to release](promoting-to-release#the-keys-file). Import the updated `KEYS` file through ATR, or commit it in SVN if your committee's file is managed there, rather than adding this key with the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
 
-### Step 5: Sign artifacts in your workflow
+### Step 5: Check that your committee can use CI
 
-In your GitHub Actions workflow, sign your release artifacts using the private key from the repository secret. The resulting `.asc` signature files should be uploaded to ATR alongside the artifacts, the same way that manually signed artifacts would be.
+Once the key is in ATR, your committee becomes eligible for Trusted Publishing. You can check this on your committee's page in ATR, where the Permissions card should show _CI builds: Enabled_. If it still shows _Disabled_, the key is probably not linked to your committee, or its UID does not follow the naming convention in step 2. See [how ATR detects automated release keys](#how-atr-detects-automated-release-keys) for the exact rules.
 
-### Step 6: Confirm reproducibility during the vote
+Eligibility alone does not let any workflow act on your releases. You also have to tell ATR which repository and which workflows it should trust, as described in [configuring repository and workflow paths](#configuring-repository-and-workflow-paths).
 
-When the project starts a release vote, PMC members should independently rebuild the artifacts and confirm that they match the ones uploaded to ATR. This is the trust model behind Trusted Publishing: the automated signature proves that the artifacts came from a specific GitHub workflow, and the reproducibility check by voters proves that the build output is genuine, matching what was built on the GitHub runners.
+### Step 6: Sign and upload artifacts in your workflow
+
+In your GitHub Actions workflow, sign your release artifacts using the private key from the repository secret. The resulting `.asc` signature files should be uploaded to ATR alongside the artifacts, the same way that manually signed artifacts would be. The ASF Tooling team provides [GitHub Actions](#github-actions-for-atr) to do the upload, and the later release steps, for you.
+
+### Step 7: Confirm reproducibility during the vote
+
+When the project starts a release vote, PMC members should independently rebuild the artifacts on trusted hardware and confirm that they match the ones uploaded to ATR. This is the trust model behind Trusted Publishing: the automated signature proves that the artifacts came from a specific GitHub workflow, and the reproducibility check by voters proves that the build output is genuine, matching what was built on the GitHub runners.
 
 ## Configuring repository and workflow paths
 
@@ -83,6 +105,28 @@ The three fields are kept separate so that a workflow is only trusted for the ph
 ### How ATR matches a workflow
 
 When a workflow calls one of the Trusted Publishing endpoints, GitHub sends ATR an OIDC token that names the repository, such as `apache/example`, and the workflow reference, such as `apache/example/.github/workflows/release-compose.yml@refs/heads/main`. ATR strips the `apache/` prefix and the trailing `@` git ref, then looks for a project whose release policy has a matching repository name and lists that workflow path under the phase being requested. If there is no match, the request is refused. The committee must also be eligible for Trusted Publishing, as described below.
+
+## GitHub Actions for ATR
+
+The ASF Tooling team maintains GitHub Actions in [apache/tooling-actions](https://github.com/apache/tooling-actions) that call ATR on your workflow's behalf. Each action requests a GitHub OIDC token, which ATR uses to identify the repository and workflow, so you don't need to store any ATR credentials in your repository.
+
+| Action | What it does | Workflow path field |
+| --- | --- | --- |
+| [`upload-to-atr`](https://github.com/apache/tooling-actions/tree/main/upload-to-atr) | Uploads a directory of artifacts and signatures into a draft | Compose |
+| [`release-on-atr`](https://github.com/apache/tooling-actions/tree/main/release-on-atr) | Resolves the vote, announces the release, or both | Vote to resolve, finish to announce |
+| [`record-atr-distribution`](https://github.com/apache/tooling-actions/tree/main/record-atr-distribution) | Records a distribution made to an external platform such as PyPI (experimental) | Finish or compose |
+
+The workflow path field column shows which of the [workflow paths](#workflow-paths) your workflow has to be listed under for ATR to accept the call. A workflow that both resolves a vote and announces the release, for example, must be listed under both vote and finish.
+
+There are a few things to be aware of when using these actions:
+
+* The actions are not tagged, so you must refer to each one by a full commit hash, e.g. `apache/tooling-actions/upload-to-atr@<commit>`, and not by `@main`.
+* The job must have the `id-token: write` permission, otherwise the action can't request an OIDC token.
+* The workflow must run on a GitHub-hosted runner. ATR rejects tokens from self-hosted runners.
+* The workflow must be triggered by a committer whose GitHub account is linked to their ASF account, as ATR records the release operations against that committer.
+* `upload-to-atr` uploads the `dist` directory by default, which you can change with the `src` input. It also sends ATR the commit that the artifacts were built from, which you can override with the `source-commit` input.
+
+Each action's README has the full list of inputs and some example workflows. When you create a draft release in ATR, the upload page also shows an example workflow already filled in with your project name.
 
 ## How ATR detects automated release keys
 

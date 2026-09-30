@@ -418,6 +418,11 @@ async def checks_tally_for(
     return ChecksTally(counts, list(results))
 
 
+async def ci_builds_enabled(committee_key: str | None, caller_data: db.Session | None = None) -> bool:
+    """Whether the committee can make automated releases from CI."""
+    return committee_key in await automated_release_signing_committees(caller_data)
+
+
 async def count_checks_for_revision_by_status(
     status: sql.CheckResultStatus,
     release: sql.Release,
@@ -1436,8 +1441,7 @@ async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedPro
         )
     if project.committee is None:
         raise InteractionError(f"Project {project.key} has no committee")
-    github_automated_release_committees = await automated_release_signing_committees()
-    if project.committee.key not in github_automated_release_committees:
+    if not await ci_builds_enabled(project.committee.key):
         raise InteractionError(f"Project {project.key} is not in a committee that can make automated releases")
     return project
 

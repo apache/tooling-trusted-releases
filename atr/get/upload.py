@@ -23,8 +23,10 @@ import htpy
 import atr.blueprints.get as get
 import atr.constants as constants
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.compose as compose
+import atr.get.docs as docs
 import atr.get.keys as keys
 import atr.htm as htm
 import atr.models.attestable
@@ -53,6 +55,7 @@ async def selected(
         release = await session.release(project_key, version_key, data=data, with_project_release_policy=True)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
         svn_base_path = shared.upload.svn_import_base_path(release.project, shared.upload.SvnArea.DEV)
+        ci_builds_enabled = await interaction.ci_builds_enabled(release.project.committee_key, data)
 
     block = htm.Block()
 
@@ -145,11 +148,34 @@ async def selected(
 
     _render_ssh_keys_info(block, user_ssh_keys)
 
+    _render_github_workflow(block, release, ci_builds_enabled)
+
+    return await template.blank(
+        f"Upload files to {release.short_display_name}",
+        content=block.collect(),
+        javascripts=["upload-progress-ui", "upload-progress"],
+    )
+
+
+def _render_github_workflow(block: htm.Block, release: sql.Release, ci_builds_enabled: bool) -> None:
     block.h2(id="github-upload")["GitHub Workflow"]
     block.p[
         "If your project is approved for reproducible builds, you can ",
         "upload files into this draft from a GitHub repository using GitHub Actions.",
     ]
+    if not ci_builds_enabled:
+        block.div(".alert.alert-info")[
+            htm.p[
+                "CI builds are not enabled for this committee, so ATR will not accept uploads from a GitHub workflow."
+            ],
+            htm.p(".mb-0")[
+                "To enable them, your builds must be reproducible and approved by the ASF Security team, ",
+                "and your committee needs an automated release signing key from ASF Infrastructure. The ",
+                htm.a(href=util.as_url(docs.page, path="trusted-publishing"))["Trusted Publishing guide"],
+                " explains each step.",
+            ],
+        ]
+        return
     block.append(
         htm.ol[
             htm.li["Ensure GitHub Actions is enabled for your repository"],
@@ -183,7 +209,7 @@ jobs:
       - name: Upload to ATR
         uses: apache/tooling-actions/upload-to-atr@56c5b7b527dc3fc2f8156e2a00acd1a7cd7c8a05
         with:
-          project: {project_key!s}
+          project: {release.project.key!s}
           version: ${{{{github.ref_name}}}}
         """
     ]
@@ -191,18 +217,12 @@ jobs:
         "(assuming your",
         htm.code[" github.ref_name "],
         "resolves to match your version - currently",
-        htm.code[f" {version_key!s} "],
+        htm.code[f" {release.version!s} "],
         "and",
         htm.code[" build.sh "],
         " produces the files you want to upload)",
     ]
     block.p["You can also use the", htm.code[" Upload to ATR "], "step directly in an existing workflow."]
-
-    return await template.blank(
-        f"Upload files to {release.short_display_name}",
-        content=block.collect(),
-        javascripts=["upload-progress-ui", "upload-progress"],
-    )
 
 
 def _render_ssh_keys_info(block: htm.Block, user_ssh_keys: Sequence[sql.SSHKey]) -> None:

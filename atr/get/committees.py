@@ -94,7 +94,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         )
         flagged_keys = set(flagged_rows.scalars().all())
 
-        signing_committees = await interaction.automated_release_signing_committees(data)
+        ci_builds_enabled = await interaction.ci_builds_enabled(committee.key, data)
 
         latest_releases = await interaction.project_latest_releases(
             data, project_keys=[str(p.key) for p in committee.projects]
@@ -166,7 +166,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         key_lists=key_lists,
         revoked_certificates=revoked_certificates,
         artifact_counts=artifact_counts,
-        ci_builds_enabled=committee.key in signing_committees,
+        ci_builds_enabled=ci_builds_enabled,
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
