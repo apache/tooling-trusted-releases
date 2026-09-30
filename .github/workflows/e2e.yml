@@ -48,37 +48,87 @@ jobs:
 
       - name: Run end-to-end tests
         run: |
-          sh tests/run-e2e-ci.sh
+          set -o pipefail
+          sh tests/run-e2e-ci.sh 2>&1 | tee "${RUNNER_TEMP}/e2e.log"
 
       - name: Tear down any leftover containers
         if: always()
         run: |
           cd tests && docker compose down -v --remove-orphans
 
-      - name: Open an issue on e2e failure
-        if: failure()
+      # One tracking issue per branch - opened on the first failure, commented on
+      # whenever the set of failing tests changes, and closed by the next run
+      # that passes.
+      - name: Report the result on the tracking issue
+        if: success() || failure()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/${REPO}"
           title="Nightly e2e tests are failing [${BRANCH}]"
-          existing=$(curl -fsS \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${api}/issues?state=open&labels=testing&per_page=100")
-          if printf '%s' "$existing" | grep -Fq "\"${title}\""; then
-            # TODO(human): decide what a repeat failure should do.
-            echo "An open e2e failure issue already exists for ${BRANCH}; doing nothing."
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json")
+          send() {
+            curl -fsS -X "$1" "${auth[@]}" "${api}/$2" -d "$3" >/dev/null
+          }
+
+          # The number sits directly before the title in each issue, however the
+          # response happens to be laid out.
+          existing=$(curl -fsS "${auth[@]}" "${api}/issues?state=open&labels=testing&per_page=100" | tr -d '\n')
+          number=""
+          before='"number":[[:space:]]*([0-9]+),[[:space:]]*"title":[[:space:]]*'
+          if [[ "$existing" =~ ${before}"\"${title}\"" ]]
+          then
+            number="${BASH_REMATCH[1]}"
+          fi
+
+          if [ "$STATUS" = "success" ]
+          then
+            if [ -z "$number" ]
+            then
+              exit 0
+            fi
+            body="The e2e run passed on ${BRANCH} at commit ${SHA}, so closing this.\n\nRun: ${RUN_URL}"
+            send POST "issues/${number}/comments" "$(printf '{"body":"%s"}' "$body")"
+            send PATCH "issues/${number}" '{"state":"closed","state_reason":"completed"}'
             exit 0
           fi
-          body="The nightly e2e run failed on ${BRANCH} at commit ${SHA}. Run: ${RUN_URL}"
-          data=$(printf '{"title":"%s","body":"%s","labels":["testing"]}' "$title" "$body")
-          curl -fsS -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${api}/issues" -d "$data" >/dev/null
+
+          failed=$(grep -oE 'FAILED e2e/[^ ]+' "${RUNNER_TEMP}/e2e.log" 2>/dev/null \
+            | sed -e 's/^FAILED //' \
+            | LC_ALL=C sort -u || true)
+          # Each report carries a fingerprint of its failing tests, so a later
+          # run can tell whether it has anything new to say.
+          marker="e2e-failures: $(printf '%s' "$failed" | sha256sum | cut -d' ' -f1)"
+          body="The e2e run failed on ${BRANCH} at commit ${SHA}.\n\nRun: ${RUN_URL}"
+          if [ -n "$failed" ]
+          then
+            listed=$(printf '%s\n' "$failed" \
+              | sed -e 's/[\\"]/\\&/g' -e 's/^/\\n- `/' -e 's/$/`/' \
+              | tr -d '\n')
+            body="${body}\n\nFailing tests:${listed}"
+          fi
+          body="${body}\n\n<!-- ${marker} -->"
+
+          if [ -z "$number" ]
+          then
+            send POST "issues" "$(printf '{"title":"%s","body":"%s","labels":["testing"]}' "$title" "$body")"
+            exit 0
+          fi
+          # The issue comes first and its comments are oldest first, so the last
+          # fingerprint found is the most recent report.
+          last=$({
+            curl -fsS "${auth[@]}" "${api}/issues/${number}"
+            curl -fsS "${auth[@]}" "${api}/issues/${number}/comments?per_page=100"
+          } | grep -oE 'e2e-failures: [0-9a-f]{64}' | tail -n 1 || true)
+          if [ "$last" = "$marker" ]
+          then
+            echo "Same failures as last reported on #${number}, so not commenting."
+            exit 0
+          fi
+          send POST "issues/${number}/comments" "$(printf '{"body":"%s"}' "$body")"
