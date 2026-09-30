@@ -1,0 +1,84 @@
+name: End-to-end tests
+
+# The full e2e suite is too slow to run on every commit, so we run it nightly
+# against main instead. A failure raises a tracking issue rather than blocking
+# anything.
+
+on:
+  schedule:
+    # Nightly at 01:00 UTC.
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time - they share a compose project on the runner.
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  # Skip the night if this commit already passed, e.g. nothing landed since.
+  dedup:
+    uses: $/.github/workflows/dedup.yml
+    permissions:
+      actions: read
+    with:
+      workflow_file: e2e.yml
+
+  e2e:
+    needs: dedup
+    permissions:
+      contents: read
+      issues: write
+    # Only runs on schedule / dispatch, so always trusted - use our runner.
+    runs-on: self-hosted
+    # Manual dispatch always runs so we can force a re-run.
+    if: needs.dedup.outputs.already_built != 'true' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+    env:
+      # Keep clear of the compose project the Playwright step in build.yml uses,
+      # as its teardown would otherwise take our containers with it.
+      COMPOSE_PROJECT_NAME: atr-e2e-nightly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run end-to-end tests
+        run: |
+          sh tests/run-e2e-ci.sh
+
+      - name: Tear down any leftover containers
+        if: always()
+        run: |
+          cd tests && docker compose down -v --remove-orphans
+
+      - name: Open an issue on e2e failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${REPO}"
+          title="Nightly e2e tests are failing [${BRANCH}]"
+          existing=$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues?state=open&labels=testing&per_page=100")
+          if printf '%s' "$existing" | grep -Fq "\"${title}\""; then
+            # TODO(human): decide what a repeat failure should do.
+            echo "An open e2e failure issue already exists for ${BRANCH}; doing nothing."
+            exit 0
+          fi
+          body="The nightly e2e run failed on ${BRANCH} at commit ${SHA}. Run: ${RUN_URL}"
+          data=$(printf '{"title":"%s","body":"%s","labels":["testing"]}' "$title" "$body")
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues" -d "$data" >/dev/null

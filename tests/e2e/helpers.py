@@ -96,6 +96,13 @@ def route_logo(route: Route) -> None:
     route.fulfill(response=response)
 
 
+def static_text(request: APIRequestContext, path: str) -> str:
+    response = request.get(f"{_ATR_BASE_URL}/static/{path}")
+    if not response.ok:
+        raise RuntimeError(f"GET /static/{path} failed with status {response.status}")
+    return response.text()
+
+
 def visit(page: Page, path: str) -> None:
     page.goto(f"{_ATR_BASE_URL}{path}")
     page.wait_for_load_state()

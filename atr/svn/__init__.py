@@ -261,14 +261,16 @@ async def list_files(url: str, revision: int | None = None) -> list[str]:
     then hand the same revision to svnmucc as its baseline, so the commit fails out of
     date rather than acting on a tree that drifted between the listing and the change.
     """
-    arguments = ["list"]
+    target = url
+    arguments: list[str] = []
     if revision is not None:
         # Peg and operate at the one revision, the same shape export uses
-        arguments.extend(["-r", str(revision), f"{url}@{revision}"])
-    else:
-        arguments.append(url)
+        target = f"{url}@{revision}"
+        arguments.extend(["-r", str(revision)])
     arguments.extend(["--recursive", "--username", ASF_TOOL, "--password-from-stdin", "--non-interactive"])
     output = await _run_svn_command(
+        "list",
+        target,
         *arguments,
         timeout_seconds=LIST_TIMEOUT_SECONDS,
         stdin_bytes=_authentication(url),

@@ -136,6 +136,48 @@ async def test_list_files_authenticates(monkeypatch: pytest.MonkeyPatch) -> None
     )
 
 
+@requires_svn
+async def test_list_files_pinned_revision_of_deleted_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
+    repository = tmp_path / "repository"
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", f"file://{repository}", raising=False)
+    await svn.run_command("svnadmin", "create", str(repository))
+    url = f"file://{repository}/release"
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "artifact.tar.gz").write_bytes(b"artifact bytes")
+    await svn.run_command("svn", "import", str(source), url, "--non-interactive", "-m", "Import")
+    await svn.run_command("svn", "rm", url, "--non-interactive", "-m", "Remove")
+
+    assert await svn.list_files(url, 1) == ["artifact.tar.gz"]
+
+
+async def test_list_files_pins_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "file:///repo", raising=False)
+    run_command = mock.AsyncMock(return_value="a.tar.gz\n")
+    monkeypatch.setattr(svn, "run_command", run_command)
+
+    assert await svn.list_files("file:///repo/example", 42) == ["a.tar.gz"]
+
+    run_command.assert_awaited_once_with(
+        "svn",
+        "list",
+        "-r",
+        "42",
+        "--recursive",
+        "--username",
+        svn.ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        "file:///repo/example@42",
+        timeout_seconds=svn.LIST_TIMEOUT_SECONDS,
+        stdin_bytes=b"dummy",
+    )
+
+
 async def test_list_files_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_TOKEN", None, raising=False)
     run_command = mock.AsyncMock(return_value="")

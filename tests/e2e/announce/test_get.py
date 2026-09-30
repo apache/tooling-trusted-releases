@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pathlib
 import re
 
 import e2e.announce.helpers as helpers  # type: ignore[reportMissingImports]
+import e2e.helpers as root_helpers  # type: ignore[reportMissingImports]
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -58,7 +58,8 @@ def test_finish_refreshes_svn_and_announcement_status(page: Page, published: boo
         '<div id="finish-svn-publish"><div id="finish-svn-publishing">Being published</div></div>'
     )
     page.clock.install()
-    page.add_script_tag(path=pathlib.Path(__file__).parents[3] / "atr/static/js/src/finish-downloads.js")
+    # Fetched from the server, as the e2e image holds the tests but not the ATR source
+    page.add_script_tag(content=root_helpers.static_text(page.request, "js/src/finish-downloads.js"))
     page.evaluate('document.dispatchEvent(new Event("DOMContentLoaded"))')
     button = page.locator("#finish-announce")
     expect(button).to_have_attribute("aria-disabled", "true")

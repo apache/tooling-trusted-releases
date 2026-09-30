@@ -70,6 +70,8 @@ The actual test cases themselves tend to use helpers such as [`go_to_path`](/ref
 
 To run ATR end-to-end (e2e) tests, you must first have an OCI container runtime with Compose functionality, such as Docker or Podman, installed. You will also need a POSIX shell. You can then run `tests/run-e2e.sh` to run the entire e2e test suite.
 
+The e2e suite does not run on every commit. Instead, the `End-to-end tests` workflow runs it nightly against `main`, using `tests/run-e2e-ci.sh` to test the built image rather than the dev container, and opens an issue if it fails. The workflow can also be started manually from the Actions tab.
+
 ### Running unit tests
 
 Unit tests can be run separately from e2e tests:
