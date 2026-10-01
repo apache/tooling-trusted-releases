@@ -15,14 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import datetime
+import functools
+import pathlib
 import re
 import unittest.mock as mock
 from types import SimpleNamespace
 
 import pydantic
 import pytest
+import sqlalchemy.event
+import sqlalchemy.ext.asyncio
+import sqlmodel
 
+import atr.db as db
 import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -55,7 +62,9 @@ class _MockData:
         if cycle is not None and getattr(cycle, "cycle_key", None) is not None:
             self._cycles_by_key.setdefault(cycle.cycle_key, cycle)
         self.added: list[object] = []
+        self.begin_immediate = mock.AsyncMock()
         self.commit = mock.AsyncMock()
+        self.expire_all = mock.Mock()
         self.execute = mock.AsyncMock()
         result = mock.MagicMock()
         result.scalar_one_or_none.return_value = prior_event_id
@@ -371,6 +380,58 @@ async def test_edit_policy_rejects_unknown_template_variables():
         await writer.edit_policy(safe.ProjectKey("example"), bad)
 
 
+@pytest.mark.parametrize("existing_policy", [False, True])
+@pytest.mark.parametrize("web_form", [False, True])
+async def test_policy_edits_preserve_other_recipients(tmp_path: pathlib.Path, existing_policy: bool, web_form: bool):
+    engine = sqlalchemy.ext.asyncio.create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/policy.db")
+    try:
+        async with engine.begin() as connection:
+            await connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+            await connection.run_sync(sqlmodel.SQLModel.metadata.create_all)
+        async with db.Session(engine, expire_on_commit=False) as first, db.Session(engine) as second:
+            project = sql.Project(
+                key="example", name="Apache Example", committee=sql.Committee(key="alpha", name="Alpha")
+            )
+            if existing_policy:
+                project.release_policy = sql.ReleasePolicy()
+            first.add(project)
+            await first.commit()
+            cached = await second.project(key="example", _release_policy=True).demand(AssertionError("Missing project"))
+            assert (cached.release_policy is not None) == existing_policy
+
+            await first.begin_immediate()
+            write = mock.MagicMock()
+            write.authorisation.asf_uid = "alice"
+            await policy_writer.FoundationAdmin(write, mock.MagicMock(), first).edit_no_commit(
+                safe.ProjectKey("example"),
+                api.PolicyUpdateArgs.model_validate(
+                    {"project": "example", "vote_recipients": {"to": "dev@alpha.apache.org"}}
+                ),
+            )
+            await first.flush()
+            write_started = asyncio.Event()
+            connection = await second.connection()
+            sqlalchemy.event.listen(
+                connection.sync_connection,
+                "before_cursor_execute",
+                functools.partial(_signal_policy_write, write_started),
+            )
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(_edit_announce_policy(second, web_form))
+                await asyncio.wait_for(write_started.wait(), timeout=5)
+                await first.commit()
+        async with db.Session(engine) as data:
+            project = await data.project(key="example", _release_policy=True).demand(AssertionError("Missing project"))
+            assert project.release_policy is not None
+            assert project.release_policy.recipient_defaults == {
+                "vote": {"to": "dev@alpha.apache.org", "cc": [], "bcc": []},
+                "announce": {"to": "announce@apache.org", "cc": [], "bcc": []},
+            }
+            assert len(await data.release_policy().all()) == 1
+    finally:
+        await engine.dispose()
+
+
 def _cycle(project_key="example", cycle_key="example-default", eod=None, eos=None, eol=None, lts=False):
     return SimpleNamespace(
         project_key=project_key,
@@ -393,6 +454,27 @@ def _cycle_dates_form(*, project_key="example", cycle_key="example-default", eod
         eos=eos,
         eol=eol,
         lts=lts,
+    )
+
+
+async def _edit_announce_policy(data: db.Session, web_form: bool):
+    writer = _make_committee_member(data)
+    if web_form:
+        await writer.edit_finish(
+            shared_projects.FinishPolicyForm(
+                csrf_token="test",
+                project_key=safe.ProjectKey("example"),
+                announce_release_subject="",
+                announce_release_template="",
+                email_to="announce@apache.org",
+            )
+        )
+        return
+    await writer.edit_policy(
+        safe.ProjectKey("example"),
+        api.PolicyUpdateArgs.model_validate(
+            {"project": "example", "announce_recipients": {"to": "announce@apache.org"}}
+        ),
     )
 
 
@@ -425,6 +507,11 @@ def _release(version, project_key="example", cycle_key=None):
         project_key=project_key,
         cycle_key=cycle_key or f"{project_key}-default",
     )
+
+
+def _signal_policy_write(started: asyncio.Event, _connection, _cursor, statement: str, *_args):
+    if statement.startswith(("BEGIN IMMEDIATE", "INSERT", "UPDATE")):
+        started.set()
 
 
 def _version_scheme_form(

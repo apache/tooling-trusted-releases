@@ -236,6 +236,8 @@ class ReleaseManager(CommitteeParticipant):
         project_key: models.safe.ProjectKey,
         update: models.api.PolicyUpdateArgs,
     ) -> None:
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
         await self._edit_policy_no_commit(project_key, update)
         await self.__commit_and_log(str(project_key))
 
@@ -352,6 +354,8 @@ class ReleaseManager(CommitteeParticipant):
     async def __get_or_create_policy(
         self, project_key: models.safe.ProjectKey
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
         project, release_policy = await _get_or_create_policy(self.__data, project_key)
         if project.committee_key != self.__committee_key:
             raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
