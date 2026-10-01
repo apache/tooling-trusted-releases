@@ -366,6 +366,16 @@ def test_pubsub_payload_parses_valid_event():
     assert parsed.old_attributes.asf_banned == []
 
 
+def test_search_class_sets_timeouts():
+    with mock.patch.object(ldap.ldap3, "Connection") as connection:
+        with ldap.Search("dn", "pw"):
+            pass
+
+    assert connection.call_args.args[0].connect_timeout == 10
+    assert connection.call_args.kwargs["receive_timeout"] == 10
+    assert isinstance(connection.call_args.kwargs["receive_timeout"], int)
+
+
 def test_search_class_wraps_transport_errors():
     ldap_search = ldap.Search("dn", "pw")
     ldap_search._conn = MockRaisingConnection()
@@ -393,6 +403,20 @@ def test_search_core_2_sets_failed_on_no_such_object():
     params.connection = MockResultConnection(32)
     ldap._search_core_2(params, ["(uid=alice)"])
     assert params.failed is True
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_search_core_sets_timeouts(authenticated: bool):
+    params = ldap.SearchParameters(
+        bind_dn_from_config="dn" if authenticated else None,
+        bind_password_from_config="pw" if authenticated else None,
+    )
+    with mock.patch.object(ldap.ldap3, "Connection") as connection:
+        ldap._search_core(params)
+
+    assert connection.call_args.args[0].connect_timeout == 10
+    assert connection.call_args.kwargs["receive_timeout"] == 10
+    assert isinstance(connection.call_args.kwargs["receive_timeout"], int)
 
 
 def test_search_sets_failed_on_exception(monkeypatch: "MonkeyPatch"):

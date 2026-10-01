@@ -32,6 +32,7 @@ import atr.models.schema as schema
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
 LDAP_SERVER_HOST: Final[str] = "ldap-eu.apache.org"
+LDAP_TIMEOUT_SECONDS: Final[int] = 10
 LDAP_TOOLING_SERVICE_BASE: Final[str] = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
 
 RESULT_ATTRIBUTES: Final[list[str]] = [
@@ -98,7 +99,7 @@ class Search:
         self._conn: ldap3.Connection | None = None
 
     def __enter__(self):
-        server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config)
+        server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config, connect_timeout=LDAP_TIMEOUT_SECONDS)
         try:
             self._conn = ldap3.Connection(
                 server,
@@ -106,6 +107,7 @@ class Search:
                 password=self._bind_password,
                 auto_bind=True,
                 check_names=False,
+                receive_timeout=LDAP_TIMEOUT_SECONDS,
             )
         except ldap3.core.exceptions.LDAPException as e:
             raise UnavailableError(str(e)) from e
@@ -413,7 +415,9 @@ def _search_core(params: SearchParameters) -> None:
     params.failed = False
     params.connection = None
 
-    server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config, get_info=ldap3.ALL)
+    server = ldap3.Server(
+        LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config, get_info=ldap3.ALL, connect_timeout=LDAP_TIMEOUT_SECONDS
+    )
     params.srv_info = repr(server)
 
     if params.bind_dn_from_config and params.bind_password_from_config:
@@ -423,9 +427,12 @@ def _search_core(params: SearchParameters) -> None:
             password=params.bind_password_from_config,
             auto_bind=True,
             check_names=False,
+            receive_timeout=LDAP_TIMEOUT_SECONDS,
         )
     else:
-        params.connection = ldap3.Connection(server, auto_bind=True, check_names=False)
+        params.connection = ldap3.Connection(
+            server, auto_bind=True, check_names=False, receive_timeout=LDAP_TIMEOUT_SECONDS
+        )
 
     filters: list[str] = []
     if params.uid_query:
