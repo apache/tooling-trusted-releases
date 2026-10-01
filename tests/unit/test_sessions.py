@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import time
 import types
 import unittest.mock as mock
 
@@ -149,6 +150,20 @@ async def test_create_validate_destroy_lifecycle(store):
 
     await store.destroy(hsid)
     assert await store.validate(hsid) is None
+
+
+async def test_current_and_validate_expire_sessions_idle_for_three_days(store):
+    now = time.time()
+    created = now - 4 * 86400
+    cutoff = now - 3 * 86400
+    async with db.session() as data:
+        data.add(sql.UserSession(sid_hash="idle", uid="alice", cts=created, uts=cutoff - 60))
+        data.add(sql.UserSession(sid_hash="active", uid="alice", cts=created, uts=cutoff + 60))
+        await data.commit()
+
+    assert [session.sid_hash for session in await store.current()] == ["active"]
+    assert await store.validate("idle") is None
+    assert await store.validate("active") is not None
 
 
 async def test_destroy_does_not_allow_reactivation(store):

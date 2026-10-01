@@ -35,7 +35,7 @@ MutableSessionField = Literal["downgrade_admin_to_user", "last_account_check"]
 
 _MUTABLE_SESSION_FIELDS: Final[set[str]] = set(get_args(MutableSessionField))
 _SESSION_DATA_FIELDS: Final[set[str]] = {f for f in sql.UserSession.model_fields if f not in {"sid_hash", "cts"}}
-_SESSION_IDLE_TIMEOUT: Final[int] = 86400 * 7
+_SESSION_IDLE_TIMEOUT: Final[int] = 86400 * 3
 
 if not _MUTABLE_SESSION_FIELDS.issubset(sql.UserSession.model_fields):
     raise RuntimeError(

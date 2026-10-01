@@ -87,7 +87,7 @@ Only the identifier travels in the cookie; all other session state is server-sid
 
 A session can expire in two independent ways:
 
-* **Idle timeout.** A session unused for more than seven days
+* **Idle timeout.** A session unused for more than three days
   (`_SESSION_IDLE_TIMEOUT`) is treated as expired. Because `validate` refreshes
   `uts` on every request, this is a sliding window measured from the last
   activity.
@@ -96,9 +96,10 @@ A session can expire in two independent ways:
   It defaults to 72 hours, and can be changed, or disabled entirely by setting it
   to zero.
 
-With the default configuration the 72-hour absolute cap is reached before the
-seven-day idle limit, so in practice a session lasts at most 72 hours. When
-`validate` finds an expired session, it deletes the row.
+With the default configuration both limits are three days, so a session lasts at
+most 72 hours regardless of activity. The idle limit takes effect when
+`MAX_SESSION_AGE` is raised or disabled. When `validate` finds an expired session,
+it deletes the row.
 
 ## Concurrent sessions and revocation
 
