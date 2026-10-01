@@ -15,7 +15,7 @@
 
 ## Running Playwright tests
 
-We currently only have end-to-end browser tests, but we plan to expand these as part of [Issue #209](https://github.com/apache/tooling-trusted-releases/issues/209). Meanwhile, these browser tests serve as a simple consistency check when developing ATR.
+The Playwright browser tests in `playwright/test.py` serve as a consistency check when developing ATR. ATR also has unit tests in `tests/unit/` and pytest end-to-end tests in `tests/e2e/`.
 
 To run the tests, you will need Docker. Other OCI runtimes should work, but you will need to edit the test scripts accordingly.
 
@@ -52,7 +52,7 @@ The tests should, as of 14 Oct 2025, take about 40 to 50 seconds to run in Docke
 
 ## Creating Playwright tests
 
-You can add tests to `playwright/test.py`. If you're feeling particularly adventurous, you can add separate unit tests etc., but it's okay to add tests only to the Playwright test script until [Issue #209](https://github.com/apache/tooling-trusted-releases/issues/209) is resolved.
+Add tests for the Playwright script to `playwright/test.py`. Add unit tests to `tests/unit/` and feature-based end-to-end tests to `tests/e2e/` as appropriate.
 
 ### How the tests work
 
