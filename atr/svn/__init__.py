@@ -179,8 +179,6 @@ def error_message(exc: CommandExecutionError) -> str:
         if code in _CONNECTION_ERROR_CODES:
             return f"{summary} ({code}). {_STATUS_HINT}"
         return f"{summary} ({code})"
-    if detail := _sanitised_first_line(exc.output):
-        return detail
     return f"svn exited with code {exc.returncode}"
 
 
@@ -522,18 +520,6 @@ async def _run_svnmucc_command(
     *args: str, timeout_seconds: float | None = None, stdin_bytes: bytes | None = None
 ) -> str:
     return await run_command("svnmucc", *args, timeout_seconds=timeout_seconds, stdin_bytes=stdin_bytes)
-
-
-def _sanitised_first_line(output: str) -> str:
-    lines = output.strip().splitlines()
-    if not lines:
-        return ""
-    line = lines[0].strip()
-    if publish_url := config.get().SVN_PUBLISH_URL:
-        line = line.replace(publish_url.rstrip("/"), "")
-    if len(line) > 200:
-        line = line[:197] + "..."
-    return line
 
 
 async def _terminate_process(

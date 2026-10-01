@@ -27,17 +27,11 @@ import atr.config as config
 import atr.svn as svn
 
 
-def test_error_message_falls_back_to_sanitised_first_line(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/atr", raising=False
-    )
+def test_error_message_omits_unknown_error_details() -> None:
     exc = svn.CommandExecutionError(
-        1, "svn: E999999: Strange failure at 'https://internal.example.invalid/repos/dist/atr/project'\nmore detail"
+        1, "svn: E999999: Failure at https://internal.example.invalid/repo using /var/private/svn/db\nmore detail"
     )
-    message = svn.error_message(exc)
-    assert "internal.example.invalid" not in message
-    assert "Strange failure" in message
-    assert "more detail" not in message
+    assert svn.error_message(exc) == "svn exited with code 1"
 
 
 def test_error_message_maps_connection_error() -> None:

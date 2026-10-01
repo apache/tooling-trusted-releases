@@ -24,7 +24,6 @@ import contextlib
 import dataclasses
 import datetime
 import pathlib
-import re
 import stat
 import tempfile
 from typing import TYPE_CHECKING, Any, Final
@@ -277,7 +276,7 @@ def _unpublish_svn_error(exc: svn.CommandExecutionError, context: str) -> Except
     # A connection wobble or a stale baseline - a concurrent commit moved a path since we
     # listed it - clears on a retry, so defer it; anything else is terminal.
     message = svn.error_message(exc)
-    log.error(f"SVN unpublish {context}: {message}")
+    log.error(f"SVN unpublish {context}: {exc.output}")
     if svn.retryable_error(exc):
         return datatypes.RetryableError(message)
     return datatypes.FailedError(message)
@@ -1405,7 +1404,7 @@ class ReleaseManager(CommitteeParticipant):
         try:
             revision = await svn.publish_release(preview_path.path, internal_url, task_args.asf_uid, log_message)
         except svn.CommandExecutionError as exc:
-            log.error(f"SVN publish failed: {svn.error_message(exc)}")
+            log.error(f"SVN publish failed: {exc.output}")
             if "E160020" not in exc.output:
                 raise datatypes.FailedError(svn.error_message(exc)) from None
             healed = await self.__already_published_result(
@@ -1415,12 +1414,7 @@ class ReleaseManager(CommitteeParticipant):
             )
             if healed is not None:
                 return healed
-            message = "Release file already exists in SVN"
-            if (match := re.search(r"path '([^']+)'", exc.output)) is not None:
-                message = f"{message}: {match.group(1)}"
-                if svn_publish_url := config.get().SVN_PUBLISH_URL:
-                    message = message.replace(svn_publish_url, "")
-            raise datatypes.FailedError(message) from None
+            raise datatypes.FailedError("Release file already exists in SVN") from None
         if revision is None:
             raise datatypes.FailedError("SVN publish did not return a Committed revision line")
         return results.SvnPublish(
@@ -2469,6 +2463,7 @@ class FoundationAdmin(FoundationCommitter):
             try:
                 await svn.export(internal_url, task_args.svn_revision, export_path, timeout_seconds=480.0)
             except svn.CommandExecutionError as exc:
+                log.error(f"SVN publication export failed: {exc.output}")
                 raise datatypes.FailedError(
                     f"The SVN publication could not be exported: {svn.error_message(exc)}"
                 ) from None
