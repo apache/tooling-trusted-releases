@@ -518,11 +518,10 @@ def to_safe_path_list(v: Any) -> list[safe.RelPath]:
 
 
 def to_str_list(v: Any) -> list[str]:
-    # TODO: Might need to handle the empty case
     if isinstance(v, list):
-        return [str(item) for item in v]
+        return [str(item) for item in v if item != ""]
     if isinstance(v, str):
-        return [v]
+        return [v] if v else []
     raise ValueError(f"Expected a string or list of strings, got {type(v).__name__}")
 
 
