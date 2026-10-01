@@ -41,7 +41,7 @@ INPUT_EXTRA_ARGS: Final[list[str]] = [
     "unsuffixed_file_hash",
     "unsuffixed_file_uploaders",
 ]
-CHECK_VERSION: Final[str] = "13"
+CHECK_VERSION: Final[str] = "14"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -415,6 +415,16 @@ def _key_refusal_result(
             num_committee_keys=num_committee_keys,
             key_has_apache_uid=key_has_apache_uid,
         )
+    if (status.algorithm is not None) and (
+        shortfall := pgp.signing_strength_shortfall(status.algorithm, status.length_bits)
+    ):
+        return _weak_key_result(
+            matched_key=matched_key,
+            signature_info=signature_info,
+            shortfall=shortfall,
+            num_committee_keys=num_committee_keys,
+            key_has_apache_uid=key_has_apache_uid,
+        )
     return None
 
 
@@ -542,6 +552,33 @@ def _unidentified_key_result(
         "error_kind": "unidentified_key",
         "hint": "Sign the artifact with a key which records its own identity in the signature, then",
         "hint_link_text": "check your keys",
+        "hint_link": "/keys",
+        "debug_info": debug_info,
+    }
+
+
+def _weak_key_result(
+    *,
+    matched_key: openpgp.composed.SignedPublicKey,
+    signature_info: openpgp.packet.Signature,
+    shortfall: str,
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any]:
+    debug_info = _debug_info(
+        key=matched_key,
+        signature_info=signature_info,
+        status="Invalid: Key below minimum strength",
+        valid=False,
+        num_committee_keys=num_committee_keys,
+        key_has_apache_uid=key_has_apache_uid,
+    )
+    return {
+        "verified": False,
+        "error": "Signing key is below the minimum strength for releases",
+        "error_kind": "weak_key",
+        "hint": f"{shortfall}. Generate a stronger key (4096 bit RSA is recommended), re-sign, and",
+        "hint_link_text": "add your new key",
         "hint_link": "/keys",
         "debug_info": debug_info,
     }

@@ -30,6 +30,8 @@ Every release artifact must carry a detached signature, so as a release manager 
 
 Add your public key on the [keys page](/keys). For a quick guide to generating a key and signing your files, see [Signing artifacts](signing-artifacts). Projects whose builds are reproducible can sign automatically during a GitHub Actions workflow rather than signing each file by hand; see [Trusted Publishing](trusted-publishing).
 
+ATR follows the ASF Infra [guidance on key strength](https://infra.apache.org/release-signing.html#note). New keys must be RSA of at least 4096 bits, or an ECDSA or EdDSA key such as Ed25519, and ATR rejects one that falls short of this. Pre-existing keys may continue to be used if they are RSA of at least 2048 bits. DSA keys, and RSA keys shorter than 2048 bits, can't be added on the keys page. Such a key may still appear in your committee's `KEYS` file, but ATR won't accept it as the signer of a release.
+
 Keep your private key secure, and never upload it or store it on untrusted equipment. The email address in your key is publicly associated with the releases you sign, so treat it as a lasting public record.
 
 ## Ways to work with ATR

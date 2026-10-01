@@ -733,6 +733,36 @@ def test_key_length_returns_dsa_bits() -> None:
     assert length == 3072
 
 
+def test_validate_signing_floor_ignores_weak_keys_which_cannot_sign(monkeypatch) -> None:
+    facts = [
+        _signing_key_facts("aa", algorithm="rsa", length_bits=4096, can_sign=True, revoked=False),
+        _signing_key_facts("bb", algorithm="rsa", length_bits=1024, can_sign=False, revoked=False),
+        _signing_key_facts("cc", algorithm="dsa", length_bits=1024, can_sign=True, revoked=True),
+    ]
+    monkeypatch.setattr(pgp, "signing_key_facts", lambda key: facts)
+
+    keys_writer._validate_signing_floor(SimpleNamespace())
+
+
+def test_validate_signing_floor_rejects_a_live_weak_signing_subkey(monkeypatch) -> None:
+    facts = [
+        _signing_key_facts("aa", algorithm="rsa", length_bits=4096, can_sign=False, revoked=False),
+        _signing_key_facts("bb", algorithm="rsa", length_bits=1024, can_sign=True, revoked=False),
+    ]
+    monkeypatch.setattr(pgp, "signing_key_facts", lambda key: facts)
+
+    with pytest.raises(ValueError, match="Signing key BB: RSA key of 1024 bits is below the minimum of 2048 bits"):
+        keys_writer._validate_signing_floor(SimpleNamespace())
+
+
+def test_validate_signing_floor_rejects_a_live_dsa_signing_key_of_any_size(monkeypatch) -> None:
+    facts = [_signing_key_facts("aa", algorithm="dsa", length_bits=3072, can_sign=True, revoked=False)]
+    monkeypatch.setattr(pgp, "signing_key_facts", lambda key: facts)
+
+    with pytest.raises(ValueError, match="Signing key AA: DSA keys may no longer sign releases"):
+        keys_writer._validate_signing_floor(SimpleNamespace())
+
+
 async def test_keys_file_text_rearmors_stored_unpadded_certificates(sqlite_data):
     originals = [pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_PRIMARY_UID_PUBLIC_KEY_ASC]
     stored = ["\n".join(line for line in block.splitlines() if not line.startswith("=")) + "\n" for block in originals]
@@ -1115,6 +1145,22 @@ def _signing_certificate(
         secondary_declared_uids=[],
         apache_uid=apache_uid,
         ascii_armored_key=armored or "-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
+    )
+
+
+def _signing_key_facts(
+    fingerprint: str, *, algorithm: str, length_bits: int, can_sign: bool, revoked: bool
+) -> pgp.SigningKeyFacts:
+    return pgp.SigningKeyFacts(
+        fingerprint=fingerprint,
+        key_id=fingerprint,
+        is_primary=False,
+        algorithm=algorithm,
+        length_bits=length_bits,
+        created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+        expires=None,
+        revoked=revoked,
+        can_sign=can_sign,
     )
 
 

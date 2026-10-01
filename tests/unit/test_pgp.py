@@ -312,6 +312,26 @@ def test_fragment_placements_refuses_skippable_packets() -> None:
     assert (10, b"PGP") not in pgp._frames(pgp._dearmored(pgp.merge_certificate_blocks([pgp._armored(spliced)])))
 
 
+@pytest.mark.parametrize(
+    ("algorithm", "length_bits", "refused"),
+    [
+        ("rsa", 1024, True),
+        ("rsa", 2047, True),
+        ("rsa", 2048, False),
+        ("rsa-sign", 1024, True),
+        ("rsa", None, True),
+        ("dsa", 1024, True),
+        ("dsa", 3072, True),
+        ("ed25519", 255, False),
+        ("ecdsa", 256, False),
+    ],
+)
+def test_signing_strength_shortfall_refuses_dsa_and_short_rsa_keys(
+    algorithm: str, length_bits: int | None, refused: bool
+) -> None:
+    assert (pgp.signing_strength_shortfall(algorithm, length_bits) is not None) is refused
+
+
 def test_merge_certificate_blocks_drops_local_certifications() -> None:
     merged = pgp.merge_certificate_blocks([pgp_fixtures.LOCAL_CERTIFICATION_PUBLIC_KEY_ASC])
 
@@ -396,6 +416,18 @@ def test_signing_key_status_expiry_ignores_a_later_primary_expiry() -> None:
     assert primary_expires is not None
     assert primary_expires.year == pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_EXPIRES_YEAR
     assert status.expires != primary_expires
+
+
+def test_signing_key_status_reports_the_strength_of_the_issuing_key() -> None:
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
+    facts = {facts.fingerprint: facts for facts in pgp.signing_key_facts(key)}
+
+    for fingerprint in (
+        pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT,
+        pgp_fixtures.EXPIRED_SUBKEY_SIGNING_FINGERPRINT,
+    ):
+        status = pgp.signing_key_status(key, {fingerprint}, set())
+        assert (status.algorithm, status.length_bits) == (facts[fingerprint].algorithm, facts[fingerprint].length_bits)
 
 
 def test_signing_key_status_reports_an_issuer_naming_no_held_key_as_unidentified() -> None:

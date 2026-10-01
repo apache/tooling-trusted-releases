@@ -25,6 +25,9 @@ from typing import Final, Literal
 
 import openpgp
 
+# The floor below which no key may sign a release, however old it is
+MINIMUM_SIGNING_BITS: Final[int] = 2048
+
 _CERTIFICATION_REVOCATION_SIGNATURE_TYPE: Final[str] = "cert-revocation"
 # The self-certifications which carry key expiry and capabilities. A revocation sits alongside these
 # on a user binding, but declares neither, so it can't stand in for one
@@ -37,6 +40,8 @@ _SUBKEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "subkey-revocation"
 
 _ARMOR_BEGIN: Final[str] = "-----BEGIN PGP PUBLIC KEY BLOCK-----"
 _ARMOR_END: Final[str] = "-----END PGP PUBLIC KEY BLOCK-----"
+# Elliptic curve sizes aren't comparable to RSA ones, so the signing floor only applies here
+_RSA_SIGNING_ALGORITHMS: Final[frozenset[str]] = frozenset({"rsa", "rsa-sign"})
 _PRIMARY_KEY_TAG: Final[int] = 6
 _PUBLIC_SUBKEY_TAG: Final[int] = 14
 _SIGNATURE_TAG: Final[int] = 2
@@ -90,6 +95,9 @@ class SigningKeyStatus:
     can_sign: bool
     # True where the issuing key carries a revocation, or hangs beneath a primary which does
     revoked: bool
+    # The algorithm and size of the issuing key, not the primary above it
+    algorithm: str | None
+    length_bits: int | None
 
 
 def apply_delta(state: frozenset[Placement], deletions: bytes | None, additions: bytes | None) -> frozenset[Placement]:
@@ -445,6 +453,8 @@ def signing_key_status(
             can_sign=subkey.key.algorithm.can_sign() and _declares_signing(binding_signature),
             # Revoking the primary revokes everything beneath it, so a live subkey binding isn't enough
             revoked=primary_revoked or _subkey_is_revoked(primary, subkey),
+            algorithm=subkey.key.public_key_algorithm,
+            length_bits=public_params_bits(subkey.key.public_params),
         )
 
     if _issuer_is_primary(key, issuer_fingerprints, issuer_key_ids):
@@ -454,11 +464,35 @@ def signing_key_status(
             expires=key_expires_at(key, at=at),
             can_sign=primary.algorithm.can_sign() and _declares_signing(_effective_self_signature(key, timestamp)),
             revoked=primary_revoked,
+            algorithm=key.public_key_algorithm,
+            length_bits=public_params_bits(key.public_params),
         )
 
     # Naming no key we hold is not the same as naming the primary, and a signature we can't attribute
     # is one we can't judge, so report it as such rather than borrowing the primary's answer
-    return SigningKeyStatus(identified=False, fingerprint=None, expires=None, can_sign=False, revoked=False)
+    return SigningKeyStatus(
+        identified=False,
+        fingerprint=None,
+        expires=None,
+        can_sign=False,
+        revoked=False,
+        algorithm=None,
+        length_bits=None,
+    )
+
+
+def signing_strength_shortfall(algorithm: str, length_bits: int | None) -> str | None:
+    """Why a key is too weak to sign a release, or None where it is strong enough."""
+    if algorithm == "dsa":
+        return "DSA keys may no longer sign releases"
+    if algorithm not in _RSA_SIGNING_ALGORITHMS:
+        return None
+    # A size we can't read is one we can't vouch for
+    if length_bits is None:
+        return "RSA key size could not be read"
+    if length_bits < MINIMUM_SIGNING_BITS:
+        return f"RSA key of {length_bits} bits is below the minimum of {MINIMUM_SIGNING_BITS} bits"
+    return None
 
 
 def user_id_texts(block: str) -> list[str]:

@@ -63,6 +63,15 @@ async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
         ],
     ]
     page.div(".alert.alert-info")[
+        htm.p(".fw-semibold.mb-2")["What kind of key should you use?"],
+        htm.p(".mb-0")[
+            f"4096 bit RSA is recommended for new keys. DSA keys, and RSA keys under {pgp.MINIMUM_SIGNING_BITS} bits, ",
+            "can't sign releases, so this form will not accept them. See the ",
+            htm.a(href="https://infra.apache.org/release-signing.html#note")["ASF release signing guidance"],
+            " for details.",
+        ],
+    ]
+    page.div(".alert.alert-info")[
         htm.p(".fw-semibold.mb-2")["Which email address should your key use?"],
         htm.p[
             "Your key's user ID must contain an email address that ATR can link to an ASF account. ",

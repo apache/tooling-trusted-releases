@@ -16,6 +16,7 @@
 # under the License.
 
 import base64
+import dataclasses
 import pathlib
 
 import openpgp
@@ -23,6 +24,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.pgp as pgp
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature_check
 import atr.tasks.task as task
@@ -354,6 +356,30 @@ def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pat
 
     assert result["verified"] is False
     assert result["error_kind"] == "key_expired"
+
+
+def test_check_core_logic_rejects_signature_from_a_key_below_the_signing_floor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
+    signing_key_status = pgp.signing_key_status
+
+    def weak_signing_key_status(*args, **kwargs) -> pgp.SigningKeyStatus:
+        return dataclasses.replace(signing_key_status(*args, **kwargs), algorithm="rsa", length_bits=1024)
+
+    monkeypatch.setattr(pgp, "signing_key_status", weak_signing_key_status)
+
+    result = signature_check._check_core_logic_verify_signature(
+        signature_path=signature_path,
+        artifact_path=artifact_path,
+        committee_keys=[(_PRIMARY_FINGERPRINT, _EMBEDDED_PUBLIC_KEY_ASC)],
+        apache_uid_map={_PRIMARY_FINGERPRINT: True},
+        uploader_fingerprints={_PRIMARY_FINGERPRINT},
+    )
+
+    assert result["verified"] is False
+    assert result["error_kind"] == "weak_key"
+    assert result["hint"].startswith("RSA key of 1024 bits is below the minimum of 2048 bits.")
 
 
 def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: pathlib.Path) -> None:

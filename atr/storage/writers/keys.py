@@ -741,6 +741,8 @@ class FoundationCommitter(GeneralPublic):
         public_key = public_keys[0]
         key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
         _validate_key_strength(public_key)
+        # KEYS file imports skip this, as a weak key there can't sign a release anyway
+        _validate_signing_floor(public_key)
         return datatypes.Key(
             status=datatypes.KeyStatus.PARSED,
             key_model=key_model,
@@ -1621,3 +1623,13 @@ def _validate_key_strength(key: openpgp.composed.SignedPublicKey) -> None:
             )
         if (algorithm not in _RSA_ALGORITHMS) and (length < _EC_MINIMUM_BITS):
             raise ValueError(f"Elliptic curve key size {length} bits is below the minimum of {_EC_MINIMUM_BITS} bits")
+
+
+def _validate_signing_floor(key: openpgp.composed.SignedPublicKey) -> None:
+    for facts in pgp.signing_key_facts(key):
+        if (not facts.can_sign) or facts.revoked:
+            continue
+        if shortfall := pgp.signing_strength_shortfall(facts.algorithm, facts.length_bits):
+            raise ValueError(
+                f"Signing key {facts.fingerprint.upper()}: {shortfall}; 4096 bit RSA is recommended for new keys"
+            )
