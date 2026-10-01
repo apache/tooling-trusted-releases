@@ -167,8 +167,12 @@ async def test_announce_local_blocks_when_export_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     release_path = local_check_setup(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
-    error = announce_writer.svn.CommandExecutionError(1, "svn: E170013: Unable to connect to a repository")
+    error = announce_writer.svn.CommandExecutionError(
+        1, "svn: E999999: Failed at https://internal.example.invalid/repo in /private/svn/repo"
+    )
     monkeypatch.setattr(announce_writer.svn, "export", mock.AsyncMock(side_effect=error))
+    warning = mock.Mock()
+    monkeypatch.setattr(announce_writer.log, "warning", warning)
     writer = object.__new__(announce_writer.ReleaseManager)
     check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
 
@@ -176,7 +180,8 @@ async def test_announce_local_blocks_when_export_fails(
         await check(release_path, "svn://127.0.0.1:3690/atr-dev-publish/tooling", 3)
 
     assert info.value.status == 409
-    assert "could not be checked" in str(info.value)
+    assert str(info.value) == "The local SVN publish repository could not be checked."
+    warning.assert_called_once_with(f"SVN export failed for revision 3: {error}")
 
 
 async def test_announce_local_blocks_when_file_differs(

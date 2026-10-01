@@ -410,8 +410,9 @@ class ReleaseManager(CommitteeParticipant):
             try:
                 await svn.export(internal_url, svn_revision, export_path)
             except svn.CommandExecutionError as exc:
+                log.warning(f"SVN export failed for revision {svn_revision}: {exc}")
                 raise storage.AccessError(
-                    f"The local SVN publish repository could not be checked: {svn.error_message(exc)}",
+                    "The local SVN publish repository could not be checked.",
                     status=409,
                 ) from None
             differences = await util.tree_differences(unfinished_path.path, export_path)
