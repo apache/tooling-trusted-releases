@@ -27,7 +27,7 @@ available and the announcement has been sent, the release is published to the
 [Release catalog](release-catalog).
 
 For a step by step walkthrough of this phase with screenshots, see the
-[Finish section of the tutorial](/tutorial#finish). You need to be logged in to ATR to view it.
+[Finish section of the tutorial](/tutorial#finish).
 
 ## Responsibilities
 

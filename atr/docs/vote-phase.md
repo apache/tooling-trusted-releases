@@ -26,9 +26,8 @@ every voter reviews the same thing. A vote may be canceled and restarted if a pr
 light. Once a vote passes, the candidate is ready to publish in the [finish phase](finish-phase).
 
 For a step by step walkthrough of this phase with screenshots, see the
-[Vote section of the tutorial](/tutorial#vote). You need to be logged in to ATR to view it. The
-tutorial follows a release by a top level project, with the vote held on a mailing list. A
-podling release is voted on twice, as described in
+[Vote section of the tutorial](/tutorial#vote). The tutorial follows a release by a top level
+project, with the vote held on a mailing list. A podling release is voted on twice, as described in
 [Podling releases](podling-releases#the-two-rounds-of-voting).
 
 ## Responsibilities

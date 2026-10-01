@@ -30,7 +30,7 @@ vote. The candidate is held in ATR throughout, and nothing is committed to the A
 distribution servers until the [finish phase](finish-phase).
 
 For a step by step walkthrough of this phase with screenshots, see the
-[Compose section of the tutorial](/tutorial#compose). You need to be logged in to ATR to view it.
+[Compose section of the tutorial](/tutorial#compose).
 
 ## Responsibilities
 

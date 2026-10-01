@@ -127,5 +127,4 @@ import changes made to the file in SVN (the default), or the committee can uploa
 ## Tutorial
 
 We offer an [ATR tutorial](/tutorial) for release managers, which walks through the compose, vote, and finish phases
-with screenshots. Its [Projects section](/tutorial#projects) covers creating and configuring a project. You need to be
-logged in to ATR to view the tutorial.
+with screenshots. Its [Projects section](/tutorial#projects) covers creating and configuring a project.
