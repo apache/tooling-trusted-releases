@@ -1718,7 +1718,13 @@ class Release(sqlmodel.SQLModel, table=True):
     )
 
     # The combination of key and version must be unique
-    __table_args__ = (sqlmodel.UniqueConstraint("project_key", "version", name="unique_project_version"),)
+    __table_args__ = (
+        sqlmodel.UniqueConstraint("project_key", "version", name="unique_project_version"),
+        sqlalchemy.CheckConstraint(
+            "NOT expedited OR vote_mode IS NULL OR vote_mode = 'TRUSTED'",
+            name="expedited_vote_mode_trusted",
+        ),
+    )
 
     @property
     def committee(self) -> Committee | None:

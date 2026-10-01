@@ -345,6 +345,41 @@ async def test_cast_trusted_rolls_back_duplicate_receipt_id(sqlite_sessionmaker,
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("update", [False, True])
+@pytest.mark.parametrize(
+    ("expedited", "vote_mode", "valid"),
+    [
+        (False, None, True),
+        (False, sql.VoteMode.EMAIL, True),
+        (False, sql.VoteMode.MANUAL, True),
+        (False, sql.VoteMode.TRUSTED, True),
+        (True, None, True),
+        (True, sql.VoteMode.EMAIL, False),
+        (True, sql.VoteMode.MANUAL, False),
+        (True, sql.VoteMode.TRUSTED, True),
+    ],
+)
+async def test_expedited_vote_mode_constraint(sqlite_sessionmaker, update, expedited, vote_mode, valid) -> None:
+    async with sqlite_sessionmaker() as data:
+        release_model = sql.Release(
+            project_key="project",
+            version="1.0.0",
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        )
+        data.add(release_model)
+        if update:
+            await data.commit()
+        release_model.expedited = expedited
+        release_model.vote_mode = vote_mode
+        if valid:
+            await data.commit()
+            return
+        with pytest.raises(sqlalchemy.exc.IntegrityError, match="ck_release_expedited_vote_mode_trusted"):
+            await data.commit()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.parametrize("voted_revision_number", [None, "00001", "00002"])
 async def test_podling_second_round_preserves_voted_revision(
