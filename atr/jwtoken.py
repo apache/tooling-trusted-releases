@@ -81,7 +81,7 @@ async def authenticate() -> dict[str, Any]:
         raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
     except jwt.PyJWTError as exc:
         log.auth_failure("jwt_token", "jwt_token_invalid_2")
-        raise base.ASFQuartException(f"Invalid Bearer JWT: {exc}", errorcode=401) from exc
+        raise base.ASFQuartException("Invalid Bearer JWT", errorcode=401) from exc
 
     if config.get().ADMIN_ONLY and (not claims.get("atr_sys")) and (not user.is_admin(claims.get("sub"))):
         log.auth_failure("jwt_token", "jwt_admin_only")

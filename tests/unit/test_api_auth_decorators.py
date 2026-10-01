@@ -24,10 +24,16 @@ The distribution test below is a heads-up against an endpoint's scheme silently
 changing.
 """
 
+import unittest.mock as mock
+
+import asfquart.base as base
+import jwt
 import pytest
+import quart
 
 import atr.blueprints.api as api_blueprint
 import atr.blueprints.api_auth as api_auth
+import atr.jwtoken as jwtoken
 
 
 def test_expected_scheme_distribution() -> None:
@@ -105,6 +111,19 @@ async def test_bearer_endpoint_rejects_unauthenticated_request(
     assert response.status_code == 401, (
         f"bearer endpoint did not return 401 without credentials: status={response.status_code}"
     )
+
+
+async def test_bearer_jwt_error_detail_is_not_returned(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(jwtoken, "verify", mock.AsyncMock(side_effect=jwt.PyJWTError("sensitive verifier detail")))
+    app = quart.Quart(__name__)
+    app.add_url_rule("/", view_func=jwtoken.authenticate)
+    app.register_error_handler(base.ASFQuartException, api_blueprint._handle_asfquart_exception)
+
+    response = await app.test_client().get("/", headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 401
+    assert (await response.get_json())["error"] == "Invalid Bearer JWT"
+    assert "sensitive verifier detail" not in await response.get_data(as_text=True)
 
 
 # Note: there is no HTTP-level negative test for the body_oidc scheme here.
