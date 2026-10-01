@@ -24,7 +24,9 @@ authenticate_body are the enforcers the route factory calls.
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import enum
+import time
 from typing import TYPE_CHECKING, Final
 
 import asfquart.base as base
@@ -34,7 +36,10 @@ import quart
 import quart_schema
 
 import atr.config as config
+import atr.errors as errors
 import atr.jwtoken as jwtoken
+import atr.log as log
+import atr.storage as storage
 import atr.user as user
 
 if TYPE_CHECKING:
@@ -59,6 +64,10 @@ class Auth(enum.StrEnum):
 HEADER_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BEARER, Auth.SYSTEM_BEARER})
 BODY_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BODY_OIDC})
 
+_TP_ALERT_APP_EXTENSION: Final[str] = "tp_alert_throttle"
+_TP_ALERT_DETAIL_LIMIT: Final[int] = 1000
+_TP_ALERT_INTERVAL: Final[float] = 3600.0
+_TP_AUTH_TYPE: Final[str] = "trusted_publisher"
 _TP_CONTEXT_ATTR: Final[str] = "tp_context"
 
 
@@ -69,6 +78,72 @@ class TrustedPublisherContext:
     payload: github.TrustedPublisherPayload
     asf_uid: str | None
     publisher: str
+
+
+@dataclasses.dataclass
+class _TrustedPublisherAlertThrottle:
+    # Monotonic time of the last warning email per reason, and failures held back since then
+    sent: dict[str, float] = dataclasses.field(default_factory=dict)
+    held: dict[str, int] = dataclasses.field(default_factory=dict)
+
+    def due(self, reason: str, now: float) -> int | None:
+        # Returns the number of failures held back since the last warning when another
+        # warning is due for this reason, or None when this failure should be held back
+        if (last := self.sent.get(reason)) is not None:
+            if now - last < _TP_ALERT_INTERVAL:
+                self.held[reason] = self.held.get(reason, 0) + 1
+                return None
+        held_count = self.held.pop(reason, 0)
+        self.sent[reason] = now
+        return held_count
+
+
+@dataclasses.dataclass(frozen=True)
+class _TrustedPublisherFailure:
+    reason: str
+    message: str
+    alert: bool
+
+
+# Checked in order, so subclasses have to come before the classes they extend
+# Expired and not-yet-valid tokens are mostly CI retries and clock skew, so they don't alert
+_TP_FAILURES: Final[tuple[tuple[type[Exception], _TrustedPublisherFailure], ...]] = (
+    (
+        pyjwt.ExpiredSignatureError,
+        _TrustedPublisherFailure("token_expired", "Trusted Publisher token has expired", False),
+    ),
+    (
+        pyjwt.ImmatureSignatureError,
+        _TrustedPublisherFailure("token_not_yet_valid", "Trusted Publisher token is not yet valid", False),
+    ),
+    (
+        pyjwt.InvalidSignatureError,
+        _TrustedPublisherFailure("signature_invalid", "Trusted Publisher token signature is invalid", True),
+    ),
+    (
+        pyjwt.InvalidAudienceError,
+        _TrustedPublisherFailure("audience_invalid", "Trusted Publisher token audience is invalid", True),
+    ),
+    (
+        pyjwt.InvalidIssuerError,
+        _TrustedPublisherFailure("issuer_invalid", "Trusted Publisher token issuer is invalid", True),
+    ),
+    (
+        pyjwt.InvalidTokenError,
+        _TrustedPublisherFailure("token_invalid", "Trusted Publisher token is invalid", True),
+    ),
+    (
+        pydantic.ValidationError,
+        _TrustedPublisherFailure("claims_invalid", "Trusted Publisher token claims are invalid", True),
+    ),
+)
+_TP_UNSUPPORTED: Final[_TrustedPublisherFailure] = _TrustedPublisherFailure(
+    "publisher_unsupported", "Trusted Publisher is not supported", False
+)
+
+# The ATR-authored rejections from inside token validation, by status code
+# A 502 isn't here because it means the GitHub OIDC endpoint was unavailable, not that auth failed
+_TP_REJECTION_REASONS: Final[dict[int, str]] = {401: "token_rejected", 403: "account_unlinked"}
 
 
 async def authenticate_body(scheme: Auth, data: Any) -> None:
@@ -89,12 +164,21 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
 
     try:
         payload, asf_uid = await interaction.validate_trusted_jwt(publisher, jwt)
-    except base.ASFQuartException:
+    except base.ASFQuartException as exc:
+        reason = _TP_REJECTION_REASONS.get(errors.response_status_code(exc))
+        if reason is not None:
+            await _trusted_publisher_failure_record(_TrustedPublisherFailure(reason, str(exc), True), exc)
         raise
-    except (interaction.InteractionError, pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
-        raise base.ASFQuartException(f"Trusted Publisher auth failed: {exc}", errorcode=401) from exc
+    except interaction.InteractionError as exc:
+        await _trusted_publisher_failure_record(_TP_UNSUPPORTED, exc)
+        raise base.ASFQuartException(_TP_UNSUPPORTED.message, errorcode=401) from exc
+    except (pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
+        failure = _trusted_publisher_failure(exc)
+        await _trusted_publisher_failure_record(failure, exc)
+        raise base.ASFQuartException(failure.message, errorcode=401) from exc
 
     if config.get().ADMIN_ONLY and (not user.is_admin(asf_uid)):
+        log.auth_failure(_TP_AUTH_TYPE, "admin_only", asf_uid)
         raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     quart.g.tp_context = TrustedPublisherContext(payload=payload, asf_uid=asf_uid, publisher=publisher)
@@ -120,3 +204,41 @@ def trusted_publisher_context() -> TrustedPublisherContext:
     if ctx is None:
         raise RuntimeError("trusted_publisher_context() called outside a body_oidc route")
     return ctx
+
+
+def _tp_alert_throttle() -> _TrustedPublisherAlertThrottle:
+    # Created on first use, so each app (and each test app) starts with an empty throttle
+    extensions = quart.current_app.extensions
+    throttle = extensions.get(_TP_ALERT_APP_EXTENSION)
+    if not isinstance(throttle, _TrustedPublisherAlertThrottle):
+        throttle = _TrustedPublisherAlertThrottle()
+        extensions[_TP_ALERT_APP_EXTENSION] = throttle
+    return throttle
+
+
+def _trusted_publisher_failure(exc: Exception) -> _TrustedPublisherFailure:
+    for exc_type, failure in _TP_FAILURES:
+        if isinstance(exc, exc_type):
+            return failure
+    raise TypeError(f"No Trusted Publisher failure for {type(exc).__name__}")
+
+
+async def _trusted_publisher_failure_record(failure: _TrustedPublisherFailure, exc: Exception) -> None:
+    # The full exception goes to the log and the warning email, never to the caller
+    log.auth_failure(_TP_AUTH_TYPE, failure.reason)
+    log.info(f"Trusted Publisher auth failed ({failure.reason}): {errors.message(exc)}")
+    if not failure.alert:
+        return
+    held = _tp_alert_throttle().due(failure.reason, time.monotonic())
+    if held is None:
+        return
+    detail = errors.message(exc)[:_TP_ALERT_DETAIL_LIMIT]
+    failed = datetime.datetime.now(datetime.UTC)
+    try:
+        async with storage.write_as_system(storage.WriteAsTrustedPublisherAlertService) as wats:
+            await wats.tokens_notify_trusted_publisher_failure(
+                failure.reason, detail, failed, quart.request.remote_addr, held
+            )
+    except Exception:
+        # The caller still has to get its 401, so a warning that can't be queued is only logged
+        log.exception("Could not queue the Trusted Publisher failure warning")

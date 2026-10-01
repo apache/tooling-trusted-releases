@@ -35,6 +35,8 @@ type Context = Literal["announce", "announce_subject", "checklist", "finish_vote
 
 # The list that hears about every release, whether ATR made it or the watcher spotted it
 _RELEASES_LIST_ADDRESS: Final[str] = "releases@tooling.apache.org"
+# Security warnings carry request details, so they go to the private list rather than a public one
+_SECURITY_LIST_ADDRESS: Final[str] = "private@tooling.apache.org"
 
 
 class _AnnounceSubjectValues(TypedDict):
@@ -546,6 +548,36 @@ def resolve_download_path_suffix(
 def template_hash(template: str) -> str:
     """Compute a hash of a template for verification."""
     return hashlib.sha256(template.encode()).hexdigest()
+
+
+def trusted_publisher_failure_notification(
+    reason: str,
+    detail: str,
+    failed: datetime.datetime,
+    source_ip: str | None,
+    suppressed: int,
+) -> args.Send:
+    # Anyone can trigger these without logging in, so the caller throttles them and
+    # the body says how many similar failures were left out since the last warning
+    subject = f"Trusted Publisher authentication failure: {reason}"
+    body = (
+        "ATR rejected a Trusted Publisher authentication attempt.\n\n"
+        f"Reason: {reason}\n"
+        f"Time: {util.format_datetime(failed)}\n"
+        f"Source IP: {source_ip or 'unknown'}\n"
+        f"Earlier failures with this reason not emailed: {suppressed}\n\n"
+        "Detail (from the request, so not to be trusted):\n\n"
+        f"  {detail}\n\n"
+        "Every failure is recorded in the authentication log.\n"
+    )
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=_SECURITY_LIST_ADDRESS,
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
 
 
 def unknown_template_variables(text: str, names: frozenset[str]) -> list[str]:

@@ -25,6 +25,7 @@ import hashlib
 import sqlmodel
 
 import atr.constants as constants
+import atr.construct as construct
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
@@ -262,6 +263,25 @@ class FoundationAdmin(FoundationCommitter):
             .all()
         )
         return [datatypes.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
+
+    async def notify_trusted_publisher_failure(
+        self,
+        reason: str,
+        detail: str,
+        failed: datetime.datetime,
+        source_ip: str | None,
+        suppressed: int,
+    ) -> None:
+        notification = construct.trusted_publisher_failure_notification(reason, detail, failed, source_ip, suppressed)
+        self.__data.add(
+            sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.MESSAGE_SEND,
+                task_args=notification.as_task_args(),
+                asf_uid=self.__asf_uid,
+            )
+        )
+        await self.__data.commit()
 
     async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
         """Revoke all PATs that a specified user owns or created. Returns count of revoked tokens."""

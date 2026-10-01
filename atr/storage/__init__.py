@@ -381,6 +381,13 @@ class WriteAsAutomatedMailService(WriteAsSystemService):
         self.mail_send = committer.mail.send
 
 
+class WriteAsTrustedPublisherAlertService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.tokens_notify_trusted_publisher_failure = admin.tokens.notify_trusted_publisher_failure
+
+
 # TODO: Could name this WriteDispatcher
 class Write:
     # Read and Write have authenticator methods which return access outcomes
