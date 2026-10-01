@@ -290,8 +290,9 @@ async def _revalidate_pat(claims: dict[str, Any], is_system: bool) -> None:
     # through to the asfuid path, which rejects a null asfuid, so a stray
     # system PAT can't slip past silently.
     if is_system and pat.is_system:
-        if claims.get("sub") != constants.SYSTEM_SERVICE_UID:
-            log.auth_failure("jwt_token", "system_subject_invalid")
+        subject_invalid = claims.get("sub") != constants.SYSTEM_SERVICE_UID
+        if subject_invalid or ((pat.allowed_ip is not None) and (not pat.allows_ip(quart.request.remote_addr))):
+            log.auth_failure("jwt_token", "system_subject_invalid" if subject_invalid else "system_pat_ip_mismatch")
             raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
     else:
         if pat.asfuid is None:

@@ -21,6 +21,7 @@ import unittest.mock as mock
 import asfquart.base as base
 import jwt
 import pytest
+import quart
 
 import atr.constants as constants
 import atr.db as db
@@ -192,6 +193,46 @@ async def test_reader_pat_methods_return_safe_tokens() -> None:
     assert isinstance(most_recent, datatypes.PersonalAccessTokenSafe)
     assert most_recent is not None
     assert "token_hash" not in most_recent.model_dump()
+
+
+@pytest.mark.parametrize(
+    ("is_system", "allowed_ip", "client_ip", "permitted"),
+    [
+        (True, "192.0.2.1", "192.0.2.1", True),
+        (True, "192.0.2.1", "192.0.2.2", False),
+        (True, "192.0.2.0/24", "192.0.2.10", True),
+        (True, "192.0.2.0/24", "198.51.100.1", False),
+        (True, "2001:db8::/32", "2001:db8::1", True),
+        (True, "2001:db8::/32", "2001:db9::1", False),
+        (True, "192.0.2.1", None, False),
+        (True, "192.0.2.1", "invalid", False),
+        (True, None, None, True),
+        (False, "192.0.2.1", "198.51.100.1", True),
+    ],
+)
+async def test_verify_pat_ip_restrictions(
+    monkeypatch: pytest.MonkeyPatch, is_system: bool, allowed_ip: str | None, client_ip: str | None, permitted: bool
+) -> None:
+    secret = "a" * 64
+    monkeypatch.setattr(jwtoken, "_signing_key", lambda: secret)
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(return_value=True))
+    monkeypatch.setattr(db, "session", _fake_db_session(_make_pat(is_system=is_system, allowed_ip=allowed_ip)))
+    auth_failure = mock.Mock()
+    monkeypatch.setattr(jwtoken.log, "auth_failure", auth_failure)
+    subject = constants.SYSTEM_SERVICE_UID if is_system else "test"
+    token = _signed_jwt(secret, sub=subject, atr_sys=is_system)
+    app = quart.Quart(__name__)
+    async with app.test_request_context("/"):
+        quart.request.remote_addr = client_ip
+        if permitted:
+            claims = await jwtoken.verify(token)
+            assert claims["sub"] == subject
+            auth_failure.assert_not_called()
+        else:
+            with pytest.raises(base.ASFQuartException, match="Personal Access Token invalid") as exc:
+                await jwtoken.verify(token)
+            assert exc.value.errorcode == 401
+            auth_failure.assert_called_once_with("jwt_token", "system_pat_ip_mismatch")
 
 
 @pytest.mark.asyncio
