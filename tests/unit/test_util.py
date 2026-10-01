@@ -179,6 +179,18 @@ async def test_public_resolver_rejects_non_global_addresses():
         await resolver.resolve("internal.apache.org", 443)
 
 
+async def test_read_file_for_viewer_hides_exception_details(tmp_path: pathlib.Path):
+    path = tmp_path / "private.txt"
+    path.write_text("content")
+    error = PermissionError(13, "Permission denied", str(path))
+
+    with mock.patch.object(util.aiofiles, "open", side_effect=error):
+        content, _, _, error_message = await util.read_file_for_viewer(safe.StatePath(path), 1024)
+
+    assert content is None
+    assert error_message == "An error occurred reading the file"
+
+
 def test_version_key_error_rejects_too_long():
     assert util.version_key_error("1" * safe.MAX_VERSION_LENGTH) is None
     assert util.version_key_error("1" * (safe.MAX_VERSION_LENGTH + 1)) is not None

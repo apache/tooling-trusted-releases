@@ -1429,8 +1429,9 @@ async def read_file_for_viewer(full_path: safe.StatePath, max_size: int) -> tupl
                 is_text = False
                 content = _generate_hexdump(raw_content)
 
-    except Exception as e:
-        error_message = f"An error occurred reading the file: {e!s}"
+    except Exception:
+        log.exception("Error reading file for viewer")
+        error_message = "An error occurred reading the file"
 
     return content, is_text, is_truncated, error_message
 
