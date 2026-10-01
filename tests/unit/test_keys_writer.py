@@ -30,6 +30,7 @@ import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
 import atr.pgp as pgp
+import atr.principal as principal
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
@@ -117,6 +118,47 @@ class MockData:
 
     def release(self, *_args, **_kwargs):
         return Query(SimpleNamespace(project=mock.AsyncMock()))
+
+
+@pytest.mark.parametrize(
+    ("owner", "participant", "allowed"),
+    [("alice", False, True), ("bob", True, True), ("bob", False, False), (None, True, False)],
+)
+async def test_associate_fingerprint_checks_key_owner_membership(sqlite_data, owner, participant, allowed):
+    sqlite_data.add(sql.Committee(key="alpha", keys_mode=sql.KeysMode.MANUAL))
+    sqlite_data.add(_signing_certificate(_ALPHA_FINGERPRINT, apache_uid=owner))
+    await sqlite_data.commit()
+    writer, write_as = _make_committee_member(sqlite_data, "alpha")
+    with (
+        mock.patch.object(principal.authoriser_ldap, "cache_refresh", new_callable=mock.AsyncMock) as refresh,
+        mock.patch.object(principal.authoriser_ldap, "is_participant_of", return_value=participant) as membership,
+        mock.patch.object(writer, "_recheck_committee_drafts", new_callable=mock.AsyncMock) as recheck,
+        mock.patch.object(
+            writer,
+            "autogenerate_keys_file",
+            return_value=(outcome.Result(1), outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED)),
+        ) as publish,
+    ):
+        result = await writer.associate_fingerprint(_ALPHA_FINGERPRINT)
+
+    assert result.ok is allowed
+    links = (await sqlite_data.execute(sqlmodel.select(sql.KeyLink))).scalars().all()
+    assert [(link.committee_key, link.key_fingerprint) for link in links] == (
+        [("alpha", _ALPHA_FINGERPRINT)] if allowed else []
+    )
+    assert refresh.await_args_list == ([] if owner in {None, "alice"} else [mock.call(owner)])
+    assert membership.call_args_list == ([] if owner in {None, "alice"} else [mock.call(owner, "alpha")])
+    if allowed:
+        recheck.assert_awaited_once_with("alpha")
+        publish.assert_awaited_once_with()
+        write_as.append_to_audit_log.assert_called_once()
+    else:
+        error = result.error_or_none()
+        assert isinstance(error, storage.AccessError)
+        assert error.status == 403
+        recheck.assert_not_awaited()
+        publish.assert_not_awaited()
+        write_as.append_to_audit_log.assert_not_called()
 
 
 def test_block_downgrade_reason_compares_the_named_certificate() -> None:

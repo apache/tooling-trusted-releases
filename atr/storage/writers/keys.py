@@ -45,6 +45,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.pgp as pgp
+import atr.principal as principal
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
@@ -1006,9 +1007,13 @@ class CommitteeParticipant(FoundationCommitter):
         via = sql.validate_instrumented_attribute
         link_values = [{"committee_key": self.__committee_key, "key_fingerprint": fingerprint}]
         try:
-            await self.__data.signing_certificate(fingerprint=fingerprint).demand(
+            key = await self.__data.signing_certificate(fingerprint=fingerprint).demand(
                 storage.AccessError(f"Key not found: {fingerprint}", status=404)
             )
+            if (key.apache_uid != self.__asf_uid) and (
+                not (await principal.Authorisation(key.apache_uid)).is_participant_of(self.__committee_key)
+            ):
+                raise storage.AccessError(f"Key owner is not a participant of {self.__committee_key}", status=403)
             link_insert_result = await self.__data.execute(
                 sqlite.insert(sql.KeyLink)
                 .values(link_values)
