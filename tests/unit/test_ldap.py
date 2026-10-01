@@ -23,7 +23,9 @@ import ldap3.core.exceptions
 import pytest
 
 import atr.cache as cache
+import atr.errors as errors
 import atr.ldap as ldap
+import atr.principal as principal
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
@@ -180,6 +182,24 @@ async def test_github_to_apache_raises_when_ldap_unavailable(monkeypatch: "Monke
     monkeypatch.setattr("atr.ldap.search", failed_search)
     with pytest.raises(ldap.UnavailableError):
         await ldap.github_to_apache(12345)
+
+
+def test_group_membership_error_hides_ldap_base(monkeypatch: "MonkeyPatch"):
+    ldap_base = principal.LDAP_MEMBER_BASE
+    error = RuntimeError(f"Search failed at {ldap_base}")
+    ldap_search = mock.Mock(spec=ldap.Search)
+    ldap_search.search.side_effect = error
+    logged = mock.Mock()
+    monkeypatch.setattr(principal.log, "exception", logged)
+    committer = object.__new__(principal.Committer)
+
+    with pytest.raises(principal.CommitterError) as raised:
+        committer._get_group_membership(ldap_search, ldap_base, "member_uid")
+
+    assert ldap_base not in errors.traceback_text(raised.value)
+    logged.assert_called_once_with(
+        f"An unknown error occurred while fetching group memberships from {ldap_base}: {error}"
+    )
 
 
 @pytest.mark.asyncio

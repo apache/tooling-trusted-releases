@@ -157,9 +157,7 @@ class Committer:
             raise
         except Exception as ex:
             log.exception(f"An unknown error occurred while fetching group memberships from {ldap_base}: {ex!s}")
-            raise CommitterError(
-                f"An unknown error occurred while fetching group memberships from {ldap_base}."
-            ) from ex
+            raise CommitterError("An unknown error occurred while fetching group memberships.") from None
 
         members = getattr(result[0], attribute)
         if len(members) < min_members:
