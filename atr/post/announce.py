@@ -87,11 +87,11 @@ async def selected(
         return response
     if response := await _validate_subject_template_hash(session, project_key, announce_form):
         return response
+    if response := await _validate_download_page(session, release, announce_form):
+        return response
 
     try:
         async with storage.write_as_project_release_manager(project_key, session) as warm:
-            if response := await _validate_download_page(session, release, announce_form):
-                return response
             await _record_download_page(warm, project_key, release.project.download_page, announce_form)
             await warm.announce.release(
                 project_key=project_key,
