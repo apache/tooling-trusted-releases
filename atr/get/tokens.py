@@ -18,6 +18,7 @@
 from typing import Literal
 
 import atr.blueprints.get as get
+import atr.config as config
 import atr.form as form
 import atr.htm as htm
 import atr.post as post
@@ -63,43 +64,46 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
     ]
     await _build_tokens_table(page, tokens_list)
 
-    page.h2["JSON Web Token (JWT)"]
-    jwt_section = htm.Block()
-    jwt_section.p[
-        """Use a PAT to generate a JSON Web Token (JWT) to authenticate calls to ATR's
-        private API routes. Treat the token like a password and include it
-        in the Authorization header as a Bearer token when invoking the
-        protected endpoints."""
-    ]
-    issue_form = await form.render(
-        model_cls=shared.tokens.IssueForm,
-        action=util.as_url(post.tokens.jwt_post),
-        form_classes="#issue-jwt-form",
-        submit_label="Generate JWT",
-    )
-    jwt_section.div(".card.mb-4")[
-        htm.div(".card-header")["Generate new JWT"],
-        htm.div(".card-body")[issue_form],
-    ]
-    jwt_section.div(id="jwt-container", class_="d-none")[
-        htm.p["Copy the below value. It will be cleared in ", htm.span(id="time-remaining")],
-        htm.pre(id="jwt-output", class_="mt-2 p-3 atr-word-wrap border rounded w-50"),
-    ]
-    if most_recent_pat and most_recent_pat.last_used:
-        jwt_section.p(".mt-3")[
-            "You most recently used a PAT to issue a JWT at ",
-            htm.strong[util.format_datetime(most_recent_pat.last_used) + "Z"],
-            ", using the PAT labelled ",
-            htm.code[most_recent_pat.label or "[Untitled]"],
-            ".",
+    typescripts: list[str] = []
+    if not config.is_production_mode():
+        page.h2["JSON Web Token (JWT)"]
+        jwt_section = htm.Block()
+        jwt_section.p[
+            """Use a PAT to generate a JSON Web Token (JWT) to authenticate calls to ATR's
+            private API routes. Treat the token like a password and include it
+            in the Authorization header as a Bearer token when invoking the
+            protected endpoints."""
         ]
-    page.append(jwt_section)
+        issue_form = await form.render(
+            model_cls=shared.tokens.IssueForm,
+            action=util.as_url(post.tokens.jwt_post),
+            form_classes="#issue-jwt-form",
+            submit_label="Generate JWT",
+        )
+        jwt_section.div(".card.mb-4")[
+            htm.div(".card-header")["Generate new JWT"],
+            htm.div(".card-body")[issue_form],
+        ]
+        jwt_section.div(id="jwt-container", class_="d-none")[
+            htm.p["Copy the below value. It will be cleared in ", htm.span(id="time-remaining")],
+            htm.pre(id="jwt-output", class_="mt-2 p-3 atr-word-wrap border rounded w-50"),
+        ]
+        if most_recent_pat and most_recent_pat.last_used:
+            jwt_section.p(".mt-3")[
+                "You most recently used a PAT to issue a JWT at ",
+                htm.strong[util.format_datetime(most_recent_pat.last_used) + "Z"],
+                ", using the PAT labelled ",
+                htm.code[most_recent_pat.label or "[Untitled]"],
+                ".",
+            ]
+        page.append(jwt_section)
+        typescripts.append("create-a-jwt")
 
     return await template.blank(
         title="Tokens",
-        description="Manage your PATs and JWTs.",
+        description="Manage your tokens.",
         content=page.collect(),
-        typescripts=["create-a-jwt"],
+        typescripts=typescripts,
     )
 
 

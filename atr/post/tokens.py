@@ -19,10 +19,12 @@ import datetime
 import hashlib
 from typing import Literal
 
+import pydantic
 import quart
 import quart_rate_limiter as rate_limiter
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.get as get
 import atr.htm as htm
 import atr.noisy as noisy
@@ -34,12 +36,18 @@ import atr.web as web
 
 @post.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-async def jwt_post(
-    session: web.Committer, _tokens_jwt: Literal["tokens/jwt"], form: shared.tokens.IssueForm
-) -> web.QuartResponse:
+async def jwt_post(session: web.Committer, _tokens_jwt: Literal["tokens/jwt"]) -> web.QuartResponse:
     """
     URL: /tokens/jwt
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
+    try:
+        form = shared.tokens.IssueForm.model_validate(await session.form_data())
+    except pydantic.ValidationError:
+        return quart.abort(400)
+
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
         jwt_token = await wafc.tokens.issue_jwt(form.pat, quart.request.remote_addr)
