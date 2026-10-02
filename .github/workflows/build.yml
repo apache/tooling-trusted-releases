@@ -124,6 +124,8 @@ jobs:
             if [ "$status" != "0" ]
             then
               docker logs "$NRSRV" --tail 100 || true
+              docker inspect "$NRSRV" --format 'exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' || true
+              docker run --rm -v "$NRVOL:/opt/atr/state" atr:ci tail -100 /opt/atr/state/hypercorn/logs/hypercorn.log || true
             fi
             docker rm -f "$NRSRV" "$NRNEG" >/dev/null 2>&1 || true
             docker volume rm -f "$NRVOL" >/dev/null 2>&1 || true
