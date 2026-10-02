@@ -9,6 +9,7 @@
 **Sections**:
 
 * [Overview](#overview)
+* [File handling](#file-handling)
 * [Browser](#browser)
 * [rsync](#rsync)
 * [SVN import](#svn-import)
@@ -30,6 +31,22 @@ Every artifact needs a detached signature and a checksum beside it, as described
 The upload page for a release, reached with the "Upload files" button on its compose page, covers
 the browser, SVN, rsync, and GitHub workflow routes, and shows the exact commands and paths for
 that release.
+
+## File handling
+
+Upload release artifacts, their signatures and checksums, and related documentation and SBOMs. Common artifact formats include `.tar.gz`, `.tgz` and `.zip`. ATR checks the contents of selected formats but does not reject every unknown extension. An accepted upload can still fail the [release checks](checks).
+
+| Upload method | Size limit |
+| --- | --- |
+| Browser and HTTP API | 512 MiB per request by default, including form fields and encoding overhead |
+| rsync | Files over 2 GB are skipped |
+| SVN import | No explicit byte limit on the imported files |
+
+For selected archive formats, ATR holds the whole proposed revision in quarantine while it extracts and validates the archives. The default unpacked size limit is 2 GiB for each file and for the total content of each archive. The previous revision remains available. If an archive fails extraction, ATR records the error and removes the quarantined upload. Correct the files and upload again. Dismissing the failure only acknowledges it.
+
+Files already in a revision remain downloadable while release checks run or report problems. Blockers prevent starting a vote. Local files are served as attachments, and published downloads go to ASF distribution services. ATR does not scan files for malware. Verify the [signatures](signing-artifacts) and checksums before using a download.
+
+See [File handling in the developer guide](file-handling) for the format lists, extraction limits, download controls and separate limits for key imports.
 
 ## Browser
 

@@ -4,7 +4,7 @@
 
 **Prev**: `7.20.` [Resource management](resource-management)
 
-**Next**: (none)
+**Next**: `7.22.` [File handling](file-handling)
 
 **Sections**:
 

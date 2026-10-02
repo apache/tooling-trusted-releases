@@ -29,6 +29,7 @@
 * `7.19.` [ASF modules](asf-modules)
 * `7.20.` [Resource management](resource-management)
 * `7.21.` [SBOM architecture](sbom-architecture)
+* `7.22.` [File handling](file-handling)
 
 **Sections**:
 
@@ -46,5 +47,6 @@ ATR is security-critical infrastructure for the Apache Software Foundation. Befo
 * [Authentication security](authentication-security) - How users authenticate to ATR via ASF OAuth and API tokens
 * [Authorization security](authorization-security) - The role-based access control model and LDAP integration
 * [Input validation](input-validation) - Data validation patterns and injection prevention
+* [File handling](file-handling) - Upload limits, archive validation and downloads
 
 For reporting security vulnerabilities, see [SECURITY.md](https://github.com/apache/tooling-trusted-releases/blob/main/SECURITY.md) in the repository root.

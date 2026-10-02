@@ -49,3 +49,4 @@ NOTE: This documentation is a work in progress.
   * `7.19.` [ASF modules](asf-modules)
   * `7.20.` [Resource management](resource-management)
   * `7.21.` [SBOM architecture](sbom-architecture)
+  * `7.22.` [File handling](file-handling)

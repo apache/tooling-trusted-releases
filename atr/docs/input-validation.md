@@ -29,7 +29,7 @@ Input validation is critical for ATR's security posture. As a system that handle
 ATR employs multiple layers of validation:
 
 1. **Transport layer**: HTTPS required, enforced by httpd
-2. **Request layer**: Size limits enforced by httpd (`MAX_CONTENT_LENGTH`)
+2. **Request layer**: ATR enforces the request body limit set by `MAX_CONTENT_LENGTH`
 3. **Form layer**: Pydantic models validate structure and types
 4. **Application layer**: Business logic validation in route handlers, interaction helpers, and storage writers
 5. **Database layer**: SQLAlchemy ORM with parameterized queries, plus constraints
@@ -154,11 +154,7 @@ Committee and project names are validated against the set of known committees an
 
 ### File names
 
-File names in uploads are sanitized to prevent path traversal:
-
-* Directory separators (`/`, `\`) and the path token `..` are rejected or stripped
-* Null bytes are rejected
-* Only expected extensions are permitted per upload type
+Release upload paths use [`safe.RelPath`](/ref/atr/models/safe.py), which rejects absolute paths, directory traversal, null bytes and most dotfiles. These rules apply to every upload method, including rsync and SVN imports. For file content checks, see [File handling](file-handling).
 
 ## Data integrity validation
 
@@ -314,23 +310,7 @@ Never mark user-controlled data as safe without proper sanitization.
 
 ## File upload security
 
-File uploads are handled with several security measures:
-
-### Size limits
-
-Maximum upload size is enforced at the httpd layer via `MAX_CONTENT_LENGTH`. This prevents denial-of-service attacks via large uploads.
-
-### Extension validation
-
-Each upload type has an allowlist of permitted file extensions. Files with unexpected extensions are rejected.
-
-### Storage location
-
-Uploaded files are stored outside the application in configured directories (e.g., `state/unfinished/`). They are not directly accessible via HTTP.
-
-### File handling
-
-Files are processed via [`quart.datastructures.FileStorage`](/ref/atr/form.py) (quart_request) and validated before being written to disk. Empty files (where the browser sends a file input with no selection) are filtered out.
+See [File handling](file-handling) for upload limits, format checks, archive quarantine and downloads.
 
 ## Injection prevention
 

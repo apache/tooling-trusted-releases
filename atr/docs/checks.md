@@ -24,7 +24,7 @@ Checks are recorded against the release revision that you upload, and the result
 
 ## How ATR selects checks
 
-When you create or update a draft revision, ATR scans the files in the revision directory and schedules checks based on file suffix and project policy. A signature file with the `.asc` suffix triggers signature verification. A checksum file with the `.sha256` or `.sha512` suffix triggers hash verification. Archive files with the `.tar.gz`, `.tgz`, or `.zip` suffix trigger archive integrity, archive structure, and license checks. Files with the `.cdx.json` suffix trigger SBOM analysis. ATR also runs a path and naming check across the entire revision.
+When you create or update a draft revision, ATR scans the files in the revision directory and schedules checks based on file suffix and project policy. A signature file with the `.asc` suffix triggers signature verification. A checksum file with the `.sha256` or `.sha512` suffix triggers hash verification. Archive files with the `.tar.gz`, `.tgz`, or `.zip` suffix trigger archive structure and license checks. Files with the `.cdx.json` suffix trigger SBOM analysis. ATR also runs a path and naming check across the entire revision.
 
 Project policy tells ATR which artifacts are source artifacts and which are binary artifacts, and it supplies exclusion patterns for license related checks. Project policy also controls the license check mode for source artifacts. You can choose lightweight checks, Apache RAT, or both for source artifacts. Binary artifacts are not scanned by RAT, and always rely on the lightweight checks.
 
@@ -60,9 +60,7 @@ The checker key is `atr.tasks.checks.signature.check`, and the uploader concern 
 
 ### Archive integrity checks
 
-ATR checks that each `.tar.gz`, `.tgz`, or `.zip` archive can be read in full. For tar based archives it reads all members using the tar reader. For zip archives it lists members and verifies that the zip structure is valid. Archives that are corrupted or contain too many members fail this check.
-
-The checker key for tar based archives is `atr.tasks.checks.targz.integrity`, and the checker key for zip archives is `atr.tasks.checks.zipformat.integrity`.
+ATR validates archive integrity during quarantine extraction, before accepting the proposed revision. Corrupt archives and those that exceed extraction limits fail validation. This is separate from the checks recorded against a revision. See [File handling](file-handling) for the formats covered and failure behavior.
 
 ### Archive structure checks
 
