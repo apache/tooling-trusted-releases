@@ -104,13 +104,6 @@ async def complete_approval(
         return await session.redirect(get.projects.projects, error="Approval request not found.")
     if approval.status != sql.ApprovalStatus.APPROVED:
         return await session.redirect(get.projects.projects, error="This approval request is not ready to complete.")
-    if approval.action == sql.ApprovalAction.ARCHIVE_RELEASE:
-        # Release archival completes on its own once the vote passes, so there's
-        # nothing to do here by hand
-        return await session.redirect(
-            get.projects.projects,
-            error="Release archival completes automatically once the CAP vote passes.",
-        )
 
     project_key = safe.ProjectKey(approval.project_key)
     async with db.session() as data:
@@ -636,7 +629,6 @@ async def _request_approval(
             existing = await data.approval_request(
                 project_key=str(project_key),
                 status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-                release_version=None,
             ).get()
             if existing is not None:
                 return await session.redirect(

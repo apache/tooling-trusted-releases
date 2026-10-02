@@ -62,7 +62,6 @@ async def selected(
     View all the files in a release (any phase).
     """
     release = await session.release(project_key, version_key, phase=None, with_project_release_policy=True)
-    approval = await _archival_approval(release)
 
     block = htm.Block()
 
@@ -92,7 +91,7 @@ async def selected(
                 ],
                 htm.div(".col-md-6")[
                     htm.p[htm.strong["Created:"], " ", release.created.strftime("%Y-%m-%d %H:%M:%S")],
-                    htm.p[htm.strong["Status:"], " ", _release_status(release, approval)],
+                    htm.p[htm.strong["Status:"], " ", _release_status(release)],
                 ],
             ]
         ],
@@ -108,7 +107,7 @@ async def selected(
     block.append(_files_card(release, file_stats, published))
 
     if release.phase == sql.ReleasePhase.RELEASE:
-        actions_card = await _render_release_actions(session, release, approval)
+        actions_card = await _render_release_actions(session, release)
         if actions_card is not None:
             block.append(actions_card)
 
@@ -179,18 +178,6 @@ async def selected_path(
     return await template.blank(
         f"View {release.project.short_display_name}/{release.version}/{file_path}", content=block.collect()
     )
-
-
-async def _archival_approval(release: sql.Release) -> sql.ApprovalRequest | None:
-    # Only a full release can be under an archival vote
-    if release.phase != sql.ReleasePhase.RELEASE:
-        return None
-    async with db.session() as data:
-        return await data.approval_request(
-            project_key=str(release.project.key),
-            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-            release_version=release.version,
-        ).get()
 
 
 def _files_card(
@@ -281,25 +268,6 @@ def _get_navigation_info(release: sql.Release) -> tuple[str, str, Phase] | None:
     return None
 
 
-async def _last_archival_failure(release: sql.Release) -> sql.ApprovalRequest | None:
-    # The most recent archival vote that passed but whose auto-archival then failed
-    if release.phase != sql.ReleasePhase.RELEASE:
-        return None
-    via = sql.validate_instrumented_attribute
-    async with db.session() as data:
-        return await (
-            data.approval_request(
-                project_key=str(release.project.key),
-                release_version=release.version,
-                action=sql.ApprovalAction.ARCHIVE_RELEASE,
-                status=sql.ApprovalStatus.FAILED,
-            )
-            .order_by(via(sql.ApprovalRequest.resolved_at).desc())
-            .limit(1)
-            .get()
-        )
-
-
 def _phase_display_name(phase: sql.ReleasePhase) -> str:
     """Get a display name for the phase."""
     if phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
@@ -327,14 +295,10 @@ async def _release_file_stats(
     return file_stats
 
 
-def _release_status(release: sql.Release, approval: sql.ApprovalRequest | None) -> htm.Element:
+def _release_status(release: sql.Release) -> htm.Element:
     if release.is_archived:
         archived_on = f" on {release.archived.strftime('%Y-%m-%d')}" if release.archived else ""
         return htm.span(".badge.text-bg-secondary")[f"Archived{archived_on}"]
-    if approval is not None:
-        if approval.status == sql.ApprovalStatus.PENDING:
-            return htm.span(".badge.text-bg-secondary")["Archival vote in progress"]
-        return htm.span(".badge.text-bg-warning")["Archival approved"]
     if release.phase == sql.ReleasePhase.RELEASE:
         label = "Released"
     else:
@@ -359,9 +323,7 @@ def _render_file_content(block: htm.Block, content: str, is_text: bool, is_trunc
     block.append(card.collect())
 
 
-async def _render_release_actions(
-    session: web.Committer, release: sql.Release, approval: sql.ApprovalRequest | None
-) -> htm.Element | None:
+async def _render_release_actions(session: web.Committer, release: sql.Release) -> htm.Element | None:
     project = release.project
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     if not (is_committee_member or session.is_admin):
@@ -377,48 +339,22 @@ async def _render_release_actions(
     if release.is_archived:
         archived_on = f" on {release.archived.strftime('%Y-%m-%d')}" if release.archived else ""
         body.p(".text-muted.mb-0")[f"This release was archived{archived_on}."]
-    elif approval is not None:
-        if approval.status == sql.ApprovalStatus.PENDING:
-            body.p(".mb-0")[
-                f"An archival vote for this release is in progress (CAP #{approval.cap_question_id}, closes "
-                f"{approval.closes_at.strftime('%Y-%m-%d %H:%M UTC')})."
-            ]
-        else:
-            body.p(".mb-0")[
-                f"The archival vote passed (CAP #{approval.cap_question_id})."
-                " ATR is archiving this release and removing its files from the downloads area."
-            ]
     else:
-        failure = await _last_archival_failure(release)
-        if (failure is not None) and failure.error:
-            body.div(".alert.alert-warning.py-2.px-3")[
-                f"The last archival attempt failed after the vote passed: {failure.error}. You can try again below."
-            ]
         if cycles.is_latest_in_cycle(project, release, full_releases):
-            body.p[
-                "This is the latest full release in its cycle, so archiving it requires a CAP approval vote"
-                " by the committee PMC. ATR will auto-archive the release once the vote passes."
+            body.div(".alert.alert-warning.py-2.px-3")[
+                "This is the latest full release in its cycle. Once it is archived, the cycle will have no"
+                " current release in the downloads area."
             ]
-            body.append(
-                await form.render(
-                    model_cls=shared.projects.ArchiveSelectedRelease,
-                    action=util.as_url(post.file.post, project_key=project.key, version_key=release.version),
-                    submit_classes="btn-sm btn-outline-danger",
-                    submit_label="Request archival vote",
-                    empty=True,
-                )
+        body.p["Archiving this release removes its files from the downloads area."]
+        body.append(
+            await form.render(
+                model_cls=shared.projects.ConfirmReleaseArchival,
+                action=util.as_url(post.file.post, project_key=project.key, version_key=release.version),
+                submit_classes="btn-sm btn-outline-danger",
+                submit_label="Archive release",
+                empty=True,
             )
-        else:
-            body.p["Archiving this release removes its files from the downloads area."]
-            body.append(
-                await form.render(
-                    model_cls=shared.projects.ConfirmReleaseArchival,
-                    action=util.as_url(post.file.post, project_key=project.key, version_key=release.version),
-                    submit_classes="btn-sm btn-outline-danger",
-                    submit_label="Archive release",
-                    empty=True,
-                )
-            )
+        )
 
     card.append(body.collect())
     return card.collect()

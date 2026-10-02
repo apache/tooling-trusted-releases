@@ -451,7 +451,6 @@ async def cap_create_approval_question(
     committee_key: str,
     requested_by: str,
     closes_at: datetime.datetime,
-    release_version: safe.VersionKey | None = None,
 ) -> cap.Question:
     token = await cap_mint_token()
     match action:
@@ -461,22 +460,13 @@ async def cap_create_approval_question(
             consequence = "ATR will mark the project RETIRED"
             subject = f"the project {project_key} ({display_name})"
             title = f"[ATR] {verb.capitalize()} project {project_key}"
-        case sql.ApprovalAction.ARCHIVE_RELEASE:
-            verb = "archive"
-            approval_type = constants.CAP_ARCHIVE_APPROVAL_TYPE
-            consequence = "ATR will mark the release as archived and remove it from the downloads area"
-            subject = f"release {release_version} of project {project_key} ({display_name})"
-            title = f"[ATR] Archive release {project_key} {release_version}"
         case sql.ApprovalAction.DELETE:
             verb = action.value
             approval_type = constants.CAP_DELETE_APPROVAL_TYPE
             consequence = "ATR will permanently delete the project and its metadata"
             subject = f"the project {project_key} ({display_name})"
             title = f"[ATR] {verb.capitalize()} project {project_key}"
-    if action == sql.ApprovalAction.ARCHIVE_RELEASE:
-        completion = "ATR will complete this automatically once the vote passes"
-    else:
-        completion = f"an authorised {committee_key} PMC member may complete the {verb} in ATR"
+    completion = f"an authorised {committee_key} PMC member may complete the {verb} in ATR"
     description = (
         f"{requested_by} has requested, through ATR, to {verb} {subject}. "
         f"If this vote passes, {consequence}, and {completion}. "

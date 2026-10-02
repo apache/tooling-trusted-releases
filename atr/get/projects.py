@@ -171,8 +171,7 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
         ).all()
         release_counts = await interaction.project_release_counts(data)
 
-    # Release archival requests surface on the release's own file page, not here
-    approvals_by_project = {a.project_key: a for a in approvals if a.action != sql.ApprovalAction.ARCHIVE_RELEASE}
+    approvals_by_project = {a.project_key: a for a in approvals}
 
     committee_project_counts: Counter[str] = Counter(
         str(p.committee.key) for p in projects if p.committee and p.is_active
@@ -545,7 +544,6 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
         approval = await data.approval_request(
             project_key=str(project.key),
             status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-            release_version=None,
         ).get()
     if approval is not None:
         return await _approval_request_element(approval)

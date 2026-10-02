@@ -49,20 +49,12 @@ not have to copy a release there before archiving it.
 ## Archiving a release
 
 Members of the project's committee archive a release from the "Release actions" card on the
-release's page, which you reach from the release's entry on the project page. What happens depends
-on whether the release has been superseded:
+release's page, which you reach from the release's entry on the project page. Use "Archive
+release", and type `ARCHIVE` to confirm.
 
-* **A superseded release**, one that is not the latest in its cycle, can be archived straight
-  away. Use "Archive release", and type `ARCHIVE` to confirm.
-* **The latest release in its cycle** cannot be archived on one person's say. It requires
-  ***Contingent Approval*** from the committee, which is a vote held through the ASF's Contingent
-  Approval Portal (***CAP***), currently at [cap-test.apache.org](https://cap-test.apache.org/).
-  Use "Request archival vote" to start the vote. The card shows the vote's CAP number and closing
-  time while it runs, and committee members cast their votes on the portal. If the vote passes,
-  ATR archives the release itself.
-
-A release is the latest in its cycle according to the project's version scheme, described under
-[Lifecycle](project-configuration#lifecycle).
+If the release is the latest in its cycle, the card warns you that the cycle will have no current
+release in the downloads area once it is archived. A release is the latest in its cycle according
+to the project's version scheme, described under [Lifecycle](project-configuration#lifecycle).
 
 ## Archiving the prior release automatically
 
@@ -106,7 +98,9 @@ defines, so you can fix a mistake without hiding it from consumers of the feed.
 ## Retiring a project
 
 A project that is no longer maintained can be retired. Retiring a project requires
-[Contingent Approval](#archiving-a-release) from the committee. A member of the committee uses
+***Contingent Approval*** from the committee, which is a vote held through the ASF's Contingent
+Approval Portal (***CAP***), currently at [cap-test.apache.org](https://cap-test.apache.org/).
+Committee members cast their votes on the portal. A member of the committee uses
 "Request archival" in the Actions card on the project page, which starts the vote. It is offered
 once all the project's releases have been archived, and only where the committee has another
 active project. If the vote passes, the member who asked returns to complete the archival, which

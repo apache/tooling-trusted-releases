@@ -404,14 +404,12 @@ class CommitteeMember(ReleaseManager):
         action: sql.ApprovalAction,
         cap_question_id: int,
         closes_at: datetime.datetime,
-        release_version: safe.VersionKey | None = None,
     ) -> sql.ApprovalRequest:
         await self.__validate_project_in_committee(project_key)
         approval = sql.ApprovalRequest(
             project_key=str(project_key),
             committee_key=self.__committee_key,
             action=action,
-            release_version=str(release_version) if release_version else None,
             cap_question_id=cap_question_id,
             requested_by=self.__asf_uid,
             closes_at=closes_at,
@@ -427,8 +425,6 @@ class CommitteeMember(ReleaseManager):
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as error:
             await self.__data.rollback()
-            if "approvalrequest.release_version" in str(error):
-                raise storage.AccessError("A CAP approval request for this release is already in progress.", status=409)
             if "approvalrequest.project_key" in str(error):
                 raise storage.AccessError("A CAP approval request for this project is already in progress.", status=409)
             raise storage.AccessError(
@@ -494,34 +490,6 @@ class FoundationAdmin(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
-
-    async def record_approval_failure(self, approval_request_id: int, error: str) -> bool:
-        """Mark an approved request FAILED because its completion could not be carried out.
-
-        The vote itself passed, so `outcome` is left as it was - `error` carries
-        why the follow-on action (e.g. auto-archival) could not complete.
-        """
-        await self.__data.begin_immediate()
-        self.__data.expire_all()
-        try:
-            approval = await self.__data.approval_request(id=approval_request_id).get()
-            if (approval is None) or (approval.status != sql.ApprovalStatus.APPROVED):
-                await self.__data.rollback()
-                return False
-            approval.status = sql.ApprovalStatus.FAILED
-            approval.error = error
-            approval.resolved_at = datetime.datetime.now(datetime.UTC)
-            await self.__data.commit()
-        except Exception:
-            await self.__data.rollback()
-            raise
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            approval_request_id=approval_request_id,
-            approval_status=sql.ApprovalStatus.FAILED.value,
-            error=error,
-        )
-        return True
 
     async def record_approval_outcome(
         self,

@@ -199,30 +199,6 @@ async def _assert_no_existing_release(
     raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
 
 
-async def _claim_release_archive_approval(
-    data: db.Session,
-    approval_request_id: int,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    committee_key: str,
-) -> str:
-    approval = await data.approval_request(id=approval_request_id).get()
-    if (approval is None) or (approval.status != sql.ApprovalStatus.APPROVED):
-        raise storage.AccessError("This approval request is not ready to complete.", status=409)
-    if (
-        (approval.action != sql.ApprovalAction.ARCHIVE_RELEASE)
-        or (approval.project_key != str(project_key))
-        or (approval.release_version != str(version_key))
-    ):
-        raise storage.AccessError("This approval request does not match the requested action.", status=409)
-    if approval.committee_key != committee_key:
-        raise storage.AccessError("This approval request was filed for a different committee.", status=409)
-    approval.status = sql.ApprovalStatus.COMPLETED
-    # The requester is a real committer, so the archival - and the SVN removal it commits -
-    # is attributed to them rather than to the system running the resolve task.
-    return approval.requested_by
-
-
 async def _ensure_project_cycle(data: db.Session, project: sql.Project, version: safe.VersionKey) -> str:
     try:
         cycle_name = cycles.cycle_name_for_version(project, str(version))
@@ -1499,18 +1475,14 @@ class CommitteeMember(ReleaseManager):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
     ) -> None:
-        """Archive a published release that no CAP vote covers.
+        """Archive a published release.
 
-        Only a release which is not the latest in its cycle may be archived this
-        way. The write lock is taken before that is decided, so a release can't
-        become the latest, or gain an archival vote, in between.
+        The write lock is taken before the release is checked, so two archivals of
+        the same release can't both go ahead.
         """
         await self.__data.begin_immediate()
         self.__data.expire_all()
         try:
-            project = await self.__data.project(key=str(project_key), _committee=True, _releases=True).get()
-            if project is None:
-                raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
             release = await self.__data.release(
                 project_key=str(project_key),
                 version=str(version_key),
@@ -1518,7 +1490,12 @@ class CommitteeMember(ReleaseManager):
             ).get()
             if release is None:
                 raise storage.AccessError(f"Release {project_key!s} {version_key!s} not found", status=404)
-            await self.__assert_archivable_without_vote(project, release, project_key, version_key)
+            if release.phase != sql.ReleasePhase.RELEASE:
+                raise storage.AccessError(
+                    f"Release {project_key!s} {version_key!s} is not in the release phase", status=409
+                )
+            if release.is_archived:
+                raise storage.AccessError(f"Release {project_key!s} {version_key!s} is already archived.", status=409)
             error = await archive_release_core(
                 self.__data,
                 self.__write_as,
@@ -1533,39 +1510,6 @@ class CommitteeMember(ReleaseManager):
         except Exception:
             await self.__data.rollback()
             raise
-
-    async def __assert_archivable_without_vote(
-        self,
-        project: sql.Project,
-        release: sql.Release,
-        project_key: safe.ProjectKey,
-        version_key: safe.VersionKey,
-    ) -> None:
-        if release.phase != sql.ReleasePhase.RELEASE:
-            raise storage.AccessError(
-                f"Release {project_key!s} {version_key!s} is not in the release phase", status=409
-            )
-        if release.is_archived:
-            raise storage.AccessError(f"Release {project_key!s} {version_key!s} is already archived.", status=409)
-        active = [
-            r
-            for r in project.releases_including_embargoed
-            if (r.phase == sql.ReleasePhase.RELEASE) and (not r.is_archived)
-        ]
-        latest = cycles.latest_release_in_cycle(project, release.version, active)
-        if (latest is None) or (latest.key == release.key):
-            raise storage.AccessError(
-                f"Release {project_key!s} {version_key!s} is the latest in its cycle,"
-                " so archiving it requires a CAP approval vote.",
-                status=409,
-            )
-        approval = await self.__data.approval_request(
-            project_key=str(project_key),
-            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-            release_version=str(version_key),
-        ).get()
-        if approval is not None:
-            raise storage.AccessError("A CAP approval request for this release is already in progress.", status=409)
 
     async def start_expedited(
         self,
@@ -1636,59 +1580,6 @@ class FoundationAdmin(FoundationCommitter):
             release,
             sql.ArchiveSource.DIST_WATCHER,
         )
-
-    async def complete_archive(
-        self,
-        project_key: safe.ProjectKey,
-        version_key: safe.VersionKey,
-        approval_request_id: int,
-    ) -> str | None:
-        """Archive a release whose CAP approval vote has passed.
-
-        The CAP resolve task runs this once a vote passes, so there's no committer
-        pressing the button - but the person who requested the vote is a real committer,
-        so the archival, and the SVN removal it commits, is attributed to them rather than
-        to the system. It mirrors the by-hand committee-member path: take the write lock,
-        claim the approval, then archive. The lock is taken before the approval is read, so
-        an approval can only ever complete one archival.
-        """
-        await self.__data.begin_immediate()
-        self.__data.expire_all()
-        try:
-            release = await self.__data.release(
-                project_key=str(project_key),
-                version=str(version_key),
-                _committee=True,
-            ).get()
-            if release is None:
-                return f"Release {project_key!s} {version_key!s} not found"
-            committee = release.committee
-            if committee is None:
-                return f"Release {project_key!s} {version_key!s} has no committee"
-            requested_by = await _claim_release_archive_approval(
-                self.__data, approval_request_id, project_key, version_key, committee.key
-            )
-            if release.is_archived:
-                # The watcher or a by-hand archive got there while the vote ran. The
-                # approval has nothing left to do, so complete it rather than leave it
-                # blocking the release
-                await self.__data.commit()
-                return None
-            return await archive_release_core(
-                self.__data,
-                self.__write_as,
-                requested_by,
-                project_key,
-                version_key,
-                release,
-                sql.ArchiveSource.CAP,
-            )
-        except storage.AccessError as e:
-            await self.__data.rollback()
-            return str(e)
-        except Exception:
-            await self.__data.rollback()
-            raise
 
     async def catalogue_release(
         self,

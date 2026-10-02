@@ -85,30 +85,9 @@ async def test_archive_rejects_a_release_not_in_the_release_phase():
 
 
 @pytest.mark.asyncio
-async def test_archive_rejects_a_release_with_an_archival_vote_in_progress():
-    target = _archive_candidate(version="1.0.0")
-    member = _make_member(
-        release_result=target,
-        siblings=[_archive_candidate(version="2.0.0")],
-        approval=SimpleNamespace(status=sql.ApprovalStatus.PENDING),
-    )
-    with pytest.raises(storage.AccessError, match="already in progress"):
-        await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-
-
-@pytest.mark.asyncio
-async def test_archive_rejects_the_latest_release_in_the_cycle():
-    # The latest in a cycle may only be archived through a CAP approval vote
-    target = _archive_candidate(version="2.0.0")
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="1.0.0")])
-    with pytest.raises(storage.AccessError, match="requires a CAP approval vote"):
-        await member.archive(safe.ProjectKey("example"), safe.VersionKey("2.0.0"))
-
-
-@pytest.mark.asyncio
 async def test_archive_succeeds_and_writes_lifecycle_event():
     target = _archive_candidate(version="1.0.0")
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    member = _make_member(release_result=target)
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
@@ -137,7 +116,7 @@ async def test_archive_enqueues_svn_unpublish_when_published(monkeypatch):
     # Archiving a release that ATR published should queue its removal from dist
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
     target = _archive_candidate(version="1.0.0", download_path_suffix="example/1.0.0")
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    member = _make_member(release_result=target)
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
@@ -160,7 +139,7 @@ async def test_archive_enqueues_svn_unpublish_for_a_root_published_release(monke
     # An empty suffix means the release lives at the committee dist root; it must still be removed
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
     target = _archive_candidate(version="1.0.0", download_path_suffix="")
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    member = _make_member(release_result=target)
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
@@ -180,7 +159,7 @@ async def test_archive_queues_svn_unpublish_without_a_suffix(monkeypatch):
     # dist locations, so a removal is queued and the executor works out what to take out.
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
     target = _archive_candidate(version="1.0.0", download_path_suffix=None)
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    member = _make_member(release_result=target)
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
@@ -199,7 +178,7 @@ async def test_archive_skips_svn_unpublish_when_svn_not_configured(monkeypatch):
     # Without an SVN publish target there is nothing to remove, so no task
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None, raising=False)
     target = _archive_candidate(version="1.0.0", download_path_suffix="example/1.0.0")
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    member = _make_member(release_result=target)
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
@@ -261,27 +240,9 @@ def _archive_candidate(
     )
 
 
-def _make_member(
-    release_result: object,
-    siblings: list[SimpleNamespace] | None = None,
-    approval: object = None,
-) -> release.CommitteeMember:
-    # A release is only archivable without a vote when a later sibling supersedes it
-    releases = list(siblings or [])
-    if isinstance(release_result, SimpleNamespace):
-        releases.append(release_result)
-    project = SimpleNamespace(
-        key="example",
-        cycle_match=None,
-        calver_format=None,
-        version_method=sql.VersionMethod.SIMPLE,
-        releases_including_embargoed=releases,
-    )
-
+def _make_member(release_result: object) -> release.CommitteeMember:
     mock_data = mock.MagicMock()
     mock_data.release = mock.MagicMock(return_value=ReleaseQuery(release_result))
-    mock_data.project = mock.MagicMock(return_value=ReleaseQuery(project))
-    mock_data.approval_request = mock.MagicMock(return_value=ReleaseQuery(approval))
     # Archival queues a catalog-site regeneration, which first looks for an existing queued one.
     mock_data.task = mock.MagicMock(return_value=ReleaseQuery(None))
     mock_data.execute_query = mock.AsyncMock()
