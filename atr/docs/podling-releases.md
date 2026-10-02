@@ -17,7 +17,7 @@
 
 A ***Podling*** is a project in the Apache Incubator, and its committee is a ***PPMC***. A
 podling release goes through the same compose, vote, and finish phases as any other release, but
-incubation policy adds some requirements. The main one is that a podling release must be approved
+[incubation policy](https://incubator.apache.org/policy/incubation.html#releases) adds some requirements. The main one is that a podling release must be approved
 twice: first by the podling's own PPMC, and then by the Incubator PMC. ATR runs these as two
 rounds of voting on the same candidate.
 

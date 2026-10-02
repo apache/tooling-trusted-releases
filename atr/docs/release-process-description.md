@@ -20,7 +20,7 @@
 
 ## Releases
 
-The ASF releases open source software. The ATR platform helps PMCs release their project's artifacts through several stages:
+The ASF releases open source software under its [release policy](https://www.apache.org/legal/release-policy.html). The ATR platform helps PMCs release their project's artifacts through several stages:
 
 1. ***Candidate***. Guiding a ***Release Candidate*** through the phases of ASF Governance to make a Release is the primary purpose of the ATR platform.
    * ***Compose***. ***Release Artifacts*** are assembled and checked for compliance, and the Release Manager iterates on them until the

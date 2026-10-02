@@ -37,7 +37,7 @@ Both the Release Manager and the wider PMC have a part to play in this phase:
 * The ***Release Manager*** starts the vote, links to the artifacts under vote, and, when the
   vote is over, tallies the result and resolves it.
 * PMC members review the candidate and cast their votes on the vote thread. Whose votes are
-  binding is a matter of ASF policy.
+  binding is a matter of [ASF policy](https://www.apache.org/legal/release-policy.html#release-approval).
 
 ## Casting and resolving the vote
 

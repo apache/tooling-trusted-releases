@@ -46,7 +46,7 @@ links to the relevant page.
 ## What stays the same
 
 * The PMC still votes on each release, the vote thread is still on the project's mailing list,
-  and whose votes are binding is still a matter of ASF policy. Podlings still vote twice, as described in
+  and whose votes are binding is still a matter of [ASF policy](https://www.apache.org/legal/release-policy.html#release-approval). Podlings still vote twice, as described in
   [Podling releases](podling-releases).
 * Each release manager still signs the artifacts with their own OpenPGP key, and the committee
   still publishes a single `KEYS` file at `svn:dist:release`. See [The KEYS file](#the-keys-file)
@@ -89,7 +89,7 @@ upload credentials. In addition, as a PMC coming from the traditional process, c
 
 ## The KEYS file
 
-Signing releases is done with individual keys, as described in [Signing artifacts](signing-artifacts). Separately, each committee publishes a single `KEYS` file listing the public keys that its release managers sign with. The file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS`, is managed independently of any individual release, and is what downstream users fetch to verify release signatures. When you upload your key to ATR and associate it with a committee, it becomes part of the set that ATR holds for that committee's `KEYS` file.
+Signing releases is done with individual keys, as described in [Signing artifacts](signing-artifacts). Separately, each committee publishes a single [`KEYS` file](https://infra.apache.org/release-signing.html#keys-policy) listing the public keys that its release managers sign with. The file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS`, is managed independently of any individual release, and is what downstream users fetch to verify release signatures. When you upload your key to ATR and associate it with a committee, it becomes part of the set that ATR holds for that committee's `KEYS` file.
 
 Committee members choose how the file is kept in step with ATR, using the KEYS file management setting on the committee's page. There are three modes:
 

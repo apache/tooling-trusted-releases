@@ -38,7 +38,7 @@ sections below define the major terminology as it is used in ATR.
 
 A ***Committee*** in ATR is a PMC (Project Management Committee), or a PPMC (Podling Project Management Committee). The concept of a committee is
 important in ATR because both its members and all release managers have elevated permissions compared to non-member and non-release-manager
-committers. PMC members have ***binding release votes*** and can be ***Release Managers***; designated committers may be explicitly allowed to be
+committers. PMC members have [***binding release votes***](https://www.apache.org/legal/release-policy.html#release-approval) and can be ***Release Managers***; designated committers may be explicitly allowed to be
 Release Managers too. Committee status is determined outside of the ATR system, by either the Board of Directors for PMCs or by the Incubator PMC
 for PPMCs.
 
@@ -67,7 +67,7 @@ important for PMCs to acknowledge their *true number of projects*.
 * See [Trusted Publishing](trusted-publishing).
 
 Projects are initially defined based on ***DOAP files*** and observed release activity. Once a PMC uses ATR, projects are defined both within the
-platform and via `.asf.yaml`. See [Project configuration](project-configuration) for the metadata fields and naming requirements. The tooling team
+platform and via [`.asf.yaml`](https://github.com/apache/infrastructure-asfyaml#atrsync). See [Project configuration](project-configuration) for the metadata fields and naming requirements. The tooling team
 will work with PMCs to properly update their projects.
 
 ## Release
