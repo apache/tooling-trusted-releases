@@ -23,6 +23,7 @@ import unittest.mock as mock
 from typing import TYPE_CHECKING
 
 import aiosmtplib
+import aiosmtplib.response as response
 import pytest
 
 import atr.mail as mail
@@ -60,6 +61,53 @@ async def test_address_objects_used_for_from_to_headers(monkeypatch: "MonkeyPatc
     # Address objects format email addresses properly
     assert "From: sender@apache.org" in msg_text
     assert "To: recipient@apache.org" in msg_text
+
+
+@pytest.mark.parametrize("failure", [None, "partial", "refused", "connect", "data"])
+async def test_bulk_mail_batches_recipients_and_reports_failures(monkeypatch, failure):
+    recipients = [f"user{i}@apache.org" for i in range(201)]
+    smtp = mock.MagicMock()
+    smtp.__aenter__.return_value = smtp
+    smtp.sendmail = mock.AsyncMock(return_value=({}, "OK"))
+    smtp_factory = mock.Mock(return_value=smtp)
+    monkeypatch.setattr(aiosmtplib, "SMTP", smtp_factory)
+    if failure == "connect":
+        smtp.__aenter__.side_effect = OSError("connection failed")
+    elif failure == "data":
+        smtp.sendmail.side_effect = [({}, "OK"), OSError("DATA failed")]
+    elif failure == "partial":
+        smtp.sendmail.side_effect = [
+            ({recipients[0]: response.SMTPResponse(550, "refused")}, "OK"),
+            ({}, "OK"),
+            ({}, "OK"),
+        ]
+    elif failure == "refused":
+        smtp.sendmail.side_effect = [
+            aiosmtplib.SMTPRecipientsRefused(
+                [aiosmtplib.SMTPRecipientRefused(550, "refused", addr) for addr in recipients[:100]]
+            ),
+            ({}, "OK"),
+            ({}, "OK"),
+        ]
+    errors = await mail._send_many("admin@apache.org", recipients, "same message")
+    expected_failed = {
+        None: [],
+        "partial": recipients[:1],
+        "refused": recipients[:100],
+        "connect": recipients,
+        "data": recipients[100:],
+    }[failure]
+    assert len(errors) == len(expected_failed)
+    assert all(
+        error.startswith(f"failed to send to {addr}: ") for addr, error in zip(expected_failed, errors, strict=True)
+    )
+    calls = smtp.sendmail.await_args_list
+    expected_batches = 0 if (failure == "connect") else 2 if (failure == "data") else 3
+    assert len(calls) == expected_batches
+    for i, call in enumerate(calls):
+        assert call.args == ("admin@apache.org", recipients[i * 100 : (i + 1) * 100], b"same message")
+    smtp_factory.assert_called_once()
+    smtp.close.assert_called_once()
 
 
 @pytest.mark.asyncio

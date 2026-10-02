@@ -145,6 +145,7 @@ type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
 type CATALOG_SITE_REBUILD = Literal["CATALOG_SITE_REBUILD"]
 type LDAP = Literal["LDAP"]
+type NOTIFY_PAT_OWNERS = Literal["NOTIFY_PAT_OWNERS"]
 type PRESENTATIONS_VOTE_BYPASS = Literal["PRESENTATIONS_VOTE_BYPASS"]
 type PROJECTS_UPDATE = Literal["PROJECTS_UPDATE"]
 type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
@@ -205,6 +206,29 @@ class LdapLookupForm(form.Form):
     )
 
 
+class NotifyPATOwnersForm(form.Form):
+    variant: NOTIFY_PAT_OWNERS = form.value(NOTIFY_PAT_OWNERS)
+    revocation_id: str = form.label("Revocation", widget=form.Widget.HIDDEN)
+    subject: str = form.label("Subject", default="ATR user PATs revoked", required=True)
+    body: str = form.label("Message", widget=form.Widget.TEXTAREA, required=True)
+
+    @pydantic.field_validator("subject", "body")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        if not value:
+            raise ValueError("Must not be empty")
+        if "\x00" in value:
+            raise ValueError("Must not contain null bytes")
+        return value
+
+    @pydantic.field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str) -> str:
+        if ("\r" in value) or ("\n" in value):
+            raise ValueError("Subject must be a single line")
+        return value
+
+
 class PresentationsVoteBypassForm(form.Form):
     variant: PRESENTATIONS_VOTE_BYPASS = form.value(PRESENTATIONS_VOTE_BYPASS)
     enabled: form.Bool = form.label(
@@ -230,6 +254,7 @@ class ReleaseAgeRow(NamedTuple):
 @dataclasses.dataclass
 class SessionsQuery(web.PageQuery):
     limit: int = 250
+    revocation_id: str | None = None
 
 
 class RestoreBannerForm(form.Form):
@@ -239,7 +264,9 @@ class RestoreBannerForm(form.Form):
 
 class RevokeAllTokensForm(form.Form):
     variant: REVOKE_ALL_TOKENS = form.value(REVOKE_ALL_TOKENS)
-    confirm_revoke: Literal["REVOKE ALL TOKENS"] = form.label("Confirmation", "Type REVOKE ALL TOKENS to confirm.")
+    confirm_revoke: Literal["REVOKE ALL USER PATS"] = form.label(
+        "Confirmation", "Type REVOKE ALL USER PATS to confirm."
+    )
 
 
 class RevokeUserTokensForm(form.Form):
@@ -354,6 +381,7 @@ type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestR
 type UsersForm = Annotated[
     BrowseAsUserForm
     | LdapLookupForm
+    | NotifyPATOwnersForm
     | RevokeUserTokensForm
     | RevokeAllTokensForm
     | RevokeUserSSHKeysForm
@@ -1861,6 +1889,8 @@ async def users_post(
             return await _users_browse_as(session, users_form)
         case LdapLookupForm():
             return await _users_page(session, "ldap", SessionsQuery(), ldap_form=users_form)
+        case NotifyPATOwnersForm():
+            return await _users_notify_pat_owners(session, users_form)
         case RevokeUserTokensForm():
             return await _users_revoke_tokens(session, users_form)
         case RevokeAllTokensForm():
@@ -3168,6 +3198,21 @@ async def _users_ldap_tab(lookup_form: LdapLookupForm | None) -> htm.Element:
     return htm.div[markupsafe.Markup(content)]
 
 
+async def _users_notify_pat_owners(session: web.Committer, notice_form: NotifyPATOwnersForm) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        count = await write.as_foundation_admin().tokens.notify_revoked_pat_owners(
+            notice_form.revocation_id, notice_form.subject, notice_form.body
+        )
+    if count is None:
+        await quart.flash("This notice was already queued or is no longer available.", "info")
+    else:
+        await web.flash_success(
+            htm.p[f"Queued the notice for {util.plural(count, 'affected user')}."],
+            htm.a(href=util.as_url(system_get, tab="tasks"))["View delivery status"],
+        )
+    return await session.redirect(users_get, tab="revoke-all-tokens")
+
+
 async def _users_page(
     session: web.Committer, active_tab: str, query_args: SessionsQuery, ldap_form: LdapLookupForm | None = None
 ) -> str:
@@ -3176,7 +3221,11 @@ async def _users_page(
         htm.Tab("ldap", "LDAP lookup", lambda: _users_ldap_tab(ldap_form)),
         htm.Tab("sessions", "Sessions", lambda: _users_sessions_tab(query_args)),
         htm.Tab("revoke-tokens", "Revoke tokens", _users_revoke_tokens_tab),
-        htm.Tab("revoke-all-tokens", "Revoke all tokens", _users_revoke_all_tokens_tab),
+        htm.Tab(
+            "revoke-all-tokens",
+            "Revoke all user PATs",
+            lambda: _users_revoke_all_tokens_tab(session, query_args.revocation_id),
+        ),
         htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
         htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session)),
         htm.Tab("rotate-jwt", "Rotate JWT key", _users_rotate_jwt_tab),
@@ -3187,32 +3236,67 @@ async def _users_page(
     return await template.render("admin-blank.html", title="Users", content=page.collect())
 
 
+async def _users_revocation_notice_tab(session: web.Committer, revocation_id: str) -> htm.Element:
+    async with storage.write(session) as write:
+        revocation = await write.as_foundation_admin().tokens.pat_revocation(revocation_id)
+    if revocation is None:
+        await quart.flash("This notice was already queued or is no longer available.", "info")
+        return await _users_revoke_all_tokens_tab(session)
+    page = htm.Block()
+    page.h2["Notify affected users"]
+    page.p[f"{util.plural(revocation.count, 'user PAT')} revoked at {util.format_datetime(revocation.revoked)}."]
+    page.p[
+        "Please choose whether to email all affected users (using the form below), or ",
+        htm.a(href=util.as_url(system_get, tab="banner"))["change the site banner"],
+        " or do nothing.",
+    ]
+    page.p[
+        "To: ",
+        htm.code[f"{session.asf_uid}@apache.org"],
+        f". BCC: {util.plural(len([uid for uid in revocation.owners if uid != session.asf_uid]), 'affected user')}.",
+    ]
+    page.append(
+        await form.render(
+            model_cls=NotifyPATOwnersForm,
+            action=util.as_url(users_post, tab="revoke-all-tokens", revocation_id=revocation_id),
+            defaults={"revocation_id": revocation_id},
+            submit_label=f"Email {util.plural(len(revocation.owners), 'affected user')}",
+            confirm="Send this notice to the affected users?",
+        )
+    )
+    return page.collect()
+
+
 async def _users_revoke_all_tokens(session: web.Committer) -> web.WerkzeugResponse:
     async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        count = await wafa.tokens.revoke_all_users_tokens()
+        revocation = await write.as_foundation_admin().tokens.revoke_all_users_tokens()
+    if revocation is None:
+        await quart.flash("No user PATs found.", "info")
+        return await session.redirect(users_get, tab="revoke-all-tokens")
+    await quart.flash(
+        f"Revoked {util.plural(revocation.count, 'user PAT')} "
+        f"belonging to {util.plural(len(revocation.owners), 'user')}.",
+        "success",
+    )
+    return await session.redirect(users_get, tab="revoke-all-tokens", revocation_id=revocation.id)
 
-    if count > 0:
-        await quart.flash(f"Revoked {util.plural(count, 'token')} across all users.", "success")
-    else:
-        await quart.flash("No user tokens found.", "info")
 
-    return await session.redirect(users_get, tab="revoke-all-tokens")
-
-
-async def _users_revoke_all_tokens_tab() -> htm.Element:
+async def _users_revoke_all_tokens_tab(session: web.Committer, revocation_id: str | None = None) -> htm.Element:
+    if revocation_id:
+        return await _users_revocation_notice_tab(session, revocation_id)
     rendered_form = await form.render(
         model_cls=RevokeAllTokensForm,
         action=util.as_url(users_post, tab="revoke-all-tokens"),
-        submit_label="Revoke all tokens",
+        submit_label="Revoke all user PATs",
         submit_classes="btn-danger",
     )
     block = htm.Block()
-    block.h2["Revoke all tokens"]
+    block.h2["Revoke all user PATs"]
     block.append(
         htm.div(".alert.alert-danger", role="alert")[
             "This deletes the Personal Access Tokens of every user at once. Any JWT issued from them stops"
-            " working immediately, and every user must generate new tokens. System tokens are not affected."
+            " working immediately, and affected users must create new PATs. System tokens, browser sessions and SSH"
+            " keys are not affected."
         ]
     )
     block.append(rendered_form)

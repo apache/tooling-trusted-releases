@@ -28,6 +28,7 @@ import pytest
 import atr.ldap as ldap
 import atr.mail as mail
 import atr.models.args as args
+import atr.models.sql as sql
 import atr.tasks.message as message
 
 if TYPE_CHECKING:
@@ -43,6 +44,56 @@ def test_send_args_accepts_and_rejects_message_id() -> None:
     assert with_message_id.message_id == "preallocated@example.apache.org"
     with pytest.raises(pydantic.ValidationError, match=r"Message ID"):
         args.Send.model_validate({**base, "message_id": "preallocated@example.org"})
+
+
+@pytest.mark.parametrize(
+    ("task_id", "actor", "is_admin", "overrides", "allowed"),
+    [
+        (1, "validuser", True, {}, True),
+        (None, "validuser", True, {}, False),
+        (1, None, True, {}, False),
+        (1, "otheradmin", True, {}, False),
+        (1, "validuser", False, {}, False),
+        (1, "validuser", True, {"email_to": "other@apache.org"}, False),
+        (1, "validuser", True, {"email_cc": ["other@apache.org"]}, False),
+        (1, "validuser", True, {"email_bcc": []}, False),
+        (1, "validuser", True, {"email_bcc": ["dev@tooling.apache.org"]}, False),
+        (1, "validuser", True, {"email_bcc": ["validuser@apache.org"]}, False),
+    ],
+)
+async def test_send_pat_notice_requires_admin_task_and_fixed_addressing(
+    monkeypatch, task_id, actor, is_admin, overrides, allowed
+):
+    monkeypatch.setattr(message, "_verify_sender_account", mock.AsyncMock())
+    monkeypatch.setattr(message.user, "is_admin_async", mock.AsyncMock(return_value=is_admin))
+    data = mock.Mock()
+    task = sql.Task(task_type=sql.TaskType.MESSAGE_SEND, asf_uid=actor) if actor else None
+    data.task.return_value.get = mock.AsyncMock(return_value=task)
+    monkeypatch.setattr(message.db, "session", lambda: contextlib.nullcontext(data))
+    write = mock.Mock()
+    delivery = write.as_foundation_committer.return_value.mail.send = mock.AsyncMock(return_value=("mid", []))
+    monkeypatch.setattr(message.storage, "write", lambda _uid: contextlib.nullcontext(write))
+    notice = (
+        _send_args(email_to="validuser@apache.org")
+        | {
+            "pat_revocation_notice": True,
+            "email_bcc": ["affected@apache.org"],
+        }
+        | overrides
+    )
+    if not allowed:
+        with pytest.raises(message.SendError):
+            await message.send(notice, task_id=task_id)
+        delivery.assert_not_awaited()
+        return
+    await message.send(notice, task_id=task_id)
+    delivery.assert_awaited_once()
+    sent = delivery.await_args.args[0]
+    assert sent.email_to == "validuser@apache.org"
+    assert sent.email_bcc == ["affected@apache.org"]
+    delivery.return_value = ("mid", ["failed to send to affected@apache.org: refused"])
+    with pytest.raises(message.SendError, match="some recipients may have received it"):
+        await message.send(notice, task_id=task_id)
 
 
 @pytest.mark.asyncio
@@ -253,6 +304,7 @@ def test_send_task_args_omits_only_empty_message_id() -> None:
     without_message_id = base.as_task_args()
     with_supplied_message_id = with_message_id.as_task_args()
 
+    assert "pat_revocation_notice" not in without_message_id
     assert "message_id" not in without_message_id
     assert "in_reply_to" in without_message_id
     assert without_message_id["in_reply_to"] is None

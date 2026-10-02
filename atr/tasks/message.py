@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
 import atr.mail as mail
@@ -21,6 +22,7 @@ import atr.models.args as args
 import atr.models.results as results
 import atr.storage as storage
 import atr.tasks.checks as checks
+import atr.user as user
 
 
 class SendError(Exception):
@@ -28,12 +30,15 @@ class SendError(Exception):
 
 
 @checks.with_model(args.Send)
-async def send(task_args: args.Send) -> results.Results | None:
+async def send(task_args: args.Send, task_id: int | None = None) -> results.Results | None:
     is_noreply = task_args.email_sender == mail.NOREPLY_EMAIL_ADDRESS
     sender_asf_uid = _sender_asf_uid(task_args.email_sender)
     if not is_noreply:
         await _verify_sender_account(sender_asf_uid, task_args.email_sender)
-    _verify_recipients(task_args, sender_asf_uid)
+    if task_args.pat_revocation_notice:
+        await _verify_pat_revocation_notice(task_args, sender_asf_uid, task_id)
+    else:
+        _verify_recipients(task_args, sender_asf_uid)
 
     message = mail.Message(
         email_sender=task_args.email_sender,
@@ -52,6 +57,10 @@ async def send(task_args: args.Send) -> results.Results | None:
         log.warning(f"Mail sending to {task_args.email_to} for subject '{task_args.subject}' encountered errors:")
         for error in mail_errors:
             log.warning(f"- {error}")
+        if task_args.pat_revocation_notice:
+            raise SendError(
+                f"PAT notice delivery failed; some recipients may have received it: {'; '.join(mail_errors)}"
+            )
         recipient_total = 1 + len(task_args.email_cc) + len(task_args.email_bcc)
         if len(mail_errors) >= recipient_total:
             raise SendError(f"Failed to send to any recipient: {'; '.join(mail_errors)}")
@@ -87,6 +96,19 @@ def _sender_asf_uid(email_sender: str) -> str:
     if email_sender.endswith("@apache.org"):
         return email_sender.split("@")[0]
     raise SendError(f"Invalid email sender: {email_sender}")
+
+
+async def _verify_pat_revocation_notice(task_args: args.Send, sender: str, task_id: int | None) -> None:
+    if task_id is None:
+        raise SendError("PAT notices must be sent by a queued admin task")
+    async with db.session() as data:
+        task = await data.task(id=task_id).get()
+    if (task is None) or (task.asf_uid != sender) or (not await user.is_admin_async(sender)):
+        raise SendError("PAT notices require the sending administrator's task")
+    if (task_args.email_to != f"{sender}@apache.org") or task_args.email_cc or (not task_args.email_bcc):
+        raise SendError("PAT notices must be addressed to the administrator with affected users in BCC")
+    if any((not addr.endswith("@apache.org")) or (addr == task_args.email_to) for addr in task_args.email_bcc):
+        raise SendError("Invalid PAT notice BCC recipients")
 
 
 def _verify_recipients(task_args: args.Send, sender_asf_uid: str) -> None:

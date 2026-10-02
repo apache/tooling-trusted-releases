@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
+import uuid
 
 import sqlmodel
 
@@ -31,6 +32,7 @@ import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.mail as mail
+import atr.models.args as args
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -264,6 +266,37 @@ class FoundationAdmin(FoundationCommitter):
         )
         return [datatypes.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
 
+    async def notify_revoked_pat_owners(self, revocation_id: str, subject: str, body: str) -> int | None:
+        via = sql.validate_instrumented_attribute
+        claim = (
+            sqlmodel.delete(sql.TextValue)
+            .where(via(sql.TextValue.ns) == "pat_revocation", via(sql.TextValue.key) == revocation_id)
+            .returning(via(sql.TextValue.value))
+        )
+        value = (await self.__data.execute(claim)).scalar_one_or_none()
+        if value is None:
+            return None
+        revocation = datatypes.PATRevocation.model_validate_json(value)
+        if revocation.actor != self.__asf_uid:
+            raise storage.AccessError("This PAT revocation belongs to another administrator", status=403)
+        sender = f"{self.__asf_uid}@apache.org"
+        bcc = [f"{uid}@apache.org" for uid in revocation.owners if uid != self.__asf_uid]
+        notice = args.Send(
+            email_sender=sender,
+            email_to=sender,
+            email_bcc=bcc,
+            subject=subject,
+            body=body,
+            in_reply_to=None,
+            footer_category=mail.MailFooterCategory.USER,
+            pat_revocation_notice=bool(bcc),
+        )
+        task = sql.Task(task_type=sql.TaskType.MESSAGE_SEND, task_args=notice.as_task_args(), asf_uid=self.__asf_uid)
+        self.__data.add(task)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(revocation_id=revocation_id, task_id=task.id, bcc_count=len(bcc))
+        return len(revocation.owners)
+
     async def notify_trusted_publisher_failure(
         self,
         reason: str,
@@ -282,6 +315,15 @@ class FoundationAdmin(FoundationCommitter):
             )
         )
         await self.__data.commit()
+
+    async def pat_revocation(self, revocation_id: str) -> datatypes.PATRevocation | None:
+        value = await self.__data.ns_text_get("pat_revocation", revocation_id)
+        if value is None:
+            return None
+        revocation = datatypes.PATRevocation.model_validate_json(value)
+        if revocation.actor != self.__asf_uid:
+            raise storage.AccessError("This PAT revocation belongs to another administrator", status=403)
+        return revocation
 
     async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
         """Revoke all PATs that a specified user owns or created. Returns count of revoked tokens."""
@@ -315,16 +357,29 @@ class FoundationAdmin(FoundationCommitter):
             await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
         return count
 
-    async def revoke_all_users_tokens(self) -> int:
+    async def revoke_all_users_tokens(self) -> datatypes.PATRevocation | None:
         via = sql.validate_instrumented_attribute
-        stmt = sqlmodel.delete(sql.PersonalAccessToken).where(via(sql.PersonalAccessToken.is_system).is_(False))
-        result = await self.__data.execute(stmt)
+        stmt = (
+            sqlmodel.delete(sql.PersonalAccessToken)
+            .where(via(sql.PersonalAccessToken.is_system).is_(False))
+            .returning(via(sql.PersonalAccessToken.asfuid))
+        )
+        owners = (await self.__data.execute(stmt)).scalars().all()
+        if not owners:
+            await self.__data.commit()
+            return None
+        revocation = datatypes.PATRevocation(
+            id=uuid.uuid4().hex,
+            actor=self.__asf_uid,
+            revoked=datetime.datetime.now(datetime.UTC),
+            count=len(owners),
+            owners=sorted({uid for uid in owners if uid is not None}),
+        )
+        await self.__data.ns_text_set("pat_revocation", revocation.id, revocation.model_dump_json(), commit=False)
         await self.__data.commit()
-        count = getattr(result, "rowcount", 0) or 0
-        if count > 0:
-            self.__write_as.append_to_audit_log(tokens_revoked=count)
-            log.auth_event("pat_all_users_revoke", self.__asf_uid, tokens_revoked=count)
-        return count
+        self.__write_as.append_to_audit_log(tokens_revoked=revocation.count, revocation_id=revocation.id)
+        log.auth_event("pat_all_users_revoke", self.__asf_uid, tokens_revoked=revocation.count)
+        return revocation
 
     async def revoke_system_token(self, token_id: int) -> bool:
         pat = await self.__data.personal_access_token(id=token_id, is_system=True).get()

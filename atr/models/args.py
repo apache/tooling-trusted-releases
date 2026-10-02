@@ -205,6 +205,7 @@ class SBOMHeatmap(schema.Strict):
 class Send(schema.Strict):
     """Arguments for the task to send an email."""
 
+    pat_revocation_notice: bool = False
     email_sender: pydantic.EmailStr = schema.description("The email address of the sender")
     email_to: pydantic.EmailStr = schema.description("The email To address")
     subject: str = schema.description("The subject of the email")
@@ -229,6 +230,8 @@ class Send(schema.Strict):
         task_args = self.model_dump()
         if task_args.get("message_id") is None:
             task_args.pop("message_id", None)
+        if not self.pat_revocation_notice:
+            task_args.pop("pat_revocation_notice")
         return task_args
 
 

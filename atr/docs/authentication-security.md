@@ -252,6 +252,8 @@ Browser sign in is delegated to `oauth.apache.org`, so ATR does not process pass
 
 There is one automatic containment step that goes beyond a simple reject: when LDAP marks an account as inactive, ATR revokes that user's sessions, PATs, and SSH keys.
 
+**Revoke all user PATs** in *Admin → Users* deletes ordinary user PATs and invalidates JWTs issued from them. System tokens, browser sessions, and SSH keys are unaffected. Afterwards, the administrator can email the affected owners, edit the site banner, or finish without a notice. Each revocation saves its own recipient list, and the email goes To the initiating administrator and BCC to the other affected owners, once per owner. Only the subject and message are editable. Sending queues a background task and consumes the saved notice, to prevent duplicate submissions, and delivery failures are shown in *Admin → System → Tasks*. Multi-recipient emails share one SMTP connection and use batches of up to 100 recipients, with failures reported per address.
+
 ATR also does not ship with built in alert thresholds or automatic blocking rules for repeated failures. Instead it writes authentication events to `<STATE_DIR>/audit/daily/YYYY-MM-DD.jsonl` and request summaries to `<STATE_DIR>/logs/requests.log`.
 
 ## Audit Logging

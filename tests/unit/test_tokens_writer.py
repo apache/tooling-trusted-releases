@@ -26,6 +26,7 @@ import sqlmodel
 
 import atr.db as db
 import atr.models.sql as sql
+import atr.storage as storage
 import atr.storage.writers.tokens as tokens
 
 
@@ -57,9 +58,74 @@ async def test_revoke_all_users_tokens_keeps_system_tokens(sqlite_sessionmaker) 
         writer._FoundationAdmin__data = data
         writer._FoundationAdmin__asf_uid = "admin"
 
-        count = await writer.revoke_all_users_tokens()
+        data.add(sql.PersonalAccessToken(asfuid="alice", created_by="alice", token_hash="a2", expires=expires))
+        data.add(sql.PersonalAccessToken(asfuid="admin", created_by="admin", token_hash="c", expires=expires))
+        await data.commit()
+        revocation = await writer.revoke_all_users_tokens()
 
-        assert count == 2
+        assert revocation is not None
+        assert revocation.count == 4
+        assert revocation.owners == ["admin", "alice", "bob"]
         remaining = (await data.execute(sqlmodel.select(sql.PersonalAccessToken))).scalars().all()
         assert [token.token_hash for token in remaining] == ["s"]
-        write_as.append_to_audit_log.assert_called_once_with(tokens_revoked=2)
+        write_as.append_to_audit_log.assert_called_once_with(tokens_revoked=4, revocation_id=revocation.id)
+        assert await writer.pat_revocation(revocation.id) == revocation
+        assert await writer.revoke_all_users_tokens() is None
+
+        data.add(sql.PersonalAccessToken(asfuid="carol", created_by="carol", token_hash="d", expires=expires))
+        await data.commit()
+        later = await writer.revoke_all_users_tokens()
+        assert later is not None
+        assert later.id != revocation.id
+        assert later.owners == ["carol"]
+
+        assert await writer.notify_revoked_pat_owners(revocation.id, "Notice", "Replace your PATs.") == 3
+        assert await writer.notify_revoked_pat_owners(revocation.id, "Again", "Again") is None
+        assert await writer.pat_revocation(revocation.id) is None
+        assert await writer.pat_revocation(later.id) == later
+        tasks = await data.task(task_type=sql.TaskType.MESSAGE_SEND).all()
+        assert len(tasks) == 1
+        assert tasks[0].asf_uid == "admin"
+        assert tasks[0].task_args["email_sender"] == "admin@apache.org"
+        assert tasks[0].task_args["email_to"] == "admin@apache.org"
+        assert tasks[0].task_args["email_bcc"] == ["alice@apache.org", "bob@apache.org"]
+        assert tasks[0].task_args["email_cc"] == []
+        assert tasks[0].task_args["pat_revocation_notice"] is True
+
+
+@pytest.mark.parametrize("failure", ["wrong_admin", "commit"])
+async def test_revocation_notice_failed_queue_preserves_audience(sqlite_sessionmaker, monkeypatch, failure) -> None:
+    async with sqlite_sessionmaker() as data:
+        data.add(
+            sql.PersonalAccessToken(
+                asfuid="admin", created_by="admin", token_hash="a", expires=datetime.datetime.now(datetime.UTC)
+            )
+        )
+        await data.commit()
+        writer = object.__new__(tokens.FoundationAdmin)
+        writer._FoundationAdmin__write_as = mock.Mock()
+        writer._FoundationAdmin__data = data
+        writer._FoundationAdmin__asf_uid = "admin"
+        revocation = await writer.revoke_all_users_tokens()
+        assert revocation is not None
+        revocation_id = revocation.id
+        with monkeypatch.context() as patch:
+            if failure == "wrong_admin":
+                patch.setattr(writer, "_FoundationAdmin__asf_uid", "otheradmin")
+                with pytest.raises(storage.AccessError):
+                    await writer.pat_revocation(revocation_id)
+                error = storage.AccessError
+            else:
+                patch.setattr(data, "commit", mock.AsyncMock(side_effect=RuntimeError("commit failed")))
+                error = RuntimeError
+            with pytest.raises(error):
+                await writer.notify_revoked_pat_owners(revocation_id, "Notice", "Replace your PATs.")
+            await data.rollback()
+        assert await writer.pat_revocation(revocation_id) is not None
+        assert await data.task(task_type=sql.TaskType.MESSAGE_SEND).all() == []
+        assert await writer.notify_revoked_pat_owners(revocation_id, "Notice", "Replace your PATs.") == 1
+        task = await data.task(task_type=sql.TaskType.MESSAGE_SEND).get()
+        assert task is not None
+        assert task.task_args["email_to"] == "admin@apache.org"
+        assert task.task_args["email_bcc"] == []
+        assert "pat_revocation_notice" not in task.task_args

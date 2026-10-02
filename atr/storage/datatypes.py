@@ -111,6 +111,14 @@ class LinkedCommittee:
     publication: outcome.Outcome[KeysPublish]
 
 
+class PATRevocation(schema.Strict):
+    id: str
+    actor: str
+    revoked: datetime.datetime
+    count: int
+    owners: list[str]
+
+
 class PathInfo(schema.Strict):
     blockers: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     checker_stats: list[CheckerStats] = schema.factory(list)

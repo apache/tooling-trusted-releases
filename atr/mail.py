@@ -38,6 +38,7 @@ import atr.util as util
 _APACHE_DOMAIN: Final[str] = models_mail.APACHE_DOMAIN
 _MAIL_RELAY: Final[str] = "mail-relay.apache.org"
 _PREFLIGHT_TIMEOUT: Final[int] = 10
+_SMTP_BATCH_SIZE: Final[int] = 100
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
 NOREPLY_EMAIL_ADDRESS: Final[str] = f"noreply@{_APACHE_DOMAIN}"
@@ -171,9 +172,37 @@ def _reject_null_bytes(*values: str | None) -> None:
             raise ValueError("Email content cannot contain null bytes")
 
 
+async def _send_bulk_via_relay(from_addr: str, to_addrs: list[str], msg_bytes: bytes) -> list[str]:
+    smtp = aiosmtplib.SMTP(
+        hostname=_MAIL_RELAY,
+        port=_SMTP_PORT,
+        timeout=_SMTP_TIMEOUT,
+        tls_context=util.create_secure_ssl_context(),
+        start_tls=True,
+    )
+    errors: list[str] = []
+    pending = to_addrs
+    try:
+        async with smtp:
+            while pending:
+                try:
+                    refused, _ = await smtp.sendmail(from_addr, pending[:_SMTP_BATCH_SIZE], msg_bytes)
+                    errors.extend(f"failed to send to {addr}: {response}" for addr, response in refused.items())
+                except aiosmtplib.SMTPRecipientsRefused as e:
+                    errors.extend(f"failed to send to {error.recipient}: {error}" for error in e.recipients)
+                pending = pending[_SMTP_BATCH_SIZE:]
+    except Exception as e:
+        errors.extend(f"failed to send to {addr}: {e}" for addr in pending)
+    finally:
+        smtp.close()
+    return errors
+
+
 async def _send_many(from_addr: str, to_addrs: list[str], msg_text: str) -> list[str]:
     """Send an email to multiple recipients."""
     message_bytes = bytes(msg_text, "utf-8")
+    if len(to_addrs) > 1:
+        return await _send_bulk_via_relay(from_addr, to_addrs, message_bytes)
 
     errors = []
     for addr in to_addrs:
