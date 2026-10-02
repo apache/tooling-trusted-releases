@@ -92,6 +92,17 @@ async def authenticate() -> dict[str, Any]:
     return claims
 
 
+def bearer_subject(request: quart.Request) -> str | None:
+    # The signature is checked so that a forged sub can't pick its own bucket, but
+    # the LDAP and PAT checks are left to authenticate, which still runs afterwards
+    try:
+        claims = _decode(_extract_bearer_token(request))
+    except (base.ASFQuartException, jwt.PyJWTError):
+        return None
+    subject = claims.get("sub")
+    return subject if isinstance(subject, str) else None
+
+
 def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, system: bool = False) -> str:
     # audit_guidance no explicit typ header or token_type claim is added: the aud claim (_ATR_JWT_AUDIENCE)
     # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
@@ -123,22 +134,13 @@ def setup_signing_key(app: base.QuartApp) -> None:
 
 
 async def verify(token: str) -> dict[str, Any]:
-    jwt_secret_key = _signing_key()
     # We get the uid for logging here, which does allow faked UIDs to be used, but they'll only be used
     # to be set in an auth_failure log which would show the claimed UID, which we explicitly want for audit context
     # (even if it's not real, we want to know someone tried to auth as that user)
     claims_unsafe = jwt.decode(token, options={"verify_signature": False}, algorithms=[_ALGORITHM])
     asf_uid = claims_unsafe.get("sub")
     log.set_asf_uid(asf_uid)
-    claims = jwt.decode(
-        token,
-        jwt_secret_key,
-        algorithms=[_ALGORITHM],
-        issuer=_ATR_JWT_ISSUER,
-        audience=_ATR_JWT_AUDIENCE,
-        leeway=_ATR_JWT_LEEWAY_SECONDS,
-        options={"require": ["sub", "iss", "aud", "iat", "nbf", "exp", "jti"]},
-    )
+    claims = _decode(token)
     log.debug(f"JWT claims: {claims}")
     if not isinstance(asf_uid, str):
         log.auth_failure("jwt_token", "jwt_subject_invalid")
@@ -230,6 +232,18 @@ def write_new_signing_key() -> str:
     key = _new_signing_key()
     _write_signing_key(key)
     return key
+
+
+def _decode(token: str) -> dict[str, Any]:
+    return jwt.decode(
+        token,
+        _signing_key(),
+        algorithms=[_ALGORITHM],
+        issuer=_ATR_JWT_ISSUER,
+        audience=_ATR_JWT_AUDIENCE,
+        leeway=_ATR_JWT_LEEWAY_SECONDS,
+        options={"require": ["sub", "iss", "aud", "iat", "nbf", "exp", "jti"]},
+    )
 
 
 def _extract_bearer_token(request: quart.Request) -> str:

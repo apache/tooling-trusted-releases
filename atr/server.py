@@ -509,6 +509,8 @@ def _app_setup_rate_limits(app: base.QuartApp, conf: type[config.AppConfig]):
         session = await sessions.read()
         if isinstance(session, sql.UserSession):
             return f"user:{session.uid}"
+        if (subject := jwtoken.bearer_subject(quart.request)) is not None:
+            return f"user:{subject}"
         return f"ip:{quart.request.remote_addr}"
 
     if not config.is_test_mode():
