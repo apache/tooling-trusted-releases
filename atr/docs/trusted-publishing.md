@@ -61,7 +61,7 @@ Although your project never sees the private key, Infrastructure makes it availa
 
 ### Step 4: Add the public key to your `KEYS` file
 
-If Infrastructure has not already done so, add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and it is kept in step with ATR as described in [Promoting to release](promoting-to-release#the-keys-file). Import the updated `KEYS` file through ATR, or commit it in SVN if your committee's file is managed there, rather than adding this key with the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
+If Infrastructure has not already done so, add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and it is kept in step with ATR as described in [The KEYS file](moving-to-atr#the-keys-file). Import the updated `KEYS` file through ATR, or commit it in SVN if your committee's file is managed there, rather than adding this key with the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
 
 ### Step 5: Check that your committee can use CI
 

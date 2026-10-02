@@ -4,7 +4,11 @@
 
 **Prev**: `1.` [Scope](scope)
 
-**Next**: `3.` [Projects](projects)
+**Next**: `2.1.` [Moving from the current process](moving-to-atr)
+
+**Pages**:
+
+* `2.1.` [Moving from the current process](moving-to-atr)
 
 **Sections**:
 
@@ -32,5 +36,8 @@ one or more of several methods.
    * Start a new release candidate.
    * See any finished releases, current and archived, whether made through ATR or found on https://downloads.apache.org/ and
      https://archive.apache.org/
+
+If your PMC is coming from the `svn:dist:dev` process, also read [Moving from the current process](moving-to-atr), which covers
+what changes and what to check before your first release.
 
 If your project is a podling, also read [Podling releases](podling-releases), which covers what differs for a project in the Incubator.

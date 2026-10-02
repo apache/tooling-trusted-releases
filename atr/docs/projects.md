@@ -2,7 +2,7 @@
 
 **Up**: [Documentation](.)
 
-**Prev**: `2.` [Getting started](getting-started)
+**Prev**: `2.1.` [Moving from the current process](moving-to-atr)
 
 **Next**: `3.1.` [Project configuration](project-configuration)
 
@@ -122,7 +122,7 @@ the committee's `KEYS` file before you publish signatures made with it.
 Committee members manage the committee's ***Signing Keys*** at [`/keys`](/keys), and choose how the `KEYS` file itself is
 kept in step with ATR from the committee's page. There are three modes - ATR can own the file and regenerate it, ATR can
 import changes made to the file in SVN (the default), or the committee can upload and commit it manually. See
-[The KEYS file](promoting-to-release#the-keys-file) for what each mode does and when to use it.
+[The KEYS file](moving-to-atr#the-keys-file) for what each mode does and when to use it.
 
 ## Tutorial
 

@@ -8,6 +8,7 @@ NOTE: This documentation is a work in progress.
 
 * `1.` [Scope](scope)
 * `2.` [Getting started](getting-started)
+  * `2.1.` [Moving from the current process](moving-to-atr)
 * `3.` [Projects](projects)
   * `3.1.` [Project configuration](project-configuration)
 * `4.` [Release managers](release-manager-setup)
