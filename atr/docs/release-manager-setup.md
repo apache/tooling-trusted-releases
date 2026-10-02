@@ -30,9 +30,26 @@ Every release artifact must carry a detached signature, so as a release manager 
 
 Add your public key on the [keys page](/keys). For a quick guide to generating a key and signing your files, see [Signing artifacts](signing-artifacts). Projects whose builds are reproducible can sign automatically during a GitHub Actions workflow rather than signing each file by hand; see [Trusted Publishing](trusted-publishing).
 
-ATR follows the ASF Infra [guidance on key strength](https://infra.apache.org/release-signing.html#note). New keys must be RSA of at least 4096 bits, or an ECDSA or EdDSA key such as Ed25519, and ATR rejects one that falls short of this. Pre-existing keys may continue to be used if they are RSA of at least 2048 bits. DSA keys, and RSA keys shorter than 2048 bits, can't be added on the keys page. Such a key may still appear in your committee's `KEYS` file, but ATR won't accept it as the signer of a release.
-
 Keep your private key secure, and never upload it or store it on untrusted equipment. The email address in your key is publicly associated with the releases you sign, so treat it as a lasting public record.
+
+### Required key settings
+
+ATR follows the ASF Infra [release signing guidance](https://infra.apache.org/release-signing.html), which is the full reference. ATR checks the settings below when it verifies each signature, and the keys page won't accept a key whose algorithm, size or user ID falls short. Where a signature was made by a subkey, it is the subkey that has to meet them.
+
+| Setting | Requirement |
+| --- | --- |
+| Algorithm and size | New keys must be RSA of at least 4096 bits, or an elliptic curve key such as Ed25519 or ECDSA on P-256 or stronger. Pre-existing keys must be RSA of at least 2048 bits. |
+| Prohibited keys | DSA keys of any size, and RSA keys shorter than 2048 bits, can't sign releases. They may still appear in your committee's `KEYS` file, but ATR won't accept them as the signer. |
+| Usage | The key, or subkey, must be able to sign. |
+| User ID | The key must carry an email address that ATR can link to your ASF account, ideally your `@apache.org` address. |
+| Expiry | The key must not have expired when ATR checks the signature. |
+| Revocation | A revoked key can't sign releases, whatever reason was given for revoking it. |
+
+ASF Infra also recommends the following, which ATR doesn't check:
+
+* Protect your private key with a strong passphrase.
+* Use SHA-256 or SHA-512 as the signature digest, not SHA-1. Recent GnuPG releases do this by default. This is separate from the `.sha256` or `.sha512` checksum files, which ATR does check.
+* Generate a revocation certificate and keep it somewhere safe, apart from your private key.
 
 ## Ways to work with ATR
 

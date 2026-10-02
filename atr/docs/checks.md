@@ -52,7 +52,7 @@ The checker key is `atr.tasks.checks.file_hash.check`.
 
 For each `.asc` signature file, ATR verifies the signature against the matching artifact using the public keys stored for the release committee. The signature is accepted only when it verifies and when the signing key is associated with an ASF UID or is the committee's automated release signing key, with a primary UID containing "Automated Release Signing" or "Services RM" (ignoring case) and the email address `private@`[_committee name_]`.apache.org`. If no suitable key is found or the signature does not match the artifact, the check fails.
 
-The key which made the signature, which may be a subkey, must also meet the minimum strength for signing releases. ATR records a blocker when a signature was made by a DSA key of any size, or by an RSA key shorter than 2048 bits, even if the signature itself verifies. See [Signing keys](release-manager-setup#signing-keys) for the key strength requirements.
+The key which made the signature, which may be a subkey, must also meet the minimum strength for signing releases. ATR records a blocker when a signature was made by a DSA key of any size, or by an RSA key shorter than 2048 bits, even if the signature itself verifies. See [Required key settings](release-manager-setup#required-key-settings) for the full list.
 
 ATR also raises a concern when the ASF UID of the signing key is not one of the ASF UIDs recorded as having uploaded the artifact, because an artifact is expected to be signed by the person who uploaded it. The automated release signing key is exempt. The concern does not block a vote, but it must be acknowledged before one is started.
 
