@@ -24,9 +24,16 @@ Checks are recorded against the release revision that you upload, and the result
 
 ## How ATR selects checks
 
-When you create or update a draft revision, ATR scans the files in the revision directory and schedules checks based on file suffix and project policy. A signature file with the `.asc` suffix triggers signature verification. A checksum file with the `.sha256` or `.sha512` suffix triggers hash verification. Archive files with the `.tar.gz`, `.tgz`, or `.zip` suffix trigger archive structure and license checks. Files with the `.cdx.json` suffix trigger SBOM analysis. ATR also runs a path and naming check across the entire revision.
+ATR chooses checks for each new draft revision based on file names and project policy:
 
-Project policy tells ATR which artifacts are source artifacts and which are binary artifacts, and it supplies exclusion patterns for license related checks. Project policy also controls the license check mode for source artifacts. You can choose lightweight checks, Apache RAT, or both for source artifacts. Binary artifacts are not scanned by RAT, and always rely on the lightweight checks.
+* `.asc` files: signature verification.
+* `.sha256` and `.sha512` files: checksum verification.
+* `.tar.gz`, `.tgz` and `.zip` archives: archive structure and license checks.
+* CycloneDX JSON SBOMs, such as `.cdx.json` files: SBOM analysis.
+
+ATR also checks file names and required signatures and checksums across the revision.
+
+Project policy identifies source and binary artifacts and sets exclusions for license checks. For source artifacts, you can choose lightweight license checks, Apache RAT, or both. Binary artifacts always use the lightweight checks.
 
 ## Understanding check results
 
@@ -60,7 +67,7 @@ The checker key is `atr.tasks.checks.signature.check`, and the uploader concern 
 
 ### Archive integrity checks
 
-ATR validates archive integrity during quarantine extraction, before accepting the proposed revision. Corrupt archives and those that exceed extraction limits fail validation. This is separate from the checks recorded against a revision. See [File handling](file-handling) for the formats covered and failure behavior.
+ATR validates new archives in supported formats before creating a revision. If an archive is corrupt or exceeds the extraction limits, the upload fails and the error appears on the compose page. See [Archive validation](uploading-files#archive-validation) for what happens while an upload is checked and how to retry a failed upload.
 
 ### Archive structure checks
 

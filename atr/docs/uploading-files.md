@@ -9,7 +9,8 @@
 **Sections**:
 
 * [Overview](#overview)
-* [File handling](#file-handling)
+* [Upload limits](#upload-limits)
+* [Archive validation](#archive-validation)
 * [Browser](#browser)
 * [rsync](#rsync)
 * [SVN import](#svn-import)
@@ -20,33 +21,36 @@
 
 ## Overview
 
-Once you have started a release, you add files to it during the [compose phase](compose-phase).
-ATR offers several ways to do so, and you can mix them within one release. Whichever you use, the
-files land in the same candidate, ATR runs its [checks](checks) over them, and the change is
-recorded as a new [revision](#revisions).
+Once you have started a release, you add files to it during the [compose phase](compose-phase). ATR offers several ways to do so, and you can mix them within one release. Each accepted upload creates a new [revision](#revisions), and ATR runs its [checks](checks) against it. Archives may need [validation](#archive-validation) before the new revision is created.
 
 Every artifact needs a detached signature and a checksum beside it, as described in
 [Signing artifacts](signing-artifacts). Upload those alongside the artifact itself.
+
+You can also include documentation and SBOMs. Uploaded files must not be symbolic links. For selected formats, ATR also rejects empty files or contents that do not match the file extension.
 
 The upload page for a release, reached with the "Upload files" button on its compose page, covers
 the browser, SVN, rsync, and GitHub workflow routes, and shows the exact commands and paths for
 that release.
 
-## File handling
+## Upload limits
 
-Upload release artifacts, their signatures and checksums, and related documentation and SBOMs. Common artifact formats include `.tar.gz`, `.tgz` and `.zip`. ATR checks the contents of selected formats but does not reject every unknown extension. An accepted upload can still fail the [release checks](checks).
-
-| Upload method | Size limit |
+| Upload method | Default limit |
 | --- | --- |
-| Browser and HTTP API | 512 MiB per request by default, including form fields and encoding overhead |
+| Browser and HTTP API | 512 MiB per request, including form fields and encoding |
 | rsync | Files over 2 GB are skipped |
-| SVN import | No explicit byte limit on the imported files |
+| SVN import | No fixed size limit on the imported files |
 
-For selected archive formats, ATR holds the whole proposed revision in quarantine while it extracts and validates the archives. The default unpacked size limit is 2 GiB for each file and for the total content of each archive. The previous revision remains available. If an archive fails extraction, ATR records the error and removes the quarantined upload. Correct the files and upload again. Dismissing the failure only acknowledges it.
+If a browser upload is too large, send fewer files at a time or use rsync within its file size limit.
 
-Files already in a revision remain downloadable while release checks run or report problems. Blockers prevent starting a vote. Local files are served as attachments, and published downloads go to ASF distribution services. ATR does not scan files for malware. Verify the [signatures](signing-artifacts) and checksums before using a download.
+## Archive validation
 
-See [File handling in the developer guide](file-handling) for the format lists, extraction limits, download controls and separate limits for key imports.
+ATR unpacks new archives in supported formats, including `.tar.gz`, `.tgz` and `.zip`, before accepting them. Each archive can contain up to 2 GiB of unpacked files by default. See the [developer guide](file-handling#archive-quarantine) for the full format list and extraction limits.
+
+During validation, the upload is not yet part of a revision. The previous revision remains available. You cannot start a vote until validation finishes. The compose page refreshes automatically when validation completes.
+
+If archive validation fails, ATR discards the whole upload. Read the error on the compose page, fix the problem, then upload all the files again, including signatures and checksums. **Dismiss** only hides the failure notice.
+
+Once the upload is accepted, ATR runs the [release checks](checks). The files remain downloadable even if these checks report problems. Fix blockers before starting a vote. ATR does not scan uploads for malware.
 
 ## Browser
 
@@ -128,9 +132,7 @@ for your release, and [Trusted Publishing](trusted-publishing) explains the appr
 
 ## Revisions
 
-Every change that you make during the compose phase, whether an upload, an import, or a deletion,
-creates a new [***Revision***](projects#revision) rather than altering the existing one. Revisions
-are numbered in sequence, starting from `00001`, and ATR runs its checks against each revision.
+Every change that ATR accepts during the compose phase, whether an upload, an import, or a deletion, creates a new [***Revision***](projects#revision) rather than altering the existing one. Revisions are numbered in sequence, starting from `00001`, and ATR runs its checks against each revision.
 
 Use the "Revisions" button on the compose page to see the history of a release. For each revision
 it shows:
