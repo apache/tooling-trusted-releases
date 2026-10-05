@@ -116,10 +116,7 @@ class FoundationCommitter(GeneralPublic):
                 vote_round,
                 caller_data=self.__data,
             )
-            binding_word, non_binding_word = user.binding_terminology(vote_round)
-            potency_label = binding_word.lower() if is_binding else None
-            if (vote_round == 1) and (not is_binding):
-                potency_label = non_binding_word.lower()
+            potency_label = await _vote_potency_label(release, self.__asf_uid, is_binding, self.__data)
 
             start_task = await interaction.release_current_vote_task(release, self.__data)
             if start_task is None:
@@ -248,7 +245,7 @@ class FoundationCommitter(GeneralPublic):
             fullname=fullname,
             is_binding=is_binding,
             comment=comment,
-            potency_label=_vote_potency_label(release, is_binding),
+            potency_label=await _vote_potency_label(release, self.__asf_uid, is_binding, self.__data),
         )
         in_reply_to = vote_thread_mid
 
@@ -1046,8 +1043,9 @@ class ReleaseManager(CommitteeParticipant):
                 and (not resolution_bypass)
             ):
                 binding_label, _non_binding_label = user.binding_terminology(voting_round)
+                binding_label_inline = user.binding_label_inline(binding_label)
                 raise storage.AccessError(
-                    f"The trusted ballot record does not have enough {binding_label.lower()} +1 votes to pass.",
+                    f"The trusted ballot record does not have enough {binding_label_inline} +1 votes to pass.",
                     status=409,
                 )
 
@@ -1414,13 +1412,11 @@ def _extend_unique(addresses: list[str], additions: list[str] | None, seen: set[
     return result
 
 
-def _vote_potency_label(release: sql.Release, is_binding: bool) -> str | None:
-    vote_round = None
-    if (release.committee is not None) and release.committee.is_podling:
-        vote_round = 2 if (release.podling_thread_id is not None) else 1
-    binding_word, non_binding_word = user.binding_terminology(vote_round)
+async def _vote_potency_label(release: sql.Release, asf_uid: str, is_binding: bool, data: db.Session) -> str | None:
+    committee = release.committee
+    if (committee is not None) and committee.is_podling and (release.podling_thread_id is None):
+        is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2, caller_data=data)
+        return user.binding_label_inline(user.round_one_binding_label(is_binding, is_ipmc_member))
     if is_binding:
-        return binding_word.lower()
-    if vote_round == 1:
-        return non_binding_word.lower()
+        return "binding"
     return None

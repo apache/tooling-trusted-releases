@@ -422,8 +422,7 @@ def _render_binding_status_round_one(
             " for Incubator approval.",
         ]
     page.p[ppmc_status, ipmc_status]
-    labels = (["IPMC-binding"] if is_ipmc_member else []) + (["PPMC-binding"] if is_ppmc_member else [])
-    return ", ".join(labels) or "Non-binding"
+    return user.round_one_binding_label(is_ppmc_member, is_ipmc_member)
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:

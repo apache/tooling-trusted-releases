@@ -32,9 +32,15 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
+def binding_label_inline(label: str) -> str:
+    if label.startswith(("IPMC", "PPMC")):
+        return label
+    return label.lower()
+
+
 def binding_terminology(vote_round: int | None) -> tuple[str, str]:
     if vote_round == 1:
-        return "Formal", "Informal"
+        return "PPMC-binding", "Non-binding"
     return "Binding", "Non-binding"
 
 
@@ -160,6 +166,11 @@ async def projects(uid: str, committee_only: bool = False, super_project: bool =
             _super_project=super_project,
         ).all()
     return list(projects)
+
+
+def round_one_binding_label(is_ppmc_member: bool, is_ipmc_member: bool) -> str:
+    labels = (["IPMC-binding"] if is_ipmc_member else []) + (["PPMC-binding"] if is_ppmc_member else [])
+    return ", ".join(labels) or "Non-binding"
 
 
 @functools.cache

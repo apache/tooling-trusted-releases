@@ -158,6 +158,7 @@ async def selected(  # noqa: C901
     is_trusted_mode = release.effective_vote_mode == sql.VoteMode.TRUSTED
     vote_round = interaction.trusted_vote_round(release)
     binding_label, non_binding_label = user.binding_terminology(vote_round)
+    binding_label_inline = user.binding_label_inline(binding_label)
     vote_seq = release.current_vote_seq
     trusted_ballot_rows: list[TrustedBallotRow] = []
     trusted_has_vote_serial = vote_seq is not None
@@ -241,7 +242,7 @@ async def selected(  # noqa: C901
         )
 
     if trusted_summary is not None:
-        trusted_outcome = _trusted_outcome(trusted_summary, binding_label)
+        trusted_outcome = _trusted_outcome(trusted_summary, binding_label_inline)
 
     cancel_only = False
     submit_classes = "btn-primary"
@@ -345,19 +346,19 @@ async def selected(  # noqa: C901
         icon = htpy.i(class_="bi bi-exclamation-triangle me-1")
         if is_trusted_mode:
             message = (
-                f"The trusted ballot record does not contain sufficient {binding_label.lower()} +1 votes to"
-                f" pass (at least 3 {binding_label.lower()} +1 votes are required, with more +1 than -1)."
+                f"The trusted ballot record does not contain sufficient {binding_label_inline} +1 votes to"
+                f" pass (at least 3 {binding_label_inline} +1 votes are required, with more +1 than -1)."
             )
         elif details is not None:
             message = (
-                f"The automated tabulation did not find sufficient {binding_label.lower()} +1 votes to"
-                f" pass (at least 3 {binding_label.lower()} +1 votes are required, with more +1 than -1)."
+                f"The automated tabulation did not find sufficient {binding_label_inline} +1 votes to"
+                f" pass (at least 3 {binding_label_inline} +1 votes are required, with more +1 than -1)."
                 " Note that the tabulation is heuristic and may not have parsed all votes"
                 " correctly."
             )
         else:
             message = (
-                f"The vote thread could not be tabulated, so {binding_label.lower()} vote requirements"
+                f"The vote thread could not be tabulated, so {binding_label_inline} vote requirements"
                 " could not be verified automatically."
             )
         if bypass_active and is_trusted_mode:
@@ -402,6 +403,7 @@ async def selected(  # noqa: C901
         pass_fail_allowed=pass_fail_allowed,
         bypass_active=bypass_active,
         binding_label=binding_label,
+        binding_label_inline=binding_label_inline,
         non_binding_label=non_binding_label,
     )
 
@@ -519,7 +521,7 @@ def _trusted_ballot_rows(
     return rows
 
 
-def _trusted_outcome(summary: interaction.TrustedVoteSummary, binding_label: str) -> str:
+def _trusted_outcome(summary: interaction.TrustedVoteSummary, binding_label_inline: str) -> str:
     if tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no):
-        return f"The ATR ballot record satisfies the {binding_label.lower()} vote threshold for passing."
-    return f"The ATR ballot record does not satisfy the {binding_label.lower()} vote threshold for passing."
+        return f"The ATR ballot record satisfies the {binding_label_inline} vote threshold for passing."
+    return f"The ATR ballot record does not satisfy the {binding_label_inline} vote threshold for passing."

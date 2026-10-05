@@ -22,8 +22,10 @@ from types import SimpleNamespace
 
 import pytest
 
+import atr.db.interaction as interaction
 import atr.models.tabulate as models_tabulate
 import atr.tabulate as tabulate
+import atr.user as user
 
 
 @pytest.mark.parametrize(
@@ -37,6 +39,18 @@ import atr.tabulate as tabulate
 )
 def test_binding_vote_passes(binding_plus_one: int, binding_minus_one: int, expected: bool) -> None:
     assert tabulate.binding_vote_passes(binding_plus_one, binding_minus_one) is expected
+
+
+def test_trusted_tally_block_uses_ppmc_binding_label() -> None:
+    summary = interaction.TrustedVoteSummary(binding_votes_yes=3, non_binding_votes_no=1)
+
+    tally = tabulate.trusted_tally_block(summary, *user.binding_terminology(1))
+
+    assert tally.splitlines() == [
+        "There were 3 PPMC-binding votes.",
+        "PPMC-binding votes: +1: 3, 0: 0, -1: 0.",
+        "Non-binding votes: +1: 0, 0: 0, -1: 1.",
+    ]
 
 
 @pytest.mark.asyncio
@@ -138,18 +152,37 @@ def test_vote_resolution_body_votes_formats_singular_binding_summary() -> None:
     assert body_lines[2] == "Of these binding votes, 8 were +1, 1 was -1, and 0 were 0."
 
 
-def test_vote_resolution_body_votes_uses_formal_label() -> None:
+def test_vote_resolution_body_votes_uses_ppmc_binding_label() -> None:
     summary = {
-        "binding_votes": 3,
-        "binding_votes_yes": 3,
+        "binding_votes": 1,
+        "binding_votes_yes": 1,
         "binding_votes_no": 0,
         "binding_votes_abstain": 0,
     }
+    vote_email = models_tabulate.VoteEmail(
+        name="PPMC Member",
+        asf_uid_or_email="ppmc",
+        from_email="ppmc@apache.org",
+        status=models_tabulate.VoteStatus.BINDING,
+        asf_eid="ppmc-eid",
+        iso_datetime="2026-01-01T00:00:00Z",
+        vote=models_tabulate.Vote.YES,
+        quotation="+1",
+        updated=False,
+    )
 
-    body_lines = list(tabulate._vote_resolution_body_votes({}, summary, "Formal", "Informal"))
+    body_lines = list(tabulate._vote_resolution_body_votes({"ppmc": vote_email}, summary, *user.binding_terminology(1)))
 
-    assert body_lines[0] == "There were 3 formal votes."
-    assert body_lines[2] == "Of these formal votes, 3 were +1, 0 were -1, and 0 were 0."
+    assert body_lines == [
+        "The PPMC-binding votes were cast as follows:",
+        "",
+        "+1 ppmc (PPMC-binding)",
+        "",
+        "There was 1 PPMC-binding vote.",
+        "",
+        "Of these PPMC-binding votes, 1 was +1, 0 were -1, and 0 were 0.",
+        "",
+    ]
 
 
 def test_vote_result_subject_formats_result_before_vote() -> None:

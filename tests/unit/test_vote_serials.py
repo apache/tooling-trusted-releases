@@ -36,6 +36,7 @@ import atr.storage as storage
 import atr.storage.writers.announce as announce
 import atr.storage.writers.release as release
 import atr.storage.writers.vote as vote
+import atr.user as user
 import atr.util as util
 
 
@@ -593,6 +594,59 @@ async def test_release_current_vote_task_matches_serial_and_legacy_fallback(sqli
         legacy = await interaction.release_current_vote_task(release_model, data)
         assert legacy is not None
         assert legacy.task_args["vote_seq"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
+@pytest.mark.parametrize(
+    ("vote_round", "is_member", "is_ipmc_member", "body"),
+    [
+        (1, True, True, "+1 (IPMC-binding, PPMC-binding) (chair) Voter"),
+        (1, False, True, "+1 (IPMC-binding) (chair) Voter"),
+        (1, True, False, "+1 (PPMC-binding) (chair) Voter"),
+        (1, False, False, "+1 (non-binding) (chair) Voter"),
+        (2, False, True, "+1 (binding) (chair) Voter"),
+        (2, True, False, "+1 (chair) Voter"),
+        (None, True, True, "+1 (binding) (chair) Voter"),
+        (None, False, True, "+1 (chair) Voter"),
+    ],
+)
+async def test_vote_email_labels_reflect_membership(
+    sqlite_sessionmaker, monkeypatch, vote_mode, vote_round, is_member, is_ipmc_member, body
+) -> None:
+    async with sqlite_sessionmaker() as data:
+        release_model = await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            current_vote_seq=1,
+            is_podling=vote_round is not None,
+            vote_mode=vote_mode,
+        )
+        release_model.podling_thread_id = "thread-abc" if (vote_round == 2) else None
+        release_model.project.committee.committee_members = ["chair"] if is_member else []
+        ipmc_members = ["chair"] if is_ipmc_member else []
+        data.add(sql.Committee(key="incubator", name="Incubator", committee_members=ipmc_members, committers=[]))
+        start_task = _completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
+        data.add(start_task)
+        await data.commit()
+        monkeypatch.setattr(vote.interaction, "release_current_vote_task", mock.AsyncMock(return_value=start_task))
+
+        writer, _write_as = _foundation_writer_with_data(data)
+        if vote_mode == sql.VoteMode.TRUSTED:
+            result = await writer.cast_trusted(
+                safe.ProjectKey("project"), safe.VersionKey("1.0.0"), sql.VoteChoice.YES, "", "Voter"
+            )
+        else:
+            is_binding, _committee = await user.is_binding_for_release(
+                release_model.project.committee, "chair", vote_round, caller_data=data
+            )
+            result = await writer.send_user_vote(release_model, "+1", "", "Voter", is_binding)
+
+        assert result == (["dev@project.apache.org"], "")
+        message_task = (
+            await data.execute(sqlmodel.select(sql.Task).where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND))
+        ).scalar_one()
+        assert message_task.task_args["body"] == body
 
 
 @pytest.mark.asyncio

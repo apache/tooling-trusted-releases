@@ -25,6 +25,7 @@ import atr.db as db
 import atr.log as log
 import atr.models as models
 import atr.models.sql as sql
+import atr.user as user
 import atr.util as util
 
 MAX_THREAD_MESSAGES = 10000
@@ -349,7 +350,7 @@ def _trusted_tally_block(
         yield f"https://lists.apache.org/thread/{thread_id}"
         yield ""
 
-    yield f"There were {summary.binding_votes} {binding_label.lower()} votes."
+    yield f"There were {summary.binding_votes} {user.binding_label_inline(binding_label)} votes."
     yield (
         f"{binding_label} votes: +1: {summary.binding_votes_yes}, "
         f"0: {summary.binding_votes_abstain}, -1: {summary.binding_votes_no}."
@@ -510,10 +511,11 @@ def _vote_resolution_body_votes(
         tabulated_votes, {models.tabulate.VoteStatus.BINDING}, binding_label, non_binding_label
     )
 
+    binding_label_inline = user.binding_label_inline(binding_label)
     binding_total = summary["binding_votes"]
     were_word = "was" if (binding_total == 1) else "were"
     votes_word = "vote" if (binding_total == 1) else "votes"
-    yield f"There {were_word} {binding_total} {binding_label.lower()} {votes_word}."
+    yield f"There {were_word} {binding_total} {binding_label_inline} {votes_word}."
     yield ""
 
     binding_yes = summary["binding_votes_yes"]
@@ -524,7 +526,7 @@ def _vote_resolution_body_votes(
         _vote_resolution_count(binding_no, "-1"),
         _vote_resolution_count(binding_abstain, "0"),
     ]
-    yield f"Of these {binding_label.lower()} votes, {', '.join(binding_vote_counts[:2])}, and {binding_vote_counts[2]}."
+    yield f"Of these {binding_label_inline} votes, {', '.join(binding_vote_counts[:2])}, and {binding_vote_counts[2]}."
     yield ""
 
     yield from _vote_resolution_votes(
@@ -552,7 +554,7 @@ def _vote_resolution_votes(  # noqa: C901
     status_labels = []
     for status in statuses:
         if status == models.tabulate.VoteStatus.BINDING:
-            status_labels.append(binding_label.lower())
+            status_labels.append(user.binding_label_inline(binding_label))
         elif status in {models.tabulate.VoteStatus.COMMITTER, models.tabulate.VoteStatus.CONTRIBUTOR}:
             status_labels.append(status.value.lower())
         else:
@@ -576,6 +578,8 @@ def _vote_resolution_votes(  # noqa: C901
                 symbol = "?"
         user_info = vote_email.asf_uid_or_email
         status = vote_email.status.value.lower()
+        if vote_email.status == models.tabulate.VoteStatus.BINDING:
+            status = user.binding_label_inline(binding_label)
         if vote_email.updated:
             status += ", updated"
         yield f"{symbol} {user_info} ({status})"
