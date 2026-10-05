@@ -17,6 +17,7 @@
 * [Signing keys](#signing-keys)
 * [Ways to work with ATR](#ways-to-work-with-atr)
 * [Access credentials](#access-credentials)
+* [Worked examples](#worked-examples)
 
 ## Introduction
 
@@ -122,4 +123,105 @@ Web Token*** (***JWT***), which you then send as a bearer token on your API call
 after a short period, so you mint a fresh one from your PAT whenever you need it. Revoking the
 backing PAT immediately invalidates any JWT issued from it. The full authentication model, including
 how to exchange a PAT for a JWT, is documented in
-[Authentication security](authentication-security).
+[Authentication security](authentication-security), and there is a
+[worked example](#exchanging-a-pat-for-a-jwt) below.
+
+## Worked examples
+
+The examples below use `curl` and `jq`, and assume that `ATR` holds the address of the ATR server,
+such as `https://releases.apache.org`. Replace `alice`, `example` and the version numbers with your
+own ASF UID, project and release. The full API is described at `/api/docs` on the ATR server.
+
+### Exchanging a PAT for a JWT
+
+Create a PAT on the [tokens page](/tokens) and keep it somewhere your shell can read it, such as an
+environment variable. A single call to `/api/jwt/create` exchanges it for a JWT:
+
+```shell
+JWT="$(curl -sSf -X POST "${ATR}/api/jwt/create" \
+  -H "Content-Type: application/json" \
+  -d "{\"asfuid\": \"alice\", \"pat\": \"${ATR_PAT}\"}" | jq -r .jwt)"
+```
+
+The response is a JSON object with an `asfuid` and a `jwt` field, and the command above keeps only
+the JWT. Send it as a bearer token on each API call that needs authentication:
+
+```shell
+curl -sSf -H "Authorization: Bearer ${JWT}" "${ATR}/api/..."
+```
+
+The JWT lasts 30 minutes, so a script that runs for longer has to mint a new one.
+Each PAT can mint at most ten JWTs an hour. If the PAT is bound to an IP
+address, the exchange has to come from that address.
+
+### Designating a committer as a release manager
+
+PMC members are release managers already. To let a committer who isn't on the PMC manage releases
+too, a PMC member designates them on the committee's page:
+
+1. Open the [committee directory](/committees) and choose your committee.
+2. Find the committer in the ***Roster and Release Managers*** card.
+3. Select ***Designate*** beside their name.
+
+The roster then marks them as a release manager, and they can compose, start votes on, and finish
+releases for every project in the committee. A designated release manager does not gain a binding
+vote, which still comes from PMC membership. To undo the change, select ***Remove*** beside their
+name. Each change is recorded in the audit log.
+
+The buttons only appear to PMC members, and only for people who are already committers of the
+committee. Standing committees don't have a roster of designated release managers.
+
+### Recording distributions
+
+ATR does not push your artifacts to Maven Central, PyPI, npm, Docker Hub or Artifact Hub, but it can
+record that you have done so. When you record a distribution, ATR looks the package up on the
+platform before it accepts the record, and the release's distribution list then links to it. If your
+project's [tagging spec](project-configuration#compose) names a platform, ATR won't let you announce
+the release until a distribution to that platform has been recorded.
+
+In the web interface, open the release's finish page and select
+***Verify a third-party distribution***. Choose the platform, then fill in the package details:
+
+| Platform | Owner or namespace | Package |
+| --- | --- | --- |
+| Maven Central | The `groupId`, such as `org.apache.example` | The `artifactId`, such as `example-core` |
+| PyPI | Leave blank | The package name, such as `apache-example` |
+| npm | Leave blank | The package name |
+| npm (scoped) | The scope, without the `@` | The package name within the scope |
+| Docker Hub | The namespace, which defaults to `library` | The repository name |
+| Artifact Hub | The repository name | The chart name |
+
+Package names may contain only letters, digits and hyphens, so use the normalised form of a PyPI
+name, i.e. `apache-example` rather than `apache_example`. During the compose phase, the same button
+on the draft's page records a staged distribution instead, such as a Maven staging repository.
+
+Scripts can record a distribution through the API with a [JWT](#exchanging-a-pat-for-a-jwt). Use the
+platform names `MAVEN`, `PYPI`, `NPM`, `NPM_SCOPED`, `DOCKER_HUB` or `ARTIFACT_HUB`. For example, to
+record version 1.2.0 of `org.apache.example:example-core` on Maven Central:
+
+```shell
+curl -sSf -X POST "${ATR}/api/distribution/record" \
+  -H "Authorization: Bearer ${JWT}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project": "example",
+    "version": "1.2.0",
+    "platform": "MAVEN",
+    "distribution_owner_namespace": "org.apache.example",
+    "distribution_package": "example-core",
+    "distribution_version": "1.2.0",
+    "staging": false,
+    "details": false
+  }'
+```
+
+For PyPI, set `platform` to `PYPI`, set `distribution_owner_namespace` to `null`, and set
+`distribution_package` to the package name. Set `staging` to `true` to record a staged distribution
+during the compose phase. If ATR can't find the package yet, for example because Maven Central has
+not finished syncing, the call fails and nothing is recorded, so wait and try again. You can check
+what has been recorded with `GET /api/distribution/list/example/1.2.0`, which needs no
+authentication.
+
+A GitHub Actions workflow can record a distribution without a PAT, using the
+`record-atr-distribution` action described in
+[Trusted Publishing](trusted-publishing#github-actions-for-atr).

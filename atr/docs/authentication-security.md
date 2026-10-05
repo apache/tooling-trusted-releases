@@ -160,10 +160,10 @@ PATs are rejected if the user who created them has been banned in or removed fro
 ### JSON Web Tokens (JWTs)
 
 To access protected API endpoints, users must first obtain a JWT by exchanging their PAT. This is
-done by POSTing to `/api/jwt`:
+done by POSTing to `/api/jwt/create`:
 
 ```text
-POST /api/jwt
+POST /api/jwt/create
 Content-Type: application/json
 
 {"asfuid": "username", "pat": "pat_token_value"}
@@ -207,8 +207,8 @@ it is recorded in `created_by`, which is always set on every PAT. The JWT a syst
 a fixed service identity, `system`, which has no LDAP account. System tokens are restricted to
 foundation administrators; committers cannot create them from the `/tokens` page.
 
-A system token is exchanged for a JWT at `/api/jwt`, requesting the `system` identity. The resulting
-JWT carries an additional `atr_sys` claim and `system` as its subject. Because that identity has no
+A system token is exchanged for a JWT at `/api/jwt/create`, requesting the `system` identity. The
+resulting JWT carries an additional `atr_sys` claim and `system` as its subject. Because that identity has no
 LDAP account, verification skips the LDAP active check for these JWTs. It still re-validates the
 backing PAT on every request, so revoking the PAT immediately invalidates every JWT issued from it.
 Two further checks apply: a system JWT must be backed by a system PAT, and its subject must be
