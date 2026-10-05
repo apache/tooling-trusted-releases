@@ -642,6 +642,8 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
             response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = csp_header
         response.headers["Permissions-Policy"] = permissions_policy
+        # audit_guidance we set Cross-Origin-Opener-Policy: same-origin in our frontend proxy
+        # audit_guidance we set Cross-Origin-Resource-Policy: same-origin in our frontend proxy
         # audit_guidance we set Referrer-Policy: same-origin in our frontend proxy
         # audit_guidance we set X-Content-Type-Options: nosniff in our frontend proxy
         # audit_guidance we set X-Frame-Options: DENY in our frontend proxy
