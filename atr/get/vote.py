@@ -402,15 +402,19 @@ def _render_binding_status_round_one(
     page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool
 ) -> str:
     if is_ppmc_member:
-        ppmc_status = [f"As {ppmc_membership}, your vote ", htpy.strong["counts"], " towards podling approval. "]
+        ppmc_status = [f"As {ppmc_membership}, your vote is ", htpy.strong["PPMC-binding"], " for podling approval. "]
     else:
         ppmc_status = [
-            f"You are not {ppmc_membership}, so your vote ",
-            htpy.strong["does not count"],
-            " towards podling approval. ",
+            f"You are not {ppmc_membership}, so your vote is ",
+            htpy.strong["non-binding"],
+            " for podling approval. ",
         ]
     if is_ipmc_member:
-        ipmc_status = ["As an Incubator PMC member, your vote is ", htpy.strong["binding"], " for Incubator approval."]
+        ipmc_status = [
+            "As an Incubator PMC member, your vote is ",
+            htpy.strong["IPMC-binding"],
+            " for Incubator approval.",
+        ]
     else:
         ipmc_status = [
             "You are not an Incubator PMC member, so your vote is ",
@@ -418,7 +422,7 @@ def _render_binding_status_round_one(
             " for Incubator approval.",
         ]
     page.p[ppmc_status, ipmc_status]
-    labels = (["IPMC binding"] if is_ipmc_member else []) + (["PPMC vote"] if is_ppmc_member else [])
+    labels = (["IPMC-binding"] if is_ipmc_member else []) + (["PPMC-binding"] if is_ppmc_member else [])
     return ", ".join(labels) or "Non-binding"
 
 

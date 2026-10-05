@@ -564,9 +564,9 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
 @pytest.mark.parametrize(
     ("is_podling", "podling_thread_id", "binding_by_round", "label"),
     [
-        (True, None, {1: True, 2: True}, "IPMC binding, PPMC vote"),
-        (True, None, {1: False, 2: True}, "IPMC binding"),
-        (True, None, {1: True, 2: False}, "PPMC vote"),
+        (True, None, {1: True, 2: True}, "IPMC-binding, PPMC-binding"),
+        (True, None, {1: False, 2: True}, "IPMC-binding"),
+        (True, None, {1: True, 2: False}, "PPMC-binding"),
         (True, None, {1: False, 2: False}, "Non-binding"),
         (True, "thread-abc", {2: True}, "Binding"),
         (False, None, {None: False}, "Non-binding"),
@@ -600,9 +600,9 @@ async def test_vote_decision_labels_reflect_membership(
     assert f"+1 ({label})" in html
     assert f"-1 ({label})" in html
     if is_podling and (podling_thread_id is None):
-        ppmc_word = "counts" if binding_by_round[1] else "does not count"
-        ipmc_word = "binding" if binding_by_round[2] else "non-binding"
-        assert f"your vote <strong>{ppmc_word}</strong> towards podling approval." in html
+        ppmc_word = "PPMC-binding" if binding_by_round[1] else "non-binding"
+        ipmc_word = "IPMC-binding" if binding_by_round[2] else "non-binding"
+        assert f"your vote is <strong>{ppmc_word}</strong> for podling approval." in html
         assert f"your vote is <strong>{ipmc_word}</strong> for Incubator approval." in html
 
 
