@@ -548,6 +548,15 @@ class ReleaseManager(CommitteeParticipant):
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
         if release.effective_vote_mode == sql.VoteMode.MANUAL:
             raise storage.AccessError("Release is configured for manual voting", status=409)
+        # Template fetched now and passed in to avoid fetches while holding the write lock
+        second_round_body_template: str | None = None
+        if (
+            (vote_result == "passed")
+            and (release.committee is not None)
+            and release.committee.is_podling
+            and (release.podling_thread_id is None)
+        ):
+            second_round_body_template = (await construct.resolve_template(release.project, "start_vote")).body
         podling_round_one_thread_id = None
         if release.effective_vote_mode == sql.VoteMode.TRUSTED:
             if (
@@ -570,6 +579,7 @@ class ReleaseManager(CommitteeParticipant):
                 expected_vote_seq,
                 expected_vote_mode,
                 podling_round_one_thread_id,
+                second_round_body_template,
                 automatic_resolve_when_finished=automatic_resolve_when_finished,
                 notify_when_finished=notify_when_finished,
                 additional_cc=additional_cc,
@@ -615,6 +625,7 @@ class ReleaseManager(CommitteeParticipant):
             latest_vote_task,
             asf_fullname,
             resolution_body,
+            second_round_body_template=second_round_body_template,
             automatic_resolve_when_finished=automatic_resolve_when_finished,
             notify_when_finished=notify_when_finished,
             additional_cc=additional_cc,
@@ -697,6 +708,7 @@ class ReleaseManager(CommitteeParticipant):
         latest_vote_task: sql.Task,
         asf_fullname: str,
         resolution_body: str,
+        second_round_body_template: str | None = None,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
         additional_cc: list[str] | None = None,
@@ -744,7 +756,9 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError("Release has no revision number - Invalid state", status=500)
                 vote_duration = latest_vote_task.task_args["vote_duration"]
                 subject_template = await construct.start_vote_subject_default(release.safe_project_key)
-                body_template = await construct.start_vote_default(release.safe_project_key)
+                body_template = second_round_body_template
+                if body_template is None:
+                    raise storage.AccessError("Second round vote template was not resolved", status=500)
                 options = construct.StartVoteOptions(
                     asfuid=self.__asf_uid,
                     fullname=asf_fullname,
@@ -974,6 +988,7 @@ class ReleaseManager(CommitteeParticipant):
         expected_vote_seq: int | None,
         expected_vote_mode: sql.VoteMode | None,
         podling_round_one_thread_id: str | None,
+        second_round_body_template: str | None,
         *,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
@@ -1059,7 +1074,9 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError("Release has no revision number - Invalid state", status=500)
                 vote_duration = latest_vote_task.task_args["vote_duration"]
                 subject_template = await construct.start_vote_subject_default(release.safe_project_key)
-                body_template = await construct.start_vote_default(release.safe_project_key)
+                body_template = second_round_body_template
+                if body_template is None:
+                    raise storage.AccessError("Second round vote template was not resolved", status=500)
                 options = construct.StartVoteOptions(
                     asfuid=self.__asf_uid,
                     fullname=asf_fullname,

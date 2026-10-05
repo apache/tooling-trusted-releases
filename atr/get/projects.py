@@ -363,7 +363,7 @@ async def view(
 
     content = page.collect()
 
-    javascripts = ["copy-variable", "version-scheme-toggle"]
+    javascripts = ["copy-variable", "template-url-toggle", "version-scheme-toggle"]
     return await template.blank(
         title=f"{project.display_name}",
         description=f"Information regarding {project.display_name}.",
@@ -470,10 +470,14 @@ def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, obje
     for field in (
         "announce_release_subject",
         "announce_release_template",
+        "announce_release_template_url",
         "start_vote_subject",
         "start_vote_template",
+        "start_vote_template_url",
         "finish_vote_template",
+        "finish_vote_template_url",
         "vote_comment_template",
+        "vote_comment_template_url",
         "release_checklist",
         "github_repository_name",
         "github_repository_branch",
@@ -974,6 +978,7 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
                 "project_key": project.key,
                 "announce_release_subject": project.policy_announce_release_subject or "",
                 "announce_release_template": project.policy_announce_release_template or "",
+                "announce_release_template_url": project.policy_announce_release_template_url,
                 "archive_prior_release": project.policy_auto_archive_prior_release,
                 "download_path_suffix": project.policy_download_path_suffix,
             },
@@ -1462,9 +1467,12 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
         "min_hours": project.policy_min_hours,
         "release_checklist": project.policy_release_checklist or "",
         "vote_comment_template": project.policy_vote_comment_template or "",
+        "vote_comment_template_url": project.policy_vote_comment_template_url,
         "start_vote_subject": project.policy_start_vote_subject or "",
         "start_vote_template": project.policy_start_vote_template or "",
+        "start_vote_template_url": project.policy_start_vote_template_url,
         "finish_vote_template": project.policy_finish_vote_template or "",
+        "finish_vote_template_url": project.policy_finish_vote_template_url,
     }
 
     release_checklist_widget = _textarea_with_variables(

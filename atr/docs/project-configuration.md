@@ -112,6 +112,11 @@ The Vote tab sets the defaults for the project's votes. The release manager can 
 * **Start vote subject** and **Start vote template.** The subject and body of the email that starts a vote.
 * **Finish vote template.** The body of the email that reports the result of a vote.
 
+Each email template also has a **template URL** field, as an alternative to composing the template in ATR. If you set one, ATR fetches the template from that URL whenever it shows the email form,
+so you can keep the text in your own repository, or reuse the same template for multiple projects easily. Whoever is sending the email can still edit it first. The URL must be on an `apache.org` host or `raw.githubusercontent.com`.
+If the fetch fails, ATR shows the default template with a warning, so check it carefully before sending. Emails that ATR sends without anyone reviewing them, such as an automatic vote resolution,
+use the default template in the same situation, and the API refuses to send rather than fall back.
+
 The templates and the checklist can include variables, written in the form `{{VERSION}}`, which ATR replaces when it uses the text. Each template field on the tab lists the variables available to it.
 
 ## Finish

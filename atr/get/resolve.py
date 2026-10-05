@@ -218,8 +218,9 @@ async def selected(  # noqa: C901
         )
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
+    resolved_template = await construct.resolve_template(release.project, "finish_vote")
     email_body = construct.finish_vote_body(
-        release.project.policy_finish_vote_template,
+        resolved_template.body,
         {
             "ATR_TALLY": atr_tally,
             "COMMITTEE": committee_name,
@@ -386,6 +387,7 @@ async def selected(  # noqa: C901
         resolve_form=resolve_form,
         fetch_error=fetch_error,
         mail_warnings=mail_warnings,
+        template_warning=resolved_template.warning,
         vote_task_error=vote_task_error,
         archive_url=archive_url,
         cancel_only=cancel_only,

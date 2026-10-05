@@ -24,6 +24,8 @@ from typing import Final, Literal, TypedDict, overload
 
 import atr.config as config
 import atr.db as db
+import atr.email_templates as email_templates
+import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
 import atr.models.safe as safe
@@ -32,11 +34,18 @@ import atr.paths as paths
 import atr.util as util
 
 type Context = Literal["announce", "announce_subject", "checklist", "finish_vote", "vote", "vote_subject"]
+type TemplateKind = Literal["announce_release", "finish_vote", "start_vote", "vote_comment"]
 
 # The list that hears about every release, whether ATR made it or the watcher spotted it
 _RELEASES_LIST_ADDRESS: Final[str] = "releases@tooling.apache.org"
 # Security warnings carry request details, so they go to the private list rather than a public one
 _SECURITY_LIST_ADDRESS: Final[str] = "private@tooling.apache.org"
+_TEMPLATE_LABELS: Final[dict[TemplateKind, str]] = {
+    "announce_release": "announcement email template",
+    "finish_vote": "vote resolution email template",
+    "start_vote": "vote email template",
+    "vote_comment": "vote comment template",
+}
 
 
 class _AnnounceSubjectValues(TypedDict):
@@ -204,6 +213,13 @@ class StartVoteOptions:
     version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
     vote_duration: int
+
+
+@dataclasses.dataclass(frozen=True)
+class ResolvedTemplate:
+    body: str
+    # Set when a configured template URL could not be used and body is the default template instead
+    warning: str | None = None
 
 
 async def announce_release_default(project_key: safe.ProjectKey) -> str:
@@ -545,6 +561,26 @@ def resolve_download_path_suffix(
     return safe.RelPath(f"{project_key}-{version}")
 
 
+async def resolve_template(project: sql.Project, kind: TemplateKind) -> ResolvedTemplate:
+    """Get the template for an email form, from the project's template URL if it has one."""
+    url, inline = _template_url_and_inline(project, kind)
+    if not url:
+        return ResolvedTemplate(inline)
+
+    try:
+        return ResolvedTemplate(await email_templates.fetch(url))
+    except email_templates.EmailTemplateError as e:
+        label = _TEMPLATE_LABELS[kind]
+        log.warning(f"Could not fetch {label} for {project.key} from {url}: {e}")
+        return ResolvedTemplate(
+            _template_default(project, kind),
+            warning=(
+                f"Could not fetch the {label} from {url}: {e}. The default template is shown instead, which may"
+                " not be what your project normally uses. Check it carefully before sending."
+            ),
+        )
+
+
 def template_hash(template: str) -> str:
     """Compute a hash of a template for verification."""
     return hashlib.sha256(template.encode()).hexdigest()
@@ -617,6 +653,30 @@ def _podling_disclaimer(project: sql.Project, committee: sql.Committee) -> str:
         "does indicate that the project has yet to be fully endorsed "
         "by the ASF.\n"
     )
+
+
+def _template_default(project: sql.Project, kind: TemplateKind) -> str:
+    match kind:
+        case "announce_release":
+            return project.policy_announce_release_default
+        case "finish_vote":
+            return project.policy_finish_vote_default
+        case "start_vote":
+            return project.policy_start_vote_default
+        case "vote_comment":
+            return ""
+
+
+def _template_url_and_inline(project: sql.Project, kind: TemplateKind) -> tuple[str, str]:
+    match kind:
+        case "announce_release":
+            return project.policy_announce_release_template_url.strip(), project.policy_announce_release_template
+        case "finish_vote":
+            return project.policy_finish_vote_template_url.strip(), project.policy_finish_vote_template
+        case "start_vote":
+            return project.policy_start_vote_template_url.strip(), project.policy_start_vote_template
+        case "vote_comment":
+            return project.policy_vote_comment_template_url.strip(), project.policy_vote_comment_template
 
 
 @overload

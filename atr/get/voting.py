@@ -92,10 +92,13 @@ async def selected(
 
         vote_mode = release.effective_vote_mode
         default_subject_template = await construct.start_vote_subject_default(project_key)
+        template_warning = None
         if release.expedited:
             default_body_template = construct.START_VOTE_EXPEDITED_DEFAULT
         else:
-            default_body_template = await construct.start_vote_default(project_key)
+            resolved_template = await construct.resolve_template(release.project, "start_vote")
+            default_body_template = resolved_template.body
+            template_warning = resolved_template.warning
         subject_template_hash = construct.template_hash(default_subject_template)
 
         options = construct.StartVoteOptions(
@@ -126,6 +129,7 @@ async def selected(
             default_subject=default_subject,
             subject_template_hash=subject_template_hash,
             default_body=default_body,
+            template_warning=template_warning,
             min_hours=min_hours,
             vote_mode=vote_mode,
             asf_uid=session.uid,
@@ -219,6 +223,7 @@ async def _render_page(  # noqa: C901
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
+    template_warning: str | None,
     min_hours: int,
     vote_mode: sql.VoteMode,
     asf_uid: str,
@@ -259,6 +264,9 @@ async def _render_page(  # noqa: C901
             "and advance the draft to the VOTE phase. Please note that this feature is currently in development."
         ]
     ]
+
+    if template_warning is not None:
+        page.div(".alert.alert-warning.mb-4", role="alert")[template_warning]
 
     if expedited:
         private_address = f"private@{release.committee.key}.apache.org"

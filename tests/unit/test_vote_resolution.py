@@ -1560,6 +1560,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
             short_display_name="Project",
             release_policy=None,
             policy_finish_vote_template="{{ATR_TALLY}}",
+            policy_finish_vote_template_url="",
             policy_recipients=lambda action: ("", [], []),
             committee=SimpleNamespace(
                 key="project",

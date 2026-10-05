@@ -1345,6 +1345,12 @@ Sincerely,
         return policy.announce_release_subject
 
     @property
+    def policy_announce_release_template_url(self) -> str:
+        if (policy := self.release_policy) is None:
+            return ""
+        return policy.announce_release_template_url
+
+    @property
     def policy_announce_release_template(self) -> str:
         if ((policy := self.release_policy) is None) or (policy.announce_release_template == ""):
             return self.policy_announce_release_default
@@ -1391,6 +1397,12 @@ Sincerely,
         return policy.release_checklist
 
     @property
+    def policy_vote_comment_template_url(self) -> str:
+        if (policy := self.release_policy) is None:
+            return ""
+        return policy.vote_comment_template_url
+
+    @property
     def policy_vote_comment_template(self) -> str:
         if ((policy := self.release_policy) is None) or (policy.vote_comment_template == ""):
             return ""
@@ -1403,10 +1415,22 @@ Sincerely,
         return policy.start_vote_subject
 
     @property
+    def policy_start_vote_template_url(self) -> str:
+        if (policy := self.release_policy) is None:
+            return ""
+        return policy.start_vote_template_url
+
+    @property
     def policy_start_vote_template(self) -> str:
         if ((policy := self.release_policy) is None) or (policy.start_vote_template == ""):
             return self.policy_start_vote_default
         return policy.start_vote_template
+
+    @property
+    def policy_finish_vote_template_url(self) -> str:
+        if (policy := self.release_policy) is None:
+            return ""
+        return policy.finish_vote_template_url
 
     @property
     def policy_finish_vote_template(self) -> str:
@@ -2320,11 +2344,15 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
     vote_comment_template: str = sqlmodel.Field(default="")
+    vote_comment_template_url: str = sqlmodel.Field(default="")
     start_vote_subject: str = sqlmodel.Field(default="")
     start_vote_template: str = sqlmodel.Field(default="")
+    start_vote_template_url: str = sqlmodel.Field(default="")
     finish_vote_template: str = sqlmodel.Field(default="")
+    finish_vote_template_url: str = sqlmodel.Field(default="")
     announce_release_subject: str = sqlmodel.Field(default="")
     announce_release_template: str = sqlmodel.Field(default="")
+    announce_release_template_url: str = sqlmodel.Field(default="")
     binary_artifact_paths: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
@@ -2368,11 +2396,15 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             min_hours=self.min_hours,
             release_checklist=self.release_checklist,
             vote_comment_template=self.vote_comment_template,
+            vote_comment_template_url=self.vote_comment_template_url,
             start_vote_subject=self.start_vote_subject,
             start_vote_template=self.start_vote_template,
+            start_vote_template_url=self.start_vote_template_url,
             finish_vote_template=self.finish_vote_template,
+            finish_vote_template_url=self.finish_vote_template_url,
             announce_release_subject=self.announce_release_subject,
             announce_release_template=self.announce_release_template,
+            announce_release_template_url=self.announce_release_template_url,
             binary_artifact_paths=list(self.binary_artifact_paths),
             source_artifact_paths=list(self.source_artifact_paths),
             license_check_mode=self.license_check_mode,

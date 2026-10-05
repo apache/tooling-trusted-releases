@@ -129,8 +129,10 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
         thread_id=thread_id,
         podling_thread_id=release.podling_thread_id,
     )
+    # There is no one to warn here, so a template URL that fails falls back to the default and is logged
+    resolved_template = await construct.resolve_template(release.project, "finish_vote")
     resolution_body = construct.finish_vote_body(
-        release.project.policy_finish_vote_template,
+        resolved_template.body,
         {
             "ATR_TALLY": atr_tally,
             "COMMITTEE": committee_name,

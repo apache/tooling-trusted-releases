@@ -953,6 +953,7 @@ async def policy_get(
         project_key=project.safe_key,
         policy_announce_release_subject=project.policy_announce_release_subject,
         policy_announce_release_template=project.policy_announce_release_template,
+        policy_announce_release_template_url=project.policy_announce_release_template_url,
         policy_binary_artifact_paths=project.policy_binary_artifact_paths,
         policy_github_compose_workflow_path=project.policy_github_compose_workflow_path,
         policy_github_finish_workflow_path=project.policy_github_finish_workflow_path,
@@ -971,8 +972,11 @@ async def policy_get(
         policy_source_artifact_paths=project.policy_source_artifact_paths,
         policy_start_vote_subject=project.policy_start_vote_subject,
         policy_start_vote_template=project.policy_start_vote_template,
+        policy_start_vote_template_url=project.policy_start_vote_template_url,
         policy_finish_vote_template=project.policy_finish_vote_template,
+        policy_finish_vote_template_url=project.policy_finish_vote_template_url,
         policy_vote_comment_template=project.policy_vote_comment_template,
+        policy_vote_comment_template_url=project.policy_vote_comment_template_url,
     ).model_dump(mode="json"), 200
 
 
@@ -2522,9 +2526,8 @@ async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: 
         version_key=data.version,
         revision_number=revision_number,
     )
-    _, body = await construct.announce_release_subject_and_body(
-        "", release.project.policy_announce_release_template, options
-    )
+    template = await construct.resolve_template(release.project, "announce_release")
+    _, body = await construct.announce_release_subject_and_body("", template.body, options)
     return body, fullname
 
 
@@ -2605,7 +2608,7 @@ async def _vote_start_subject_and_body(
         if release.expedited:
             body_template = construct.START_VOTE_EXPEDITED_DEFAULT
         else:
-            body_template = release.project.policy_start_vote_template
+            body_template = (await construct.resolve_template(release.project, "start_vote")).body
     options = construct.StartVoteOptions(
         asfuid=asf_uid,
         fullname=fullname,

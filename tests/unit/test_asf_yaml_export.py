@@ -84,6 +84,10 @@ class _FakePolicy:
             "github_finish_workflow_path": [],
             "download_path_suffix": "",
             "rat_excludes_url": "",
+            "announce_release_template_url": "",
+            "start_vote_template_url": "",
+            "finish_vote_template_url": "",
+            "vote_comment_template_url": "",
         }
         defaults.update(fields)
         for key, value in defaults.items():

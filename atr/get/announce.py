@@ -63,7 +63,7 @@ async def selected(
 
     # Get the templates from the release policy
     default_subject_template = await construct.announce_release_subject_default(project_key)
-    default_body_template = await construct.announce_release_default(project_key)
+    body_template = await construct.resolve_template(release.project, "announce_release")
     subject_template_hash = construct.template_hash(default_subject_template)
 
     if (committee := release.project.committee) is None:
@@ -78,7 +78,7 @@ async def selected(
         revision_number=release.safe_latest_revision_number,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
-        default_subject_template, default_body_template, options
+        default_subject_template, body_template.body, options
     )
 
     permitted_recipients = util.permitted_announce_recipients(session.uid, committee=committee, project=release.project)
@@ -93,6 +93,7 @@ async def selected(
         default_subject=default_subject,
         subject_template_hash=subject_template_hash,
         default_body=default_body,
+        template_warning=body_template.warning,
         embargo_message=embargo_message,
     )
 
@@ -278,6 +279,7 @@ async def _render_page(
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
+    template_warning: str | None,
     embargo_message: str | None,
 ) -> htm.Element:
     """Render the announce page."""
@@ -319,6 +321,8 @@ async def _render_page(
     page.p["This form will send an announcement to the selected recipients."]
     if embargo_message is not None:
         page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[embargo_message]
+    if template_warning is not None:
+        page.div(".alert.alert-warning.mb-4", role="alert")[template_warning]
     await _render_announce_form(
         page,
         release,

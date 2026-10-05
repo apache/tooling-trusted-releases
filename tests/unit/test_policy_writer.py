@@ -533,3 +533,20 @@ def _version_scheme_form(
         calver_format=calver_format,
         branch_template=branch_template,
     )
+
+
+@pytest.mark.asyncio
+async def test_policy_update_stores_stripped_template_url():
+    release_policy = SimpleNamespace(start_vote_template_url="")
+    project = SimpleNamespace()
+    update = api.PolicyUpdateArgs(
+        project=safe.ProjectKey("example"),
+        start_vote_template_url="  https://apache.org/vote.txt \n",
+    )
+
+    with mock.patch.object(
+        policy_writer, "_get_or_create_policy", mock.AsyncMock(return_value=(project, release_policy))
+    ):
+        await policy_writer._apply_policy_update_no_commit(mock.Mock(), safe.ProjectKey("example"), update)
+
+    assert release_policy.start_vote_template_url == "https://apache.org/vote.txt"

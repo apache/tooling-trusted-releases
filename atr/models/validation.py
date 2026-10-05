@@ -35,9 +35,9 @@ REPOSITORY_URI_SCHEMES: Final[frozenset[str]] = frozenset(
 )
 STANDARD_URI_SCHEMES: Final[frozenset[str]] = frozenset({"http", "https"})
 
-# Non-apache.org hosts we'll fetch a project's .rat-excludes from. apache.org and its subdomains
-# are allowed by suffix in validate_rat_excludes_url, so only extra hosts need listing here
-RAT_EXCLUDES_URL_HOSTS: Final[frozenset[str]] = frozenset({"raw.githubusercontent.com"})
+# Non-apache.org hosts we'll fetch a project's .rat-excludes or email templates from. apache.org and its
+# subdomains are allowed by suffix in validate_fetch_url, so only extra hosts need listing here
+EXTERNAL_CONFIG_URL_HOSTS: Final[frozenset[str]] = frozenset({"raw.githubusercontent.com"})
 
 
 def compile_ignore_pattern(pattern: str):
@@ -130,23 +130,22 @@ def validate_policy_min_hours(min_hours: int) -> None:
         raise ValueError("Minimum voting period must be 0 or between 72 and 168 hours inclusive.")
 
 
-def validate_rat_excludes_url(url: str) -> None:
-    # We fetch this server-side on every checked revision, so an open URL would be an SSRF lever.
-    # Keep the hosts tight: apache.org covers gitbox, svn, and dist, and raw.githubusercontent.com
-    # covers projects that keep the file in a GitHub repo.
+def validate_fetch_url(url: str) -> None:
+    # We fetch these server-side (RAT excludes on every checked revision, email templates whenever a
+    # form is shown), so an open URL would be an SSRF lever. Keep the hosts tight: apache.org covers
+    # gitbox, svn, and dist, and raw.githubusercontent.com covers projects that keep the file in a
+    # GitHub repo.
     resolved = url.strip()
     if not resolved:
         return
     if not uri_scheme_allowed(resolved, frozenset({"https"})):
-        raise ValueError("RAT excludes URL must use the https scheme.")
+        raise ValueError("URL must use the https scheme.")
     host = (parse.urlsplit(resolved).hostname or "").lower()
     if not host:
-        raise ValueError("RAT excludes URL must include a host.")
+        raise ValueError("URL must include a host.")
     apache = (host == "apache.org") or host.endswith(".apache.org")
-    if not (apache or (host in RAT_EXCLUDES_URL_HOSTS)):
-        raise ValueError(
-            f"RAT excludes URL host '{host}' is not allowed; use an apache.org host or raw.githubusercontent.com."
-        )
+    if not (apache or (host in EXTERNAL_CONFIG_URL_HOSTS)):
+        raise ValueError(f"URL host '{host}' is not allowed; use an apache.org host or raw.githubusercontent.com.")
 
 
 def validate_security_contact(committee_key: str, security_contact: str | None) -> None:

@@ -68,7 +68,7 @@ async def body_preview(
         )
 
     default_subject_template = await construct.start_vote_subject_default(project_key)
-    default_body_template = await construct.start_vote_default(project_key)
+    default_body_template = (await construct.resolve_template(release.project, "start_vote")).body
 
     options = construct.StartVoteOptions(
         asfuid=session.uid,

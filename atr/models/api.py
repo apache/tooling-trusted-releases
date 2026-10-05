@@ -419,6 +419,7 @@ class PolicyGetResults(schema.Strict):
     project_key: safe.ProjectKey
     policy_announce_release_subject: str
     policy_announce_release_template: str
+    policy_announce_release_template_url: str
     policy_binary_artifact_paths: list[str]
     policy_github_compose_workflow_path: list[str]
     policy_github_finish_workflow_path: list[str]
@@ -435,8 +436,11 @@ class PolicyGetResults(schema.Strict):
     policy_source_artifact_paths: list[str]
     policy_start_vote_subject: str
     policy_start_vote_template: str
+    policy_start_vote_template_url: str
     policy_finish_vote_template: str
+    policy_finish_vote_template_url: str
     policy_vote_comment_template: str
+    policy_vote_comment_template_url: str
 
 
 class PolicyArgsBase(schema.Strict):
@@ -446,6 +450,7 @@ class PolicyArgsBase(schema.Strict):
 
     announce_release_subject: str | None = None
     announce_release_template: str | None = None
+    announce_release_template_url: str | None = None
     binary_artifact_paths: list[str] | None = None
     file_tag_mappings: dict[str, list[str]] | None = None
     github_compose_workflow_path: list[str] | None = None
@@ -466,8 +471,11 @@ class PolicyArgsBase(schema.Strict):
     rat_excludes_url: str | None = None
     start_vote_subject: str | None = None
     start_vote_template: str | None = None
+    start_vote_template_url: str | None = None
     finish_vote_template: str | None = None
+    finish_vote_template_url: str | None = None
     vote_comment_template: str | None = None
+    vote_comment_template_url: str | None = None
     vote_mode: sql.VoteMode | None = None
 
     @pydantic.field_validator("license_check_mode", mode="before")
@@ -502,7 +510,16 @@ class PolicyArgsBase(schema.Strict):
             validation.validate_download_path_suffix(self.download_path_suffix)
 
         if self.rat_excludes_url is not None:
-            validation.validate_rat_excludes_url(self.rat_excludes_url)
+            validation.validate_fetch_url(self.rat_excludes_url)
+
+        for template_url in (
+            self.announce_release_template_url,
+            self.start_vote_template_url,
+            self.finish_vote_template_url,
+            self.vote_comment_template_url,
+        ):
+            if template_url is not None:
+                validation.validate_fetch_url(template_url)
 
         github_repository_name = self.github_repository_name
         if github_repository_name is not None:

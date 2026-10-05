@@ -26,8 +26,8 @@ import atr.util as util
 
 def test_empty_url_is_allowed() -> None:
     # An unset URL means we don't fetch anything, so it must pass validation
-    validation.validate_rat_excludes_url("")
-    validation.validate_rat_excludes_url("   ")
+    validation.validate_fetch_url("")
+    validation.validate_fetch_url("   ")
 
 
 @pytest.mark.parametrize(
@@ -39,7 +39,7 @@ def test_empty_url_is_allowed() -> None:
     ],
 )
 def test_allowed_hosts_pass(url: str) -> None:
-    validation.validate_rat_excludes_url(url)
+    validation.validate_fetch_url(url)
 
 
 @pytest.mark.parametrize(
@@ -54,7 +54,7 @@ def test_allowed_hosts_pass(url: str) -> None:
 )
 def test_disallowed_urls_raise(url: str) -> None:
     with pytest.raises(ValueError):
-        validation.validate_rat_excludes_url(url)
+        validation.validate_fetch_url(url)
 
 
 def _mock_session(response: mock.Mock) -> mock.MagicMock:

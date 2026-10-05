@@ -100,5 +100,6 @@ def _release(expedited: bool = False) -> SimpleNamespace:
         project=SimpleNamespace(
             policy_start_vote_subject="[VOTE] {{PROJECT_NAME}} {{VERSION}}",
             policy_start_vote_template="Body {{VERSION}}",
+            policy_start_vote_template_url="",
         ),
     )

@@ -27,6 +27,7 @@ import htpy
 
 import atr.blueprints.get as get
 import atr.config as config
+import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
@@ -219,7 +220,10 @@ async def _append_cast_vote_form(
         "vote_mode": release.effective_vote_mode,
     }
     if (skip is None) or ("comment" not in skip):
-        defaults["comment"] = release.project.policy_vote_comment_template
+        comment_template = await construct.resolve_template(release.project, "vote_comment")
+        defaults["comment"] = comment_template.body
+        if comment_template.warning is not None:
+            page.div(".alert.alert-warning", role="alert")[comment_template.warning]
 
     vote_action_url = util.as_url(
         post.vote.selected_post,

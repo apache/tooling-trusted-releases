@@ -192,3 +192,22 @@ def _project_config_project(**project: object) -> api.ProjectConfigArgs:
     return api.ProjectConfigArgs.model_validate(
         {"project_key": "tooling", "committee_key": "tooling", "project": project}
     )
+
+
+def test_project_config_accepts_template_urls() -> None:
+    url = "https://raw.githubusercontent.com/apache/example/main/vote.txt"
+    args = _project_config(
+        announce_release_template_url=url,
+        start_vote_template_url=url,
+        finish_vote_template_url=url,
+        vote_comment_template_url=url,
+    )
+
+    assert args.policy is not None
+    assert args.policy.start_vote_template_url == url
+    assert args.policy.vote_comment_template_url == url
+
+
+def test_project_config_rejects_template_url_on_other_host() -> None:
+    with pytest.raises(pydantic.ValidationError, match="not allowed"):
+        _project_config(start_vote_template_url="https://example.com/vote.txt")

@@ -19,43 +19,26 @@ from typing import Final
 
 import aiohttp
 
-import atr.hashes as hashes
 import atr.log as log
 import atr.models.validation as validation
 import atr.util as util
 
-# A .rat-excludes file is a short list of glob patterns, so anything larger than this is either
-# not the file we expected or an attempt to make us buffer something big
+# An email template is a page of text at most, so anything larger is not the file we expected
 _MAX_BYTES: Final[int] = 64 * 1024
 
-_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=15, connect=10)
+_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10, connect=5)
 
 
-class RatExcludesError(Exception):
+class EmailTemplateError(Exception):
     pass
 
 
-class TransientError(RatExcludesError):
-    # A network-level problem that might clear on its own, so the check retries rather than fails
-    pass
-
-
-class UnavailableError(RatExcludesError):
-    # A problem the release manager has to fix (bad host, missing file, oversized), so the check
-    # records it rather than retrying
-    pass
-
-
-def content_hash(data: bytes) -> str:
-    return hashes.compute_bytes_hash(data)
-
-
-async def fetch(url: str) -> bytes:
-    """Fetch a project's .rat-excludes file, enforcing the host allowlist and size cap."""
+async def fetch(url: str) -> str:
+    """Fetch a project's email template, enforcing the host allowlist and size cap."""
     try:
         validation.validate_fetch_url(url)
     except ValueError as exc:
-        raise UnavailableError(str(exc)) from exc
+        raise EmailTemplateError(str(exc)) from exc
 
     try:
         # public=True routes DNS through the resolver that refuses private and loopback
@@ -65,16 +48,22 @@ async def fetch(url: str) -> bytes:
             response = await session.get(url, allow_redirects=False)
             response.raise_for_status()
             if response.status >= 300:
-                raise UnavailableError(f"RAT excludes URL redirected (HTTP {response.status}); use a direct link")
+                raise EmailTemplateError(f"the URL redirected (HTTP {response.status}); use a direct link")
             body = await response.content.read(_MAX_BYTES + 1)
     except aiohttp.ClientResponseError as exc:
-        raise UnavailableError(f"RAT excludes URL returned HTTP {exc.status}") from exc
-    except (aiohttp.ClientSSLError, aiohttp.ClientConnectionError, aiohttp.ServerTimeoutError) as exc:
-        log.warning(f"Transient failure fetching RAT excludes URL {url}: {exc}")
-        raise TransientError(str(exc)) from exc
+        raise EmailTemplateError(f"the URL returned HTTP {exc.status}") from exc
     except aiohttp.ClientError as exc:
-        raise UnavailableError(str(exc)) from exc
+        log.warning(f"Failed to fetch email template URL {url}: {exc}")
+        raise EmailTemplateError(str(exc) or type(exc).__name__) from exc
+    except TimeoutError as exc:
+        raise EmailTemplateError("the request timed out") from exc
 
     if len(body) > _MAX_BYTES:
-        raise UnavailableError(f"RAT excludes file exceeds {_MAX_BYTES} bytes")
-    return body
+        raise EmailTemplateError(f"the template exceeds {_MAX_BYTES} bytes")
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise EmailTemplateError("the template is not valid UTF-8") from exc
+    if not text.strip():
+        raise EmailTemplateError("the template is empty")
+    return text

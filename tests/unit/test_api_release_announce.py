@@ -113,7 +113,9 @@ def _patch_rendering(monkeypatch: pytest.MonkeyPatch) -> dict:
 
     release = SimpleNamespace(
         safe_latest_revision_number=safe.RevisionNumber("00003"),
-        project=SimpleNamespace(policy_announce_release_template="Body {{VERSION}}"),
+        project=SimpleNamespace(
+            policy_announce_release_template="Body {{VERSION}}", policy_announce_release_template_url=""
+        ),
     )
 
     @contextlib.asynccontextmanager

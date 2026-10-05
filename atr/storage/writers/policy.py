@@ -254,6 +254,7 @@ class ReleaseManager(CommitteeParticipant):
 
         self.__set_announce_release_subject(form.announce_release_subject or "", project, release_policy)
         self.__set_announce_release_template(form.announce_release_template or "", project, release_policy)
+        release_policy.announce_release_template_url = form.announce_release_template_url.strip()
         _set_recipient_defaults(
             release_policy, models.sql.RecipientAction.ANNOUNCE, form.email_to, form.email_cc, form.email_bcc
         )
@@ -333,9 +334,12 @@ class ReleaseManager(CommitteeParticipant):
             self.__set_min_hours(form.min_hours, project, release_policy)
             release_policy.release_checklist = form.release_checklist or ""
             release_policy.vote_comment_template = form.vote_comment_template or ""
+            release_policy.vote_comment_template_url = form.vote_comment_template_url.strip()
             self.__set_start_vote_subject(form.start_vote_subject or "", project, release_policy)
             self.__set_start_vote_template(form.start_vote_template or "", project, release_policy)
+            release_policy.start_vote_template_url = form.start_vote_template_url.strip()
             self.__set_finish_vote_template(form.finish_vote_template or "", project, release_policy)
+            release_policy.finish_vote_template_url = form.finish_vote_template_url.strip()
         elif release_policy.vote_mode != models.sql.VoteMode.MANUAL:
             raise ValueError(f"Unsupported vote mode: {release_policy.vote_mode}")
 
@@ -495,7 +499,7 @@ async def _apply_policy_update_no_commit(
         value = getattr(update, field)
         if (value is None) and (field not in _NULLABLE_POLICY_FIELDS):
             raise ValueError(f"Field '{field}' does not accept null")
-        normalised_values[field] = value
+        normalised_values[field] = _normalise_url_value(field, value)
 
     if ("file_tag_mappings" in fields_to_update) and (update.file_tag_mappings is not None):
         _validate_file_tag_mappings(update.file_tag_mappings)
@@ -558,6 +562,12 @@ def _normalise_text_list(values: list[str]) -> list[str]:
 
 def _normalise_text_value(value: str) -> str:
     return value.strip()
+
+
+def _normalise_url_value(field: str, value: Any) -> Any:
+    if isinstance(value, str) and field.endswith("_url"):
+        return value.strip()
+    return value
 
 
 def _normalise_trusted_publishing_update(

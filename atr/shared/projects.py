@@ -184,7 +184,7 @@ class ComposePolicyForm(form.Form):
     @pydantic.field_validator("rat_excludes_url", mode="before")
     @classmethod
     def validate_rat_excludes_url(cls, val: str) -> str:
-        validation.validate_rat_excludes_url(val)
+        validation.validate_fetch_url(val)
         return val
 
 
@@ -218,6 +218,13 @@ class VotePolicyForm(form.Form):
         widget=form.Widget.TEXTAREA,
         rows=6,
     )
+    vote_comment_template_url: str = form.label(
+        "Vote comment template URL",
+        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
+        " this URL whenever the email form is shown, and you can still edit it before sending."
+        " Must be an apache.org host or raw.githubusercontent.com.",
+        default="",
+    )
     start_vote_subject: str = form.label(
         "Start vote subject",
         widget=form.Widget.CUSTOM,
@@ -226,10 +233,32 @@ class VotePolicyForm(form.Form):
         "Start vote template",
         widget=form.Widget.CUSTOM,
     )
+    start_vote_template_url: str = form.label(
+        "Start vote template URL",
+        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
+        " this URL whenever the email form is shown, and you can still edit it before sending."
+        " Must be an apache.org host or raw.githubusercontent.com.",
+        default="",
+    )
     finish_vote_template: str = form.label(
         "Finish vote template",
         widget=form.Widget.CUSTOM,
     )
+    finish_vote_template_url: str = form.label(
+        "Finish vote template URL",
+        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
+        " this URL whenever the email form is shown, and you can still edit it before sending."
+        " Must be an apache.org host or raw.githubusercontent.com.",
+        default="",
+    )
+
+    @pydantic.field_validator(
+        "vote_comment_template_url", "start_vote_template_url", "finish_vote_template_url", mode="before"
+    )
+    @classmethod
+    def validate_template_urls(cls, val: str) -> str:
+        validation.validate_fetch_url(val)
+        return val
 
     @pydantic.field_validator("finish_vote_template")
     @classmethod
@@ -488,6 +517,13 @@ class FinishPolicyForm(form.Form):
         "Announce release template",
         widget=form.Widget.CUSTOM,
     )
+    announce_release_template_url: str = form.label(
+        "Announce release template URL",
+        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
+        " this URL whenever the email form is shown, and you can still edit it before sending."
+        " Must be an apache.org host or raw.githubusercontent.com.",
+        default="",
+    )
     email_to: str = form.label(
         "Default announce recipient",
         "The mailing list announcements default to. Release managers can still override this when announcing.",
@@ -501,6 +537,12 @@ class FinishPolicyForm(form.Form):
     @classmethod
     def validate_download_path_suffix(cls, val: str) -> str:
         validation.validate_download_path_suffix(val)
+        return val
+
+    @pydantic.field_validator("announce_release_template_url", mode="before")
+    @classmethod
+    def validate_announce_release_template_url(cls, val: str) -> str:
+        validation.validate_fetch_url(val)
         return val
 
     @pydantic.field_validator("announce_release_subject")
