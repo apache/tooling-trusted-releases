@@ -499,18 +499,15 @@ async def test_post_vote_dispatches_trusted_email_manual_and_stale(monkeypatch) 
     flash = mock.AsyncMock()
 
     @contextlib.asynccontextmanager
-    async def _participant_context(_committee_key):
-        yield SimpleNamespace(vote=SimpleNamespace(send_user_vote=email_send))
-
-    @contextlib.asynccontextmanager
     async def _write_context(_session):
         yield SimpleNamespace(
-            as_foundation_committer=lambda: SimpleNamespace(vote=SimpleNamespace(cast_trusted=trusted_cast))
+            as_foundation_committer=lambda: SimpleNamespace(
+                vote=SimpleNamespace(cast_trusted=trusted_cast, send_user_vote=email_send)
+            )
         )
 
     monkeypatch.setattr(post_vote.quart, "flash", flash)
     monkeypatch.setattr(post_vote.storage, "write", _write_context)
-    monkeypatch.setattr(post_vote.storage, "write_as_committee_participant", _participant_context)
     monkeypatch.setattr(post_vote.user, "is_binding_for_release", mock.AsyncMock(return_value=(True, "Project")))
 
     handler = _post_handler()

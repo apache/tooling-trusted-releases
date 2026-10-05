@@ -100,7 +100,7 @@ Release operations have the following access requirements:
 
 **Cast a vote on a release**:
 
-* Allowed for: Project participants
+* Allowed for: Committers
 * Constraint: Cannot vote multiple times; can change existing vote
 
 **Resolve a vote (tally votes and determine outcome)**:
@@ -133,7 +133,7 @@ defined in [Roles and principals](#roles-and-principals).
 | Create a release | starts a new **Draft** | Participant |
 | Upload or edit files | **Draft** only | Participant *(the starter, or a PMC member)* |
 | Start a vote | **Draft** → Candidate | Release manager or PMC member |
-| Cast a vote | **Candidate** | Participant |
+| Cast a vote | **Candidate** | Committer |
 | Resolve a vote | **Candidate** → Preview (passed) / Draft (failed) | Release manager or PMC member |
 | Announce / publish | **Preview** → Release | Release manager or PMC member |
 

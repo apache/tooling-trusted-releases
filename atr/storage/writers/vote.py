@@ -211,39 +211,6 @@ class FoundationCommitter(GeneralPublic):
         )
         return [email_to], ""
 
-
-class FoundationAdmin(FoundationCommitter):
-    def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
-        super().__init__(write, write_as, data)
-        self.__write_as = write_as
-
-    def presentations_bypass_set(self, enabled: bool) -> None:
-        conf = config.get()
-        previous = conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS
-        if previous == enabled:
-            return
-        conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS = enabled
-        self.__write_as.append_to_audit_log(asf_uid=self.__write_as.asf_uid, previous=previous, enabled=enabled)
-
-
-class CommitteeParticipant(FoundationCommitter):
-    def __init__(
-        self,
-        write: storage.Write,
-        write_as: storage.WriteAsCommitteeParticipant,
-        data: db.Session,
-        committee_key: str,
-    ):
-        super().__init__(write, write_as, data)
-        self.__write = write
-        self.__write_as = write_as
-        self.__data = data
-        asf_uid = write.authorisation.asf_uid
-        if asf_uid is None:
-            raise storage.AccessError("Not authorized", status=403)
-        self.__asf_uid = asf_uid
-        self.__committee_key = committee_key
-
     async def send_user_vote(
         self,
         release: sql.Release,
@@ -307,6 +274,39 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.commit()
 
         return [email_to], ""
+
+
+class FoundationAdmin(FoundationCommitter):
+    def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
+        super().__init__(write, write_as, data)
+        self.__write_as = write_as
+
+    def presentations_bypass_set(self, enabled: bool) -> None:
+        conf = config.get()
+        previous = conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS
+        if previous == enabled:
+            return
+        conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS = enabled
+        self.__write_as.append_to_audit_log(asf_uid=self.__write_as.asf_uid, previous=previous, enabled=enabled)
+
+
+class CommitteeParticipant(FoundationCommitter):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsCommitteeParticipant,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
 
 
 class ReleaseManager(CommitteeParticipant):

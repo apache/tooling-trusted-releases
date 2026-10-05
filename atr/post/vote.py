@@ -96,8 +96,9 @@ async def selected_post(  # noqa: C901
         vote_round = 2 if (release.podling_thread_id is not None) else 1
     is_binding, _binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
 
-    async with storage.write_as_committee_participant(release.committee.key) as wacp:
-        email_to, error_message = await wacp.vote.send_user_vote(release, vote, comment, session.fullname, is_binding)
+    async with storage.write(session) as write:
+        wafc = write.as_foundation_committer()
+        email_to, error_message = await wafc.vote.send_user_vote(release, vote, comment, session.fullname, is_binding)
 
     if error_message:
         await quart.flash(error_message, "error")
