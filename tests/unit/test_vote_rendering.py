@@ -559,6 +559,53 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
     latest_ballot_get.assert_awaited_once_with("project-1.0.0", 1, "voter")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
+@pytest.mark.parametrize(
+    ("is_podling", "podling_thread_id", "binding_by_round", "label"),
+    [
+        (True, None, {1: True, 2: True}, "IPMC binding, PPMC vote"),
+        (True, None, {1: False, 2: True}, "IPMC binding"),
+        (True, None, {1: True, 2: False}, "PPMC vote"),
+        (True, None, {1: False, 2: False}, "Non-binding"),
+        (True, "thread-abc", {2: True}, "Binding"),
+        (False, None, {None: False}, "Non-binding"),
+    ],
+)
+async def test_vote_decision_labels_reflect_membership(
+    render_app: quart.Quart,
+    monkeypatch: pytest.MonkeyPatch,
+    vote_mode: sql.VoteMode,
+    is_podling: bool,
+    podling_thread_id: str | None,
+    binding_by_round: dict[int | None, bool],
+    label: str,
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        vote.user,
+        "is_binding_for_release",
+        mock.AsyncMock(side_effect=lambda _committee, _uid, vote_round: (binding_by_round[vote_round], "Project")),
+    )
+    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=None))
+    release = _release(vote_mode)
+    release.committee.is_podling = is_podling
+    release.podling_thread_id = podling_thread_id
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(page, release, _session(), None, "dev@project.apache.org", None)
+
+    html = str(page.collect())
+    assert f"+1 ({label})" in html
+    assert f"-1 ({label})" in html
+    if is_podling and (podling_thread_id is None):
+        ppmc_word = "counts" if binding_by_round[1] else "does not count"
+        ipmc_word = "binding" if binding_by_round[2] else "non-binding"
+        assert f"your vote <strong>{ppmc_word}</strong> towards podling approval." in html
+        assert f"your vote is <strong>{ipmc_word}</strong> for Incubator approval." in html
+
+
 def test_vote_task_warnings_renders_delivery_warnings() -> None:
     task = _completed_vote_task()
     task.result = task.result.model_copy(

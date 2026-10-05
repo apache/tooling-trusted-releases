@@ -372,10 +372,16 @@ def _is_podling_round_two(release: sql.Release) -> bool:
     return (committee is not None) and committee.is_podling and (release.podling_thread_id is not None)
 
 
-def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str, vote_round: int | None) -> None:
-    binding_word, non_binding_word = user.binding_terminology(vote_round)
+async def _render_binding_status(
+    page: htm.Block, committee: sql.Committee, asf_uid: str, vote_round: int | None
+) -> str:
+    is_binding, binding_committee = await user.is_binding_for_release(committee, asf_uid, vote_round)
     committee_membership = _voting_committee_membership(binding_committee, vote_round)
     article = "an" if committee_membership[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+    if vote_round == 1:
+        is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2)
+        return _render_binding_status_round_one(page, f"{article} {committee_membership}", is_binding, is_ipmc_member)
+    binding_word, non_binding_word = user.binding_terminology(vote_round)
     if is_binding:
         page.p[
             f"As {article} {committee_membership}, your vote is ",
@@ -389,6 +395,31 @@ def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee:
             htpy.strong[non_binding_word.lower()],
             " but is still valued by the community.",
         ]
+    return binding_word if is_binding else non_binding_word
+
+
+def _render_binding_status_round_one(
+    page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool
+) -> str:
+    if is_ppmc_member:
+        ppmc_status = [f"As {ppmc_membership}, your vote ", htpy.strong["counts"], " towards podling approval. "]
+    else:
+        ppmc_status = [
+            f"You are not {ppmc_membership}, so your vote ",
+            htpy.strong["does not count"],
+            " towards podling approval. ",
+        ]
+    if is_ipmc_member:
+        ipmc_status = ["As an Incubator PMC member, your vote is ", htpy.strong["binding"], " for Incubator approval."]
+    else:
+        ipmc_status = [
+            "You are not an Incubator PMC member, so your vote is ",
+            htpy.strong["non-binding"],
+            " for Incubator approval.",
+        ]
+    page.p[ppmc_status, ipmc_status]
+    labels = (["IPMC binding"] if is_ipmc_member else []) + (["PPMC vote"] if is_ppmc_member else [])
+    return ", ".join(labels) or "Non-binding"
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
@@ -650,10 +681,7 @@ async def _render_trusted_vote_authenticated(
         )
 
     vote_round = interaction.trusted_vote_round(release)
-    is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
-    binding_word, non_binding_word = user.binding_terminology(vote_round)
-    potency = binding_word if is_binding else non_binding_word
-    _render_binding_status(page, is_binding, binding_committee, vote_round)
+    potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
 
     if latest_ballot is not None:
         is_carried = (latest_ballot.vote_round == 1) and (vote_round == 2)
@@ -712,11 +740,7 @@ async def _render_vote_authenticated(
         return
 
     vote_round = interaction.trusted_vote_round(release)
-    is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
-    binding_word, non_binding_word = user.binding_terminology(vote_round)
-
-    potency = binding_word if is_binding else non_binding_word
-    _render_binding_status(page, is_binding, binding_committee, vote_round)
+    potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
     _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
     vote_widget = _vote_decision_widget(potency)
     await _append_cast_vote_form(page, release, vote_widget)
