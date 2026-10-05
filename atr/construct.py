@@ -110,6 +110,7 @@ class _VoteValues(TypedDict):
     COMMIT_PARAGRAPH: str
     COMMITTEE: str
     DURATION: str
+    FIRST_ROUND_THREAD: str
     HOMEPAGE: str
     KEYS_FILE: str
     MANIFEST_URL: str
@@ -142,6 +143,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "DOWNLOAD_PAGE": "Download page URL",
     "DOWNLOAD_URL": "URL to download the release",
     "DURATION": "Vote duration in hours",
+    "FIRST_ROUND_THREAD": "First round vote thread link, in podling second round votes only",
     "HOMEPAGE": "Homepage URL",
     "KEYS_FILE": "URL to the KEYS file",
     "LIFECYCLE_PAGE": "Lifecycle page URL",
@@ -213,6 +215,7 @@ class StartVoteOptions:
     version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
     vote_duration: int
+    first_round_thread_id: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -486,6 +489,13 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             revision=revision,
         )
 
+    first_round_paragraph = ""
+    if options.first_round_thread_id is not None:
+        first_round_paragraph = (
+            "\nThe first round vote thread is archived at:\n\n"
+            f"  https://lists.apache.org/thread/{options.first_round_thread_id}\n"
+        )
+
     subject_values: _VoteSubjectValues = {
         "COMMITTEE": committee.display_name,
         "PROJECT_NAME": project_display_name,
@@ -503,6 +513,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         ),
         "COMMITTEE": committee.display_name,
         "DURATION": str(options.vote_duration or "an unlimited number of"),
+        "FIRST_ROUND_THREAD": first_round_paragraph,
         "HOMEPAGE": project.homepage or "",
         "KEYS_FILE": paths.committee_keys_url(committee),
         "MANIFEST_URL": f"https://{host}{manifest_path}",

@@ -46,7 +46,7 @@ these:
 * **Moving to the second round.** When you resolve the first round as passed, ATR does not move the
   release on to the finish phase. Instead it starts the second round straight away, sending a new
   vote email to the Incubator list. The second round is held on the same revision, with the same
-  duration, using your project's vote email template.
+  duration, using your project's vote email template. The default template links to the first round vote thread, and a custom template can do the same by including the `{{FIRST_ROUND_THREAD}}` variable.
 * **Second round.** The vote is held by the Incubator PMC. When you resolve it as passed, the
   release moves on to the finish phase, and ATR sends the result to the second round thread and
   also, as a reply, to the first round thread.

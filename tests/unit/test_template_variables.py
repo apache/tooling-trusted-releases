@@ -71,5 +71,6 @@ def test_validate_template_variables() -> None:
 
 def test_vote_policy_form_validates_template_variables() -> None:
     projects.VotePolicyForm.model_validate(_VOTE_BASE)
+    projects.VotePolicyForm.model_validate(_VOTE_BASE | {"start_vote_template": "{{FIRST_ROUND_THREAD}}"})
     with pytest.raises(pydantic.ValidationError, match="Unknown template variables: BAD, WORSE"):
         projects.VotePolicyForm.model_validate(_VOTE_BASE | {"start_vote_template": "{{BAD}} {{WORSE}}"})

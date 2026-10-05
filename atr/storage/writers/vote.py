@@ -763,6 +763,7 @@ class ReleaseManager(CommitteeParticipant):
                     version_key=release.safe_version_key,
                     revision_number=release.safe_latest_revision_number,
                     vote_duration=vote_duration,
+                    first_round_thread_id=thread_id,
                 )
                 subject_data, body_data = await construct.start_vote_subject_and_body(
                     subject_template, body_template, options
@@ -1082,6 +1083,7 @@ class ReleaseManager(CommitteeParticipant):
                     version_key=release.safe_version_key,
                     revision_number=release.safe_latest_revision_number,
                     vote_duration=vote_duration,
+                    first_round_thread_id=podling_round_one_thread_id,
                 )
                 subject_data, body_data = await construct.start_vote_subject_and_body(
                     subject_template, body_template, options

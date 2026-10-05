@@ -16,6 +16,7 @@
 # under the License.
 
 import contextlib
+import unittest.mock as mock
 from types import SimpleNamespace
 
 import pytest
@@ -274,6 +275,19 @@ async def test_start_vote_body_renders_commit_token(monkeypatch, commit_hash: st
     assert body == expected
 
 
+@pytest.mark.asyncio
+async def test_start_vote_body_renders_first_round_paragraph_only_where_templated(monkeypatch) -> None:
+    default_body = await _second_round_start_vote_body(monkeypatch, sql.Project(key="x").policy_start_vote_default)
+    custom_body = await _second_round_start_vote_body(monkeypatch, "Before\n{{FIRST_ROUND_THREAD}}\nAfter")
+    omitted_body = await _second_round_start_vote_body(monkeypatch, "Please vote")
+
+    paragraph = "\nThe first round vote thread is archived at:\n\n  https://lists.apache.org/thread/thread-abc\n"
+    assert f"/KEYS\n{paragraph}\nPlease review" in default_body
+    assert default_body.index(paragraph) < default_body.index("Thanks,")
+    assert custom_body == f"Before\n{paragraph}\nAfter"
+    assert omitted_body == "Please vote"
+
+
 def test_substitute_does_not_rescan_replacement_values() -> None:
     result = construct._substitute(
         "{{PROJECT_NAME}} {{VERSION}} {{UNKNOWN}}",
@@ -290,3 +304,38 @@ def _mock_session_factory(data: MockDBSession):
         yield data
 
     return _session
+
+
+async def _second_round_start_vote_body(monkeypatch, template: str) -> str:
+    committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject")
+    project = SimpleNamespace(
+        short_display_name="Apache MyProject",
+        key="myproject",
+        bug_database=None,
+        homepage=None,
+        repositories=[],
+    )
+    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=None)
+    revision = SimpleNamespace(number="1", tag=None)
+
+    monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")
+    monkeypatch.setattr(construct.config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/repos/dist/atr")
+    monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
+    monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
+    monkeypatch.setattr(construct.db, "get_project_release_policy", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")
+
+    _subject, body = await construct.start_vote_subject_and_body(
+        "",
+        template,
+        construct.StartVoteOptions(
+            asfuid="sbp",
+            fullname="Some Body",
+            project_key=safe.ProjectKey("myproject"),
+            version_key=safe.VersionKey("1.0.0"),
+            revision_number=safe.RevisionNumber("1"),
+            vote_duration=72,
+            first_round_thread_id="thread-abc",
+        ),
+    )
+    return body

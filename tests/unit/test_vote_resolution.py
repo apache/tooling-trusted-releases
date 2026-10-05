@@ -569,6 +569,54 @@ async def test_podling_double_pass_raises_error() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
+async def test_podling_round_one_pass_passes_thread_to_second_round_body(
+    monkeypatch: pytest.MonkeyPatch, vote_mode: sql.VoteMode
+) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
+    writer.start = mock.AsyncMock(return_value=SimpleNamespace(task_args={"vote_seq": 4}))
+
+    release = _candidate_release()
+    release.vote_mode = vote_mode
+    release.effective_vote_mode = vote_mode
+    release.current_vote_seq = 3
+    release.committee.is_podling = True
+    release.project.committee.is_podling = True
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+    data.merge = mock.AsyncMock(return_value=release)
+    thread_id = "0123456789abcdef0123456789abcdef"
+    write_as.cache.get_message_archive_url = mock.AsyncMock(return_value=f"https://lists.apache.org/thread/{thread_id}")
+
+    vote_task = _latest_vote_task_with_end(-24)
+    vote_task.task_args["vote_duration"] = 72
+    render = mock.AsyncMock(return_value=("subject", "body"))
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
+    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        interaction,
+        "trusted_ballot_summary",
+        mock.AsyncMock(return_value=interaction.TrustedVoteSummary(binding_votes_yes=3)),
+    )
+    monkeypatch.setattr(
+        vote.construct, "resolve_template", mock.AsyncMock(return_value=vote.construct.ResolvedTemplate("template"))
+    )
+    monkeypatch.setattr(vote.construct, "start_vote_subject_default", mock.AsyncMock(return_value="subject"))
+    monkeypatch.setattr(vote.construct, "start_vote_subject_and_body", render)
+
+    await writer.resolve(_project_key(), _version_key(), "passed", "Chair", "The vote passed.")
+
+    render.assert_awaited_once()
+    assert render.call_args.args[2].first_round_thread_id == thread_id
+    writer.start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_podling_stale_round_one_cancel_after_pass() -> None:
     """A stale cancel after another user passes podling round 1 raises AccessError."""
     data = _mock_data()
