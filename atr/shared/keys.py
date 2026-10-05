@@ -40,7 +40,6 @@ MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
 type DELETE_OPENPGP_KEY = Literal["delete_openpgp_key"]
 type DELETE_SSH_KEY = Literal["delete_ssh_key"]
 type SET_KEYS_MODE = Literal["set_keys_mode"]
-type UPLOAD_REMOTE_KEYS = Literal["upload_remote_keys"]
 type UPDATE_COMMITTEE_KEYS = Literal["update_committee_keys"]
 type UPLOAD_FILE_KEYS = Literal["upload_file_keys"]
 
@@ -116,6 +115,12 @@ KEYS_MODE_LABELS: Final[dict[sql.KeysMode, str]] = {
     sql.KeysMode.MANUAL: "Manually upload KEYS files in ATR",
 }
 
+# What an upload does for a committee in each mode, shown beside the committee choice
+KEYS_MODE_UPLOAD_EFFECTS: Final[dict[sql.KeysMode, str]] = {
+    sql.KeysMode.AUTOMATIC: "keys are published to SVN automatically",
+    sql.KeysMode.MANUAL: "keys are held in ATR, and you publish the KEYS file yourself",
+}
+
 
 class UpdateCommitteeKeysForm(form.Empty):
     variant: UPDATE_COMMITTEE_KEYS = form.value(UPDATE_COMMITTEE_KEYS)
@@ -157,22 +162,6 @@ class UploadFileForm(form.Form):
         if not self.key:
             raise ValueError("A KEYS file is required")
         return self
-
-
-class UploadRemoteForm(form.Form):
-    variant: UPLOAD_REMOTE_KEYS = form.value(UPLOAD_REMOTE_KEYS)
-    committee: str = form.label(
-        "Committee",
-        "Choose the committee whose existing KEYS file to fetch from the ASF downloads server and import.",
-        widget=form.Widget.RADIO,
-        required=True,
-    )
-
-
-type UploadKeysForm = Annotated[
-    UploadFileForm | UploadRemoteForm,
-    form.DISCRIMINATOR,
-]
 
 
 def certificate_all_revoked(certificate: sql.SigningCertificate) -> bool:
@@ -220,9 +209,26 @@ def publication_removed_warning(publications: dict[str, storage.outcome.Outcome[
     )
 
 
+def publication_summary(publication: storage.outcome.Outcome[datatypes.KeysPublish]) -> tuple[str, str]:
+    # A badge class and a line of text saying what became of the committee's published KEYS file
+    error = publication.error_or_none()
+    if error is not None:
+        return "bg-danger", f"Publication to SVN failed: {error}"
+    match publication.result_or_none():
+        case datatypes.KeysPublish.PUBLISHED:
+            return "bg-success", "Published to SVN"
+        case datatypes.KeysPublish.AUTOMATION_DISABLED:
+            return "bg-secondary", "Keys added in ATR, but the KEYS file in SVN was not changed"
+        case datatypes.KeysPublish.SVN_NOT_CONFIGURED:
+            return "bg-secondary", "Keys added in ATR, but publication to SVN is not configured on this server"
+        case None:
+            return "bg-secondary", "No publication was attempted"
+
+
 async def render_upload_page(
     results: storage.outcome.List | None = None,
     submitted_committees: list[str] | None = None,
+    publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]] | None = None,
     error: bool = False,
 ) -> str:
     """Render the upload page with optional results."""
@@ -235,49 +241,52 @@ async def render_upload_page(
     eligible_committees = [
         c for c in participant_of_committees if (not util.committee_is_standing(c.key)) or (c.key == "tooling")
     ]
+    # In reflect mode SVN owns the keys and ATR is read-only, so there is nothing to upload to
+    uploadable_committees = [c for c in eligible_committees if c.keys_mode is not sql.KeysMode.REFLECT]
+    reflect_committees = [c for c in eligible_committees if c.keys_mode is sql.KeysMode.REFLECT]
 
-    committee_choices = [(c.key, c.display_name) for c in eligible_committees]
+    committee_choices = [
+        (c.key, f"{c.display_name} ({KEYS_MODE_UPLOAD_EFFECTS[c.keys_mode]})") for c in uploadable_committees
+    ]
     committee_map = {c.key: c.display_name for c in eligible_committees}
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(get.keys.keys))["← Back to Manage keys"]]
-    page.h1["Import KEYS"]
-    page.p["Import OpenPGP public signing keys from a KEYS file."]
+    page.h1["Upload KEYS file"]
+    page.p["Add OpenPGP public signing keys to a committee from a KEYS file."]
 
     if results and submitted_committees:
         page.append(_get_results_table_css())
         _render_results_table(page, results, submitted_committees, committee_map)
+        if publications:
+            _render_publication_summary(page, publications, committee_map)
 
-    page.h2["Upload a file"]
-    page.p["Upload a KEYS file from your computer."]
+    if reflect_committees:
+        names = util.conjunction([c.display_name for c in reflect_committees])
+        page.div(".alert.alert-info")[
+            f"Keys for {names} are imported automatically from the KEYS file in SVN, so they cannot be uploaded"
+            " here. To upload keys in ATR instead, change how the committee's keys are managed on its committee page."
+        ]
 
-    await form.render_block(
-        page,
-        model_cls=shared.keys.UploadFileForm,
-        action=util.as_url(post.keys.upload),
-        submit_label="Upload KEYS file",
-        defaults={"selected_committee": committee_choices},
-        border=True,
-        wider_widgets=True,
-    )
-
-    page.h2(".mt-5")["Fetch existing KEYS file"]
-    page.p["Fetch the KEYS file from the ASF downloads server for the selected committee."]
-
-    await form.render_block(
-        page,
-        model_cls=shared.keys.UploadRemoteForm,
-        action=util.as_url(post.keys.upload),
-        submit_label="Fetch KEYS file",
-        defaults={"committee": committee_choices},
-        border=True,
-        wider_widgets=True,
-    )
+    if uploadable_committees:
+        page.h2["Upload a file"]
+        page.p["Upload a KEYS file from your computer."]
+        await form.render_block(
+            page,
+            model_cls=shared.keys.UploadFileForm,
+            action=util.as_url(post.keys.upload),
+            submit_label="Upload KEYS file",
+            defaults={"selected_committee": committee_choices},
+            border=True,
+            wider_widgets=True,
+        )
+    elif not reflect_committees:
+        page.p["You are not a participant in any committee which can have keys uploaded."]
 
     return await template.blank(
-        "Import KEYS",
+        "Upload KEYS file",
         content=page.collect(),
-        description="Import OpenPGP public signing keys from a KEYS file.",
+        description="Add OpenPGP public signing keys to a committee from a KEYS file.",
     )
 
 
@@ -410,6 +419,23 @@ def _get_results_table_css() -> htm.Element:
         """
         )
     ]
+
+
+def _render_publication_summary(
+    page: htm.Block,
+    publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]],
+    committee_map: dict[str, str],
+) -> None:
+    page.h3(".mt-4")["Published KEYS files"]
+    items = htm.Block(htm.ul, classes=".list-unstyled")
+    for committee_key, publication in sorted(publications.items()):
+        badge_class, text = publication_summary(publication)
+        items.li(".mb-1")[
+            htm.strong[committee_map.get(committee_key, committee_key)],
+            " ",
+            htm.span(f".badge.{badge_class}.text-white")[text],
+        ]
+    page.append(items.collect())
 
 
 def _render_results_table(

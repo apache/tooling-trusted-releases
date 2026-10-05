@@ -22,8 +22,6 @@ import gc
 from typing import Literal
 
 import aiofiles
-import aiohttp
-import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
@@ -285,17 +283,49 @@ async def ssh_add(
 async def upload(
     session: web.Committer,
     _keys_upload: Literal["keys/upload"],
-    upload_form: shared.keys.UploadKeysForm,
+    upload_file_form: shared.keys.UploadFileForm,
 ) -> str:
     """
     URL: /keys/upload
     Upload or fetch a KEYS file containing multiple OpenPGP keys.
     """
-    match upload_form:
-        case shared.keys.UploadFileForm() as upload_file_form:
-            return await _upload_file_keys(session, upload_file_form)
-        case shared.keys.UploadRemoteForm() as upload_remote_form:
-            return await _upload_remote_keys(upload_remote_form)
+    try:
+        uploaded_file = upload_file_form.key
+        if uploaded_file is None:
+            await quart.flash("No KEYS file uploaded", "error")
+            return await shared.keys.render_upload_page(error=True)
+
+        keys_content = await asyncio.to_thread(uploaded_file.read)
+        if len(keys_content) > shared.keys.MAX_KEYS_SIZE:
+            await quart.flash(f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)", "error")
+            return await shared.keys.render_upload_page(error=True)
+        keys_text = keys_content.decode("utf-8", errors="replace")
+        if util.contains_private_key_text(keys_text):
+            vars(upload_file_form)["key"] = None
+            session.form_data_discard(["key"])
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(uploaded_file.close)
+            del keys_content
+            del keys_text
+            del uploaded_file
+            gc.collect()
+            await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
+            return await shared.keys.render_upload_page(error=True)
+
+        if not keys_text:
+            await quart.flash("No KEYS data found", "error")
+            return await shared.keys.render_upload_page(error=True)
+
+        selected_committee = upload_file_form.selected_committee
+        if (committee_error := await _upload_committee_error(selected_committee)) is not None:
+            await quart.flash(committee_error, "error")
+            return await shared.keys.render_upload_page(error=True)
+        log.keys_submitted("web:keys/upload", keys_text, committee_keys=[selected_committee])
+        return await _process_keys(keys_text, selected_committee)
+    except Exception as e:
+        log.exception("Error uploading KEYS file:")
+        await quart.flash(f"Error processing KEYS file: {e!s}", "error")
+        return await shared.keys.render_upload_page(error=True)
 
 
 async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.AddOpenPGPKeyForm) -> str:
@@ -371,37 +401,6 @@ async def _delete_ssh_key(session: web.Committer, delete_form: shared.keys.Delet
     return await session.redirect(get.keys.keys)
 
 
-async def _fetch_keys_from_url(keys_url: str) -> str:
-    """Fetch KEYS file from ASF downloads."""
-    try:
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with util.create_secure_session(timeout=timeout) as session:
-            # audit_guidance known issue: redirect without domain validation; will change when key import is refactored
-            async with session.get(keys_url, allow_redirects=True) as response:
-                response.raise_for_status()
-                content_length = response.content_length
-                if (content_length is not None) and (content_length > shared.keys.MAX_KEYS_SIZE):
-                    raise base.ASFQuartException(
-                        f"KEYS file too large ({content_length} bytes, limit {shared.keys.MAX_KEYS_SIZE})",
-                        errorcode=502,
-                    )
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in response.content.iter_chunked(65536):
-                    size += len(chunk)
-                    if size > shared.keys.MAX_KEYS_SIZE:
-                        raise base.ASFQuartException(
-                            f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)",
-                            errorcode=502,
-                        )
-                    chunks.append(chunk)
-                return b"".join(chunks).decode("utf-8", errors="replace")
-    except aiohttp.ClientResponseError as e:
-        raise base.ASFQuartException(f"Unable to fetch keys from remote server: {e.status} {e.message}", errorcode=502)
-    except aiohttp.ClientError as e:
-        raise base.ASFQuartException(f"Network error while fetching keys: {e}", errorcode=503)
-
-
 async def _flash_openpgp_key_uid_warning(key_model: sql.SigningCertificate, current_asf_uid: str) -> None:
     warning = _openpgp_key_uid_warning(key_model, current_asf_uid)
     if warning is not None:
@@ -450,7 +449,9 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
     if failure := shared.keys.publication_failed_warning(publications):
         await quart.flash(failure, "error")
 
-    return await shared.keys.render_upload_page(results=outcomes, submitted_committees=[selected_committee])
+    return await shared.keys.render_upload_page(
+        results=outcomes, submitted_committees=[selected_committee], publications=publications
+    )
 
 
 async def _set_keys_mode(session: web.Committer, set_form: shared.keys.SetKeysModeForm) -> web.WerkzeugResponse:
@@ -510,68 +511,12 @@ async def _update_committee_keys(
     return await session.redirect(get.keys.keys)
 
 
-async def _upload_file_keys(session: web.Committer, upload_file_form: shared.keys.UploadFileForm) -> str:
-    """Handle file upload."""
-    try:
-        uploaded_file = upload_file_form.key
-        if uploaded_file is None:
-            await quart.flash("No KEYS file uploaded", "error")
-            return await shared.keys.render_upload_page(error=True)
-
-        keys_content = await asyncio.to_thread(uploaded_file.read)
-        if len(keys_content) > shared.keys.MAX_KEYS_SIZE:
-            await quart.flash(f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)", "error")
-            return await shared.keys.render_upload_page(error=True)
-        keys_text = keys_content.decode("utf-8", errors="replace")
-        if util.contains_private_key_text(keys_text):
-            vars(upload_file_form)["key"] = None
-            session.form_data_discard(["key"])
-            with contextlib.suppress(Exception):
-                await asyncio.to_thread(uploaded_file.close)
-            del keys_content
-            del keys_text
-            del uploaded_file
-            gc.collect()
-            await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
-            return await shared.keys.render_upload_page(error=True)
-
-        if not keys_text:
-            await quart.flash("No KEYS data found", "error")
-            return await shared.keys.render_upload_page(error=True)
-
-        selected_committee = upload_file_form.selected_committee
-        log.keys_submitted("web:keys/upload", keys_text, committee_keys=[selected_committee])
-        return await _process_keys(keys_text, selected_committee)
-    except Exception as e:
-        log.exception("Error uploading KEYS file:")
-        await quart.flash(f"Error processing KEYS file: {e!s}", "error")
-        return await shared.keys.render_upload_page(error=True)
-
-
-async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) -> str:
-    """Fetch KEYS file from ASF downloads."""
-    try:
-        selected_committee = upload_remote_form.committee
-        async with db.session() as data:
-            committee = await data.committee(key=selected_committee).get()
-            if not committee:
-                await quart.flash(f"Committee '{selected_committee}' not found", "error")
-                return await shared.keys.render_upload_page(error=True)
-        keys_url = paths.committee_keys_url(committee)
-        keys_text = await _fetch_keys_from_url(keys_url)
-
-        if util.contains_private_key_text(keys_text):
-            del keys_text
-            gc.collect()
-            await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
-            return await shared.keys.render_upload_page(error=True)
-        if not keys_text:
-            await quart.flash("No KEYS data found at ASF downloads", "error")
-            return await shared.keys.render_upload_page(error=True)
-
-        log.keys_submitted("web:keys/upload:remote", keys_text, committee_keys=[selected_committee], url=keys_url)
-        return await _process_keys(keys_text, selected_committee)
-    except Exception as e:
-        log.exception("Error fetching KEYS file from ASF:")
-        await quart.flash(f"Error fetching KEYS file: {e!s}", "error")
-        return await shared.keys.render_upload_page(error=True)
+async def _upload_committee_error(committee_key: str) -> str | None:
+    # The upload form only offers committees which accept uploads, but the POST is checked regardless
+    async with db.session() as data:
+        committee = await data.committee(key=committee_key).get()
+    if committee is None:
+        return f"Committee '{committee_key}' not found"
+    if committee.keys_mode is sql.KeysMode.REFLECT:
+        return f"Keys for {committee.display_name} are imported from SVN, so they cannot be uploaded in ATR."
+    return None

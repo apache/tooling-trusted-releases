@@ -44,8 +44,8 @@ def test_openpgp_key_uid_warning_flags_other_asf_uid(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_upload_remote_keys_uses_canonical_committee_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    committee = SimpleNamespace(key="example", is_podling=True)
+async def test_upload_rejects_reflect_mode_committee(monkeypatch: pytest.MonkeyPatch) -> None:
+    committee = SimpleNamespace(key="example", display_name="Example", keys_mode=sql.KeysMode.REFLECT)
     query = SimpleNamespace(get=mock.AsyncMock(return_value=committee))
     data = SimpleNamespace(committee=mock.Mock(return_value=query))
 
@@ -53,43 +53,27 @@ async def test_upload_remote_keys_uses_canonical_committee_url(monkeypatch: pyte
     async def db_session():
         yield data
 
-    canonical_url = "https://downloads.apache.org/incubator/example/KEYS"
-    committee_keys_url = mock.Mock(return_value=canonical_url)
-    fetch = mock.AsyncMock(return_value="public keys")
-    process = mock.AsyncMock(return_value="rendered")
     monkeypatch.setattr(keys.db, "session", db_session)
-    monkeypatch.setattr(keys.paths, "committee_keys_url", committee_keys_url)
-    monkeypatch.setattr(keys, "_fetch_keys_from_url", fetch)
-    monkeypatch.setattr(keys, "_process_keys", process)
-    monkeypatch.setattr(keys.util, "contains_private_key_text", lambda _text: False)
 
-    result = await keys._upload_remote_keys(SimpleNamespace(committee="example"))
+    error = await keys._upload_committee_error("example")
 
-    assert result == "rendered"
-    committee_keys_url.assert_called_once_with(committee)
-    fetch.assert_awaited_once_with(canonical_url)
+    assert error is not None
+    assert "imported from SVN" in error
 
 
-async def test_fetch_keys_from_url_tolerates_prose_that_is_not_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def iter_chunked(_size: int):
-        yield b"Ren\xe9 <"
-        yield b"r@example.org>\n"
-
-    response = SimpleNamespace(
-        content_length=None, content=SimpleNamespace(iter_chunked=iter_chunked), raise_for_status=lambda: None
-    )
+@pytest.mark.asyncio
+async def test_upload_accepts_manual_mode_committee(monkeypatch: pytest.MonkeyPatch) -> None:
+    committee = SimpleNamespace(key="example", display_name="Example", keys_mode=sql.KeysMode.MANUAL)
+    query = SimpleNamespace(get=mock.AsyncMock(return_value=committee))
+    data = SimpleNamespace(committee=mock.Mock(return_value=query))
 
     @contextlib.asynccontextmanager
-    async def get(_url: str, **_kwargs: object):
-        yield response
+    async def db_session():
+        yield data
 
-    @contextlib.asynccontextmanager
-    async def session(**_kwargs: object):
-        yield SimpleNamespace(get=get)
+    monkeypatch.setattr(keys.db, "session", db_session)
 
-    monkeypatch.setattr(keys.util, "create_secure_session", session)
-
-    assert await keys._fetch_keys_from_url("https://downloads.apache.org/alpha/KEYS") == "Ren\ufffd <r@example.org>\n"
+    assert await keys._upload_committee_error("example") is None
 
 
 def _public_key(apache_uid: str | None) -> sql.SigningCertificate:
