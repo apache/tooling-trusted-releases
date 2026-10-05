@@ -19,7 +19,9 @@
 
 ## Overview
 
-This server enforces modern TLS security settings aligned with current best practices. The configuration restricts TLS to strong protocol versions, modern cipher suites, secure elliptic curves, and additional protections such as OCSP stapling and disabled session tickets.
+This server enforces modern TLS security settings aligned with current best practices. The
+configuration restricts TLS to strong protocol versions, modern cipher suites, secure elliptic
+curves, and additional protections such as OCSP stapling and disabled session tickets.
 
 ```apache
 SSLProtocol         -all +TLSv1.2 +TLSv1.3
@@ -50,7 +52,8 @@ SSLProtocol -all +TLSv1.2 +TLSv1.3
 SSLProxyProtocol -all +TLSv1.2 +TLSv1.3
 ```
 
-These directives restrict both client connections and upstream proxy connections to **TLS 1.2 and TLS 1.3 only**.
+These directives restrict both client connections and upstream proxy connections to **TLS 1.2 and
+TLS 1.3 only**.
 
 Version       | Status   | Reason
 --------------|----------|-----------------------------------------------------------
@@ -59,7 +62,8 @@ TLS 1.2       | Enabled  | Widely supported secure protocol
 TLS 1.1 / 1.0 | Disabled | Deprecated and vulnerable to known attacks
 SSLv3 / SSLv2 | Disabled | Insecure and obsolete
 
-TLS 1.3 cipher suites are negotiated automatically by OpenSSL and are not controlled by the `SSLCipherSuite` directive.
+TLS 1.3 cipher suites are negotiated automatically by OpenSSL and are not controlled by the
+`SSLCipherSuite` directive.
 
 ---
 
@@ -127,7 +131,8 @@ These provide high-performance AES encryption using **Galois/Counter Mode (GCM)*
 * ECDHE-ECDSA-CHACHA20-POLY1305
 * ECDHE-RSA-CHACHA20-POLY1305
 
-ChaCha20 performs better than AES on systems without AES hardware acceleration (e.g., many mobile devices).
+ChaCha20 performs better than AES on systems without AES hardware acceleration (e.g., many mobile
+devices).
 
 ---
 
@@ -137,7 +142,8 @@ ChaCha20 performs better than AES on systems without AES hardware acceleration (
 * DHE-RSA-AES256-GCM-SHA384
 * DHE-RSA-CHACHA20-POLY1305
 
-These use **finite-field Diffie-Hellman** rather than elliptic curves and exist primarily for compatibility with older clients that cannot use ECDHE.
+These use **finite-field Diffie-Hellman** rather than elliptic curves and exist primarily for
+compatibility with older clients that cannot use ECDHE.
 
 ---
 
@@ -149,7 +155,8 @@ SSLHonorCipherOrder off
 
 This allows the **client to choose the preferred cipher suite** from the server’s allowed list.
 
-This behavior is recommended when supporting modern clients because browsers typically select the most optimal cipher for the platform (for example, preferring ChaCha20 on mobile devices).
+This behavior is recommended when supporting modern clients because browsers typically select the
+most optimal cipher for the platform (for example, preferring ChaCha20 on mobile devices).
 
 ---
 
@@ -161,7 +168,8 @@ This behavior is recommended when supporting modern clients because browsers typ
 SSLSessionTickets off
 ```
 
-Disabling session tickets prevents reuse of ticket encryption keys across long periods, which can otherwise weaken forward secrecy if ticket keys are compromised.
+Disabling session tickets prevents reuse of ticket encryption keys across long periods, which can
+otherwise weaken forward secrecy if ticket keys are compromised.
 
 Session resumption still works using **session IDs**.
 
@@ -173,7 +181,8 @@ Session resumption still works using **session IDs**.
 SSLCompression off
 ```
 
-TLS compression is disabled to prevent attacks such as **CRIME**, which exploit compression side channels.
+TLS compression is disabled to prevent attacks such as **CRIME**, which exploit compression side
+channels.
 
 ---
 
@@ -204,4 +213,5 @@ This configuration enforces modern TLS best practices:
 * **OCSP stapling for certificate validation**
 * Protection against legacy TLS vulnerabilities
 
-The result is a secure and performant TLS configuration suitable for modern browsers and API clients.
+The result is a secure and performant TLS configuration suitable for modern browsers and API
+clients.

@@ -20,13 +20,16 @@
 
 ### Follow PEP 8 rules by default
 
-Follow [PEP 8](https://peps.python.org/pep-0008/) unless otherwise indicated in this document. Some of the conventions listed below recapitulate or add exceptions to PEP 8 rules.
+Follow [PEP 8](https://peps.python.org/pep-0008/) unless otherwise indicated in this document. Some
+of the conventions listed below recapitulate or add exceptions to PEP 8 rules.
 
 Obey all project local lints, e.g. the use of `ruff` and specific `ruff` rules.
 
 ### Keep the primary execution path to the left
 
-Structure code so that the most likely, normal, successful execution path remains at the level of least indentation. Handle error cases and edge conditions early with guard clauses, and then continue with the main logic. This makes it easier to identify the primary execution flow.
+Structure code so that the most likely, normal, successful execution path remains at the level of
+least indentation. Handle error cases and edge conditions early with guard clauses, and then
+continue with the main logic. This makes it easier to identify the primary execution flow.
 
 ```python
 # Avoid
@@ -56,13 +59,21 @@ def process_data(data):
 
 ### Avoid excessive indentation
 
-When you find yourself nesting code more than two or three levels deep, extract the nested logic into separate functions. This improves readability, testability, and maintainability. Each function should handle a single, well defined piece of logic.
+When you find yourself nesting code more than two or three levels deep, extract the nested logic
+into separate functions. This improves readability, testability, and maintainability. Each function
+should handle a single, well defined piece of logic.
 
 ### Do not use lint or type checker ignore statements
 
-You must not use `# noqa`, `# type: ignore`, or equivalents such as `cast`, even to ignore specific errors. The single exception to this is when there is a bug in the linter or type checker. Such ignores should be scoped to the category of error being raised by the checker. We currently use pyright for type checking, where one additional restriction is that ignores of the style `# type: ignore` or `# type: ignore[category]` [must not be used](https://github.com/apache/tooling-trusted-releases/issues/375).
+You must not use `# noqa`, `# type: ignore`, or equivalents such as `cast`, even to ignore specific
+errors. The single exception to this is when there is a bug in the linter or type checker. Such
+ignores should be scoped to the category of error being raised by the checker. We currently use
+pyright for type checking, where one additional restriction is that ignores of the style
+`# type: ignore` or `# type: ignore[category]`
+[must not be used](https://github.com/apache/tooling-trusted-releases/issues/375).
 
-File level lint ignores can be added to the project's `pyproject.toml`, but they must be used sparingly.
+File level lint ignores can be added to the project's `pyproject.toml`, but they must be used
+sparingly.
 
 ### Use double quotes for all strings
 
@@ -70,7 +81,9 @@ This includes triple quoted strings.
 
 ### Prefix private interfaces with a single underscore
 
-Prefix private interfaces, e.g. functions, constants, variables, with a single underscore. An interface is private when used exclusively within its containing module and not referenced by external code, templates, or processes.
+Prefix private interfaces, e.g. functions, constants, variables, with a single underscore. An
+interface is private when used exclusively within its containing module and not referenced by
+external code, templates, or processes.
 
 Exceptions to this rule include:
 
@@ -80,25 +93,32 @@ Exceptions to this rule include:
 * Methods requiring interface compatibility with their superclass
 * Nested functions (which should generally be avoided)
 
-Scripts are explicitly _not_ an exception. Underscores should be used to prefix private interfaces in scripts for consistency, e.g. so that linters don't need to carry exceptions, and to ease potential migration to modules.
+Scripts are explicitly _not_ an exception. Underscores should be used to prefix private interfaces
+in scripts for consistency, e.g. so that linters don't need to carry exceptions, and to ease
+potential migration to modules.
 
 ### Avoid nested functions
 
-Function definitions should be at the top level. This is not a hard rule, but should only be broken when absolutely necessary.
+Function definitions should be at the top level. This is not a hard rule, but should only be broken
+when absolutely necessary.
 
 ### Use UPPERCASE for top level constants
 
-Define top level constants using `UPPERCASE` letters. Don't forget to apply an underscore prefix to constants which are private to their module.
+Define top level constants using `UPPERCASE` letters. Don't forget to apply an underscore prefix to
+constants which are private to their module.
 
 Do not use uppercase for constants within functions and methods.
 
 ### Use the `Final` type with all constants
 
-This pattern must be followed for top level constants, and should be followed for function and method level constants too. The longer the function, the more important the use of `Final`.
+This pattern must be followed for top level constants, and should be followed for function and
+method level constants too. The longer the function, the more important the use of `Final`.
 
 ### Prefix global variables with `global_`
 
-Top level variables should be avoided. When their use is necessary, prefix them with `global_`, using lowercase letters, to ensure clear identification of their scope. Use an underscore prefix too, `_global_`, when the variable is private.
+Top level variables should be avoided. When their use is necessary, prefix them with `global_`,
+using lowercase letters, to ensure clear identification of their scope. Use an underscore prefix
+too, `_global_`, when the variable is private.
 
 ### Import modules as their least significant name part
 
@@ -112,11 +132,15 @@ import a.b.c as c
 import a.b.c
 ```
 
-This convention aligns with Go's package naming practices. Follow [Go naming rules](https://go.dev/blog/package-names) for all modules.
+This convention aligns with Go's package naming practices. Follow
+[Go naming rules](https://go.dev/blog/package-names) for all modules.
 
-This only applies to modules outside of the Python standard library. The standard library module `os.path`, for example, must always be imported using the form `import os.path`, and _not_ `import os.path as path`.
+This only applies to modules outside of the Python standard library. The standard library module
+`os.path`, for example, must always be imported using the form `import os.path`, and _not_
+`import os.path as path`.
 
-Furthermore, if a third party module to be imported would conflict with a Python standard library module, then that third party module must be imported with one extra level.
+Furthermore, if a third party module to be imported would conflict with a Python standard library
+module, then that third party module must be imported with one extra level.
 
 ```python
 # Prefer
@@ -130,17 +154,24 @@ import sqlalchemy.ext.asyncio as asyncio
 import aiofiles.os.path as path
 ```
 
-It's possible to use `from a.b import c` instead of `import a.b.c as c` when `c` is a module, but we prefer the latter form because it makes it clear that `c` must be a module, whereas in the former `from a.b import c` form, `c` could be any interface.
+It's possible to use `from a.b import c` instead of `import a.b.c as c` when `c` is a module, but we
+prefer the latter form because it makes it clear that `c` must be a module, whereas in the former
+`from a.b import c` form, `c` could be any interface.
 
-TODO: There's a question as to whether we could actually use `import aiofiles.os.path as path` since we import `os.path` as `os.path` and not `path`.
+TODO: There's a question as to whether we could actually use `import aiofiles.os.path as path` since
+we import `os.path` as `os.path` and not `path`.
 
-TODO: Sometimes we're using `as` for standard library modules. We should decide what to do about this.
+TODO: Sometimes we're using `as` for standard library modules. We should decide what to do about
+this.
 
 ### Avoid duplicated module names
 
-Try to avoid using, for example, `baking/apple/pie.py` and `baking/cherry/pie.py` because these will both be imported as `pie` and one will have to be renamed.
+Try to avoid using, for example, `baking/apple/pie.py` and `baking/cherry/pie.py` because these will
+both be imported as `pie` and one will have to be renamed.
 
-If there are duplicates imported within a single file, they should be disambiguated by the next level up. In the pie example, that would be `import baking.apple as apple` and then `apple.pie`, and `import baking.cherry as cherry` and `cherry.pie`.
+If there are duplicates imported within a single file, they should be disambiguated by the next
+level up. In the pie example, that would be `import baking.apple as apple` and then `apple.pie`, and
+`import baking.cherry as cherry` and `cherry.pie`.
 
 ### Never import names directly from modules
 
@@ -156,7 +187,8 @@ from p.q.r import s
 s()
 ```
 
-The `collections.abc`, `types`, and `typing` modules are an exception to this rule. Always import `collections.abc`, `types` and `typing` interfaces directly using the `from` syntax:
+The `collections.abc`, `types`, and `typing` modules are an exception to this rule. Always import
+`collections.abc`, `types` and `typing` interfaces directly using the `from` syntax:
 
 ```python
 # Prefer
@@ -170,7 +202,8 @@ import typing
 CONSTANT: typing.Final = "CONSTANT"
 ```
 
-In tests, only, `playwright.sync_api` is another exception. Use `from playwright.sync_api import expect`, for example.
+In tests, only, `playwright.sync_api` is another exception. Use
+`from playwright.sync_api import expect`, for example.
 
 ### Use concise typing patterns
 
@@ -190,36 +223,54 @@ def example() -> List[Optional[str]]:
 
 ### Never name interfaces after their module
 
-Do not name interfaces with the same identifier as their containing module. For example, in a module named `example`, the function names `example` and `example_function` are prohibited.
+Do not name interfaces with the same identifier as their containing module. For example, in a module
+named `example`, the function names `example` and `example_function` are prohibited.
 
 ### Keep modules small and focused
 
-Maintain modules with a reasonable number of interfaces. Though no strict limits are enforced, modules containing numerous classes, constants, or functions should be considered for logical subdivision. Exceptions may be made when closely related functionality necessitates grouping multiple interfaces within a single module.
+Maintain modules with a reasonable number of interfaces. Though no strict limits are enforced,
+modules containing numerous classes, constants, or functions should be considered for logical
+subdivision. Exceptions may be made when closely related functionality necessitates grouping
+multiple interfaces within a single module.
 
 ### Sort functions alphabetically
 
-Wherever possible, the order of functions within each module should be alphabetical by name. Take advantage of this convention by grouping related functions under a common prefix (including grouping helper functions with their caller), and using numbers in the names of functions called in serial order. As an exception to this rule, underscored (and hence private) functions are sorted below public functions.
+Wherever possible, the order of functions within each module should be alphabetical by name. Take
+advantage of this convention by grouping related functions under a common prefix (including grouping
+helper functions with their caller), and using numbers in the names of functions called in serial
+order. As an exception to this rule, underscored (and hence private) functions are sorted below
+public functions.
 
 ### Keep cyclomatic complexity below 10
 
-We limit function complexity to a score of 10. If the linter complains, your function is doing too much.
+We limit function complexity to a score of 10. If the linter complains, your function is doing too
+much.
 
-Cyclomatic complexity counts the number of independent paths through code: more if and else branches, loops, and exception handlers means higher complexity. Complex code is harder to test, maintain, and understand. The easiest way to fix high complexity is usually to refactor a chunk of related logic into a separate helper function.
+Cyclomatic complexity counts the number of independent paths through code: more if and else
+branches, loops, and exception handlers means higher complexity. Complex code is harder to test,
+maintain, and understand. The easiest way to fix high complexity is usually to refactor a chunk of
+related logic into a separate helper function.
 
 ### Replace synchronous calls with asynchronous counterparts in async code
 
-Our use of blockbuster enables automatic detection of synchronous function calls within asynchronous code. When detected, replace these calls with their asynchronous equivalents without performance testing. The conversion process typically requires minimal, trivial effort.
+Our use of blockbuster enables automatic detection of synchronous function calls within asynchronous
+code. When detected, replace these calls with their asynchronous equivalents without performance
+testing. The conversion process typically requires minimal, trivial effort.
 
 Exceptions to this rule apply only in these scenarios:
 
 * When dealing with third party dependencies
 * When the asynchronous equivalent function is unknown
 
-If either exception applies, either submit a brief issue with the blockbuster traceback, notify the team via Slack, or add a code comment if part of another commit. An ATR Tooling engineer will address the issue without requiring significant time investment from you.
+If either exception applies, either submit a brief issue with the blockbuster traceback, notify the
+team via Slack, or add a code comment if part of another commit. An ATR Tooling engineer will
+address the issue without requiring significant time investment from you.
 
 ### Use explicit `commit()` for database transactions
 
-When writing database mutations within a `db.session()`, prefer calling `await data.commit()` explicitly after the mutations, rather than wrapping them in `async with data.begin():`. The explicit commit makes the transaction boundary visible and is the more common pattern that we use.
+When writing database mutations within a `db.session()`, prefer calling `await data.commit()`
+explicitly after the mutations, rather than wrapping them in `async with data.begin():`. The
+explicit commit makes the transaction boundary visible and is the more common pattern that we use.
 
 ```python
 # Prefer
@@ -245,7 +296,8 @@ a or b and c == d or not e or f
 (a or b) and (c == d) or (not e) or f
 ```
 
-Because `f` is not a complex expression, it does not get parenthesised. Also because this rule is about subexpressions only, we do not put parentheses around the top level.
+Because `f` is not a complex expression, it does not get parenthesised. Also because this rule is
+about subexpressions only, we do not put parentheses around the top level.
 
 ```python
 # Avoid
@@ -259,11 +311,20 @@ if a or b:
 
 ### Use terse comments on their own lines
 
-Place comments on dedicated lines preceding the relevant code block. Comments at the ends of lines are strictly reserved for linter or type checker directives. This convention enhances code scannability for such directives. General comments must not appear at the end of code lines: PEP 8 says to use inline comments "sparingly", but we disallow them to make it easier to evaluate non-conformance. Keep comments concise, using sentence case without terminal punctuation. Each sentence forming a comment must occupy its own line. Comments must not include information about what has changed from earlier code revisions.
+Place comments on dedicated lines preceding the relevant code block. Comments at the ends of lines
+are strictly reserved for linter or type checker directives. This convention enhances code
+scannability for such directives. General comments must not appear at the end of code lines: PEP 8
+says to use inline comments "sparingly", but we disallow them to make it easier to evaluate
+non-conformance. Keep comments concise, using sentence case without terminal punctuation. Each
+sentence forming a comment must occupy its own line. Comments must not include information about
+what has changed from earlier code revisions.
 
 ### Prefer explicit checks over `assert`
 
-We do not use `assert`. If you need to guard against invalid states or inputs, use standard `if` checks and raise appropriate exceptions. If you need to help type checkers understand the type of a variable within a specific code block, in other words if you need to narrow a type, then use `if isinstance(...)` or `if not isinstance(...)` as appropriate.
+We do not use `assert`. If you need to guard against invalid states or inputs, use standard `if`
+checks and raise appropriate exceptions. If you need to help type checkers understand the type of a
+variable within a specific code block, in other words if you need to narrow a type, then use
+`if isinstance(...)` or `if not isinstance(...)` as appropriate.
 
 ### Never use `case _` when pattern matching exhaustive types
 
@@ -271,9 +332,12 @@ Using `case _` breaks type checking in such situations.
 
 ### Use f-string interpolation instead of printf style formatting
 
-This should be adhered to even in contexts where printf style is usually expected, such as in `log.info` calls, unless there is a reason not to, such as when there are specific printf style flags which have no f-string equivalent.
+This should be adhered to even in contexts where printf style is usually expected, such as in
+`log.info` calls, unless there is a reason not to, such as when there are specific printf style
+flags which have no f-string equivalent.
 
-This convention is not enforced by any checks. Enforcement is via code review. See [issue #339](https://github.com/apache/tooling-trusted-releases/issues/339) for a discussion.
+This convention is not enforced by any checks. Enforcement is via code review. See
+[issue #339](https://github.com/apache/tooling-trusted-releases/issues/339) for a discussion.
 
 ## Documentation and user interfaces
 
@@ -283,15 +347,27 @@ For example, a page with the title "This is an example" should be named `this-is
 
 ### Use sentence case for headings, form labels, and submission buttons
 
-We write headings, form labels, and submission buttons in the form "This is some text", and not "This is Some Text" or "This Is Some Text". This follows the [Wikipedia style for headings](https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style#Section_headings).
+We write headings, form labels, and submission buttons in the form "This is some text", and not
+"This is Some Text" or "This Is Some Text". This follows the
+[Wikipedia style for headings](https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style#Section_headings).
 
 ## HTML
 
 ### Use Bootstrap classes for all style
 
-We use Bootstrap classes for style, and avoid custom classes unless absolutely necessary. If you think that you have to resort to a custom class, consult the list of [Bootstrap classes](https://bootstrapclasses.com/) for guidance. There is usually a class for what you want to achieve, and if there isn't then you may be making things too complicated. Complicated, custom style is difficult for a team to maintain. If you still believe that a new class is strictly warranted, then the class must be prefixed with a project key, e.g. `example-` if the project is called `example`. Classes can go in `<style>` elements in `stylesheet` template blocks in such cases. The use of the `style` attribute on any HTML element is forbidden.
+We use Bootstrap classes for style, and avoid custom classes unless absolutely necessary. If you
+think that you have to resort to a custom class, consult the list of
+[Bootstrap classes](https://bootstrapclasses.com/) for guidance. There is usually a class for what
+you want to achieve, and if there isn't then you may be making things too complicated. Complicated,
+custom style is difficult for a team to maintain. If you still believe that a new class is strictly
+warranted, then the class must be prefixed with a project key, e.g. `example-` if the project is
+called `example`. Classes can go in `<style>` elements in `stylesheet` template blocks in such
+cases. The use of the `style` attribute on any HTML element is forbidden.
 
-The `custom.scss` file in our Bootstrap customisation is for adjusting Bootstrap classes only. Classes which we add, even if they seem to follow the Bootstrap feel, go in `atr.css` and should be given an `atr-` prefix to distinguish them from Bootstrap classes. The `.atr-hide` class, for example, just applies `display: none` and has a Bootstrap feel to it but belongs in `atr.css`.
+The `custom.scss` file in our Bootstrap customisation is for adjusting Bootstrap classes only.
+Classes which we add, even if they seem to follow the Bootstrap feel, go in `atr.css` and should be
+given an `atr-` prefix to distinguish them from Bootstrap classes. The `.atr-hide` class, for
+example, just applies `display: none` and has a Bootstrap feel to it but belongs in `atr.css`.
 
 ## Markdown
 
@@ -303,17 +379,26 @@ Do not use `*` for emphasis or `__` for strong emphasis.
 
 ### Do not use JavaScript unless necessary
 
-It is often possible to avoid using JavaScript without significant loss of functionality, but it may require a little more thought. JavaScript is not, however, something to avoid by rote. User experiences can be significantly improved with thoughtful application of JavaScript. Therefore, default to not using JavaScript, but consider how it could be used concisely and with care to improve UX.
+It is often possible to avoid using JavaScript without significant loss of functionality, but it may
+require a little more thought. JavaScript is not, however, something to avoid by rote. User
+experiences can be significantly improved with thoughtful application of JavaScript. Therefore,
+default to not using JavaScript, but consider how it could be used concisely and with care to
+improve UX.
 
 ### Use best practices for installing JavaScript dependencies
 
-Disable lifecycle scripts, separate the process into pinning and building from pinned versions, ensure that versions are properly pinned (e.g. using `save-exact` and `save-prefix` in npm), run audits automatically after installation, and set a package cooldown of 14 days. Manually update in case of a CVE within the 14 day cooldown period. If possible, run the whole process in an OCI container with a non-root build user in the container.
+Disable lifecycle scripts, separate the process into pinning and building from pinned versions,
+ensure that versions are properly pinned (e.g. using `save-exact` and `save-prefix` in npm), run
+audits automatically after installation, and set a package cooldown of 14 days. Manually update in
+case of a CVE within the 14 day cooldown period. If possible, run the whole process in an OCI
+container with a non-root build user in the container.
 
 ## Shell
 
 ### Use POSIX sh only
 
-Do not use bash or other idioms, only POSIX sh. Ensure that all commands called from the shell script are available in the POSIX standard, using only POSIX flags and arguments.
+Do not use bash or other idioms, only POSIX sh. Ensure that all commands called from the shell
+script are available in the POSIX standard, using only POSIX flags and arguments.
 
 ### Use two spaces for indentation
 
@@ -327,4 +412,7 @@ Avoid the use of `; then`. Always put keywords on their own line.
 
 ### Be FHS compliant
 
-Don't create directories which are not defined in the most recent [Filesystem Hierarchy Standard](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html). If adding a directory whose role in the FHS is unclear, try to copy practices from established Linux distributions.
+Don't create directories which are not defined in the most recent
+[Filesystem Hierarchy Standard](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html). If
+adding a directory whose role in the FHS is unclear, try to copy practices from established Linux
+distributions.

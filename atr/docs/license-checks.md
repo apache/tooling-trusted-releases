@@ -26,7 +26,8 @@ When you configure a release, you can choose which checks run on **source artifa
 
 ## Automatically excluded patterns
 
-These file patterns are automatically treated as "generated" and are ignored by **both** the RAT check and the lightweight check:
+These file patterns are automatically treated as "generated" and are ignored by **both** the RAT
+check and the lightweight check:
 
 * `**/*.bundle.js`
 * `**/*.chunk.js`
@@ -54,11 +55,12 @@ You can define your own exclusions by adding a `.rat-excludes` file to the archi
 > [!IMPORTANT]
 > If a `.rat-excludes` file exists, the **standard exclusions are ignored**.
 
-**Scan root behavior**:
-You can only have one `.rat-excludes` file. The folder it's in becomes the **scan root**.
+**Scan root behavior**: You can only have one `.rat-excludes` file. The folder it's in becomes the
+**scan root**.
 
 * Everything you want checked must be inside this scan root (or subfolders).
-* Files outside this root might cause errors or get ignored in weird ways. It's best to just put `.rat-excludes` at the very top of your archive.
+* Files outside this root might cause errors or get ignored in weird ways. It's best to just put
+  `.rat-excludes` at the very top of your archive.
 
 ## Lightweight license check
 
@@ -66,7 +68,8 @@ This check looks at source files to see if they have valid license headers.
 
 ### Accepted headers
 
-ATR accepts the standard ASF source header or the [SPDX form permitted by ASF policy](https://www.apache.org/legal/src-headers.html#is-an-spdx-form-of-the-source-header-acceptable):
+ATR accepts the standard ASF source header or the
+[SPDX form permitted by ASF policy](https://www.apache.org/legal/src-headers.html#is-an-spdx-form-of-the-source-header-acceptable):
 
 ```text
 SPDX-License-Identifier: Apache-2.0
@@ -74,7 +77,10 @@ SPDX-FileCopyrightText: See the NOTICE file distributed with this work for addit
 SPDX-FileContributor: Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements
 ```
 
-All three fields must appear within the first 4KB, each on one line, in any order. Common comment prefixes, differences in case, and extra spaces or tabs are accepted. The identifier line may end with an inline block closer (`*/`, `-->`, or `#>`). A bare identifier, other license identifiers, compound license expressions, and wrapped field values are not recognized by this check.
+All three fields must appear within the first 4KB, each on one line, in any order. Common comment
+prefixes, differences in case, and extra spaces or tabs are accepted. The identifier line may end
+with an inline block closer (`*/`, `-->`, or `#>`). A bare identifier, other license identifiers,
+compound license expressions, and wrapped field values are not recognized by this check.
 
 ### Content-based exclusions
 
@@ -85,12 +91,13 @@ Files are skipped (considered generated) if the first 4KB of the file contains o
 
 ### Included file types
 
-Unlike RAT, the lightweight check uses an allowlist of file extensions (e.g., `.js`, `.py`, `.java`, etc.). If a file extension isn't in the list, it gets ignored by default.
+Unlike RAT, the lightweight check uses an allowlist of file extensions (e.g., `.js`, `.py`, `.java`,
+etc.). If a file extension isn't in the list, it gets ignored by default.
 
 ## Project policy exclusions
 
-On top of file-based exclusions, you can configure exclusions right in the ATR web interface.
-When editing a project, look for the **License Check Exclusions** fields:
+On top of file-based exclusions, you can configure exclusions right in the ATR web interface. When
+editing a project, look for the **License Check Exclusions** fields:
 
 * **RAT Exclusions**: newline-separated patterns to exclude from RAT checks.
 * **Lightweight Exclusions**: newline-separated patterns to exclude from lightweight checks.
@@ -99,7 +106,9 @@ These settings are stored on the project, but individual patterns may be scoped 
 
 ### Scoping lightweight excludes to one archive
 
-Lightweight source excludes use `.gitignore` syntax and match `/<archive-filename>/<path inside the archive>`. Use an unrooted pattern (no leading `/`) to apply to all source archives, or prefix with `/` and an archive filename glob to target one archive:
+Lightweight source excludes use `.gitignore` syntax and match
+`/<archive-filename>/<path inside the archive>`. Use an unrooted pattern (no leading `/`) to apply
+to all source archives, or prefix with `/` and an archive filename glob to target one archive:
 
 ```text
 **/vendor/**

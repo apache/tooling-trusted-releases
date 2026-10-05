@@ -1,8 +1,8 @@
 # 4.1. Signing artifacts
 
-**Up**: `4.` [Release managers](release-manager-setup)
+**Up**: `4.` [Release manager setup](release-manager-setup)
 
-**Prev**: `4.` [Release managers](release-manager-setup)
+**Prev**: `4.` [Release manager setup](release-manager-setup)
 
 **Next**: `4.2.` [Trusted Publishing](trusted-publishing)
 
@@ -15,23 +15,37 @@
 
 ## Introduction
 
-The ASF Infrastructure team provide an [extensive guide to signing artifacts](https://infra.apache.org/release-signing.html) which should be followed.
+The ASF Infrastructure team provide an
+[extensive guide to signing artifacts](https://infra.apache.org/release-signing.html) which should
+be followed.
 
-For users who prefer a faster route to signing artifacts, such as novice release managers, this page provides a very quick guide. We sacrifice some security and comprehensiveness in the process, but this guide does not replace or supplant the ASF Infra guide above. Please refer to that for further detail.
+For users who prefer a faster route to signing artifacts, such as novice release managers, this page
+provides a very quick guide. We sacrifice some security and comprehensiveness in the process, but
+this guide does not replace or supplant the ASF Infra guide above. Please refer to that for further
+detail.
 
 ## How to sign artifacts
 
 ### Step 1: Install the requirements
 
-Install GnuPG 2.1 or higher in your package manager. The `gpg` and `gpgconf` commands must be available in your `PATH`, with those exact names. Some package managers install GnuPG 2 with the `gpg2` command, so double check this.
+Install GnuPG 2.1 or higher in your package manager. The `gpg` and `gpgconf` commands must be
+available in your `PATH`, with those exact names. Some package managers install GnuPG 2 with the
+`gpg2` command, so double check this.
 
-[Download the `gpgsign.sh` shell script](/static/sh/gpgsign.sh) that we make available as part of ATR. The rest of this guide will assume that it is available on your path as `gpgsign`, but you can call it using `sh gpgsign.sh` etc.
+[Download the `gpgsign.sh` shell script](/static/sh/gpgsign.sh) that we make available as part of
+ATR. The rest of this guide will assume that it is available on your path as `gpgsign`, but you can
+call it using `sh gpgsign.sh` etc.
 
 ### Step 2: Generate an OpenPGP keypair
 
-Choose where to write your OpenPGP keys. This can be anywhere, but you will need to keep your private key secure. This guide will put them in the home directory.
+Choose where to write your OpenPGP keys. This can be anywhere, but you will need to keep your
+private key secure. This guide will put them in the home directory.
 
-The email address in your key matters. ATR links a key to an ASF account through the email address in the key, so use your `@apache.org` address, or another address that you have linked to your account at [id.apache.org](https://id.apache.org/). If ATR cannot map the address to an ASF UID, the individual key upload page will not accept the key. The example below uses `example@apache.org`; substitute your own name and address.
+The email address in your key matters. ATR links a key to an ASF account through the email address
+in the key, so use your `@apache.org` address, or another address that you have linked to your
+account at [id.apache.org](https://id.apache.org/). If ATR cannot map the address to an ASF UID, the
+individual key upload page will not accept the key. The example below uses `example@apache.org`;
+substitute your own name and address.
 
 ```shell
 gpgsign issue "Alice Example" example@apache.org ~/.public.asc ~/.private.asc
@@ -48,13 +62,18 @@ do
 done
 ```
 
-This will create `.tar.gz.asc` files, which is standard. Supply an extra argument to `gpgsign sign` if you want to choose different filenames.
+This will create `.tar.gz.asc` files, which is standard. Supply an extra argument to `gpgsign sign`
+if you want to choose different filenames.
 
 ### Step 4: Upload your key to ATR
 
-Go to [add your OpenPGP key](/keys/add) on ATR and upload your _public_ key. Do not upload your private key. You must not reveal your private key to anyone, or store it on untrusted equipment.
+Go to [add your OpenPGP key](/keys/add) on ATR and upload your _public_ key. Do not upload your
+private key. You must not reveal your private key to anyone, or store it on untrusted equipment.
 
-The email address in your key is publically associated with releases you sign through your public key and your committee's public `KEYS` file. Treat this as a lasting public record. You can remove the key from ATR later, but that does not retract the signatures on releases that you have already published.
+The email address in your key is publically associated with releases you sign through your public
+key and your committee's public `KEYS` file. Treat this as a lasting public record. You can remove
+the key from ATR later, but that does not retract the signatures on releases that you have already
+published.
 
 ## Optional steps
 
@@ -62,14 +81,22 @@ That's all that you need to do, but you can also take the following step.
 
 ### Step 5: Verify the signatures (optional)
 
-Optionally, you can check the signatures that you just created. This can guard, for example, against having accidentally created empty signature files. ATR will also validate your signatures for you, but for example you can run:
+Optionally, you can check the signatures that you just created. This can guard, for example, against
+having accidentally created empty signature files. ATR will also validate your signatures for you,
+but for example you can run:
 
 ```shell
 gpgsign verify ~/.public.asc example.tar.gz
 ```
 
-Assuming that the signature is at `example.tar.gz.asc`. Otherwise you can supply an extra argument for the signature file path.
+Assuming that the signature is at `example.tar.gz.asc`. Otherwise you can supply an extra argument
+for the signature file path.
 
 ## Security considerations
 
-For ease of use, this script creates a key without password protection. For enhanced security, please follow the [extensive guide to signing artifacts](https://infra.apache.org/release-signing.html) by ASF Infra. This script has not been audited, and has not been tested in a wide range of environments. There is one known potential race condition, and temporary directories are generated using an insecure pseudorandom value. These are limitations of the script to make it portable.
+For ease of use, this script creates a key without password protection. For enhanced security,
+please follow the
+[extensive guide to signing artifacts](https://infra.apache.org/release-signing.html) by ASF Infra.
+This script has not been audited, and has not been tested in a wide range of environments. There is
+one known potential race condition, and temporary directories are generated using an insecure
+pseudorandom value. These are limitations of the script to make it portable.

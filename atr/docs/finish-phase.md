@@ -1,6 +1,6 @@
 # 5.3. Finish phase
 
-**Up**: `5.` [Making releases](release-process-description)
+**Up**: `5.` [Making releases](making-releases)
 
 **Prev**: `5.2.1.` [Staging and voting](staging-and-voting)
 
@@ -33,21 +33,19 @@ For a step by step walkthrough of this phase with screenshots, see the
 
 The finish phase is again mostly the work of the Release Manager:
 
-* Distribute the release artifacts to any package distribution platforms your project uses, such
-  as Maven Central, PyPI, or Docker Hub. ATR does not do this for you, but you can record the
-  results on ATR. If your project's [tagging spec](project-configuration#compose) names a
-  platform, ATR will not let you announce the release until a distribution to it has been
-  recorded.
-* Publish the approved candidate, which commits the artifacts to `svn:dist:release`. This can be done
-  automatically, if requested when the vote is started.
-* Announce the release through ATR. ATR checks that the artifacts have reached the download
-  servers first, and if they have not finished propagating it asks you to try again later.
+* Distribute the release artifacts to any package distribution platforms your project uses, such as
+  Maven Central, PyPI, or Docker Hub. ATR does not do this for you, but you can record the results
+  on ATR. If your project's [tagging spec](project-configuration#compose) names a platform, ATR will
+  not let you announce the release until a distribution to it has been recorded.
+* Publish the approved candidate, which commits the artifacts to `svn:dist:release`. This can be
+  done automatically, if requested when the vote is started.
+* Announce the release through ATR. ATR checks that the artifacts have reached the download servers
+  first, and if they have not finished propagating it asks you to try again later.
 
 ## Publishing and announcing
 
-ATR commits the artifacts directly to `svn:dist:release` and defers the announcement until they
-are available for download, so there is no window in which the announcement points at files that
-are not yet there. After publication the release is cataloged alongside every other current and
-archived ASF release. See [Promoting to release](promoting-to-release) for the mechanics of the
-commit and announcement, and [Release catalog](release-catalog) for where the finished release
-ends up.
+ATR commits the artifacts directly to `svn:dist:release` and defers the announcement until they are
+available for download, so there is no window in which the announcement points at files that are not
+yet there. After publication the release is cataloged alongside every other current and archived ASF
+release. See [Promoting to release](promoting-to-release) for the mechanics of the commit and
+announcement, and [Release catalog](release-catalog) for where the finished release ends up.

@@ -17,7 +17,7 @@
 
 import pathlib
 from html.parser import HTMLParser
-from typing import Literal
+from typing import Final, Literal
 
 import aiofiles
 import aiofiles.os
@@ -29,7 +29,17 @@ import atr.config as config
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.template as template
+import atr.util as util
 import atr.web as web
+
+# Pages that were removed or renamed, mapped to where their content lives now
+MOVED_PAGES: Final[dict[str, str]] = {
+    "archiving-releases": "archiving-and-lifecycle",
+    "introduction-to-atr": "scope",
+    "release-process-description": "making-releases",
+    "terminology": "glossary",
+    "user-guide": "index",
+}
 
 
 class H1Parser(HTMLParser):
@@ -57,7 +67,10 @@ async def index(_session: web.Public, _docs: Literal["docs"], _: Literal[""]) ->
 
 
 @get.typed
-async def page(_session: web.Public, _docs: Literal["docs"], path: safe.RelPath) -> str:
+async def page(_session: web.Public, _docs: Literal["docs"], path: safe.RelPath) -> str | web.WerkzeugResponse:
+    moved_to = MOVED_PAGES.get(str(path).removesuffix(".html"))
+    if moved_to is not None:
+        return quart.redirect(util.as_url(page, path=moved_to), code=301)
     return await _serve_docs_page(str(path))
 
 

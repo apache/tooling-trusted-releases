@@ -20,21 +20,42 @@
 
 ## Introduction
 
-All database writes, and some reads, in ATR go through the [`storage`](/ref/atr/storage/__init__.py) interface. This interface **enforces permissions**, **centralizes audit logging**, and **provides type-safe access** to the database. In other words, avoid calling [`db`](/ref/atr/db/__init__.py) directly in route handlers if possible.
+All database writes, and some reads, in ATR go through the [`storage`](/ref/atr/storage/__init__.py)
+interface. This interface **enforces permissions**, **centralizes audit logging**, and **provides
+type-safe access** to the database. In other words, avoid calling [`db`](/ref/atr/db/__init__.py)
+directly in route handlers if possible.
 
-The storage interface recognizes several permission levels: general public (unauthenticated visitors), foundation committer (any ASF account), committee participant (committers and PMC members), release manager (PMC members and designated committer release managers for a project), committee member (PMC members only), and foundation admin (infrastructure administrators). Each level inherits from the previous one, so for example committee members can do everything release managers can do, plus additional operations.
+The storage interface recognizes several permission levels: general public (unauthenticated
+visitors), foundation committer (any ASF account), committee participant (committers and PMC
+members), release manager (PMC members and designated committer release managers for a project),
+committee member (PMC members only), and foundation admin (infrastructure administrators). Each
+level inherits from the previous one, so for example committee members can do everything release
+managers can do, plus additional operations.
 
-The storage interface does not make it impossible to bypass authorization, because you can always import `db` directly and write to the database. But it makes bypassing authorization an explicit choice that requires deliberate action, and it makes the safer path the easier path. This is a pragmatic approach to security: we cannot prevent all mistakes, but we can make it harder to make them accidentally.
+The storage interface does not make it impossible to bypass authorization, because you can always
+import `db` directly and write to the database. But it makes bypassing authorization an explicit
+choice that requires deliberate action, and it makes the safer path the easier path. This is a
+pragmatic approach to security: we cannot prevent all mistakes, but we can make it harder to make
+them accidentally.
 
-**Note:** In Test mode, authorization checks in the storage layer are completely skipped for the test committee [`release`](/ref/atr/storage/writers/release.py). This is an intentional exception for development and test environments only. See [Authorization security](authorization-security#test-mode) for the full security implications of this flag.
+**Note:** In Test mode, authorization checks in the storage layer are completely skipped for the
+test committee [`release`](/ref/atr/storage/writers/release.py). This is an intentional exception
+for development and test environments only. See
+[Authorization security](authorization-security#test-mode) for the full security implications of
+this flag.
 
 ## How do we read from storage?
 
-Reading from storage is a work in progress. There are some existing methods, but most of the functionality is currently in `db` or `db.interaction`, and much work is required to migrate this to the storage interface. We have given this less priority because reads are generally safe, with the exception of a few components such as user tokens, which should be given greater migration priority.
+Reading from storage is a work in progress. There are some existing methods, but most of the
+functionality is currently in `db` or `db.interaction`, and much work is required to migrate this to
+the storage interface. We have given this less priority because reads are generally safe, with the
+exception of a few components such as user tokens, which should be given greater migration priority.
 
 ## How do we write to storage?
 
-To write to storage we open a write session, request specific permissions, use the exposed functionality, and then handle the outcome. Here is an actual example from [`post/start.py`](/ref/atr/post/start.py):
+To write to storage we open a write session, request specific permissions, use the exposed
+functionality, and then handle the outcome. Here is an actual example from
+[`post/start.py`](/ref/atr/post/start.py):
 
 ```python
 async with storage.write(session) as write:
@@ -42,25 +63,69 @@ async with storage.write(session) as write:
     new_release, _project = await wacp.release.start(project_name, version)
 ```
 
-The `wacp` object, short for `w`rite `a`s `c`ommittee `p`articipant, provides access to domain-specific writers: `announce`, `checks`, `distributions`, `keys`, `policy`, `project`, `release`, `sbom`, `ssh`, `tokens`, and `vote`.
+The `wacp` object, short for `w`rite `a`s `c`ommittee `p`articipant, provides access to
+domain-specific writers: `announce`, `checks`, `distributions`, `keys`, `policy`, `project`,
+`release`, `sbom`, `ssh`, `tokens`, and `vote`.
 
-The write session takes an optional [`Committer`](/ref/atr/web.py) (Committer) or ASF UID, typically `session.uid` from the logged-in user. If you omit the UID, the session determines it automatically from the current request context. The write object checks LDAP memberships and raises [`storage.AccessError`](/ref/atr/storage/__init__.py) (AccessError) if the user is not authorized for the requested permission level.
+The write session takes an optional [`Committer`](/ref/atr/web.py) (Committer) or ASF UID, typically
+`session.uid` from the logged-in user. If you omit the UID, the session determines it automatically
+from the current request context. The write object checks LDAP memberships and raises
+[`storage.AccessError`](/ref/atr/storage/__init__.py) (AccessError) if the user is not authorized
+for the requested permission level.
 
-Because projects belong to committees, we provide [`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py) (as_project_committee_member) and [`write.as_project_committee_participant(project_name)`](/ref/atr/storage/__init__.py) (as_project_committee_participant), which look up the project's committee and authenticate the user as a member or participant of that committee. This is convenient when, for example, the URL provides a project name.
+Because projects belong to committees, we provide
+[`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py)
+(as_project_committee_member) and
+[`write.as_project_committee_participant(project_name)`](/ref/atr/storage/__init__.py)
+(as_project_committee_participant), which look up the project's committee and authenticate the user
+as a member or participant of that committee. This is convenient when, for example, the URL provides
+a project name.
 
-Some storage writers perform additional authorization validation beyond what `as_project_committee_member` provides. The check ignores writer, for example, validates that the target project belongs to the committee for which the user is authorized. Therefore even if a caller mistakenly passes an incorrect project name, the writer will reject the operation.
+Some storage writers perform additional authorization validation beyond what
+`as_project_committee_member` provides. The check ignores writer, for example, validates that the
+target project belongs to the committee for which the user is authorized. Therefore even if a caller
+mistakenly passes an incorrect project name, the writer will reject the operation.
 
-Some rules cannot be expressed at the committee level at all, because they depend on the specific release rather than on its committee. Expedited releases, marked by the [`expedited`](/ref/atr/models/sql.py:Release) flag, are confidential until they reach the `RELEASE` phase, and while a release is embargoed only committee members may write to it. A participant or a designated release manager is not necessarily a committee member, so the committee scoped factories cannot enforce this on their own.
+Some rules cannot be expressed at the committee level at all, because they depend on the specific
+release rather than on its committee. Expedited releases, marked by the
+[`expedited`](/ref/atr/models/sql.py:Release) flag, are confidential until they reach the `RELEASE`
+phase, and while a release is embargoed only committee members may write to it. A participant or a
+designated release manager is not necessarily a committee member, so the committee scoped factories
+cannot enforce this on their own.
 
-Instead, each writer method that mutates a release calls [`write.ensure_release_writable(release)`](/ref/atr/storage/__init__.py) (`ensure_release_writable`) against the release it has just loaded, which raises a generic 403 [`AccessError`](/ref/atr/storage/__init__.py) (`AccessError`) when the release is expedited and the actor is not a member of its committee. The check runs against the release actually being mutated, not a value supplied earlier in the request, so it cannot be bypassed by passing a stale or unrelated release.
+Instead, each writer method that mutates a release calls
+[`write.ensure_release_writable(release)`](/ref/atr/storage/__init__.py) (`ensure_release_writable`)
+against the release it has just loaded, which raises a generic 403
+[`AccessError`](/ref/atr/storage/__init__.py) (`AccessError`) when the release is expedited and the
+actor is not a member of its committee. The check runs against the release actually being mutated,
+not a value supplied earlier in the request, so it cannot be bypassed by passing a stale or
+unrelated release.
 
-File and revision changes are all funnelled through [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py) (`create_revision_with_quarantine`), so the check there covers every file mutation, and the remaining row level mutations carry the same check where they load the release. Member-tier and higher methods do not need the check, because a non-member can never obtain a member-tier writer in the first place.
+File and revision changes are all funnelled through
+[`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py)
+(`create_revision_with_quarantine`), so the check there covers every file mutation, and the
+remaining row level mutations carry the same check where they load the release. Member-tier and
+higher methods do not need the check, because a non-member can never obtain a member-tier writer in
+the first place.
 
-Creating an expedited release follows the same member-only rule from the other direction. The participant-tier `release.start` and the member-tier [`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py).`release.start_expedited(...)` both delegate to the module-level `_start_release` function, which is the only place that constructs a release carrying the `expedited` flag. The participant `start` always passes `expedited=False`; only `start_expedited` passes `expedited=True`, and `start_expedited` exists only on the member tier.
+Creating an expedited release follows the same member-only rule from the other direction. The
+participant-tier `release.start` and the member-tier
+[`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py).`release.start_expedited(...)`
+both delegate to the module-level `_start_release` function, which is the only place that constructs
+a release carrying the `expedited` flag. The participant `start` always passes `expedited=False`;
+only `start_expedited` passes `expedited=True`, and `start_expedited` exists only on the member
+tier.
 
-The `expedited` argument is not a privilege switch: before persisting the new release, `_start_release` calls `ensure_release_writable` on it, so an expedited (and therefore embargoed) release is refused unless the actor is a member of its committee, no matter which tier reached the function or whether a future caller passes the flag. The member factory enforces the same rule earlier, when it constructs the writer, and the writable check runs before any row is written, so a refused attempt leaves no release behind. The flag is set only at creation, and no edit form or API exposes it afterwards, so it is immutable once chosen.
+The `expedited` argument is not a privilege switch: before persisting the new release,
+`_start_release` calls `ensure_release_writable` on it, so an expedited (and therefore embargoed)
+release is refused unless the actor is a member of its committee, no matter which tier reached the
+function or whether a future caller passes the flag. The member factory enforces the same rule
+earlier, when it constructs the writer, and the writable check runs before any row is written, so a
+refused attempt leaves no release behind. The flag is set only at creation, and no edit form or API
+exposes it afterwards, so it is immutable once chosen.
 
-Here is a more complete example from [`api/__init__.py`](/ref/atr/api/__init__.py) that shows the classic three step pattern:
+Here is a more complete example from [`api/__init__.py`](/ref/atr/api/__init__.py) that shows the
+classic three step pattern:
 
 ```python
 async with storage.write(asf_uid) as write:
@@ -74,11 +139,16 @@ async with storage.write(asf_uid) as write:
     key = outcome.result_or_raise()
 ```
 
-In this case we decide to raise as soon as there is any error. We could also choose to display a warning, ignore the error, collect multiple outcomes for batch processing, or handle it in any other way appropriate for the situation.
+In this case we decide to raise as soon as there is any error. We could also choose to display a
+warning, ignore the error, collect multiple outcomes for batch processing, or handle it in any other
+way appropriate for the situation.
 
 ## How do we add new storage functionality?
 
-Add methods to classes in the [`storage/writers`](/ref/atr/storage/writers/) or [`storage/readers`](/ref/atr/storage/readers/) directories. Code to perform any action associated with public keys that involves writing to storage, for example, goes in [`storage/writers/keys.py`](/ref/atr/storage/writers/keys.py).
+Add methods to classes in the [`storage/writers`](/ref/atr/storage/writers/) or
+[`storage/readers`](/ref/atr/storage/readers/) directories. Code to perform any action associated
+with public keys that involves writing to storage, for example, goes in
+[`storage/writers/keys.py`](/ref/atr/storage/writers/keys.py).
 
 Classes in writer and reader modules must be named to match the permission hierarchy:
 
@@ -131,19 +201,37 @@ class CommitteeMember(ReleaseManager):
     ...
 ```
 
-This hierarchy that this creates is: `GeneralPublic` → `FoundationCommitter` → `CommitteeParticipant` → `ReleaseManager` → `CommitteeMember`. You can add methods at any level. A method on `CommitteeMember` is only available to committee members, while a method on `ReleaseManager` is available to committee members and designated release managers.
+This hierarchy that this creates is: `GeneralPublic` → `FoundationCommitter` →
+`CommitteeParticipant` → `ReleaseManager` → `CommitteeMember`. You can add methods at any level. A
+method on `CommitteeMember` is only available to committee members, while a method on
+`ReleaseManager` is available to committee members and designated release managers.
 
-Use `__private_methods` for helper code that is not part of the public interface. Use `public_methods` for operations that should be available to callers at the appropriate permission level. Consider returning [`Outcome`](/ref/atr/storage/outcome.py) (Outcome) types to allow callers flexibility in error handling. Refer to the [section on using outcomes](#how-do-we-use-outcomes) for more details.
+Use `__private_methods` for helper code that is not part of the public interface. Use
+`public_methods` for operations that should be available to callers at the appropriate permission
+level. Consider returning [`Outcome`](/ref/atr/storage/outcome.py) (Outcome) types to allow callers
+flexibility in error handling. Refer to the [section on using outcomes](#how-do-we-use-outcomes) for
+more details.
 
-After adding a new writer module, register it in the appropriate `WriteAs*` classes in [`storage/__init__.py`](/ref/atr/storage/__init__.py). For example, when adding the `distributions` writer, it was necessary to add `self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)` to the [`WriteAsCommitteeMember`](/ref/atr/storage/__init__.py) (WriteAsCommitteeMember) class.
+After adding a new writer module, register it in the appropriate `WriteAs*` classes in
+[`storage/__init__.py`](/ref/atr/storage/__init__.py). For example, when adding the `distributions`
+writer, it was necessary to add
+`self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)` to
+the [`WriteAsCommitteeMember`](/ref/atr/storage/__init__.py) (WriteAsCommitteeMember) class.
 
 ## How do we use outcomes?
 
-Consider using **outcome types** from [`storage.outcome`](/ref/atr/storage/outcome.py) when returning results from writer methods. Outcomes let you represent both success and failure without raising exceptions, which gives callers flexibility in how they handle errors.
+Consider using **outcome types** from [`storage.outcome`](/ref/atr/storage/outcome.py) when
+returning results from writer methods. Outcomes let you represent both success and failure without
+raising exceptions, which gives callers flexibility in how they handle errors.
 
-An [`Outcome[T]`](/ref/atr/storage/outcome.py) (Outcome) is either a [`Result[T]`](/ref/atr/storage/outcome.py) (Result) wrapping a successful value, or an [`Error[T]`](/ref/atr/storage/outcome.py) (Error) wrapping an exception. You can check which it is with the `ok` property or pattern matching, extract the value with `result_or_raise()`, or extract the error with `error_or_raise()`.
+An [`Outcome[T]`](/ref/atr/storage/outcome.py) (Outcome) is either a
+[`Result[T]`](/ref/atr/storage/outcome.py) (Result) wrapping a successful value, or an
+[`Error[T]`](/ref/atr/storage/outcome.py) (Error) wrapping an exception. You can check which it is
+with the `ok` property or pattern matching, extract the value with `result_or_raise()`, or extract
+the error with `error_or_raise()`.
 
-Here is an example from [`post/keys.py`](/ref/atr/post/keys.py) that processes multiple keys and collects outcomes:
+Here is an example from [`post/keys.py`](/ref/atr/post/keys.py) that processes multiple keys and
+collects outcomes:
 
 ```python
 async with storage.write() as write:
@@ -154,31 +242,79 @@ success_count = outcomes.result_count
 error_count = outcomes.error_count
 ```
 
-The `ensure_associated` method returns an [`outcome.List`](/ref/atr/storage/outcome.py) (List), which is a collection of outcomes. Some keys might import successfully, and others might fail because they are malformed or already exist. The caller can inspect the list to see how many succeeded and how many failed, and present that information to the user.
+The `ensure_associated` method returns an [`outcome.List`](/ref/atr/storage/outcome.py) (List),
+which is a collection of outcomes. Some keys might import successfully, and others might fail
+because they are malformed or already exist. The caller can inspect the list to see how many
+succeeded and how many failed, and present that information to the user.
 
-The `outcome.List` class provides many useful methods: [`results()`](/ref/atr/storage/outcome.py) (results) to get only the successful values, [`errors()`](/ref/atr/storage/outcome.py) (errors) to get only the exceptions, [`result_count`](/ref/atr/storage/outcome.py) (result_count) and [`error_count`](/ref/atr/storage/outcome.py) (error_count) to count them, and [`results_or_raise()`](/ref/atr/storage/outcome.py) (results_or_raise) to extract all values or raise on the first error.
+The `outcome.List` class provides many useful methods: [`results()`](/ref/atr/storage/outcome.py)
+(results) to get only the successful values, [`errors()`](/ref/atr/storage/outcome.py) (errors) to
+get only the exceptions, [`result_count`](/ref/atr/storage/outcome.py) (result_count) and
+[`error_count`](/ref/atr/storage/outcome.py) (error_count) to count them, and
+[`results_or_raise()`](/ref/atr/storage/outcome.py) (results_or_raise) to extract all values or
+raise on the first error.
 
-Use outcomes when an operation might fail for some items but succeed for others, or when you want to give the caller control over error handling. Do not use them when failure should always raise an exception, such as authorization failures or database connection errors. Those should be raised immediately.
+Use outcomes when an operation might fail for some items but succeed for others, or when you want to
+give the caller control over error handling. Do not use them when failure should always raise an
+exception, such as authorization failures or database connection errors. Those should be raised
+immediately.
 
 ## What about audit logging?
 
-Storage write operations are logged to `<STATE_DIR>/audit/daily/YYYY-MM-DD.jsonl`, located by [`paths.get_audit_log_dir()`](/ref/atr/paths.py) (get_audit_log_dir), alongside authentication and submitted-key events. Each entry contains `event`, `level`, `logger`, and a UTC `timestamp` assigned at append time; storage entries use the logger `atr.storage.audit`. When you write a storage method that should be audited, call `self.__write_as.append_to_audit_log(**kwargs)` with whatever parameters are relevant to that specific operation. The action name is extracted automatically from the call stack using [`log.caller_name()`](/ref/atr/log.py) (caller_name), so if the method is called [`i_am_a_teapot`](https://datatracker.ietf.org/doc/html/rfc2324), the audit log will show `i_am_a_teapot` without you having to pass the name explicitly.
+Storage write operations are logged to `<STATE_DIR>/audit/daily/YYYY-MM-DD.jsonl`, located by
+[`paths.get_audit_log_dir()`](/ref/atr/paths.py) (get_audit_log_dir), alongside authentication and
+submitted-key events. Each entry contains `event`, `level`, `logger`, and a UTC `timestamp` assigned
+at append time; storage entries use the logger `atr.storage.audit`. When you write a storage method
+that should be audited, call `self.__write_as.append_to_audit_log(**kwargs)` with whatever
+parameters are relevant to that specific operation. The action name is extracted automatically from
+the call stack using [`log.caller_name()`](/ref/atr/log.py) (caller_name), so if the method is
+called [`i_am_a_teapot`](https://datatracker.ietf.org/doc/html/rfc2324), the audit log will show
+`i_am_a_teapot` without you having to pass the name explicitly.
 
-Audit logging must be done manually because the values to log are often those computed during method execution, not just those passed as arguments which could be logged automatically. When deleting a release, for example, we log `asf_uid` (instance attribute), `project_name` (argument), and `version` (argument), but when issuing a JWT from a PAT, we log `asf_uid` (instance attribute) and `pat_hash` (_computed_). Each operation logs what makes sense for that operation.
+Audit logging must be done manually because the values to log are often those computed during method
+execution, not just those passed as arguments which could be logged automatically. When deleting a
+release, for example, we log `asf_uid` (instance attribute), `project_name` (argument), and
+`version` (argument), but when issuing a JWT from a PAT, we log `asf_uid` (instance attribute) and
+`pat_hash` (_computed_). Each operation logs what makes sense for that operation.
 
-When `<STATE_DIR>/audit/daily` is absent or empty, startup automatically backfills it from the three legacy logs before enabling audit writers or starting workers. The complete directory is prepared separately and published atomically, so a failed backfill cannot leave partially migrated daily logs. The original files remain unchanged and receive no further writes. Backfill includes every UTC day from the oldest entry through today, including zero-byte empty days; a fresh installation starts with today's empty file. Existing daily files are left untouched. Invalid historical records stop startup rather than being skipped. This happens during the normal deployment restart, which must stop the previous ATR instance before starting the new one against the same state directory.
+When `<STATE_DIR>/audit/daily` is absent or empty, startup automatically backfills it from the three
+legacy logs before enabling audit writers or starting workers. The complete directory is prepared
+separately and published atomically, so a failed backfill cannot leave partially migrated daily
+logs. The original files remain unchanged and receive no further writes. Backfill includes every UTC
+day from the oldest entry through today, including zero-byte empty days; a fresh installation starts
+with today's empty file. Existing daily files are left untouched. Invalid historical records stop
+startup rather than being skipped. This happens during the normal deployment restart, which must
+stop the previous ATR instance before starting the new one against the same state directory.
 
-Live entries are appended in write order. Closing a completed day with [`daylog.close()`](/ref/atr/daylog.py) (close) sorts them by timestamp, logger, level, and the canonical JSON of the event, including ties and clock adjustments. A recurring task closes days on startup and at 00:05 UTC each day, then seals them in chronological order, including empty days. Startup before 00:05 UTC catches up older days but leaves yesterday until 00:05. Historical sealing proceeds one day per task attempt to stay within worker time limits. Signing runs outside the daily writer lock so live audit writes can continue.
+Live entries are appended in write order. Closing a completed day with
+[`daylog.close()`](/ref/atr/daylog.py) (close) sorts them by timestamp, logger, level, and the
+canonical JSON of the event, including ties and clock adjustments. A recurring task closes days on
+startup and at 00:05 UTC each day, then seals them in chronological order, including empty days.
+Startup before 00:05 UTC catches up older days but leaves yesterday until 00:05. Historical sealing
+proceeds one day per task attempt to stay within worker time limits. Signing runs outside the daily
+writer lock so live audit writes can continue.
 
-Sealing requires persistent storage mounted at `/opt/atr/sealing`, outside the state directory and its backups. ATR creates the restricted `keys/current.pem` there and publishes the initial public key as `audit/daily/root.der`. Each day's seal is stored alongside its log as `YYYY-MM-DD.seal.json`. Missing or inconsistent key state fails the task without starting a replacement chain.
+Sealing requires persistent storage mounted at `/opt/atr/sealing`, outside the state directory and
+its backups. ATR creates the restricted `keys/current.pem` there and publishes the initial public
+key as `audit/daily/root.der`. Each day's seal is stored alongside its log as
+`YYYY-MM-DD.seal.json`. Missing or inconsistent key state fails the task without starting a
+replacement chain.
 
-If `/opt/atr/sealing` is absent in production, the sealing task fails after closing eligible daily logs. ATR continues serving requests and writing audit entries. The failure is recorded in the task database and worker log. In development and tests, an absent directory allows daily closure but skips signing. ATR does not create this directory or verify that it is a persistent mount. The deployment configuration must provide that mount.
+If `/opt/atr/sealing` is absent in production, the sealing task fails after closing eligible daily
+logs. ATR continues serving requests and writing audit entries. The failure is recorded in the task
+database and worker log. In development and tests, an absent directory allows daily closure but
+skips signing. ATR does not create this directory or verify that it is a persistent mount. The
+deployment configuration must provide that mount.
 
 ## How is the filesystem organized?
 
-The storage interface writes to the [database](database) and the filesystem. There is one shared state directory for all of ATR, configured by the `STATE_DIR` parameter in [atr/config.py]. By default this is `$PROJECT_ROOT/state`, where `PROJECT_ROOT` is another ATR configuration parameter.
+The storage interface writes to the [database](database) and the filesystem. There is one shared
+state directory for all of ATR, configured by the `STATE_DIR` parameter in [atr/config.py]. By
+default this is `$PROJECT_ROOT/state`, where `PROJECT_ROOT` is another ATR configuration parameter.
 
-Only a small number of subdirectories of the state directory are written to by the storage interface, and many of these locations are also configurable. These directories, and their configuration variables, are:
+Only a small number of subdirectories of the state directory are written to by the storage
+interface, and many of these locations are also configurable. These directories, and their
+configuration variables, are:
 
 * `attestable`, configured by `ATTESTABLE_STORAGE_DIR`
 * `finished`, configured by `FINISHED_STORAGE_DIR`
@@ -186,42 +322,69 @@ Only a small number of subdirectories of the state directory are written to by t
 * `temporary`, which is unconfigurable
 * `unfinished`, configured by `UNFINISHED_STORAGE_DIR`
 
-And the purposes of these directories is as follows. Note that "immutable" here means that existing files cannot be modified, but does not preclude new files from being added.
+And the purposes of these directories is as follows. Note that "immutable" here means that existing
+files cannot be modified, but does not preclude new files from being added.
 
-* `attestable` [**immutable**] holds JSON files of data that ATR has automatically verified and which must now be held immutably. (We could store this data in the database, but the aim is to eventually write attestation files here, so this prepares for that approach.)
-* `finished` [**immutable**, except for moving to external archive] contains all of the files of a release as they were when announced. The files are arranged exactly as the release managers arranged them upon announcing the release, separated strictly into one directory per release. This therefore constitutes an historical record.
-* `subversion` [**mutable**] is designed to mirror two subdirectories, `dev` and `release`, of `https://dist.apache.org/repos/dist`. This is currently unused.
-* `temporary` [**mutable**] holds temporary files during operations where the data cannot be modified in place. One important example is when creating a staging directory of a new revision. A subdirectory with a random name is made in this directory, and then the files in the prior version are hard linked into it. The modifications take place in this staging area before the directory is finalised and moved to `unfinished`.
-* `unfinished` [**immutable**, except for moving to `finished`] contains all of the files in a release before it is announced. In other words, when the release managers compose a release, when the committee votes on the release, and when the release has been voted on but not yet announced, the files for that release are in this directory.
+* `attestable` [**immutable**] holds JSON files of data that ATR has automatically verified and
+  which must now be held immutably. (We could store this data in the database, but the aim is to
+  eventually write attestation files here, so this prepares for that approach.)
+* `finished` [**immutable**, except for moving to external archive] contains all of the files of a
+  release as they were when announced. The files are arranged exactly as the release managers
+  arranged them upon announcing the release, separated strictly into one directory per release. This
+  therefore constitutes an historical record.
+* `subversion` [**mutable**] is designed to mirror two subdirectories, `dev` and `release`, of
+  `https://dist.apache.org/repos/dist`. This is currently unused.
+* `temporary` [**mutable**] holds temporary files during operations where the data cannot be
+  modified in place. One important example is when creating a staging directory of a new revision. A
+  subdirectory with a random name is made in this directory, and then the files in the prior version
+  are hard linked into it. The modifications take place in this staging area before the directory is
+  finalised and moved to `unfinished`.
+* `unfinished` [**immutable**, except for moving to `finished`] contains all of the files in a
+  release before it is announced. In other words, when the release managers compose a release, when
+  the committee votes on the release, and when the release has been voted on but not yet announced,
+  the files for that release are in this directory.
 
 This list does not include any configuration files, logs, or log directories.
 
 ## How should the filesystem be backed up?
 
-Only the `attestable`, `finished`, and `unfinished` directories need to be backed up. The `subversion` directory is unused, and the `temporary` directory is for temporary staging.
+Only the `attestable`, `finished`, and `unfinished` directories need to be backed up. The
+`subversion` directory is unused, and the `temporary` directory is for temporary staging.
 
-The structure of the directories that need backing up is as follows. An ellipsis, `...`, means any number of further files or subdirectories containing subdirectories or files recursively.
+The structure of the directories that need backing up is as follows. An ellipsis, `...`, means any
+number of further files or subdirectories containing subdirectories or files recursively.
 
 * `attestable/PROJECT/VERSION/REVISION.json`
 * `finished/PROJECT/VERSION/...`
 * `unfinished/PROJECT/VERSION/REVISION/`
 
-Because of the versioning scheme used for the `attestable`, `finished`, and `unfinished` directories, these can be incrementally updated by simple copying without deletion.
+Because of the versioning scheme used for the `attestable`, `finished`, and `unfinished`
+directories, these can be incrementally updated by simple copying without deletion.
 
-This list does not include any configuration files, logs, or log directories. All configuration files and the audit logs, at a minimum, should also be backed up.
+This list does not include any configuration files, logs, or log directories. All configuration
+files and the audit logs, at a minimum, should also be backed up.
 
 ## Outcome design patterns
 
-One common pattern when designing outcome types is about how to handle an **exception after a success**, and how to handle a **warning during success**:
+One common pattern when designing outcome types is about how to handle an **exception after a
+success**, and how to handle a **warning during success**:
 
-* An **exception after a success** is when an object is processed in multiple stages, and the first few stages succeed but then subsequently there is an exception.
-* A **warning during success** is when an object is processed in multiple stages, an exception is raised, but we determine that we can proceed to subsequent stages as long as we keep a note of the exception.
+* An **exception after a success** is when an object is processed in multiple stages, and the first
+  few stages succeed but then subsequently there is an exception.
+* A **warning during success** is when an object is processed in multiple stages, an exception is
+  raised, but we determine that we can proceed to subsequent stages as long as we keep a note of the
+  exception.
 
-Both of these workflows appear incompatible with outcomes. In outcomes, we can record _either_ a successful result, _or_ an exception. But in exception after success we want to record the successes up to the exception; and in a warning during a success we want to record the exception even though we return a success result.
+Both of these workflows appear incompatible with outcomes. In outcomes, we can record _either_ a
+successful result, _or_ an exception. But in exception after success we want to record the successes
+up to the exception; and in a warning during a success we want to record the exception even though
+we return a success result.
 
-The solution is similar in both cases: create a wrapper of the _primary type_ which can hold an instance of the _secondary type_.
+The solution is similar in both cases: create a wrapper of the _primary type_ which can hold an
+instance of the _secondary type_.
 
-In _exception after a success_ the primary type is an exception, and the secondary type is the result which was obtained up to that exception. The type will look like this:
+In _exception after a success_ the primary type is an exception, and the secondary type is the
+result which was obtained up to that exception. The type will look like this:
 
 ```python
 class AfterSuccessError(Exception):
@@ -229,7 +392,9 @@ class AfterSuccessError(Exception):
         self.result_before_error = result_before_error
 ```
 
-In _warning during success_, the primary type is the result, and the secondary type is the exception raised during successful processing which we consider a warning. This is the inverse of the above, and the types are therefore inverted too.
+In _warning during success_, the primary type is the result, and the secondary type is the exception
+raised during successful processing which we consider a warning. This is the inverse of the above,
+and the types are therefore inverted too.
 
 ```python
 @dataclasses.dataclass
@@ -238,7 +403,10 @@ class Result:
     warning: Exception | None
 ```
 
-This could just as easily be a Pydantic class or whatever is appropriate in the situation, as long as it can hold the warning. If the warning is generated during an additional or side task, we can use `Outcome[SideValue]` instead. We do this, for example, in the type representing a linked committee:
+This could just as easily be a Pydantic class or whatever is appropriate in the situation, as long
+as it can hold the warning. If the warning is generated during an additional or side task, we can
+use `Outcome[SideValue]` instead. We do this, for example, in the type representing a linked
+committee:
 
 ```python
 @dataclasses.dataclass
@@ -247,4 +415,5 @@ class LinkedCommittee:
     autogenerated_keys_file: Outcome[int]
 ```
 
-In this case, if the autogenerated keys file call succeeded without an error, the `Outcome` will be an `OutcomeResult[int]` where the `int` is the number of keys in the generated file.
+In this case, if the autogenerated keys file call succeeded without an error, the `Outcome` will be
+an `OutcomeResult[int]` where the `int` is the number of keys in the generated file.
