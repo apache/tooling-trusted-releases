@@ -152,6 +152,9 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
         swhid_dirs,
         github_payload=task_args.github_payload,
         source_commit=task_args.source_commit,
+        source_override=(
+            task_args.source_override if ("source_override" in task_args.model_fields_set) else db.NOT_SET
+        ),
     )
     return None
 
@@ -359,6 +362,7 @@ async def _promote(
     swhid_dirs: dict[str, str],
     github_payload: github.TrustedPublisherPayload | None = None,
     source_commit: safe.CommitHash | None = None,
+    source_override: db.Opt[str | None] = db.NOT_SET,
 ) -> None:
     quarantine_dir_path = pathlib.Path(quarantine_dir)
 
@@ -414,6 +418,7 @@ async def _promote(
             sha3_hashes=sha3_hashes,
             github_payload=github_payload,
             source_commit=source_commit,
+            source_override=source_override,
         )
 
     async with db.session() as data:

@@ -26,7 +26,7 @@ import re
 import secrets
 import tempfile
 import uuid
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles.os
 import aioshutil
@@ -100,6 +100,7 @@ async def finalise_revision(
     sha3_hashes: dict[str, str] | None = None,
     github_payload: github.TrustedPublisherPayload | None = None,
     source_commit: safe.CommitHash | None = None,
+    source_override: db.Opt[str | None] = db.NOT_SET,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -141,6 +142,7 @@ async def finalise_revision(
         sha3_hashes=sha3_hashes,
         github_payload=github_payload,
         source_commit=source_commit,
+        source_override=source_override,
     )
 
 
@@ -657,7 +659,9 @@ class CommitteeParticipant(FoundationCommitter):
 
             archive_paths = detection.detect_archives_requiring_quarantine(path_to_hash, previous_attestable)
             if archive_paths:
-                if not isinstance(source_override, db.NotSet):
+                # Setting the commit on its own brings no new files, so there's nothing to validate it against.
+                # An upload with a commit is quarantined, and the commit is applied when it is promoted.
+                if (not isinstance(source_override, db.NotSet)) and (modify is None):
                     await aioshutil.rmtree(temp_dir)
                     raise datatypes.FailedError("Source archives need validation before the source commit can be set.")
                 deduped = detection.deduplicate_quarantine_archives(archive_paths, path_to_hash)
@@ -675,6 +679,7 @@ class CommitteeParticipant(FoundationCommitter):
                         version_key=version_key,
                         github_payload=github_payload,
                         source_commit=source_commit,
+                        source_override=source_override,
                     )
 
             return await _commit_new_revision(
@@ -762,6 +767,7 @@ class CommitteeParticipant(FoundationCommitter):
         version_key: safe.VersionKey,
         github_payload: github.TrustedPublisherPayload | None = None,
         source_commit: safe.CommitHash | None = None,
+        source_override: db.Opt[str | None] = db.NOT_SET,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
@@ -799,20 +805,22 @@ class CommitteeParticipant(FoundationCommitter):
         # Release the write lock obtained in _lock_and_merge
         await data.commit()
 
+        task_args: dict[str, Any] = {
+            "quarantined_id": quarantined.id,
+            "github_payload": (
+                github_payload.model_dump(exclude={"exp", "nbf"}) if (github_payload is not None) else None
+            ),
+            "source_commit": source_commit,
+            "archives": [{"rel_path": entry.rel_path, "content_hash": entry.content_hash} for entry in file_metadata],
+        }
+        # Only present when set, as None is itself a value meaning to clear the override
+        if not isinstance(source_override, db.NotSet):
+            task_args["source_override"] = source_override
         data.add(
             sql.Task(
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.QUARANTINE_VALIDATE,
-                task_args={
-                    "quarantined_id": quarantined.id,
-                    "github_payload": (
-                        github_payload.model_dump(exclude={"exp", "nbf"}) if (github_payload is not None) else None
-                    ),
-                    "source_commit": source_commit,
-                    "archives": [
-                        {"rel_path": entry.rel_path, "content_hash": entry.content_hash} for entry in file_metadata
-                    ],
-                },
+                task_args=task_args,
                 asf_uid=asf_uid,
                 project_key=str(project_key),
                 version_key=str(version_key),

@@ -705,8 +705,35 @@ async def test_validate_success_calls_promote(
         {},
         github_payload=payload,
         source_commit=source_commit,
+        source_override=quarantine.db.NOT_SET,
     )
     mock_mark.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("override", ["e" * 40, None])
+async def test_validate_passes_source_override_to_promote(tmp_path: pathlib.Path, override: str | None):
+    # None is a value, meaning clear the override, so it must survive the round trip as well as a hash
+    task_args = {
+        "quarantined_id": 1,
+        "archives": [{"rel_path": "ok.tar.gz", "content_hash": "abc"}],
+        "source_override": override,
+    }
+    quarantine_dir = tmp_path / "quarantine"
+    quarantine_dir.mkdir()
+    row = _make_quarantined_row()
+    ok_entries = [sql.QuarantineFileEntryV1(rel_path="ok.tar.gz", size_bytes=50, content_hash="abc", errors=[])]
+
+    with (
+        mock.patch.object(quarantine.db, "session", return_value=_make_session_returning(row)),
+        mock.patch.object(quarantine.paths, "quarantine_directory", return_value=quarantine_dir),
+        mock.patch.object(quarantine, "_build_file_entries", new_callable=mock.AsyncMock, return_value=ok_entries),
+        mock.patch.object(quarantine, "_extract_archives", new_callable=mock.AsyncMock, return_value={}),
+        mock.patch.object(quarantine, "_promote", new_callable=mock.AsyncMock) as mock_promote,
+    ):
+        await quarantine.validate(task_args)
+
+    assert mock_promote.await_args.kwargs["source_override"] == override
 
 
 def _attach_active_release(mock_data: mock.AsyncMock) -> None:

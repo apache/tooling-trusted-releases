@@ -170,6 +170,8 @@ class QuarantineValidate(schema.Strict):
     archives: list[QuarantineArchiveEntry]
     github_payload: github.TrustedPublisherPayload | None = None
     source_commit: safe.CommitHash | None = None
+    # Absent means leave the override alone, and None means clear it, so use model_fields_set to tell them apart
+    source_override: str | None = None
 
 
 def _ensure_footer_enum(value: Any) -> mail.MailFooterCategory | None:
