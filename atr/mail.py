@@ -129,6 +129,8 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
         msg["To"] = headerregistry.Address(username=to_local, domain=to_domain)
         if msg_data.email_cc:
             msg["Cc"] = _address_header(msg_data.email_cc)
+        # SMTPUTF8 rejects multiline subjects with ValueError.
+        # The handler below prevents these messages from being sent.
         msg["Subject"] = msg_data.subject
         msg["Date"] = utils.formatdate(usegmt=True)
         msg["Message-ID"] = f"<{mid}>"
