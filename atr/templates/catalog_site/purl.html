@@ -10,17 +10,20 @@
     Every release in this catalog carries a
     <a href="https://github.com/package-url/purl-spec" target="_blank" rel="noopener">Package URL</a>
     (PURL) - a short, portable identifier for a piece of software that doesn't depend on any one
-    package manager. You've landed here because you followed the bare PURL prefix; the sections
-    below explain the shape and how to resolve one.
+    package manager. The sections below explain the shape and how to resolve one.
   </p>
 
   <h2 class="fs-4 border-bottom pb-1 mt-4">The shape</h2>
   <p>An ASF release PURL looks like this:</p>
-  <p class="font-monospace">pkg:software-id/apache.org/the+asf/&lt;project&gt;@&lt;version&gt;</p>
+  <p class="font-monospace">pkg:software-id/apache.org/&lt;project&gt;@&lt;version&gt;</p>
   <p>
-    The type is <code>software-id</code> and the namespace is <code>apache.org/the+asf</code> -
-    the prefix you're on now. What follows is the project's own key and the release version, for
-    example <span class="font-monospace">pkg:software-id/apache.org/the+asf/tomcat@10.1.0</span>.
+    The type is <code>software-id</code> and the namespace is <code>apache.org</code>. What
+    follows is the project's own key and the release version, for example
+    <span class="font-monospace">pkg:software-id/apache.org/tomcat@10.1.0</span>.
+  </p>
+  <p>
+    The version can also be <code>latest</code>, which always resolves to the project's newest
+    release, for example <span class="font-monospace">pkg:software-id/apache.org/tomcat@latest</span>.
   </p>
 
   <h2 class="fs-4 border-bottom pb-1 mt-4">Resolving one</h2>
@@ -29,7 +32,7 @@
     prefix for <span class="font-monospace">https://</span> gives a link that redirects into this
     catalog:
   </p>
-  <p class="font-monospace">https://apache.org/the+asf/tomcat@10.1.0</p>
+  <p class="font-monospace">https://apache.org/tomcat@10.1.0</p>
   <p>
     A bare PURL like that resolves to the release's manifest - a JSON document listing its
     artifacts, along with the signatures, checksums and any SBOMs. To browse the same releases as
@@ -49,7 +52,9 @@
     <li><code>subpath</code> - the distinguishing tail of a file name, where it's unique</li>
   </ul>
   <p>So the source archive of the release above is:</p>
-  <p class="font-monospace">https://apache.org/the+asf/tomcat@10.1.0?class=src&ext=tar.gz</p>
+  <p class="font-monospace">https://apache.org/tomcat@10.1.0?class=src&ext=tar.gz</p>
+  <p>The same qualifiers work with <code>latest</code>, so the newest source archive is:</p>
+  <p class="font-monospace">https://apache.org/tomcat@latest?class=src&ext=tar.gz</p>
 
   <p class="mt-4">
     <a href="{{ root }}index.html" class="btn btn-primary">Browse the release catalog</a>

@@ -410,7 +410,7 @@ async def test_write_htaccess_lands_the_dotfile_on_disk(tmp_path) -> None:
         [_artifact("apache-x-1.0.0-src.tgz", "https://mirror.example/x/apache-x-1.0.0-src.tgz?action=download")]
     )
 
-    await catalog_site._write_htaccess(safe.StatePath(tmp_path), version, "x", "x")
+    await catalog_site._write_htaccess(safe.StatePath(tmp_path), catalog_site._release_htaccess(version, "x", "x"))
 
     written = tmp_path / ".htaccess"
     assert written.is_file()
@@ -420,9 +420,49 @@ async def test_write_htaccess_lands_the_dotfile_on_disk(tmp_path) -> None:
 async def test_write_htaccess_writes_nothing_when_no_artifact_is_downloadable(tmp_path) -> None:
     version = _version([_artifact("apache-x-1.0.0-src.tgz", None)])
 
-    await catalog_site._write_htaccess(safe.StatePath(tmp_path), version, "x", "x")
+    await catalog_site._write_htaccess(safe.StatePath(tmp_path), catalog_site._release_htaccess(version, "x", "x"))
 
     assert not (tmp_path / ".htaccess").exists()
+
+
+async def test_write_htaccess_removes_a_stale_file_when_there_is_nothing_to_write(tmp_path) -> None:
+    (tmp_path / ".htaccess").write_text("RewriteEngine On\n")
+
+    await catalog_site._write_htaccess(safe.StatePath(tmp_path), None)
+
+    assert not (tmp_path / ".htaccess").exists()
+
+
+def test_project_htaccess_redirects_latest_to_the_newest_release() -> None:
+    # Versions arrive newest first, so the first current release is the one @latest means
+    versions = [_version([], "2.0.0"), _version([], "1.0.0")]
+
+    htaccess = catalog_site._project_htaccess("x", versions)
+
+    assert htaccess == 'RewriteEngine On\nRewriteRule "^latest/(.*)$" "/x/2.0.0/$1" [R=302,NE,L]\n'
+
+
+def test_project_htaccess_prefers_a_current_release_over_a_newer_archived_one() -> None:
+    archived = _version([], "3.0.0").model_copy(update={"status": "archived"})
+
+    htaccess = catalog_site._project_htaccess("x", [archived, _version([], "2.0.0")])
+
+    assert htaccess is not None
+    assert '"/x/2.0.0/$1"' in htaccess
+
+
+def test_project_htaccess_falls_back_to_the_newest_archived_release() -> None:
+    versions = [_version([], v).model_copy(update={"status": "archived"}) for v in ("2.0.0", "1.0.0")]
+
+    htaccess = catalog_site._project_htaccess("x", versions)
+
+    assert htaccess is not None
+    assert '"/x/2.0.0/$1"' in htaccess
+
+
+def test_project_htaccess_is_omitted_without_releases_or_when_one_is_called_latest() -> None:
+    assert catalog_site._project_htaccess("x", []) is None
+    assert catalog_site._project_htaccess("x", [_version([], "2.0.0"), _version([], "latest")]) is None
 
 
 def _committee(key: str = "example", name: str | None = "Example", *, is_podling: bool = False) -> sql.Committee:

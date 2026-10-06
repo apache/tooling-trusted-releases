@@ -168,18 +168,12 @@ def _document(
 
 
 def _identifier(project: sql.Project, release: sql.Release | None = None) -> str:
-    """Render the project as a Package-URL.
+    """Render the project as a Package-URL, `pkg:software-id/apache.org/<project_key>[@<version>]`.
 
-    `pkg:apache/<project_key>` is the simplest form. Per-distribution PURLs
-    (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact catalog (#911),
-    not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
+    Per-distribution PURLs (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact
+    catalog (#911), not on the lifecycle doc.
     """
-    return f"pkg:software-id/{_purl_namespace()}/{project.key}" + ("" if release is None else f"@{release.version}")
-
-
-def _purl_namespace() -> str:
-    """The domain and vendor part of the PURL, ie everything before the project key."""
-    return f"{_PURL_DOMAIN}/the+asf"
+    return f"pkg:software-id/{_PURL_DOMAIN}/{project.key}" + ("" if release is None else f"@{release.version}")
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:

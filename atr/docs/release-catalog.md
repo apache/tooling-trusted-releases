@@ -66,10 +66,11 @@ Each page in the catalog has a JSON counterpart, so that tools can consume the s
 ## Package URLs
 
 Every release in the catalog has a ***Package URL*** (***PURL***) of the form
-`pkg:software-id/apache.org/the+asf/<project_key>@<version>`. Replacing the `pkg:software-id/`
-prefix with `https://` gives a working link. A bare link resolves to the release's `artifacts.json`,
-and adding a query string, such as `?class=src&ext=tar.gz`, resolves to a single download. The
-catalog explains the full set of qualifiers at [the PURL prefix](https://apache.org/the+asf/).
+`pkg:software-id/apache.org/<project_key>@<version>`. Replacing the `pkg:software-id/` prefix with
+`https://` gives a working link. A bare link resolves to the release's `artifacts.json`, and adding a
+query string, such as `?class=src&ext=tar.gz`, resolves to a single download. Using `latest` as the
+version resolves to the project's newest release. The catalog explains the full set of qualifiers
+on [its PURL page](https://release-catalog.apache.org/purl/).
 
 ## How the catalog was built
 

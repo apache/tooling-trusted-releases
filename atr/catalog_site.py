@@ -132,10 +132,14 @@ _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 _INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
 _ENVIRONMENT.globals["indexing_keys"] = _INDEXING_COMMITTEE_KEYS
 
-# The bare PURL prefix, and the directory its landing page lives in. This prefix is the
-# namespace half of every ASF release PURL, so a reader who follows it with nothing after
-# wants an explainer rather than the front page or a 404.
-_PURL_PREFIX_PATH: Final = "the+asf"
+# The directory the PURL explainer lives in. ASF PURLs sit straight under apache.org, so
+# there's no bare prefix to land on; the explainer gets a fixed path of its own instead,
+# alongside the committee and project directories. No committee or project is keyed this.
+_PURL_PAGE_PATH: Final = "purl"
+
+# The version a PURL can ask for in place of a real one, resolved per project to its
+# newest release by the project directory's .htaccess.
+_LATEST_VERSION: Final = "latest"
 
 # The `class` qualifier abbreviates an artifact's stored classification to the short token
 # filenames use. Only the primary-artifact classes appear; sbom and metadata are companions.
@@ -223,7 +227,7 @@ async def generate_all(data: db.Session) -> None:
     # rather than the ones written, so a page that failed to render keeps what it had
     keep = {committee.key for committee in committees}
     keep |= {project.key for committee in committees for project in committee.projects}
-    await _prune_directories(site_dir, keep | {"assets", _PURL_PREFIX_PATH})
+    await _prune_directories(site_dir, keep | {"assets", _PURL_PAGE_PATH})
     log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
@@ -534,6 +538,24 @@ def _minimal_combo(classifiers: dict[str, str], others: list[dict[str, str]]) ->
     return None
 
 
+def _project_htaccess(project_key: str, versions: Sequence[api.CatalogVersion]) -> str | None:
+    """Render a project's `.htaccess`, resolving `<project>@latest`, or None if there's no release.
+
+    The vhost maps `<project>@latest` onto `<project>/latest/`, which isn't a real directory. This
+    redirects it, query string and all, into the newest release's directory, whose own `.htaccess`
+    then resolves any qualifiers. Versions arrive newest first, and a current release beats an
+    archived one, so a retired project's @latest still lands on its last release.
+    """
+    latest = next((version for version in versions if version.status == "released"), None)
+    if (latest is None) and versions:
+        latest = versions[0]
+    # A release actually called "latest" would be shadowed, so it keeps its literal meaning
+    if (latest is None) or any(str(version.version) == _LATEST_VERSION for version in versions):
+        return None
+    rule = f'RewriteRule "^{_LATEST_VERSION}/(.*)$" "/{project_key}/{latest.version}/$1" [R=302,NE,L]'
+    return f"RewriteEngine On\n{rule}\n"
+
+
 def _project_releases_entry(
     project: sql.Project,
     committee: sql.Committee,
@@ -834,12 +856,14 @@ async def _write_front_page(
     await _write_root_index(site_dir, listed, summaries)
 
 
-async def _write_htaccess(release_dir: safe.StatePath, version: api.CatalogVersion, pmc: str, project: str) -> None:
-    htaccess = _release_htaccess(version, pmc, project)
+async def _write_htaccess(directory: safe.StatePath, htaccess: str | None) -> None:
+    # .htaccess is a dotfile, which StatePath's join rejects, so go via the raw OS path. With
+    # nothing to write, a previous build's rules are removed rather than left redirecting.
+    path = directory.path / ".htaccess"
     if htaccess is None:
+        await asyncio.to_thread(path.unlink, missing_ok=True)
         return
-    # .htaccess is a dotfile, which StatePath's join rejects, so write via the raw OS path
-    await util.atomic_write_file(release_dir.path / ".htaccess", htaccess)
+    await util.atomic_write_file(path, htaccess)
 
 
 async def _write_incubator_index(
@@ -963,6 +987,7 @@ async def _write_project(
         document = release_documents.get(str(version.version))
         snapshot = applicable_heatmap(heatmaps.get(str(version.version)), version)
         await _write_release(project_dir, committee, project, version, f"{root}../", document, snapshot)
+    await _write_htaccess(project_dir, _project_htaccess(project.key, assembled.versions))
     await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
 
 
@@ -978,9 +1003,9 @@ async def _write_project_releases(
 
 
 async def _write_purl_landing(site_dir: safe.StatePath) -> None:
-    """Write the PURL explainer served at the bare prefix, /the+asf."""
+    """Write the PURL explainer, served at /purl."""
     html = _ENVIRONMENT.get_template("purl.html").render(root="../")
-    await _write(site_dir / _PURL_PREFIX_PATH / "index.html", html)
+    await _write(site_dir / _PURL_PAGE_PATH / "index.html", html)
 
 
 async def _write_release(
@@ -1023,7 +1048,7 @@ async def _write_release(
         ),
     )
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
-    await _write_htaccess(release_dir, version, committee.key, project.key)
+    await _write_htaccess(release_dir, _release_htaccess(version, committee.key, project.key))
     if heatmap is None:
         for name in ("heatmap.html", "heatmap.json", "heatmap-3d.html"):
             await asyncio.to_thread((release_dir / name).path.unlink, missing_ok=True)
