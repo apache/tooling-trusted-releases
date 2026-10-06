@@ -177,9 +177,11 @@ async def _handle_payload(payload: dict[str, Any]) -> str | None:
 async def _process_connection(session, pubsub_url, since):
     # Connect to pubsub and listen for payloads.
     headers = {"X-Fetch-Since-Cursor": since} if since else {}
-    async with session.get(pubsub_url, headers=headers) as conn:
+    async with session.get(pubsub_url, headers=headers, allow_redirects=False) as conn:
         # print('LIMITS:', conn.content.get_read_buffer_limits())
         conn.raise_for_status()
+        if 300 <= conn.status < 400:
+            raise ValueError(f"PubSub redirects are not allowed (HTTP {conn.status})")
         if conn.content_type != _STREAM_CONTENT_TYPE:
             log.warning(f"Unexpected pubsub content type: {conn.content_type}")
         if since:

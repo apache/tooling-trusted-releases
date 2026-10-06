@@ -20,6 +20,7 @@ import json
 import pathlib
 from typing import Any
 
+import aiohttp
 import aiohttp.web as web
 import pytest
 
@@ -33,6 +34,7 @@ class Server:
     def __init__(self) -> None:
         self.connections = 0
         self.cursors: list[str | None] = []
+        self.redirect = 0
         self.reject = 0
         self.scripts: list[list[bytes]] = []
         self.url = ""
@@ -40,6 +42,8 @@ class Server:
     async def handle(self, request: web.Request) -> web.StreamResponse:
         self.connections += 1
         self.cursors.append(request.headers.get("X-Fetch-Since-Cursor"))
+        if self.redirect:
+            return web.Response(status=self.redirect, headers={"Location": self.url}, body=_line(_EVENT))
         if self.reject > 0:
             self.reject -= 1
             return web.Response(status=503)
@@ -122,6 +126,15 @@ async def test_listen_yields_events_and_keepalives(server: Server) -> None:
     payloads = await _collect(server.url, 2)
     assert payloads[0] == _STILLALIVE
     assert payloads[1]["pubsub_topics"] == ["commit", "svn"]
+    assert server.connections == 1
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+async def test_process_connection_rejects_redirects(server: Server, status: int) -> None:
+    server.redirect = status
+    async with aiohttp.ClientSession(auth=aiohttp.BasicAuth("test", "test")) as session:
+        with pytest.raises(ValueError, match="PubSub redirects are not allowed"):
+            await anext(pubsub._process_connection(session, server.url, None))
     assert server.connections == 1
 
 
