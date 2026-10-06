@@ -11,6 +11,7 @@
 * [Overview](#overview)
 * [OAuth architecture and security responsibilities](#oauth-architecture-and-security-responsibilities)
 * [Transport security](#transport-security)
+* [Browser security requirements](#browser-security-requirements)
 * [Web authentication](#web-authentication)
 * [API authentication](#api-authentication)
 * [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
@@ -90,12 +91,43 @@ OAuth client security controls that ATR implements are described in the sections
 
 ## Transport security
 
-All ATR routes, on both the website and the API, require HTTPS using TLS 1.2 or newer. This is
-enforced at the httpd layer in front of the application. Requests over plain HTTP are redirected to
-HTTPS.
+All ATR routes, on both the website and the API, require HTTPS using TLS 1.2 or newer. This is enforced at the httpd layer in front of the application. Plain HTTP requests to the API are rejected with HTTP 421. Other plain HTTP requests are redirected to HTTPS.
 
 Tokens and credentials must never appear in URLs, as URLs may be logged or cached. They must only be
 transmitted in request headers or POST bodies over HTTPS.
+
+## Browser security requirements
+
+Browsers using the ATR web application must support the security features below to receive the intended protection. The requirements are defined by feature rather than browser name or version.
+
+| Feature | Expected browser behavior |
+| --- | --- |
+| HTTPS | Use TLS 1.2 or newer and validate the server certificate. |
+| HTTP Strict Transport Security | Enforce `Strict-Transport-Security` after receiving it over HTTPS, including its `includeSubDomains` setting. |
+| Content Security Policy | Enforce the policy in `Content-Security-Policy`, including limits on resource loading, form submission, and framing. |
+| Session cookies | Accept cookies and enforce `Secure`, `HttpOnly`, `SameSite=Strict`, and the `__Host-` prefix rules. |
+| Referer header | Send a `Referer` header from the ATR origin with website `POST` requests. |
+| Frame protection | Enforce `frame-ancestors` in the content security policy and `X-Frame-Options: DENY` to prevent other pages from framing ATR. |
+| Content types | Honor `X-Content-Type-Options: nosniff` when handling response content types. |
+| Referrer policy | Enforce `Referrer-Policy: same-origin` so requests to other origins omit the referrer. |
+| Window isolation | Enforce `Cross-Origin-Opener-Policy: same-origin` to separate ATR windows from other origins. |
+| Resource isolation | Enforce `Cross-Origin-Resource-Policy: same-origin` so other origins cannot load ATR responses in `no-cors` mode. |
+| Browser permissions | Enforce the restrictions in `Permissions-Policy` on features such as the camera, microphone, and clipboard. |
+| Response caching | Honor `Cache-Control: no-store` where ATR sends it. |
+
+ATR sets Content Security Policy, Permissions Policy, and the default cache policy for application responses in [server.py](/ref/atr/server.py). The httpd frontend proxy supplies the other response headers listed above. Deployments that bypass this proxy must supply those headers separately. Session cookie settings are in [config.py](/ref/atr/config.py).
+
+The httpd configuration also sets separate CSP sandbox policies for user directories and the static release catalog. Those policies apply to content served directly by httpd, outside of the ATR application.
+
+### When features are unavailable
+
+ATR does not detect support for these browser features or show a warning or block access because support is missing. A browser that ignores a header, directive, or cookie attribute loses the protection that it provides. Other supported protections still apply. For example, either `frame-ancestors` or `X-Frame-Options` can prevent framing when the other is unsupported. Successful access does not confirm that the browser meets these requirements.
+
+If the browser does not enforce HSTS, a request made over plain HTTP can reach the network before httpd redirects or rejects it. The `Secure` cookie attribute still keeps the session cookie off of that request if the browser supports it.
+
+On website routes, the CSRF check rejects `POST`, `PUT`, `PATCH`, and `DELETE` requests when the browser does not send cookies. It also rejects them when the `Referer` header is missing or does not come from the ATR origin. These CSRF failures show the normal HTTP 400 error page with the reason for the failure. The API is exempt from this CSRF check.
+
+ATR also checks the Fetch Metadata headers `Sec-Fetch-Site` and `Sec-Fetch-Mode`. For methods other than `GET`, `HEAD`, and `OPTIONS`, this guard returns HTTP 403 for requests marked `cross-site` and for browser navigations to API routes. If the headers are absent, this guard accepts the request. On website routes, a CSRF failure returns HTTP 400 before this guard runs. Authentication, authorization, and CSRF checks still apply where required. They do not replace missing browser protections.
 
 ## Web authentication
 

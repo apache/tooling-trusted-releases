@@ -410,7 +410,7 @@ XSS is prevented through:
 
 * Jinja2 auto-escaping (enabled by default)
 * `markupsafe.Markup` for trusted HTML only
-* Content Security Policy headers (configured in httpd)
+* Content Security Policy headers set by ATR in [server.py](/ref/atr/server.py) for application responses
 
 ### Path traversal
 
