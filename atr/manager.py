@@ -175,6 +175,8 @@ class WorkerManager:
     async def spawn_worker(self) -> None:
         """Spawn a new worker process."""
         if len(self.workers) >= self.max_workers:
+            stopping = len(self.workers) - self.active_worker_count()
+            log.warning(f"Worker pool limit of {self.max_workers} reached ({stopping} stopping), not spawning another")
             return
 
         try:
