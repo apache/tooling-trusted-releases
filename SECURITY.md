@@ -35,9 +35,9 @@ We are grateful to security researchers who help us improve ATR. With your permi
 
 For more information about ATR security:
 
-* [Authentication documentation](https://release-test.apache.org/docs/security-authentication) - How users authenticate to ATR
-* [Authorization documentation](https://release-test.apache.org/docs/security-authorization) - Access control model
-* [Input validation documentation](https://release-test.apache.org/docs/input-validation) - Data validation patterns
+* [Authentication documentation](https://releases.apache.org/docs/authentication-security) - How users authenticate to ATR
+* [Authorization documentation](https://releases.apache.org/docs/authorization-security) - Access control model
+* [Input validation documentation](https://releases.apache.org/docs/input-validation) - Data validation patterns
 
 ## Supported versions
 

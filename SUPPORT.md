@@ -41,14 +41,14 @@ Follow the [ASF security reporting process](https://www.apache.org/security/) to
 
 ## Documentation
 
-- **[ATR Documentation](https://release-test.apache.org/docs/)** - Full platform documentation
-- **[Tutorial](https://release-test.apache.org/tutorial)** - Getting started guide
+- **[ATR Documentation](https://releases.apache.org/docs/)** - Full platform documentation
+- **[Tutorial](https://releases.apache.org/tutorial)** - Getting started guide
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** - Developer quick start
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guide
 
 ## Status
 
-The alpha test deployment is available at: **https://release-test.apache.org/**
+The production deployment (currently in beta) is available at: **https://releases.apache.org/**
 
 ---
 

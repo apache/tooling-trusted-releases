@@ -1,6 +1,6 @@
 # Development guide
 
-This guide will help you get started with developing ATR. For detailed technical documentation, see the [Developer Guide](https://release-test.apache.org/docs/developer-guide).
+This guide will help you get started with developing ATR. For detailed technical documentation, see the [Developer Guide](https://releases.apache.org/docs/developer-guide).
 
 ## Prerequisites
 
@@ -219,9 +219,9 @@ tooling-trusted-releases/
 
 ## Useful resources
 
-- **[Overview of the Code](https://release-test.apache.org/docs/overview-of-the-code)** - High-level architecture
-- **[Running and Creating Tests](https://release-test.apache.org/docs/running-and-creating-tests)** - Testing guide
-- **[Code Conventions](https://release-test.apache.org/docs/code-conventions)** - Style guidelines
+- **[Overview of the Code](https://releases.apache.org/docs/overview-of-the-code)** - High-level architecture
+- **[Running and Creating Tests](https://releases.apache.org/docs/running-and-creating-tests)** - Testing guide
+- **[Code Conventions](https://releases.apache.org/docs/code-conventions)** - Style guidelines
 - **[Contributing](CONTRIBUTING.md)** - How to contribute code
 - **[Build Guide](BUILD.md)** - Complete build targets reference
 

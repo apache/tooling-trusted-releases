@@ -77,11 +77,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 
 **Key resources for contributors:**
 
-- [Contribution policies](https://release-test.apache.org/docs/how-to-contribute) – ASF policies, commit style, security guidelines
-- [Developer guide](https://release-test.apache.org/docs/developer-guide) – Technical documentation
-- [Server reference](https://release-test.apache.org/docs/running-the-server) – Architecture and configuration details
-- [Running and creating tests](https://release-test.apache.org/docs/running-and-creating-tests) – Testing guide
-- [Code conventions](https://release-test.apache.org/docs/code-conventions) – Style guidelines
+- [Contribution policies](https://releases.apache.org/docs/how-to-contribute) – ASF policies, commit style, security guidelines
+- [Developer guide](https://releases.apache.org/docs/developer-guide) – Technical documentation
+- [Server reference](https://releases.apache.org/docs/running-the-server) – Architecture and configuration details
+- [Running and creating tests](https://releases.apache.org/docs/running-and-creating-tests) – Testing guide
+- [Code conventions](https://releases.apache.org/docs/code-conventions) – Style guidelines
 
 ## License
 

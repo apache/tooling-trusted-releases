@@ -86,7 +86,7 @@ make build-docs
 
 The documentation system uses `scripts/docs_build.py` to automatically generate navigation from the table of contents in `atr/docs/index.md`. When you reorganize documentation, just edit the table of contents and run `make docs` to update all navigation links.
 
-For details, see [Build Processes](https://release-test.apache.org/docs/build-processes).
+For details, see [Build Processes](https://releases.apache.org/docs/build-processes).
 
 ## Python dependencies
 

@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to Apache Trusted Releases (ATR)! This guide will help you get started.
 
-For detailed ASF policies, commit message guidelines, and security considerations, see the [contribution policies guide](https://release-test.apache.org/docs/how-to-contribute).
+For detailed ASF policies, commit message guidelines, and security considerations, see the [contribution policies guide](https://releases.apache.org/docs/how-to-contribute).
 
 ## Before you start
 
@@ -66,7 +66,7 @@ For detailed ASF policies, commit message guidelines, and security consideration
    git checkout -b fix-typo-in-docs
    ```
 
-2. **Make your changes** following our [code conventions](https://release-test.apache.org/docs/code-conventions)
+2. **Make your changes** following our [code conventions](https://releases.apache.org/docs/code-conventions)
 
 3. **Run checks and tests** before committing:
 
@@ -147,7 +147,7 @@ For complex changes, add a body separated by a blank line explaining what and wh
 - **JavaScript:** Minimize usage, follow best practices for dependencies
 - **Shell:** POSIX sh only, no bash-specific features
 
-See the [full code conventions](https://release-test.apache.org/docs/code-conventions) for complete guidelines.
+See the [full code conventions](https://releases.apache.org/docs/code-conventions) for complete guidelines.
 
 ## Running tests
 
@@ -210,7 +210,7 @@ ATR's primary goal is to prevent supply chain attacks. When contributing:
 - **Mailing list:** [dev@tooling.apache.org](https://lists.apache.org/list.html?dev@tooling.apache.org)
 - **Slack:** [#apache-trusted-releases](https://the-asf.slack.com/archives/C049WADAAQG) on ASF Slack
 - **Issue tracker:** Comment on relevant issues or PRs
-- **Documentation:** [Developer Guide](https://release-test.apache.org/docs/developer-guide)
+- **Documentation:** [Developer Guide](https://releases.apache.org/docs/developer-guide)
 
 ## Alternative: email patches
 
