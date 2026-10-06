@@ -83,7 +83,7 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.46.3
+djlint==1.46.4
 dnspython==2.8.0
     # via
     #   email-validator
@@ -108,7 +108,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==4.0.7
+filelock==4.0.8
     # via
     #   python-discovery
     #   virtualenv
@@ -362,9 +362,9 @@ urllib3==2.8.0
     # via
     #   dulwich
     #   requests
-uvloop==0.22.1
+uvloop==0.23.0
     # via hypercorn
-virtualenv==21.14.1
+virtualenv==21.14.2
     # via pre-commit
 watchfiles==1.3.0
     # via

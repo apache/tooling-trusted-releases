@@ -46,6 +46,13 @@ There are two ways to run the server: in a container (recommended) or directly. 
 
 The easiest way to run ATR with all dependencies (CycloneDX, syft, Apache RAT for SBOM generation and license checking):
 
+**Prerequisites:**
+
+- Git
+- Docker or Podman, with Compose
+
+Everything else, including Python, Java, Apache RAT, syft, sbomqs, and the CycloneDX CLI, is built into the image.
+
 ```shell
 # Clone your fork
 git clone https://github.com/YOUR_USERNAME/tooling-trusted-releases.git
@@ -97,6 +104,20 @@ docker compose down                   # Stop the server
 ### Option 2: Running directly
 
 For faster iteration without containers:
+
+**Prerequisites:**
+
+- Git and make
+- uv and Python 3.14
+- mkcert, with `mkcert -install` run once so that your browser trusts its certificates
+- Subversion, since `make serve-local` uses `svnadmin` to create a local SVN repository to publish to
+- An `/etc/hosts` entry for `localhost.apache.org`, as described under **Accessing the site** below
+
+The following are only needed for the tasks that use them. The server runs without them, but those checks will fail on release candidates:
+
+- Java and the Apache RAT jar, for license checks. `make serve-local` looks for `state/tools/apache-rat-0.18.jar` unless `APACHE_RAT_JAR_PATH` is set
+- syft, sbomqs, and the CycloneDX CLI, for SBOM generation, scoring, and validation
+- `setpriv` with Landlock support, on Linux, to sandbox the SBOM tools
 
 ```shell
 # Clone your fork
