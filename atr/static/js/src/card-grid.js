@@ -73,9 +73,13 @@ function setupProjectToggleButtons() {
 	}
 }
 
-function cardMatchesText(card, query) {
+function titleMatchesText(card, query) {
 	const title = card.querySelector(".card-title");
-	if (title?.textContent.trim().toLowerCase().includes(query)) {
+	return title?.textContent.trim().toLowerCase().includes(query) ?? false;
+}
+
+function cardMatchesText(card, query) {
+	if (titleMatchesText(card, query)) {
 		return true;
 	}
 	// Catalogue cards bundle projects, so match their names too.
@@ -85,6 +89,18 @@ function cardMatchesText(card, query) {
 		}
 	}
 	return false;
+}
+
+function showProjectMatches(card, query) {
+	// A search that only hits a bundled project shows that project's own link,
+	// so it can be opened directly. One that hits the card's own title shows
+	// none, or searching "commons" would list every Commons project.
+	const wanted = query && !titleMatchesText(card, query);
+	for (const match of card.querySelectorAll(".page-project-match")) {
+		const hit =
+			wanted && match.dataset.projectName.toLowerCase().includes(query);
+		match.classList.toggle("d-none", !hit);
+	}
 }
 
 function updateUrl(mineOnly) {
@@ -153,6 +169,9 @@ function setParticipantMode(ctx, mineOnly, keepText) {
 	}
 	if (!keepText && ctx.filterInput) {
 		ctx.filterInput.value = "";
+		for (const card of ctx.cards) {
+			showProjectMatches(card, "");
+		}
 	}
 	setCount(ctx, visible);
 }
@@ -168,6 +187,7 @@ function filterByText(ctx) {
 		const show =
 			cardEligible(ctx, card) && (!query || cardMatchesText(card, query));
 		card.parentElement.hidden = !show;
+		showProjectMatches(card, query);
 		if (show) {
 			visible++;
 		}

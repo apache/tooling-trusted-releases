@@ -174,11 +174,19 @@ _PROJECT_RELEASES_FILE: Final = "project_releases.json"
 _PODLING_RELEASES_FILE: Final = "podling_releases.json"
 
 
+# Ordered on the name first, so a card's projects sort the way they read
+@dataclasses.dataclass(order=True)
+class _ProjectLink:
+    name: str
+    # Relative to the site root
+    target: str
+
+
 @dataclasses.dataclass
 class _CommitteeSummary:
     release_count: int
     latest_date: datetime.datetime | None
-    project_names: list[str]
+    projects: list[_ProjectLink]
 
 
 @dataclasses.dataclass
@@ -436,18 +444,27 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
         if (released is not None) and ((key not in latest) or (released > latest[key])):
             latest[key] = released
     # The search matches project names as well as committee names, so each card lists its
-    # projects. The Incubator lists its podlings, which are committees rather than projects.
-    names: dict[str, list[str]] = {
-        committee.key: sorted(project.display_name for project in committee.projects) for committee in committees
+    # projects, ready to link straight to whichever ones a search hits. The Incubator lists
+    # its podlings, which are committees rather than projects.
+    links: dict[str, list[_ProjectLink]] = {
+        committee.key: sorted(
+            _ProjectLink(name=project.display_name, target=f"{project.key}/index.html")
+            for project in committee.projects
+        )
+        for committee in committees
     }
-    names[_INCUBATOR_COMMITTEE_KEY] = sorted(committee.display_name for committee in committees if committee.is_podling)
+    links[_INCUBATOR_COMMITTEE_KEY] = sorted(
+        _ProjectLink(name=committee.display_name, target=_podling_target(committee))
+        for committee in committees
+        if committee.is_podling
+    )
     return {
         key: _CommitteeSummary(
             release_count=counts.get(key, 0),
             latest_date=latest.get(key),
-            project_names=names.get(key, []),
+            projects=links.get(key, []),
         )
-        for key in (set(counts) | set(names))
+        for key in (set(counts) | set(links))
     }
 
 
@@ -536,6 +553,13 @@ def _minimal_combo(classifiers: dict[str, str], others: list[dict[str, str]]) ->
             if not any(all(other.get(key) == value for key, value in subset) for other in others):
                 return dict(subset)
     return None
+
+
+def _podling_target(podling: sql.Committee) -> str:
+    # Mirrors the Incubator page: a podling with a single project opens that project
+    if len(podling.projects) == 1:
+        return f"{podling.projects[0].key}/index.html"
+    return f"{podling.key}/index.html"
 
 
 def _project_htaccess(project_key: str, versions: Sequence[api.CatalogVersion]) -> str | None:

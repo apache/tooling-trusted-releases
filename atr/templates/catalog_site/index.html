@@ -45,10 +45,19 @@
                       {{ summary.release_count }} {{ "release" if summary.release_count == 1 else "releases" }}
                       {%- if summary.latest_date %} &middot; latest {{ summary.latest_date.strftime("%Y-%m-%d") }}{% endif %}
                     </p>
-                    {# The projects ride along hidden so a search matches on their names too #}
-                    {% for name in summary.project_names %}
-                      <span class="d-none" data-project-name="{{ name }}"></span>
-                    {% endfor %}
+                    {# The projects ride along hidden so a search matches on their names too. A
+                       project the search hits shows its own link, sitting above the card's stretched
+                       link, so it opens the project rather than its whole committee #}
+                    {% if summary.projects %}
+                      <ul class="list-unstyled small mb-0">
+                        {% for project in summary.projects %}
+                          <li class="mt-1 d-none page-project-match"
+                              data-project-name="{{ project.name }}">
+                            <a href="{{ root }}{{ project.target }}" class="position-relative z-2">{{ project.name }} &rarr;</a>
+                          </li>
+                        {% endfor %}
+                      </ul>
+                    {% endif %}
                   {% endif %}
                 </div>
                 <div class="col-5 col-lg-4 text-center">
