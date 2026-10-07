@@ -282,3 +282,52 @@ async def test_an_svn_error_reading_the_revprop_catalogues_rather_than_drops(mon
     error = catalog.svn.CommandExecutionError(1, "svn: E175013: Access to '/repos/dist/!svn/rev/87431' forbidden")
     monkeypatch.setattr(catalog.svn, "committed_by_atr", mock.AsyncMock(side_effect=error))
     assert await catalog._committed_by_atr(87431) is False
+
+
+class _ProjectQuery:
+    def __init__(self, by_key: dict[str, object], committee_projects: list[object]) -> None:
+        self._by_key = by_key
+        self._committee_projects = committee_projects
+        self._key: str | None = None
+
+    def __call__(self, key: str | None = None, **_kwargs: object) -> "_ProjectQuery":
+        self._key = key
+        return self
+
+    async def all(self) -> list[object]:
+        return self._committee_projects
+
+    async def get(self) -> object:
+        return self._by_key.get(self._key) if (self._key is not None) else None
+
+
+def _data_with_projects(by_key: dict[str, object], committee_projects: list[object]) -> mock.MagicMock:
+    data = mock.MagicMock()
+    data.project = _ProjectQuery(by_key, committee_projects)
+    return data
+
+
+@pytest.mark.asyncio
+async def test_a_top_level_release_falls_back_to_the_committees_only_project() -> None:
+    project = SimpleNamespace(key="trafficserver-traffic-server")
+    data = _data_with_projects({}, [project])
+    assert await catalog._resolve_project(dist_rules.empty(), data, "trafficserver", None) is project
+
+
+@pytest.mark.asyncio
+async def test_a_top_level_release_under_a_committee_with_several_projects_stays_unresolved() -> None:
+    data = _data_with_projects({}, [SimpleNamespace(key="streams-examples"), SimpleNamespace(key="streams-master")])
+    assert await catalog._resolve_project(dist_rules.empty(), data, "streams", None) is None
+
+
+@pytest.mark.asyncio
+async def test_the_incubator_top_level_never_falls_back_to_a_project() -> None:
+    data = _data_with_projects({}, [SimpleNamespace(key="incubator-pouchdb")])
+    assert await catalog._resolve_project(dist_rules.empty(), data, "incubator", None) is None
+
+
+@pytest.mark.asyncio
+async def test_an_exact_key_match_wins_over_the_fallback() -> None:
+    exact = SimpleNamespace(key="tomcat")
+    data = _data_with_projects({"tomcat": exact}, [SimpleNamespace(key="tomcat-taglibs")])
+    assert await catalog._resolve_project(dist_rules.empty(), data, "tomcat", None) is exact

@@ -411,7 +411,13 @@ async def _resolve_project(
         project = await data.project(key=candidate).get()
         if project is not None:
             return project
-    return None
+    # A top-level release under a committee with only one project can only be that project's
+    # (trafficserver/ -> trafficserver-traffic-server), as in the backfill. Not the Incubator though,
+    # as its top level is a shared area rather than a product's
+    if (subproject is not None) or (remapped is not None) or (committee == "incubator"):
+        return None
+    projects = await data.project(committee_key=committee, _committee=False).all()
+    return projects[0] if (len(projects) == 1) else None
 
 
 async def _resolve_removed_file(

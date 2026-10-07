@@ -125,11 +125,14 @@ class DistRules:
             # subproject and version both live in the filename, as in the flat layout
             return self._filename_only(committee, filename)
         subproject, dir_version, dir_source = _subproject_and_dir_version(committee, parts)
-        # A language flavour dir under a <committee>-<version> release (avro/avro-1.11.5/rust) names
-        # its own project only when a remap says so; otherwise it stays flattened onto the TLP, the
-        # way avro's cpp/java/py bindings do, so this can't split a binding off from its release
-        if (subproject is None) and (len(parts) > 1) and (self.project_remap(committee, parts[-1]) is not None):
-            subproject = parts[-1]
+        # A nested dir names its own project only when a remap says so - a language flavour dir under
+        # a <committee>-<version> release (avro/avro-1.11.5/rust), or a second product shipped inside
+        # a podling's area (incubator/seata/incubator-seata-go). Otherwise it stays flattened onto
+        # the first dir's project, the way avro's cpp/java/py bindings do, so this can't split a
+        # binding off from its release
+        nested = next((part for part in parts[1:] if self.project_remap(committee, part) is not None), None)
+        if nested is not None:
+            subproject = nested
         version, source = _choose_version(dir_version, dir_source, filename)
         return Decomposed(subproject=subproject, version=version, source=source)
 

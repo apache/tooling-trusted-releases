@@ -34,6 +34,7 @@ _RULES = dist.DistRules(
         ("avro", "rust"): "avro-rs",
         ("apr", None): "apr-portable-runtime",
         ("httpd", None): "httpd-http-server",
+        ("incubator", "incubator-seata-go"): "seata-go",
         ("sis", None): "sis-spatial-information-system",
         ("trafficcontrol", None): "traffic-control",
         ("trafficserver", None): "trafficserver-traffic-server",
@@ -199,6 +200,25 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     # remap says so: avro/rust splits off to avro-rs, but avro/cpp stays flattened onto the TLP
     ("avro", ("avro-1.11.5", "rust"), "apache-avro.tgz", "rust", "1.11.5", _SOURCE),
     ("avro", ("avro-1.12.2", "cpp"), "avro-cpp-1.12.2.tar.gz", None, "1.12.2", _SOURCE),
+    # A second product shipped inside a podling's area is likewise its own project when a remap
+    # names its dir: seata-go ships under incubator/seata/, but isn't the Java seata release
+    (
+        "incubator",
+        ("seata", "incubator-seata-go", "v2.1.0"),
+        "incubator-seata-go-v2.1.0-src.tar.gz",
+        "incubator-seata-go",
+        "v2.1.0",
+        _SOURCE,
+    ),
+    (
+        "incubator",
+        ("seata", "incubator-seata-go", "2.0.0"),
+        "apache-seata-go-2.0.0-incubating-src.tar.gz",
+        "incubator-seata-go",
+        "2.0.0-incubating",
+        _SOURCE,
+    ),
+    ("incubator", ("seata", "2.6.0"), "apache-seata-2.6.0-incubating-src.tar.gz", "seata", "2.6.0-incubating", _SOURCE),
 ]
 
 
