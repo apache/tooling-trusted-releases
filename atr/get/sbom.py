@@ -558,7 +558,7 @@ def _outdated_tool_section(block: htm.Block, task_result: results.SBOMToolScore)
             block.p["No outdated tools found."]
         for result in outdated:
             if result.kind == "tool":
-                if "Apache Trusted Releases" in result.key:
+                if "Apache Trusted Releases" in result.name:
                     block.p[
                         f"""The last version of ATR used on this SBOM was
                             {result.used_version} but ATR is currently version
@@ -566,7 +566,7 @@ def _outdated_tool_section(block: htm.Block, task_result: results.SBOMToolScore)
                     ]
                 else:
                     block.p[
-                        f"""The {result.key} is outdated. The used version is
+                        f"""The {result.name} is outdated. The used version is
                             {result.used_version} and the available version is
                             {result.available_version}."""
                     ]
@@ -581,7 +581,7 @@ def _outdated_tool_section(block: htm.Block, task_result: results.SBOMToolScore)
                 else:
                     block.p[
                         f"""There was a problem with the SBOM detected when trying to
-                            determine if the {result.key} is outdated:
+                            determine if the {result.name} is outdated:
                             {result.kind.upper()}."""
                     ]
     else:
@@ -799,7 +799,10 @@ def _vulnerability_component_details_osv(
 
         # cmarkgfm will refuse to write unsafe strings into the html
         # audit_guidance CMARK_OPT_SAFE is the default option in cmarkgfm and it can't be set
-        details = markupsafe.Markup(cmarkgfm.github_flavored_markdown_to_html(vuln.details))
+        # CycloneDX makes detail optional, so a vulnerability may have none to convert
+        details = None
+        if vuln.details:
+            details = markupsafe.Markup(cmarkgfm.github_flavored_markdown_to_html(vuln.details))
         vuln_div = htm.div(".ms-3.mb-3.border-start.border-warning.border-3.ps-3")[
             htm.div(".d-flex.align-items-center.mb-2")[*vuln_header],
             htm.p(".mb-1")[vuln_summary],
