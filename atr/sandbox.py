@@ -23,6 +23,7 @@ import subprocess
 import sys
 from typing import Final
 
+LIST_ACCESSES: Final = "read-dir"
 RO_ACCESSES: Final = "read-file,read-dir"
 RW_ACCESSES: Final = (
     "read-file,read-dir,write-file,truncate,refer,"
@@ -33,7 +34,13 @@ SYSTEM_ACCESSES: Final = "execute,read-file,read-dir"
 SYSTEM_PATHS: Final = ("/bin", "/etc", "/lib", "/lib64", "/sbin", "/usr")
 
 
-def command(argv: list[str], *, ro_paths: list[str] | None = None, rw_paths: list[str] | None = None) -> list[str]:
+def command(
+    argv: list[str],
+    *,
+    list_paths: list[str] | None = None,
+    ro_paths: list[str] | None = None,
+    rw_paths: list[str] | None = None,
+) -> list[str]:
     setpriv = landlock_setpriv()
     if setpriv is None:
         return argv
@@ -41,6 +48,8 @@ def command(argv: list[str], *, ro_paths: list[str] | None = None, rw_paths: lis
     for path in SYSTEM_PATHS:
         if os.path.exists(path):
             wrapped += ["--landlock-rule", f"path-beneath:{SYSTEM_ACCESSES}:{path}"]
+    for path in list_paths or []:
+        wrapped += ["--landlock-rule", f"path-beneath:{LIST_ACCESSES}:{path}"]
     for path in ro_paths or []:
         wrapped += ["--landlock-rule", f"path-beneath:{RO_ACCESSES}:{path}"]
     for path in rw_paths or []:
@@ -67,3 +76,12 @@ def landlock_setpriv() -> str | None:
     if b"--landlock-access" in (result.stdout + result.stderr):
         return setpriv
     return None
+
+
+def rsync_command(
+    argv: list[str], *, ro_paths: list[str] | None = None, rw_paths: list[str] | None = None
+) -> list[str]:
+    # Since 3.4, rsync opens each directory from / down to its destination rather than calling chdir,
+    # and Landlock refuses that walk unless every directory on the way can be listed. Listing is all
+    # it gets, so file contents stay confined to ro_paths and rw_paths
+    return command(argv, list_paths=["/"], ro_paths=ro_paths, rw_paths=rw_paths)

@@ -645,7 +645,7 @@ async def _step_07a_process_validated_rsync_read(
                 raise RsyncArgsError(f"No files match the tag for release {release.key}")
             argv[-1:] = files
 
-        argv = sandbox.command(argv, ro_paths=[str(source_dir)])
+        argv = sandbox.rsync_command(argv, ro_paths=[str(source_dir)])
 
         ###################################################
         ### Calls _step_08_execute_rsync_sender_command ###
@@ -694,7 +694,7 @@ async def _step_07b_process_validated_rsync_write(
             if old_rev is not None:
                 log.info(f"Using old revision {old_rev.number} and interim path {path}")
             rsync_argv = _build_rsync_write_argv(argv)
-            rsync_argv = sandbox.command(rsync_argv, rw_paths=[str(path)])
+            rsync_argv = sandbox.rsync_command(rsync_argv, rw_paths=[str(path)])
 
             ###################################################
             ### Calls _step_08_execute_rsync_upload_command ###

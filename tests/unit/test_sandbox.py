@@ -16,6 +16,7 @@
 # under the License.
 
 import pathlib
+import shutil
 import subprocess
 
 import pytest
@@ -71,6 +72,40 @@ def test_executes_command_with_granted_read(tmp_path: pathlib.Path) -> None:
     result = subprocess.run(argv, capture_output=True)
     assert result.returncode == 0
     assert result.stdout == b"inside"
+
+
+@requires_landlock
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="rsync is not available")
+def test_rsync_command_copies_into_granted_path(tmp_path: pathlib.Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "file.txt").write_text("content")
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    argv = sandbox.rsync_command(
+        ["rsync", "-a", f"{source}/", f"{destination}/"], ro_paths=[str(source)], rw_paths=[str(destination)]
+    )
+    result = subprocess.run(argv, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert (destination / "file.txt").read_text() == "content"
+
+
+@requires_landlock
+def test_rsync_command_denies_read_outside_granted_paths(tmp_path: pathlib.Path) -> None:
+    granted = tmp_path / "granted"
+    granted.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("secret")
+    argv = sandbox.rsync_command(["cat", str(secret)], ro_paths=[str(granted)])
+    result = subprocess.run(argv, capture_output=True)
+    assert result.returncode != 0
+
+
+def test_rsync_command_lists_from_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sandbox, "landlock_setpriv", lambda: "/bin/setpriv")
+    wrapped = sandbox.rsync_command(["rsync", "--server"], ro_paths=["/a"])
+    assert f"path-beneath:{sandbox.LIST_ACCESSES}:/" in wrapped
+    assert f"path-beneath:{sandbox.RO_ACCESSES}:/a" in wrapped
 
 
 @requires_landlock

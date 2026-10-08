@@ -297,7 +297,7 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
         f"{archive_dir}{os.sep}",
     ]
     # A dry-run diff, so rsync only reads the two trees - confine it to those at the kernel level.
-    command = sandbox.command(command, ro_paths=[str(repo_dir), str(archive_dir)])
+    command = sandbox.rsync_command(command, ro_paths=[str(repo_dir), str(archive_dir)])
     result = subprocess.run(
         command,
         capture_output=True,
