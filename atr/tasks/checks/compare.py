@@ -329,7 +329,8 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
                         is_repo_only = True
                     elif (flags[0] in (">", "<", "c")) and (flags[2] in ("c", "s", "+")):
                         is_content_diff = True
-        if not rel_path:
+        # rsync itemises the top of the tree as "./" when its timestamp differs, which isn't a file
+        if (not rel_path) or (rel_path == "."):
             continue
         full_repo = repo_dir / rel_path
         full_archive = archive_dir / rel_path
