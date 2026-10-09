@@ -25,6 +25,7 @@ import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
 import atr.errors as errors
+import atr.get.docs as docs
 import atr.htm as htm
 import atr.models.attestable as models
 import atr.models.safe as safe
@@ -114,9 +115,12 @@ def _render_page(
         page.p(".text-muted")["This revision contains no files."]
         return page.collect()
     page.p[
-        "SHA3-256 identifies the downloaded file. Select a digest to copy it for comparison. ",
-        "An archive's SWHID identifies its extracted inner directory. ",
-        "Values absent from this revision's record are shown as Not recorded.",
+        "SHA3-256 is a digest of each file's exact bytes, for comparison with a file you have downloaded. ",
+        "An archive's SWHID identifies the files inside it, not the archive file itself. ",
+        "Neither value is a signature, so verify signatures against the committee KEYS file as usual. ",
+        "Not recorded means that ATR did not store that value for this file, and does not indicate a problem. ",
+        htm.a(href=util.as_url(docs.page, path="file-manifest"))["What these values mean"],
+        ".",
     ]
     missing_sizes = sum(content_hash not in recorded.hashes for content_hash in path_hashes.values())
     if missing_sizes:

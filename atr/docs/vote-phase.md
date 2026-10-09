@@ -9,6 +9,7 @@
 **Pages**:
 
 * `5.2.1.` [Staging and voting](staging-and-voting)
+* `5.2.2.` [File manifest](file-manifest)
 
 **Sections**:
 

@@ -2,7 +2,7 @@
 
 **Up**: `5.` [Making releases](making-releases)
 
-**Prev**: `5.2.1.` [Staging and voting](staging-and-voting)
+**Prev**: `5.2.2.` [File manifest](file-manifest)
 
 **Next**: `5.3.1.` [Promoting to release](promoting-to-release)
 

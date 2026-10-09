@@ -22,6 +22,7 @@ NOTE: This documentation is a work in progress.
     * `5.1.4.` [SBOM workflows](sbom-workflows)
   * `5.2.` [Vote phase](vote-phase)
     * `5.2.1.` [Staging and voting](staging-and-voting)
+    * `5.2.2.` [File manifest](file-manifest)
   * `5.3.` [Finish phase](finish-phase)
     * `5.3.1.` [Promoting to release](promoting-to-release)
   * `5.4.` [Archiving and lifecycle](archiving-and-lifecycle)
