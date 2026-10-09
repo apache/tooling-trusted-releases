@@ -20,7 +20,7 @@ its size and up to two identifiers: a SHA3-256 digest and, for archives, an inne
 ATR computes these values itself when files are added to the revision, and records them alongside
 the revision. They do not change afterwards, so the manifest for a revision describes exactly the
 files that were in that revision. The same data is available as JSON, except for embargoed releases.
-An expedited security release is embargoed until it is published..
+An expedited security release is embargoed until it is published.
 
 The manifest is there to let you identify files. It is not a signature, and it does not by itself
 tell you who produced a file or whether it is safe to use. For that, verify the detached signature
@@ -47,7 +47,7 @@ A match means that the file you have is byte for byte the file in this revision.
 
 ## Inner-directory SWHID
 
-A SWHID is a [Software Hash identifier](https://www.swhid.org/). The value shown in the
+A SWHID is a [Software Hash Identifier](https://www.swhid.org/). The value shown in the
 manifest is a directory identifier, starting `swh:1:dir:`, and it is computed over the contents of
 an archive rather than over the archive file. ATR extracts the archive, finds the single top-level
 directory inside it, and computes the identifier of that directory.
