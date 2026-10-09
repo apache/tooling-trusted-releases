@@ -220,8 +220,8 @@ class VotePolicyForm(form.Form):
     )
     vote_comment_template_url: str = form.label(
         "Vote comment template URL",
-        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
-        " this URL whenever the email form is shown, and you can still edit it before sending."
+        "We fetch the"
+        " template from this URL whenever the email form is shown, and you can still edit it before sending."
         " Must be an apache.org host or raw.githubusercontent.com.",
         default="",
     )
@@ -235,8 +235,8 @@ class VotePolicyForm(form.Form):
     )
     start_vote_template_url: str = form.label(
         "Start vote template URL",
-        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
-        " this URL whenever the email form is shown, and you can still edit it before sending."
+        "We fetch the"
+        " template from this URL whenever the email form is shown, and you can still edit it before sending."
         " Must be an apache.org host or raw.githubusercontent.com.",
         default="",
     )
@@ -246,8 +246,8 @@ class VotePolicyForm(form.Form):
     )
     finish_vote_template_url: str = form.label(
         "Finish vote template URL",
-        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
-        " this URL whenever the email form is shown, and you can still edit it before sending."
+        "We fetch the"
+        " template from this URL whenever the email form is shown, and you can still edit it before sending."
         " Must be an apache.org host or raw.githubusercontent.com.",
         default="",
     )
@@ -519,8 +519,8 @@ class FinishPolicyForm(form.Form):
     )
     announce_release_template_url: str = form.label(
         "Announce release template URL",
-        "Alternative to the template above, which is ignored while this is set. We fetch the template from"
-        " this URL whenever the email form is shown, and you can still edit it before sending."
+        "We fetch the"
+        " template from this URL whenever the email form is shown, and you can still edit it before sending."
         " Must be an apache.org host or raw.githubusercontent.com.",
         default="",
     )

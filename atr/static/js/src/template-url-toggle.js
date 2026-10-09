@@ -18,9 +18,11 @@
  */
 
 // While a template URL is set, ATR fetches the template from there, so the
-// inline template beside it has no effect. Make that textarea read only
-// rather than disabled, so its stored text is still submitted and kept in case
-// the URL is cleared later. The server ignores the inline text either way.
+// inline template beside it has no effect. Swap the textarea, and its list of
+// variables where it has one, for a note saying how to edit it again. A hidden
+// textarea is still submitted, so its stored text is kept in case the URL is
+// cleared later. The server ignores the inline text either way, so if the
+// script doesn't run both fields just stay visible.
 
 document.addEventListener("DOMContentLoaded", () => {
 	document
@@ -30,14 +32,18 @@ document.addEventListener("DOMContentLoaded", () => {
 				urlInput.id.slice(0, -"_url".length),
 			);
 			if (!template) return;
+			const variables = template.parentElement?.querySelector("details");
+
+			const note = document.createElement("div");
+			note.className = "form-text text-muted fst-italic";
+			note.textContent = "Remove the template URL to set template content.";
+			template.after(note);
 
 			const apply = () => {
 				const inUse = urlInput.value.trim() !== "";
-				template.readOnly = inUse;
-				template.classList.toggle("bg-light", inUse);
-				template.title = inUse
-					? "Not used while a template URL is set. Clear the URL to edit this."
-					: "";
+				template.classList.toggle("d-none", inUse);
+				variables?.classList.toggle("d-none", inUse);
+				note.classList.toggle("d-none", !inUse);
 			};
 
 			urlInput.addEventListener("input", apply);
