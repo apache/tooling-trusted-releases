@@ -34,6 +34,7 @@ import atr.api as api
 import atr.attestable as attestable
 import atr.blueprints.common as common
 import atr.db as db
+import atr.get.docs as docs
 import atr.get.manifest as manifest
 import atr.get.revisions as revisions
 import atr.htm as htm
@@ -84,6 +85,11 @@ async def app(monkeypatch, tmp_path):
         "/api/release/manifest/<project_key>/<version_key>/<revision>",
         endpoint=api.release_manifest.endpoint,
         view_func=api.release_manifest,
+    )
+    app.add_url_rule(
+        "/docs/<path:path>",
+        endpoint=docs.page.endpoint,
+        view_func=docs.page,
     )
     app.add_url_rule(
         "/manifest/<project_key>/<version_key>/<revision_number>",

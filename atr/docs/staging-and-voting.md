@@ -4,7 +4,7 @@
 
 **Prev**: `5.2.` [Vote phase](vote-phase)
 
-**Next**: `5.3.` [Finish phase](finish-phase)
+**Next**: `5.2.2.` [File manifest](file-manifest)
 
 **Sections**:
 
