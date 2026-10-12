@@ -69,7 +69,11 @@ _STD_EXCLUSIONS_ALWAYS: Final[list[str]] = ["MISC", "HIDDEN_DIR", "MAC"]
 
 # Additional exclusions when no project exclusion file is found
 _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
-    "ALL",
+    "MAVEN",
+    "ECLIPSE",
+    "IDEA",
+    "GIT",
+    "STANDARD_SCMS",
 ]
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_rat"]
