@@ -359,7 +359,7 @@ class TaskType(enum.StrEnum):
             case TaskType.QUARANTINE_VALIDATE:
                 return "Quarantine validation"
             case TaskType.RAT_CHECK:
-                return "Rat check"
+                return "RAT check"
             case TaskType.RELEASE_FINALISE:
                 return "Release finalisation"
             case TaskType.SBOM_AUGMENT:

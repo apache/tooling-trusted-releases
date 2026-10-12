@@ -82,7 +82,7 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
 
     page.locator("input#vote_duration").fill("0")
     page.locator("#automatic_publish_when_resolved").uncheck()
-    # Acknowledge every concern group raised by the checks (e.g. Rat Check)
+    # Acknowledge every concern group raised by the checks (e.g. RAT Check)
     # so the vote-start form accepts the submission.
     for _box in page.locator('input[name="concerns_noted"]').all():
         _box.check()
