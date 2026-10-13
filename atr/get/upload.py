@@ -81,7 +81,8 @@ async def selected(
         htm.a(".btn.btn-outline-primary.me-2", href="#file-upload")["Use the browser"],
         htm.a(".btn.btn-outline-primary.me-2", href="#svn-upload")["Use SVN"],
         htm.a(".btn.btn-outline-primary.me-2", href="#rsync-upload")["Use rsync"],
-        htm.a(".btn.btn-outline-primary", href="#github-upload")["Use GitHub Workflow"],
+        htm.a(".btn.btn-outline-primary.me-2", href="#github-upload")["Use GitHub Workflow"],
+        htm.a(".btn.btn-outline-primary", href="#maven-upload")["Use Maven"],
     ]
 
     block.h2(id="file-upload")["File upload"]
@@ -149,6 +150,8 @@ async def selected(
     _render_ssh_keys_info(block, user_ssh_keys)
 
     _render_github_workflow(block, release, ci_builds_enabled)
+
+    _render_maven_plugin(block)
 
     return await template.blank(
         f"Upload files to {release.short_display_name}",
@@ -223,6 +226,29 @@ jobs:
         " produces the files you want to upload)",
     ]
     block.p["You can also use the", htm.code[" Upload to ATR "], "step directly in an existing workflow."]
+
+
+def _render_maven_plugin(block: htm.Block) -> None:
+    block.h2(id="maven-upload")["Maven plugin"]
+    block.p[
+        "Projects that release with Maven can upload files into this draft from their release build, ",
+        "for example during ",
+        htm.code["mvn release:perform"],
+        ", using the ",
+        htm.a(href="https://github.com/apache/tooling-atr-maven-plugin")["ATR Maven Plugin"],
+        ". It authenticates with a ",
+        htm.a(href=util.as_url(docs.page, path="release-manager-setup") + "#personal-access-tokens")[
+            "personal access token"
+        ],
+        ", which you configure as a server in your Maven ",
+        htm.code["settings.xml"],
+        ".",
+    ]
+    block.p[
+        "The ",
+        htm.a(href="https://apache.github.io/tooling-atr-maven-plugin/")["plugin documentation"],
+        " shows how to configure your credentials and a release profile, and how to place files in subdirectories.",
+    ]
 
 
 def _render_ssh_keys_info(block: htm.Block, user_ssh_keys: Sequence[sql.SSHKey]) -> None:
