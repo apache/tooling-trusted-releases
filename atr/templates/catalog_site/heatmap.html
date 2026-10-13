@@ -18,11 +18,11 @@
 {% block content %}
   <p class="mb-1"><a href="index.html" class="atr-back-link">&larr; {{ project.display_name }} {{ release_version.version }}</a></p>
   <h1>Dependency heatmap</h1>
+  {% include "_unreviewed.html" %}
   {% block heatmap_view %}
     <p><strong>Table view</strong> · <a id="heatmap-view" href="heatmap-3d.html">3D view</a></p>
   {% endblock heatmap_view %}
   <p>Maintenance observations and advisories for the package versions listed in this release's SBOMs.</p>
-  {% include "_unreviewed.html" %}
   <p>
     Analysed <time datetime="{{ heatmap.generated_at }}">{{ heatmap.generated_at[:16] | replace("T", " ") }} UTC</time>.
     <a href="heatmap.json" download>Download analysis JSON</a>
