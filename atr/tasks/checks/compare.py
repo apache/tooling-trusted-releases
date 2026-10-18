@@ -56,7 +56,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "4"
+CHECK_VERSION: Final[str] = "5"
 
 
 @dataclasses.dataclass
@@ -332,8 +332,9 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
         # rsync itemises the top of the tree as "./" when its timestamp differs, which isn't a file
         if (not rel_path) or (rel_path == "."):
             continue
-        full_repo = repo_dir / rel_path
-        full_archive = archive_dir / rel_path
+        # Source tree members can contain dotfiles, but must stay within their respective trees
+        full_repo = safe.StatePath(repo_dir.path / rel_path, root=repo_dir.path)
+        full_archive = safe.StatePath(archive_dir.path / rel_path, root=archive_dir.path)
         if full_repo.path.is_file() or full_archive.path.is_file():
             if is_repo_only:
                 repo_only.add(rel_path)

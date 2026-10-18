@@ -409,17 +409,20 @@ def test_clone_repo_raises_when_commit_missing(monkeypatch: pytest.MonkeyPatch, 
     assert git_client.closed is True
 
 
-def test_compare_trees_rsync_archive_has_extra_file(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("rel_path", ["b.txt", ".asf.yaml", ".cargo/config.toml"])
+def test_compare_trees_rsync_archive_has_extra_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rel_path: str
+) -> None:
     temp_dir = safe.StatePath(tmp_path)
     repo_dir = temp_dir / "repo"
     archive_dir = temp_dir / "archive"
     _make_tree(repo_dir.path, ["a.txt"])
-    _make_tree(archive_dir.path, ["a.txt", "b.txt"])
+    _make_tree(archive_dir.path, ["a.txt", rel_path])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
         stdout="",
-        stderr="*deleting b.txt\n",
+        stderr=f"*deleting {rel_path}\n",
     )
     run_recorder = RunRecorder(completed)
 
@@ -428,20 +431,24 @@ def test_compare_trees_rsync_archive_has_extra_file(monkeypatch: pytest.MonkeyPa
 
     result = atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
 
-    assert result.invalid == {"b.txt"}
+    assert result.invalid == {rel_path}
     assert result.repo_only == set()
 
 
-def test_compare_trees_rsync_content_differs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("rel_path", ["b.txt", ".asf.yaml", ".cargo/config.toml"])
+def test_compare_trees_rsync_content_differs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rel_path: str
+) -> None:
     temp_dir = safe.StatePath(tmp_path)
     repo_dir = temp_dir / "repo"
     archive_dir = temp_dir / "archive"
-    _make_tree(repo_dir.path, ["a.txt", "b.txt"])
-    _make_tree(archive_dir.path, ["a.txt", "b.txt"])
+    _make_tree(repo_dir.path, ["a.txt", rel_path])
+    _make_tree(archive_dir.path, ["a.txt", rel_path])
+    (archive_dir.path / rel_path).write_text("different content", encoding="utf-8")
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
-        stdout=">fc......... b.txt\n",
+        stdout=f">fc......... {rel_path}\n",
         stderr="",
     )
     run_recorder = RunRecorder(completed)
@@ -451,7 +458,7 @@ def test_compare_trees_rsync_content_differs(monkeypatch: pytest.MonkeyPatch, tm
 
     result = atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
 
-    assert result.invalid == {"b.txt"}
+    assert result.invalid == {rel_path}
     assert result.repo_only == set()
 
 
@@ -503,16 +510,19 @@ def test_compare_trees_rsync_ignores_root_directory_line(
     assert result.repo_only == set()
 
 
-def test_compare_trees_rsync_ignores_timestamp_only(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("rel_path", ["a.txt", ".asf.yaml", ".cargo/config.toml"])
+def test_compare_trees_rsync_ignores_timestamp_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rel_path: str
+) -> None:
     temp_dir = safe.StatePath(tmp_path)
     repo_dir = temp_dir / "repo"
     archive_dir = temp_dir / "archive"
-    _make_tree(repo_dir.path, ["a.txt"])
-    _make_tree(archive_dir.path, ["a.txt"])
+    _make_tree(repo_dir.path, [rel_path])
+    _make_tree(archive_dir.path, [rel_path])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
-        stdout=".f..t...... a.txt\n",
+        stdout=f".f..t...... {rel_path}\n",
         stderr="",
     )
     run_recorder = RunRecorder(completed)
@@ -526,16 +536,73 @@ def test_compare_trees_rsync_ignores_timestamp_only(monkeypatch: pytest.MonkeyPa
     assert result.repo_only == set()
 
 
-def test_compare_trees_rsync_repo_has_extra_file(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("absolute", [False, True])
+def test_compare_trees_rsync_rejects_paths_outside_trees(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, absolute: bool
+) -> None:
     temp_dir = safe.StatePath(tmp_path)
     repo_dir = temp_dir / "repo"
     archive_dir = temp_dir / "archive"
-    _make_tree(repo_dir.path, ["a.txt", "b.txt"])
+    _make_tree(repo_dir.path, [])
+    _make_tree(archive_dir.path, [])
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside the compared trees", encoding="utf-8")
+    rel_path = str(outside) if absolute else "../outside.txt"
+    completed = subprocess.CompletedProcess(
+        args=["rsync"],
+        returncode=0,
+        stdout=f">fc......... {rel_path}\n",
+        stderr="",
+    )
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/rsync")
+    monkeypatch.setattr(subprocess, "run", RunRecorder(completed))
+
+    with pytest.raises(ValueError):
+        atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
+
+
+@pytest.mark.parametrize("tree", ["repo", "archive"])
+def test_compare_trees_rsync_rejects_symlinks_outside_trees(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, tree: str
+) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["config.toml"])
+    _make_tree(archive_dir.path, ["config.toml"])
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside the compared trees", encoding="utf-8")
+    link = tmp_path / tree / "config.toml"
+    link.unlink()
+    link.symlink_to(outside)
+    completed = subprocess.CompletedProcess(
+        args=["rsync"],
+        returncode=0,
+        stdout=">fc......... config.toml\n",
+        stderr="",
+    )
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/rsync")
+    monkeypatch.setattr(subprocess, "run", RunRecorder(completed))
+
+    with pytest.raises(ValueError, match="not within managed root"):
+        atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
+
+
+@pytest.mark.parametrize("rel_path", ["b.txt", ".asf.yaml", ".cargo/config.toml"])
+def test_compare_trees_rsync_repo_has_extra_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rel_path: str
+) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt", rel_path])
     _make_tree(archive_dir.path, ["a.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
-        stdout=">f+++++++++ b.txt\n",
+        stdout=f">f+++++++++ {rel_path}\n",
         stderr="",
     )
     run_recorder = RunRecorder(completed)
@@ -546,7 +613,7 @@ def test_compare_trees_rsync_repo_has_extra_file(monkeypatch: pytest.MonkeyPatch
     result = atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
 
     assert result.invalid == set()
-    assert result.repo_only == {"b.txt"}
+    assert result.repo_only == {rel_path}
 
 
 def test_compare_trees_rsync_trees_match(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
