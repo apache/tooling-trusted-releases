@@ -168,6 +168,7 @@ async def test_start_rejects_automatic_publish_for_expedited(monkeypatch) -> Non
         expedited=True,
         podling_thread_id=None,
     )
+    data.release = mock.MagicMock(return_value=SimpleNamespace(demand=mock.AsyncMock(return_value=release)))
     data.project = mock.MagicMock(
         return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
     )
@@ -191,7 +192,6 @@ async def test_start_rejects_automatic_publish_for_expedited(monkeypatch) -> Non
             "[VOTE] Release example 1.0",
             "Please vote.",
             "Alice",
-            release=release,
             promote=True,
             automatic_publish_when_resolved=True,
         )

@@ -146,7 +146,7 @@ async def all_releases(project: sql.Project) -> list[sql.Release]:
             results.append(release)
 
     for release in results:
-        release.project = project
+        db.set_committed_value(release, "project", project)
 
     try:
         # This rejects any non PEP 440 versions
@@ -946,8 +946,8 @@ async def releases_by_phase(project: sql.Project, phase: sql.ReleasePhase) -> li
             results.append(release)
 
     for release in results:
-        # Don't need to eager load and lose it when the session closes
-        release.project = project
+        # The caller already has the project, so stitch it on as loaded state rather than eager loading
+        db.set_committed_value(release, "project", project)
     return results
 
 
@@ -1205,7 +1205,7 @@ async def user_topnav(
     for project in user_projects:
         active_releases = releases_by_project.get(project.key, [])
         for release in active_releases:
-            release.project = project
+            db.set_committed_value(release, "project", project)
         if not user.can_view_embargoed_release(project.committee, asf_uid, is_member=is_member):
             active_releases = [r for r in active_releases if (not r.is_embargoed)]
         if active_releases:

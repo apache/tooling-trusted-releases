@@ -336,8 +336,7 @@ async def test_recheck_session(
     if not isinstance(existing, sql.UserSession):
         raise base.ASFQuartException("No session to recheck", errorcode=400)
 
-    existing.last_account_check = 0
-    await asfquart.APP.sessions.save(existing, {"last_account_check"})
+    await asfquart.APP.sessions.save(existing, {"last_account_check": 0})
     return await web.redirect(root.index)
 
 
