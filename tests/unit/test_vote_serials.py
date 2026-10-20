@@ -474,7 +474,6 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
                     vote_duration_choice=72,
                     subject="[VOTE] Release",
                     body_data="Please vote",
-                    release=release_model,
                     promote=False,
                 )
                 assert task.task_args["vote_seq"] == 2
@@ -658,7 +657,9 @@ async def test_vote_email_labels_reflect_membership(
             is_binding, _committee = await user.is_binding_for_release(
                 release_model.project.committee, "chair", vote_round, caller_data=data
             )
-            result = await writer.send_user_vote(release_model, "+1", "", "Voter", is_binding)
+            result = await writer.send_user_vote(
+                safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "+1", "", "Voter", is_binding
+            )
 
         assert result == (["dev@project.apache.org"], "")
         message_task = (

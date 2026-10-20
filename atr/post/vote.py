@@ -98,7 +98,9 @@ async def selected_post(  # noqa: C901
 
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
-        email_to, error_message = await wafc.vote.send_user_vote(release, vote, comment, session.fullname, is_binding)
+        email_to, error_message = await wafc.vote.send_user_vote(
+            project_key, version_key, vote, comment, session.fullname, is_binding
+        )
 
     if error_message:
         await quart.flash(error_message, "error")

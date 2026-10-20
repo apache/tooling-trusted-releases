@@ -117,7 +117,7 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
         for project in user_projects:
             active_releases = releases_by_project.get(project.key, [])
             for release in active_releases:
-                release.project = project
+                db.set_committed_value(release, "project", project)
             if not user.can_view_embargoed_release(project.committee, uid, is_member=session_data.is_member):
                 active_releases = [r for r in active_releases if (not r.is_embargoed)]
             all_projects.append(

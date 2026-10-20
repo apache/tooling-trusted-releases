@@ -70,9 +70,10 @@ class SafeSession:
             await aioshutil.rmtree(self._temp_dir)
             raise
 
-    async def __aexit__(self, _exc_type, _exc, _tb):
-        await self._stack.aclose()
-        return False
+    # The exception is forwarded rather than closing the stack blind, so that the session
+    # knows the block failed and does not report its unflushed changes as the error
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
+        return await self._stack.__aexit__(exc_type, exc, tb)
 
 
 async def finalise_revision(

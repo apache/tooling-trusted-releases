@@ -76,8 +76,7 @@ async def test_account_check_fails_open_when_ldap_unavailable(monkeypatch):
     await sessions.account_check(user_session, 123.0)
 
     deleted.assert_not_awaited()
-    save.assert_awaited_once()
-    assert user_session.last_account_check == 123.0
+    save.assert_awaited_once_with(user_session, {"last_account_check": 123.0})
 
 
 async def test_account_check_revokes_user_when_admin_check_unavailable(monkeypatch):
@@ -106,8 +105,7 @@ async def test_account_check_saves_timestamp_when_active(monkeypatch):
 
     await sessions.account_check(user_session, 123.0)
 
-    save.assert_awaited_once()
-    assert user_session.last_account_check == 123.0
+    save.assert_awaited_once_with(user_session, {"last_account_check": 123.0})
 
 
 async def test_create_logs_auth_success(store, monkeypatch):
@@ -219,7 +217,7 @@ async def test_destroy_then_save_does_not_resurrect(store):
     assert user_session is not None
 
     await store.destroy(hsid)
-    await store.save(user_session, {"last_account_check"})
+    await store.save(user_session, {"last_account_check": 12345.0})
     assert await store.validate(hsid) is None
 
 
@@ -294,14 +292,14 @@ async def test_revoke_by_uid_removes_all_sessions(store):
     assert await store.validate(hsid3) is not None
 
 
-async def test_save_persists_mutations(store):
+async def test_save_persists_values(store):
     hsid = _hsid()
     await store.create(hsid, _session_data())
     user_session = await store.validate(hsid)
     assert user_session is not None
 
-    user_session.last_account_check = 12345.0
-    await store.save(user_session, {"last_account_check"})
+    await store.save(user_session, {"last_account_check": 12345.0})
+    assert user_session.last_account_check == 12345.0
 
     reloaded = await store.validate(hsid)
     assert reloaded is not None

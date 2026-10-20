@@ -211,12 +211,19 @@ class FoundationCommitter(GeneralPublic):
 
     async def send_user_vote(
         self,
-        release: sql.Release,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         vote: str,
         comment: str,
         fullname: str,
         is_binding: bool = False,
     ) -> tuple[list[str], str]:
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            _project=True,
+            _committee=True,
+        ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
         # Get the email thread
         latest_vote_task = await interaction.release_current_vote_task(release)
@@ -334,7 +341,6 @@ class ReleaseManager(CommitteeParticipant):
         subject: str,
         body_data: str,
         asf_fullname: str,
-        release: sql.Release | None = None,
         promote: bool = True,
         permitted_recipients: list[str] | None = None,
         email_cc: list[str] | None = None,
@@ -349,13 +355,12 @@ class ReleaseManager(CommitteeParticipant):
         download_path_suffix: safe.RelPath | None = None,
         acknowledged_concerns: frozenset[str] = frozenset(),
     ) -> sql.Task:
-        if release is None:
-            release = await self.__data.release(
-                project_key=str(project_key),
-                version=str(version_key),
-                _project=True,
-                _committee=True,
-            ).demand(storage.AccessError("Release not found", status=404))
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            _project=True,
+            _committee=True,
+        ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
         if release.expedited and (release.committee is not None) and release.committee.is_podling:
             raise storage.AccessError("Expedited releases are not available for podling projects", status=400)
@@ -815,7 +820,6 @@ class ReleaseManager(CommitteeParticipant):
                     vote_duration_choice=vote_duration,
                     subject=subject_data,
                     body_data=body_data,
-                    release=release,
                     promote=False,
                     expected_revision=release.safe_latest_revision_number,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
@@ -1148,7 +1152,6 @@ class ReleaseManager(CommitteeParticipant):
                     vote_duration_choice=vote_duration,
                     subject=subject_data,
                     body_data=body_data,
-                    release=release,
                     promote=False,
                     expected_revision=release.safe_latest_revision_number,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
