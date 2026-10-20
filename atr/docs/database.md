@@ -160,6 +160,32 @@ unique constraint on `(project_key, version)` to prevent creating duplicate rele
 project version. The `Revision` model has two unique constraints: one on `(release_key, seq)` and
 another on `(release_key, number)`, ensuring that revision numbers are unique within a release.
 
+### Sessions and detached objects
+
+A session lasts for its `async with` block. Objects loaded in a `db.session()` or `storage.write()`
+block are attached to that session and detached once it ends. Column values on a detached object can
+still be read, because sessions are created with `expire_on_commit=False`, but nothing else about a
+detached object works.
+
+Assigning to a detached object raises
+[`db.DetachedMutationError`](/ref/atr/db/__init__.py) (DetachedMutationError), as the write would
+otherwise be discarded. Leaving a block with uncommitted changes raises
+[`db.UnflushedChangesError`](/ref/atr/db/__init__.py) (UnflushedChangesError), as they would
+otherwise be rolled back. Reading a relationship that was not eager loaded raises in SQLAlchemy, so
+the query helpers on [`db.Session`](/ref/atr/db/__init__.py) (Session) take flags such as
+`_project=True` to load what callers will read.
+
+Writers' arguments use keys like `safe.ProjectKey` and load the object in their own session, rather than
+accepting an ORM object from another block. `await data.merge(obj)` attaches a copy of an object to
+the current session when one has to be carried across. To make a related object available for
+rendering, such as `release.project` when the handler already holds the project,
+[`db.set_committed_value(release, "project", project)`](/ref/atr/db/__init__.py)
+(set_committed_value) sets it as loaded state without marking anything dirty.
+
+The `check-session-boundaries` pre-commit hook rejects a `db.session()` opened inside a
+`storage.write()` or `storage.read()` block, and public writer methods that take a `sql` table model
+as a parameter.
+
 ## Cascade deletions
 
 ATR uses two kinds of cascade deletions: ORM-level cascades managed by SQLAlchemy, and DB-level
