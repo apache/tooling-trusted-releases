@@ -73,6 +73,11 @@ from the current request context. The write object checks LDAP memberships and r
 [`storage.AccessError`](/ref/atr/storage/__init__.py) (AccessError) if the user is not authorized
 for the requested permission level.
 
+The writer's database session lasts for the `async with` block. Anything a writer returns is
+attached while the block is open and detached once it ends, so read
+[Sessions and detached objects](database#sessions-and-detached-objects) before holding on to a
+returned object past the end of the block.
+
 Because projects belong to committees, we provide
 [`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py)
 (as_project_committee_member) and
