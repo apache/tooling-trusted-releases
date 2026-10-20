@@ -600,41 +600,41 @@ async def _request_approval(
             get.projects.projects, error="CAP approval is not configured. Please contact an administrator."
         )
 
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), _committee=True, _releases=True).get()
+        if (project is None) or (project.committee is None):
+            return await session.redirect(get.projects.projects, error=f"Project '{project_key}' not found.")
+        if project.committee.is_podling:
+            return await session.redirect(
+                get.projects.projects,
+                error=(
+                    "CAP approval voting is not available for podlings. Archival or deletion of a podling is an"
+                    " Incubator PMC decision."
+                ),
+            )
+        committee_key = project.committee.key
+        display_name = project.display_name
+        active_siblings = len(
+            await data.project(committee_key=committee_key, status=sql.ProjectStatus.ACTIVE, _committee=False).all()
+        )
+        eligibility_error = _action_eligibility_error(project, action, active_siblings)
+        if eligibility_error is not None:
+            return await session.redirect(get.projects.projects, error=eligibility_error)
+        existing = await data.approval_request(
+            project_key=str(project_key),
+            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+        ).get()
+        if existing is not None:
+            return await session.redirect(
+                get.projects.projects,
+                error=f"A CAP approval request to {existing.action.value} this project is already in progress.",
+            )
+
     async with storage.write(session) as write:
         try:
             wacm = await _write_as_committee_member(write, session, project_key)
         except storage.AccessError as e:
             return await session.redirect(get.projects.projects, error=f"Error requesting {action.value} approval: {e}")
-
-        async with db.session() as data:
-            project = await data.project(key=str(project_key), _committee=True, _releases=True).get()
-            if (project is None) or (project.committee is None):
-                return await session.redirect(get.projects.projects, error=f"Project '{project_key}' not found.")
-            if project.committee.is_podling:
-                return await session.redirect(
-                    get.projects.projects,
-                    error=(
-                        "CAP approval voting is not available for podlings. Archival or deletion of a podling is an"
-                        " Incubator PMC decision."
-                    ),
-                )
-            committee_key = project.committee.key
-            display_name = project.display_name
-            active_siblings = len(
-                await data.project(committee_key=committee_key, status=sql.ProjectStatus.ACTIVE, _committee=False).all()
-            )
-            eligibility_error = _action_eligibility_error(project, action, active_siblings)
-            if eligibility_error is not None:
-                return await session.redirect(get.projects.projects, error=eligibility_error)
-            existing = await data.approval_request(
-                project_key=str(project_key),
-                status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-            ).get()
-            if existing is not None:
-                return await session.redirect(
-                    get.projects.projects,
-                    error=f"A CAP approval request to {existing.action.value} this project is already in progress.",
-                )
 
         closes_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
             minutes=constants.CAP_VOTE_DURATION_MINUTES

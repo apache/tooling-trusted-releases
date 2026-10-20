@@ -29,6 +29,7 @@ import sqlalchemy.dialects.sqlite
 import sqlalchemy.event as event
 import sqlalchemy.ext.asyncio
 import sqlalchemy.orm as orm
+import sqlalchemy.orm.attributes as attributes
 import sqlalchemy.sql
 import sqlmodel
 import sqlmodel.sql.expression as expression
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 global_log_query: bool = False
 _global_atr_engine: sqlalchemy.ext.asyncio.AsyncEngine | None = None
 _global_atr_sessionmaker: sqlalchemy.ext.asyncio.async_sessionmaker | None = None
+_global_detached_guard_installed: bool = False
 
 
 T = TypeVar("T")
@@ -82,6 +84,14 @@ class NotSet:
 
 NOT_SET: Final[NotSet] = NotSet()
 type Opt[T] = T | NotSet
+
+
+class DetachedMutationError(RuntimeError):
+    pass
+
+
+class UnflushedChangesError(RuntimeError):
+    pass
 
 
 class Query[T]:
@@ -162,6 +172,16 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self.log_queries: bool = global_log_query
         if explicit_value_passed_by_sessionmaker is not None:
             self.log_queries = explicit_value_passed_by_sessionmaker
+
+    # This is __aexit__ and not close() because the async close runs in a shielded task
+    # which cannot see an exception that is propagating out of the block
+    async def __aexit__(self, type_: Any, value: Any, traceback: Any) -> None:
+        sync = self.sync_session
+        pending = [o for o in sync.dirty if sync.is_modified(o)] + list(sync.new) + list(sync.deleted)
+        await super().__aexit__(type_, value, traceback)
+        if pending and (type_ is None):
+            names = ", ".join(sorted({type(o).__name__ for o in pending}))
+            raise UnflushedChangesError(f"Session closed with uncommitted changes to: {names}")
 
     # TODO: Need to type all of these arguments correctly
 
@@ -1337,6 +1357,7 @@ def init_database(app: base.QuartApp) -> None:
         _global_atr_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(
             bind=engine, class_=Session, expire_on_commit=False
         )
+        install_detached_mutation_guard()
 
         # Run any pending migrations on startup
         log.info("Applying database migrations via init_database...")
@@ -1380,6 +1401,22 @@ async def init_database_for_worker() -> None:
     _global_atr_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(
         bind=engine, class_=Session, expire_on_commit=False
     )
+    install_detached_mutation_guard()
+
+
+def install_detached_mutation_guard() -> None:
+    global _global_detached_guard_installed
+    if _global_detached_guard_installed:
+        return
+    for mapper in sqlmodel.SQLModel._sa_registry.mappers:
+        for prop in mapper.attrs:
+            instrumented = getattr(mapper.class_, prop.key)
+            if instrumented.impl.collection:
+                event.listen(instrumented, "append", _collection_guard(prop.key))
+                event.listen(instrumented, "remove", _collection_guard(prop.key))
+            else:
+                event.listen(instrumented, "set", _scalar_guard(prop.key))
+    _global_detached_guard_installed = True
 
 
 def is_defined[T](v: T | NotSet) -> TypeGuard[T]:
@@ -1495,9 +1532,41 @@ def session_function[**P, R](
     return wrapper
 
 
+def set_committed_value(instance: object, key: str, value: object) -> None:
+    """Populate an attribute as if loaded, without marking the instance dirty or firing events."""
+    attributes.set_committed_value(instance, key, value)
+
+
 async def shutdown_database() -> None:
     if _global_atr_engine:
         log.info("Closing database")
         await _global_atr_engine.dispose()
     else:
         log.info("No database to close")
+
+
+def _check_detached(target: object, attr_key: str, initiator: attributes.AttributeEventToken) -> None:
+    if not attributes.instance_state(target).detached:
+        return
+    # Setting a back-populated relationship fires the other side first, so we name
+    # the attribute the caller wrote, which the initiator records
+    origin = f"{initiator.impl.class_.__name__}.{initiator.impl.key}"
+    touched = f"{type(target).__name__}.{attr_key}"
+    where = origin if (origin == touched) else f"{origin} (via {touched})"
+    raise DetachedMutationError(
+        f"{where} was set on a detached instance - its session has closed, so this write would be silently discarded"
+    )
+
+
+def _collection_guard(attr_key: str) -> Callable[[object, object, attributes.AttributeEventToken], None]:
+    def guard(target: object, value: object, initiator: attributes.AttributeEventToken) -> None:
+        _check_detached(target, attr_key, initiator)
+
+    return guard
+
+
+def _scalar_guard(attr_key: str) -> Callable[[object, object, object, attributes.AttributeEventToken], None]:
+    def guard(target: object, value: object, old_value: object, initiator: attributes.AttributeEventToken) -> None:
+        _check_detached(target, attr_key, initiator)
+
+    return guard

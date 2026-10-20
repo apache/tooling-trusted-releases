@@ -1862,9 +1862,9 @@ async def toggle_view_post(
 
     Toggle between admin and user views.
     """
-    session.session.downgrade_admin_to_user = not session.session.downgrade_admin_to_user
-    await asfquart.APP.sessions.save(session.session, {"downgrade_admin_to_user"})
-    quart.g.is_session_downgraded = session.session.downgrade_admin_to_user
+    downgraded = not session.session.downgrade_admin_to_user
+    await asfquart.APP.sessions.save(session.session, {"downgrade_admin_to_user": downgraded})
+    quart.g.is_session_downgraded = downgraded
 
     message = "Viewing as regular user" if session.session.downgrade_admin_to_user else "Viewing as admin"
     await quart.flash(message, "success")

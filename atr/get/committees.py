@@ -102,7 +102,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
 
     project_list = list(committee.projects)
     for project in project_list:
-        project.committee = committee
+        db.set_committed_value(project, "committee", committee)
     project_list.sort(key=lambda p: interaction.project_order_key(p, latest_releases.get(str(p.key))))
     signing_keys = sorted(
         committee.signing_certificates,

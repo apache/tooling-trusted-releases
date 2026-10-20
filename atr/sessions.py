@@ -57,8 +57,7 @@ async def account_check(session: sql.UserSession, current_time: float) -> None:
         await deleted_or_banned(uid)
         raise base.ASFQuartException("Account is disabled", errorcode=401)
 
-    session.last_account_check = current_time
-    await asfquart.APP.sessions.save(session, {"last_account_check"})
+    await asfquart.APP.sessions.save(session, {"last_account_check": current_time})
 
 
 async def deleted_or_banned(uid: str) -> None:
@@ -244,17 +243,20 @@ class Store:
                 await data.commit()
         return count
 
-    async def save(self, user_session: sql.UserSession, fields: set[MutableSessionField]) -> None:
-        if not fields.issubset(_MUTABLE_SESSION_FIELDS):
+    async def save(self, user_session: sql.UserSession, values: dict[MutableSessionField, float | bool | None]) -> None:
+        if not set(values).issubset(_MUTABLE_SESSION_FIELDS):
             raise ValueError("Invalid fields")
+        # The caller's copy is detached, cached on quart.g for the request, so update it as loaded state
+        for field, value in values.items():
+            db.set_committed_value(user_session, field, value)
         async with db.session() as data:
             statement = sqlmodel.select(sql.UserSession).where(sql.UserSession.sid_hash == user_session.sid_hash)
             result = await data.execute(statement)
             existing = result.scalar_one_or_none()
             if existing is None:
                 return
-            for field in fields:
-                setattr(existing, field, getattr(user_session, field))
+            for field, value in values.items():
+                setattr(existing, field, value)
             await data.commit()
 
     async def validate(self, hsid: str) -> sql.UserSession | None:

@@ -185,6 +185,14 @@ repos:
       pass_filenames: false
       always_run: true
 
+    - id: check-session-boundaries
+      name: check session boundaries
+      description: Check that db.session() is not nested inside storage contexts and that writers take keys, not ORM objects
+      entry: uv run --frozen python scripts/lint/check_session_boundaries.py
+      language: system
+      pass_filenames: false
+      always_run: true
+
     - id: check-when-dependencies-updated
       name: check when dependencies were updated
       description: Verify that dependencies were updated within the configured timeframe, for ASVS 15.1.1
