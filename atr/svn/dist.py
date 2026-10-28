@@ -246,7 +246,7 @@ def _choose_version(
     name_version = version_from_filename(filename) if filename else None
     if name_version is None:
         return dir_version, dir_source
-    if (dir_version is not None) and not name_version.startswith(dir_version):
+    if (dir_version is not None) and not _refines(name_version, dir_version):
         return dir_version, dir_source
     return name_version, "filename"
 
@@ -261,6 +261,15 @@ def _normalise_version(version: str) -> str:
     # A version dir sometimes uses underscores as the separator (0_92, 1_4_7); the release
     # key uses dots. Only the key changes - the real path keeps its underscores for downloads
     return version.replace("_", ".")
+
+
+def _refines(candidate: str, base: str) -> bool:
+    # 4.0.0-rc-7 refines a 4 series and 4.5.13 a 4.5 one; 40.1 refines neither. The candidate has
+    # to continue the base at a separator, so a longer number can't pass as a prefix match
+    if not candidate.startswith(base):
+        return False
+    tail = candidate[len(base) :]
+    return (tail == "") or (tail[0] in ".-_")
 
 
 def _split_combined(component: str) -> tuple[str, str] | None:
@@ -288,7 +297,15 @@ def _subproject_and_dir_version(
     combined = _split_combined(first)
     if combined is not None:
         name, version = combined
-        return (None if name == committee else name), version, "combined"
+        subproject = None if name == committee else name
+        # maven-4/4.0.0-rc-7: the combined dir is a major-series grouping and the version dir
+        # below it is the release, so that one wins when it refines the series number. Without
+        # this the whole series keys as one release called "4", and deleting a superseded RC
+        # dir archives that instead of the RC
+        for part in parts[1:]:
+            if _is_version_dir(part) and _refines(_normalise_version(part), version):
+                return subproject, part, "dir"
+        return subproject, version, "combined"
     for part in parts[1:]:
         if _is_version_dir(part):
             return first, part, "dir"

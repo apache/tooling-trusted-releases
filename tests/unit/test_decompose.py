@@ -120,6 +120,19 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     ("jackrabbit", ("jackrabbit", "2.20.1"), "jackrabbit-2.20.1.tar.gz", None, "2.20.1", _SOURCE),
     # A combined name-version dir splits into subproject and version
     ("spark", ("spark-kubernetes-operator-0.8.0",), None, "spark-kubernetes-operator", "0.8.0", None),
+    # Maven groups each major as maven-3/ and maven-4/ with the release dir below, so the
+    # deeper version dir is the release and the combined dir only the series - with or
+    # without a filename to pin it, since a deleted RC dir arrives with none
+    (
+        "maven",
+        ("maven-4", "4.0.0-rc-7", "binaries"),
+        "apache-maven-4.0.0-rc-7-bin.tar.gz",
+        None,
+        "4.0.0-rc-7",
+        _BINARY,
+    ),
+    ("maven", ("maven-4", "4.0.0-rc-7"), None, None, "4.0.0-rc-7", None),
+    ("maven", ("maven-3", "3.9.14"), None, None, "3.9.14", None),
     # A numeric build tail stays part of the version (javaee-api 8.0 build 6)
     ("tomee", ("javaee-api-8.0-6",), "javaee-api-8.0-6-source-release.zip", "javaee-api", "8.0-6", _SOURCE),
     # A flat file with a digit mid-name (sharepoint-2007-plugin) keeps it in the subproject and
