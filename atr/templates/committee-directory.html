@@ -161,12 +161,12 @@
                     </div>
                     {% if current_user and (committee.key in current_user.member_committees) and (not committee_is_standing(committee.key)) %}
                         <a href="{{ as_url(get.projects.add_project, committee_key=committee.key) }}"
-                           title="Create a project for {{ committee.display_name }}"
+                           title="Create a new sub-project for {{ committee.display_name }}"
                            class="text-decoration-none d-block mt-4 mb-3">
                             <div class="card h-100 shadow-sm atr-cursor-pointer page-project-subcard">
                                 <div class="card-body d-flex align-items-center text-secondary p-3">
                                     <div>
-                                        <i class="bi bi-plus-circle me-2"></i>Create project
+                                        <i class="bi bi-plus-circle me-2"></i>Create a new sub-project
                                         <br />
                                         <small class="text-muted">for {{ committee.display_name }}</small>
                                     </div>
