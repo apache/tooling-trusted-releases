@@ -801,7 +801,7 @@ async def _render_actions_card(
                     htm.a(
                         ".btn.btn-sm.btn-outline-primary",
                         href=util.as_url(add_project, committee_key=project.committee.key),
-                    )["Create a sibling project"]
+                    )["Create a new sub-project"]
                 )
                 body.append(
                     htm.a(

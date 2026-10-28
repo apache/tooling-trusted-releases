@@ -92,7 +92,7 @@
           {% if project.committee.key in current_user.member_committees %}
             <span class="text-muted me-2">/</span>
             <a href="{{ as_url(get.projects.add_project, committee_key=project.committee.key) }}"
-               class="text-decoration-none me-2">Create a sibling project</a>
+               class="text-decoration-none me-2">Create a new sub-project</a>
           {% endif %}
           {% if completed_releases %}
             <span class="text-muted me-2">/</span>
