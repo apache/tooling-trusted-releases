@@ -133,7 +133,7 @@ activity, so the list is usually already populated. Your first step is to check 
 your PMC's [release catalog](https://release-catalog.apache.org) and confirm that it reflects your
 *true number of projects*.
 
-If a project is missing, a committee member can add it using the ***Create project*** button under
+If a project is missing, a committee member can add it using the ***Create a new sub-project*** button under
 their committee in the Committee directory, which opens the ***Add project*** form. You supply two
 things: a project name in title case, to which ATR adds the "Apache" prefix for you, and a project
 key in lower case. The key must be your committee key, or your committee key followed by a hyphen
