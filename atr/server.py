@@ -839,6 +839,12 @@ async def _initialise_pubsub(conf: type[config.AppConfig], app: base.QuartApp):
         )
 
 
+def _sync_test_committee_roster(committee: sql.Committee) -> None:
+    committee.committee_members = sorted({*committee.committee_members, "test", "test-pmc"})
+    committee.committers = sorted({*committee.committers, "test", "test-pmc", "test-rm", "test-committer"})
+    committee.release_managers = sorted({*committee.release_managers, "test", "test-rm"})
+
+
 async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
     if not config.is_test_mode():
         return
@@ -851,12 +857,10 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
                 name="Test Committee",
                 is_podling=False,
                 keys_mode=sql.KeysMode.AUTOMATIC,
-                committee_members=["test"],
-                committers=["test"],
-                release_managers=["test"],
             )
             data.add(test_committee)
-            await data.commit()
+        _sync_test_committee_roster(test_committee)
+        await data.commit()
 
         test_committee.mail_addresses = ["dev@test.apache.org", "user@test.apache.org"]
 

@@ -123,3 +123,15 @@ If you are working on admin functions without LDAP credentials then start the se
 ```shell
 ADMIN_USERS_ADDITIONAL=<uid> make serve-local`
 ```
+
+### Mock logins in test mode (`TESTS=1`)
+
+In local development and test mode, mock login endpoints allow testing different authorization tiers without using real ASF OAuth:
+
+* `/test/login` — Default test account (`test`): PMC Member & Committer on `test`, with Administrator rights
+* `/test/login-pmc` — PMC Member account (`test-pmc`): Can start/resolve votes, publish releases, cast binding votes, and designate release managers
+* `/test/login-rm` (or `/test/login-release-manager`) — Designated Release Manager (`test-rm`): Has release management powers (start/resolve votes, publish), but cannot cast binding votes or designate other release managers
+* `/test/login-committer` — Committer Only (`test-committer`): Can start drafts and upload candidate revisions; cannot start formal votes or publish
+* `/test/login-banned` — Disabled account: Session rejected to test account revocation
+
+You can check your effective permissions at any time by visiting `/user/permissions` (or **User** -> **Permissions** in the navigation bar).

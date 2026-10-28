@@ -112,6 +112,106 @@ async def test_login_banned(
 
 
 @get.typed
+async def test_login_pmc(_session: web.Public, _test_login_pmc: Literal["test/login-pmc"]) -> web.WerkzeugResponse:
+    """
+    URL: /test/login-pmc
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+
+    async with db.session() as data:
+        committee = await data.committee(key="test").get()
+        if committee:
+            if "test-pmc" not in committee.committee_members:
+                committee.committee_members = sorted({*committee.committee_members, "test-pmc"})
+            if "test-pmc" not in committee.committers:
+                committee.committers = sorted({*committee.committers, "test-pmc"})
+            await data.commit()
+
+    await util.write_session(
+        sql.UserSession(
+            uid="test-pmc",
+            fullname="Test PMC Member",
+            member_committees=["test"],
+            participant_committees=["test"],
+        )
+    )
+    return await web.redirect(root.index)
+
+
+@get.typed
+async def test_login_rm(_session: web.Public, _test_login_rm: Literal["test/login-rm"]) -> web.WerkzeugResponse:
+    """
+    URL: /test/login-rm
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+
+    async with db.session() as data:
+        committee = await data.committee(key="test").get()
+        if committee:
+            if "test-rm" in committee.committee_members:
+                committee.committee_members = [u for u in committee.committee_members if u != "test-rm"]
+            if "test-rm" not in committee.committers:
+                committee.committers = sorted({*committee.committers, "test-rm"})
+            if "test-rm" not in committee.release_managers:
+                committee.release_managers = sorted({*committee.release_managers, "test-rm"})
+            await data.commit()
+
+    await util.write_session(
+        sql.UserSession(
+            uid="test-rm",
+            fullname="Test Designated Release Manager",
+            member_committees=[],
+            participant_committees=["test"],
+        )
+    )
+    return await web.redirect(root.index)
+
+
+@get.typed
+async def test_login_release_manager(
+    _session: web.Public, _test_login_release_manager: Literal["test/login-release-manager"]
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/login-release-manager
+    """
+    return await test_login_rm(_session, "test/login-rm")
+
+
+@get.typed
+async def test_login_committer(
+    _session: web.Public, _test_login_committer: Literal["test/login-committer"]
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/login-committer
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+
+    async with db.session() as data:
+        committee = await data.committee(key="test").get()
+        if committee:
+            if "test-committer" in committee.committee_members:
+                committee.committee_members = [u for u in committee.committee_members if u != "test-committer"]
+            if "test-committer" in committee.release_managers:
+                committee.release_managers = [u for u in committee.release_managers if u != "test-committer"]
+            if "test-committer" not in committee.committers:
+                committee.committers = sorted({*committee.committers, "test-committer"})
+            await data.commit()
+
+    await util.write_session(
+        sql.UserSession(
+            uid="test-committer",
+            fullname="Test Committer Only",
+            member_committees=[],
+            participant_committees=["test"],
+        )
+    )
+    return await web.redirect(root.index)
+
+
+@get.typed
 async def test_merge(
     session: web.Committer,
     _test_merge: Literal["test/merge"],

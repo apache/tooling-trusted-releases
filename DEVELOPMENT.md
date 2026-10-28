@@ -72,6 +72,32 @@ The container:
 - Mounts `atr/` for live code changes without rebuilding
 - Auto-reloads when files change
 
+### Mock authentication & test logins (Test mode `TESTS=1`)
+
+When running in test mode (`TESTS=1`, which is enabled by default in Docker Compose and `make serve-local`), ATR provides mock login endpoints that bypass the external ASF OAuth service (`oauth.apache.org`):
+
+| Endpoint | Account UID | Role on `test` Committee | Capabilities |
+| --- | --- | --- | --- |
+| [`/test/login`](https://localhost.apache.org:8080/test/login) | `test` | PMC Member & Committer (Admin) | Platform administration, PMC governance, binding votes, release publishing |
+| [`/test/login-pmc`](https://localhost.apache.org:8080/test/login-pmc) | `test-pmc` | PMC Member | PMC governance, binding votes, designate release managers, upload committee KEYS, start/resolve votes |
+| [`/test/login-rm`](https://localhost.apache.org:8080/test/login-rm) | `test-rm` | Designated Release Manager | Start/resolve formal votes, publish/announce releases, record distributions; non-binding vote, cannot designate RMs |
+| [`/test/login-committer`](https://localhost.apache.org:8080/test/login-committer) | `test-committer` | Committer Only | Start candidate drafts, upload candidate revisions; cannot start formal votes or publish |
+| [`/test/login-banned`](https://localhost.apache.org:8080/test/login-banned) | `test-banned` | Disabled / Banned | Session rejected to test account revocation |
+
+#### Checking permissions in the UI
+
+To view what actions you can and cannot perform:
+
+1. In the top navigation bar, click **User** (or **Configure**) -> **Permissions**.
+2. Or visit [`/user/permissions`](https://localhost.apache.org:8080/user/permissions) directly.
+
+This page displays:
+
+- **Global account status**: User ID, Full Name, Admin status, ASF Membership, and Chair status.
+- **What you can do**: Allowed actions based on active roles.
+- **What you cannot do**: Restricted actions and prerequisites needed to unlock them.
+- **Committee breakdown**: Table displaying your role and specific permissions on each committee.
+
 **Optional LDAP credentials** (for rsync writes and certain tasks):
 
 ```shell

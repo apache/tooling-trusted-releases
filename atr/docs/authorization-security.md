@@ -461,7 +461,12 @@ significant:
 2. Authorization checks in the storage layer are completely skipped for the test committee
    [`release`](/ref/atr/storage/writers/release.py).
 3. Rate limiting is disabled [`server`](/ref/atr/server.py).
-4. A hardcoded "test" user bypasses LDAP verification.
+4. Hardcoded mock accounts (`test`, `test-pmc`, `test-rm`, `test-committer`) bypass LDAP verification:
+   * `/test/login` (`test`): PMC Member & Committer on `test`, with Administrator rights
+   * `/test/login-pmc` (`test-pmc`): PMC Member on `test` (binding votes, PMC governance, release publishing)
+   * `/test/login-rm` (`test-rm`): Designated Release Manager on `test` (can draft, start/resolve votes, publish; non-binding vote, cannot designate RMs)
+   * `/test/login-committer` (`test-committer`): Committer Only on `test` (can draft releases and upload files; cannot start/resolve votes or publish)
+   * `/test/login-banned` (`test-banned`): Account is disabled (for testing session revocation)
 
 If this is accidentally left enabled in production, every authenticated user gains unauthorized
 access to the test committee and its resources. This flag is intended for use only in development

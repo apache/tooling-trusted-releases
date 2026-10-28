@@ -46,6 +46,11 @@ RESULT_ATTRIBUTES: Final[list[str]] = [
     "uid",
 ]
 
+# Mock accounts that only exist in test mode, and which have no LDAP entry
+TEST_UIDS: Final[frozenset[str]] = frozenset({"test", "test-pmc", "test-rm", "test-committer"})
+# Test accounts that are participants of the test project but not members of the test committee
+TEST_PARTICIPANT_ONLY_UIDS: Final[frozenset[str]] = frozenset({"test-rm", "test-committer"})
+
 SEARCH_OK_RESULT_CODES: Final[tuple[int, int]] = (
     ldap3.core.results.RESULT_SUCCESS,
     ldap3.core.results.RESULT_NO_SUCH_OBJECT,
@@ -303,7 +308,7 @@ async def is_active(asf_uid: str) -> bool:
     import atr.config as config
 
     if config.is_test_mode():
-        if asf_uid == "test":
+        if asf_uid in TEST_UIDS:
             return True
         if asf_uid == "test-banned":
             return False

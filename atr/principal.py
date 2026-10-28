@@ -236,7 +236,10 @@ class AuthoriserASFQuart:
 
         committees = frozenset(asfquart_session.member_committees)
         projects = frozenset(asfquart_session.participant_committees)
-        committees, projects = _augment_test_membership(committees, projects)
+        if config.is_test_mode() and (asf_uid in ldap.TEST_PARTICIPANT_ONLY_UIDS):
+            projects = projects.union({"test"})
+        else:
+            committees, projects = _augment_test_membership(committees, projects)
 
         # We do not check that the ASF UID is the same as the one in the session
         # It is the caller's responsibility to ensure this
@@ -274,10 +277,14 @@ class AuthoriserLDAP:
             self.__cache.last_refreshed[asf_uid] = int(time.time())
             return
 
-        if config.is_test_mode() and (asf_uid == "test"):
+        if config.is_test_mode() and (asf_uid in ldap.TEST_UIDS):
             # The test user does not exist in LDAP, so we hardcode their data
-            committees = frozenset({"test"})
-            projects = frozenset({"test"})
+            if asf_uid in ldap.TEST_PARTICIPANT_ONLY_UIDS:
+                committees = frozenset()
+                projects = frozenset({"test"})
+            else:
+                committees = frozenset({"test"})
+                projects = frozenset({"test"})
             self.__cache.member_of[asf_uid] = committees
             self.__cache.participant_of[asf_uid] = projects
             self.__cache.last_refreshed[asf_uid] = int(time.time())
