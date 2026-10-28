@@ -823,6 +823,18 @@ class ReleaseDraftDeleteResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class ReleaseCommitArgs(schema.Strict):
+    project: safe.ProjectKey = schema.example("example")
+    version: safe.VersionKey = schema.example("0.0.1")
+    # None clears a commit that was given earlier
+    commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
+
+
+class ReleaseCommitResults(schema.Strict):
+    endpoint: Literal["/release/commit"] = schema.alias("endpoint")
+    release: sql.Release
+
+
 class ReleaseCreateArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
@@ -923,6 +935,7 @@ class ReleaseStoreQuery:
     version: str
     relpath: str
     expected_revision: str | None = None
+    source_commit: str | None = None
 
 
 class ReleaseStoreResults(schema.Strict):
@@ -937,6 +950,7 @@ class ReleaseUploadArgs(schema.Strict):
     relpath: safe.RelPath = schema.example("example/0.0.1/example-0.0.1-bin.tar.gz")
     content: str = schema.example("This is the content of the file.")
     expected_revision: safe.RevisionNumber | None = schema.default_example(None, "00003")
+    source_commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
 
 
 class ReleaseUploadResults(schema.Strict):

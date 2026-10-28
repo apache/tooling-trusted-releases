@@ -258,7 +258,9 @@ Each call creates a new revision of the draft, so declare all of the archives in
 repository must be one that the project metadata lists, and each path must be a source archive in
 the draft. When ATR compares an archive, it also records a concern unless the repository is in the `apache` organisation and the commit is on one of its branches or tags. If you pass `expected_revision`, ATR refuses the call when the draft has changed since
 that revision. You can make the same call with a personal API token as `POST /api/release/source`,
-giving `project` in place of `publisher` and `jwt`.
+giving `project` in place of `publisher` and `jwt`. That call is not limited to projects with
+several repositories. A project with one repository can also declare an archive this way, and the
+declaration then takes precedence over the commit recorded for the release.
 
 A declaration applies to the archive as it was when the declaration was made, so uploading the
 archive again removes it. Until an archive has a declaration, ATR cannot compare it against its

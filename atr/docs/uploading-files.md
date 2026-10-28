@@ -16,6 +16,7 @@
 * [SVN import](#svn-import)
 * [Command line client](#command-line-client)
 * [Maven plugin](#maven-plugin)
+* [Source commit](#source-commit)
 * [GitHub Actions](#github-actions)
 * [Revisions](#revisions)
 
@@ -94,6 +95,9 @@ Note that:
 * Each upload starts from the files already in the candidate, so files that you do not send are
   kept. Add `--delete` to remove files from the candidate that are absent from your directory.
 
+rsync carries no source commit. If your project has a GitHub source repository, record the commit
+afterwards as described under [Source commit](#source-commit).
+
 If rsync reports an error from ATR, please
 [open an issue](https://github.com/apache/tooling-trusted-releases/issues/new?template=BLANK_ISSUE).
 
@@ -132,6 +136,32 @@ You must start the release in ATR before the plugin can upload to it. The plugin
 files as part of your release build, for example during `mvn release:perform`. The
 [plugin documentation](https://apache.github.io/tooling-atr-maven-plugin/) shows how to configure
 your credentials and a release profile, and how to place files in subdirectories.
+
+If your project has a GitHub source repository, ATR also needs the source commit, as described
+under [Source commit](#source-commit). Until it has one, the compare check records a concern on each
+source archive.
+
+## Source commit
+
+When your project metadata lists a GitHub repository, ATR compares each source archive against the
+repository at the commit it was built from. The browser upload form asks for that commit, and a
+Trusted Publishing workflow sends it. Other routes give it through the API, with a personal access
+token:
+
+* `POST /api/release/store` and `POST /api/release/upload` take an optional `source_commit`, which
+  records the commit alongside the files. Send the same value with every file.
+* `POST /api/release/commit` records the commit for the whole release in a call of its own, before
+  or after the files are uploaded. Pass `null` as the commit to clear it.
+
+Either way the commit stays recorded for later uploads with a token, until someone changes it or a
+Trusted Publishing workflow uploads to the draft. ATR does not refuse an upload without a commit,
+but the compare check records a concern that the release manager must note before starting a vote.
+
+Projects with several GitHub repositories cannot record one commit for the release. They declare
+each source archive on its own with `POST /api/release/source`, as described under
+[Trusted Publishing](trusted-publishing#projects-with-several-source-repositories). That call also
+works for a project with one repository, and a declaration for an archive takes precedence over the
+release commit.
 
 ## GitHub Actions
 

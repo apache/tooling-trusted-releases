@@ -552,6 +552,15 @@ class CommitteeParticipant(FoundationCommitter):
         version_key: safe.VersionKey,
         commit_hash: str | None,
     ) -> sql.Release:
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
+            storage.AccessError("Release not found", status=404)
+        )
+        # With several repositories a release level commit means nothing, so the caller is told rather than ignored
+        if len(release.project.github_repositories) > 1:
+            raise storage.AccessError(
+                "This project has several GitHub repositories, so declare the source of each archive instead",
+                status=400,
+            )
         try:
             if commit_hash is not None:
                 commit_hash = str(safe.CommitHash(commit_hash))
@@ -560,7 +569,7 @@ class CommitteeParticipant(FoundationCommitter):
                 version_key,
                 self.__asf_uid,
                 allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
-                description="Source commit updated through Compose",
+                description="Source commit updated",
                 source_override=commit_hash,
             )
         except datatypes.FailedError as e:
@@ -1053,9 +1062,11 @@ class CommitteeParticipant(FoundationCommitter):
         relpath: safe.RelPath,
         source: pathlib.Path,
         expected_revision: safe.RevisionNumber | None,
+        source_commit: safe.CommitHash | None = None,
     ) -> sql.Revision | sql.Quarantined:
         validated_path = relpath.as_path()
         description = f"Store via API: {validated_path}"
+        source_override = await self.__source_override(project_key, version_key, source_commit)
 
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             target_path = path / validated_path
@@ -1070,13 +1081,34 @@ class CommitteeParticipant(FoundationCommitter):
             description=description,
             modify=modify,
             expected_revision=expected_revision,
+            source_override=source_override,
         )
         return await self.__stored_revision(project_key, version_key, result)
+
+    async def __source_override(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        source_commit: safe.CommitHash | None,
+    ) -> db.Opt[str | None]:
+        # Unlike the upload form, the API doesn't insist on a commit - the compare check's concern is the backstop
+        if source_commit is None:
+            return db.NOT_SET
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
+            storage.AccessError("Release not found", status=404)
+        )
+        # With several repositories the source is declared per archive, so a release level commit is ignored
+        if len(release.project.github_repositories) > 1:
+            return db.NOT_SET
+        return str(source_commit)
 
     async def upload_file(self, upload_args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
         file_bytes = base64.b64decode(upload_args.content, validate=True)
         validated_path = upload_args.relpath.as_path()
         description = f"Upload via API: {validated_path}"
+        source_override = await self.__source_override(
+            upload_args.project, upload_args.version, upload_args.source_commit
+        )
 
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             target_path = path / validated_path
@@ -1092,6 +1124,7 @@ class CommitteeParticipant(FoundationCommitter):
             description=description,
             modify=modify,
             expected_revision=upload_args.expected_revision,
+            source_override=source_override,
         )
         return await self.__stored_revision(upload_args.project, upload_args.version, result)
 

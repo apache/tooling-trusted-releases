@@ -1363,6 +1363,34 @@ async def release_announce(
 
 @api.typed(
     auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseCommitResults, 200),
+)
+async def release_commit(
+    _release_commit: Literal["release/commit"],
+    data: models.api.ReleaseCommitArgs,
+) -> DictResponse:
+    """
+    URL: POST /release/commit
+
+    Record the commit that the source archives in a draft were built from.
+    This is the same commit that the upload form asks for, and applies to the whole release.
+    Projects with several GitHub repositories declare each archive with release/source instead.
+    """
+    commit = str(data.commit) if (data.commit is not None) else None
+    try:
+        async with storage.write(_jwt_asf_uid()) as write:
+            wacp = await write.as_project_committee_participant(data.project)
+            release = await wacp.release.set_commit_hash(data.project, data.version, commit)
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+    return models.api.ReleaseCommitResults(
+        endpoint="/release/commit",
+        release=release,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
     response=(models.api.ReleaseCreateResults, 201),
     rate_limit=(10, datetime.timedelta(hours=1)),
 )
@@ -1609,8 +1637,9 @@ async def release_source(
     """
     URL: POST /release/source
 
-    Declare the repository and commit that source archives in a draft were built from.
-    This is for projects with several GitHub repositories, where ATR can't tell which one an archive came from.
+    Declare the repository and commit that source archives in a draft were built from, archive by archive.
+    Projects with several GitHub repositories must use this, as ATR can't tell which one an archive came from.
+    Projects with one repository can instead give the commit when uploading, or with release/commit.
     """
     revision = await _declare_sources(_jwt_asf_uid(), data.project, data.version, data.sources, data.expected_revision)
     return models.api.ReleaseSourceResults(
@@ -1642,6 +1671,7 @@ async def release_store(
         expected_revision = (
             safe.RevisionNumber(query_args.expected_revision) if (query_args.expected_revision is not None) else None
         )
+        source_commit = safe.CommitHash(query_args.source_commit.strip().lower()) if query_args.source_commit else None
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
 
@@ -1658,7 +1688,9 @@ async def release_store(
             raise exceptions.RequestTimeout() from e
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(project)
-            result = await wacp.release.store_file(project, version, relpath, pathlib.Path(source), expected_revision)
+            result = await wacp.release.store_file(
+                project, version, relpath, pathlib.Path(source), expected_revision, source_commit
+            )
     except (datatypes.PhaseMismatchError, datatypes.RevisionMismatchError) as e:
         raise exceptions.Conflict(str(e))
     except datatypes.ContentInvalidError as e:

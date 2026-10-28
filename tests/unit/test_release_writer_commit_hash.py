@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import base64
 import datetime
 import pathlib
 import unittest.mock as mock
@@ -26,6 +27,7 @@ import sqlmodel
 import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
+import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.source as source
@@ -106,6 +108,46 @@ async def test_set_commit_hash_only_updates_drafts(data: db.Session, phase: sql.
     assert release_row.commit_hash == expected_commit_hash
 
 
+async def test_set_commit_hash_refuses_several_repositories(data: db.Session):
+    writer = await _writer(data, ["https://github.com/apache/first", "https://github.com/apache/second"])
+
+    with pytest.raises(storage.AccessError, match="several GitHub repositories") as exc:
+        await writer.set_commit_hash(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "a" * 40)
+    assert exc.value.status == 400
+    assert await data.revision(release_key="project-1.0.0").get() is None
+
+
+@pytest.mark.parametrize(
+    ("repositories", "source_commit", "expected"),
+    [
+        (["https://github.com/apache/project"], "b" * 40, "b" * 40),
+        (["https://github.com/apache/project"], None, None),
+        (["https://github.com/apache/first", "https://github.com/apache/second"], "b" * 40, None),
+        ([], "b" * 40, "b" * 40),
+    ],
+)
+async def test_upload_file_records_source_commit(
+    data: db.Session, repositories: list[str], source_commit: str | None, expected: str | None
+):
+    writer = await _writer(data, repositories)
+    pk, vk = safe.ProjectKey("project"), safe.VersionKey("1.0.0")
+    upload_args = api.ReleaseUploadArgs.model_validate(
+        {
+            "project": pk,
+            "version": vk,
+            "relpath": "README.txt",
+            "content": base64.b64encode(b"hello").decode(),
+            "source_commit": source_commit,
+        }
+    )
+
+    result = await writer.upload_file(upload_args)
+
+    assert isinstance(result, sql.Revision)
+    # Same rules as the upload form: ignored with several repositories, and the API never insists on one
+    assert (await source.read(pk, vk, safe.RevisionNumber("00001"))).override == expected
+
+
 async def test_set_commit_hash_rechecks_new_revision(data: db.Session):
     project = sql.Project(
         key="project",
@@ -150,3 +192,27 @@ async def test_set_commit_hash_rechecks_new_revision(data: db.Session):
         pk, vk, safe.RevisionNumber("00002")
     )
     assert revision.tasks.draft_checks.await_count == 2
+
+
+async def _writer(data: db.Session, repositories: list[str]) -> release.CommitteeParticipant:
+    project = sql.Project(
+        key="project",
+        name="Apache Project",
+        committee=sql.Committee(key="project", name="Project"),
+        repositories=repositories,
+    )
+    data.add(
+        sql.Release(
+            key=sql.release_key("project", "1.0.0"),
+            project=project,
+            version="1.0.0",
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            created=datetime.datetime.now(datetime.UTC),
+        )
+    )
+    await data.commit()
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "tester"
+    write_as = mock.MagicMock()
+    write_as.revision = revision.CommitteeParticipant(write, write_as, data, "project")
+    return release.CommitteeParticipant(write, write_as, data, "project")

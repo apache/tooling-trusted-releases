@@ -53,12 +53,13 @@ class StallingBody:
 
 
 def _mock_storage_write(store_result, recorded):
-    async def store_file(project, version, relpath, source, expected_revision):
+    async def store_file(project, version, relpath, source, expected_revision, source_commit=None):
         recorded["project"] = project
         recorded["version"] = version
         recorded["relpath"] = relpath
         recorded["content"] = source.read_bytes()
         recorded["expected_revision"] = expected_revision
+        recorded["source_commit"] = source_commit
         if isinstance(store_result, Exception):
             raise store_result
         return store_result
@@ -103,6 +104,16 @@ async def test_release_store_invalid_content(app, state_tmp):
         mock.patch.object(atr.api, "_jwt_asf_uid", return_value="test"),
         mock.patch.object(atr.api.storage, "write", storage_write),
     ):
+        async with app.test_request_context("/api/release/store", method="POST", data=b""):
+            with pytest.raises(exceptions.BadRequest):
+                await handler(_release_store="release/store", query_args=query)
+    assert list(state_tmp.iterdir()) == []
+
+
+async def test_release_store_invalid_source_commit(app, state_tmp):
+    handler = inspect.unwrap(atr.api.release_store)
+    query = atr.models.api.ReleaseStoreQuery(project="test", version="0.1", relpath="a.tar.gz", source_commit="xyz")
+    with mock.patch.object(atr.api, "_jwt_asf_uid", return_value="test"):
         async with app.test_request_context("/api/release/store", method="POST", data=b""):
             with pytest.raises(exceptions.BadRequest):
                 await handler(_release_store="release/store", query_args=query)
@@ -155,4 +166,26 @@ async def test_release_store_streams_to_writer(app, state_tmp):
     assert str(recorded["version"]) == "0.1"
     assert str(recorded["relpath"]) == "a/b.tar.gz"
     assert recorded["expected_revision"] is None
+    assert recorded["source_commit"] is None
     assert list(state_tmp.iterdir()) == []
+
+
+@pytest.mark.parametrize("given", ["A" * 40, "  " + "a" * 40 + " ", ""])
+async def test_release_store_source_commit(app, state_tmp, given):
+    recorded = {}
+    storage_write = _mock_storage_write(sql.Revision(), recorded)
+    handler = inspect.unwrap(atr.api.release_store)
+    query = atr.models.api.ReleaseStoreQuery(project="test", version="0.1", relpath="a.tar.gz", source_commit=given)
+    with (
+        mock.patch.object(atr.api, "_jwt_asf_uid", return_value="test"),
+        mock.patch.object(atr.api.storage, "write", storage_write),
+    ):
+        async with app.test_request_context("/api/release/store", method="POST", data=b"content"):
+            _body, status = await handler(_release_store="release/store", query_args=query)
+    assert status == 201
+    # The query string value is folded the same way as the upload form field, and blank means absent
+    if given.strip():
+        assert isinstance(recorded["source_commit"], safe.CommitHash)
+        assert str(recorded["source_commit"]) == "a" * 40
+    else:
+        assert recorded["source_commit"] is None

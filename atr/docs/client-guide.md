@@ -68,6 +68,8 @@ atr upload example 1.0.0 apache-example-1.0.0.tar.gz.sha512 apache-example-1.0.0
 
 The last two arguments are the destination path in ATR, then the local file to read. Here they have the same name. Each upload creates a new revision, which is a snapshot of the candidate.
 
+If your project has a GitHub source repository, ATR compares the source archive against it and needs the commit the archive was built from. The client has no option for this yet, so record it with the API's `release/commit` call, giving `project`, `version`, and the full 40-character `commit`. The client's generic `atr api post` command can make the call. See [Source commit](uploading-files#source-commit) for the other ways to give it.
+
 Archive uploads pause while ATR validates them. If an upload times out, run `atr list example 1.0.0` and look at the release's compose page on the website before trying again, because validation may still be running. If validation failed, the compose page says why. Fix the archive and upload it again.
 
 For files over the usual 512 MiB upload limit, or a whole directory of release files, use rsync instead. You need local `rsync` and `ssh` commands and an SSH key registered with ATR:
