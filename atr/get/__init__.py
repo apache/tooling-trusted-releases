@@ -32,6 +32,7 @@ import atr.get.download as download
 import atr.get.draft as draft
 import atr.get.file as file
 import atr.get.finish as finish
+import atr.get.gates as gates
 import atr.get.keys as keys
 import atr.get.manifest as manifest
 import atr.get.manual as manual
@@ -69,6 +70,7 @@ __all__ = [
     "draft",
     "file",
     "finish",
+    "gates",
     "keys",
     "manifest",
     "manual",

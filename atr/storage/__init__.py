@@ -160,6 +160,7 @@ class WriteAsFoundationCommitter(WriteAsGeneralPublic):
         self.announce = writers.announce.FoundationCommitter(write, self, data)
         self.cache = writers.cache.FoundationCommitter(write, self, data)
         self.checks = writers.checks.FoundationCommitter(write, self, data)
+        self.gates = writers.gates.FoundationCommitter(write, self, data)
         self.keys = writers.keys.FoundationCommitter(write, self, data)
         self.mail = writers.mail.FoundationCommitter(write, self, data)
         self.notifications = writers.notifications.FoundationCommitter(write, self, data)

@@ -25,6 +25,7 @@ import atr.storage.writers.checks as checks
 import atr.storage.writers.committee as committee
 import atr.storage.writers.dist_rule as dist_rule
 import atr.storage.writers.distributions as distributions
+import atr.storage.writers.gates as gates
 import atr.storage.writers.keys as keys
 import atr.storage.writers.mail as mail
 import atr.storage.writers.notifications as notifications
@@ -48,6 +49,7 @@ __all__ = [
     "committee",
     "dist_rule",
     "distributions",
+    "gates",
     "keys",
     "mail",
     "notifications",

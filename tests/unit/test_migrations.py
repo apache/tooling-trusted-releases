@@ -110,6 +110,10 @@ _ROWS = {
         "INSERT INTO keyattestable (fingerprint, seq, operation, source, updated, actor, role)"
         " VALUES (:fingerprint, 1, 'revise', 'test', '2026-01-01 00:00:00', 'u', 'user')",
     ),
+    "0138": (
+        "INSERT INTO gaterequest (repository_id, run_id, run_attempt, head_sha, ref, actor, status, decisions)"
+        " VALUES (1, 1, 1, 'sha', 'v1', 'u', 'PENDING', '{}')",
+    ),
 }
 
 

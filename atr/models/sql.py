@@ -192,6 +192,12 @@ class DistRuleKind(enum.StrEnum):
     AIRFLOW_PROVIDER_AREA = "airflow_provider_area"
 
 
+class GateStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class KeyOperation(enum.StrEnum):
     DELETE = "delete"
     RESTORE = "restore"
@@ -283,6 +289,7 @@ class TaskType(enum.StrEnum):
     DISTRIBUTION_STATUS = "distribution_status"
     DISTRIBUTION_WORKFLOW = "distribution_workflow"
     DOWNLOADS_CHECK = "downloads_check"
+    GATE_DECISION = "gate_decision"
     HAS_SBOM = "has_sbom"
     HASHING_CHECK = "hashing_check"
     INTEGRITY_CHECK = "integrity_check"
@@ -338,6 +345,8 @@ class TaskType(enum.StrEnum):
                 return "Distribution workflow"
             case TaskType.DOWNLOADS_CHECK:
                 return "Download availability"
+            case TaskType.GATE_DECISION:
+                return "Gate decision"
             case TaskType.HAS_SBOM:
                 return "SBOM check"
             case TaskType.HASHING_CHECK:
@@ -724,6 +733,25 @@ class DistRule(sqlmodel.SQLModel, table=True):
     note: str | None = sqlmodel.Field(default=None)
 
     __table_args__ = (sqlalchemy.Index("ix_distrule_kind", "kind"),)
+
+
+# GateRequest:
+class GateRequest(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    repository_id: int = sqlmodel.Field()
+    run_id: int = sqlmodel.Field()
+    run_attempt: int = sqlmodel.Field()
+    head_sha: str = sqlmodel.Field()
+    ref: str = sqlmodel.Field()
+    actor: str = sqlmodel.Field()
+    actor_asf_uid: str | None = sqlmodel.Field(default=None)
+    status: GateStatus = sqlmodel.Field(default=GateStatus.PENDING)
+    decisions: dict[str, bool] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    decided: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+
+    __table_args__ = (sqlalchemy.Index("ix_gaterequest_run", "repository_id", "run_id", "run_attempt", unique=True),)
 
 
 # KeyAttestable:

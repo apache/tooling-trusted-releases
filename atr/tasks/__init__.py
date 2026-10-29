@@ -451,6 +451,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return gha.trigger_workflow
         case sql.TaskType.DOWNLOADS_CHECK:
             return downloads.check
+        case sql.TaskType.GATE_DECISION:
+            return gha.gate_decision
         case sql.TaskType.HAS_SBOM:
             return sbom_check.check
         case sql.TaskType.HASHING_CHECK:

@@ -528,6 +528,47 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         execution_result: sqlalchemy.engine.Result = await self.execute(query)
         return execution_result
 
+    def gate_request(
+        self,
+        id: Opt[int] = NOT_SET,
+        repository_id: Opt[int] = NOT_SET,
+        run_id: Opt[int] = NOT_SET,
+        run_attempt: Opt[int] = NOT_SET,
+        head_sha: Opt[str] = NOT_SET,
+        ref: Opt[str] = NOT_SET,
+        actor: Opt[str] = NOT_SET,
+        actor_asf_uid: Opt[str | None] = NOT_SET,
+        status: Opt[sql.GateStatus] = NOT_SET,
+        decisions: Opt[dict[str, bool]] = NOT_SET,
+        decided: Opt[datetime.datetime | None] = NOT_SET,
+    ) -> Query[sql.GateRequest]:
+        query = sqlmodel.select(sql.GateRequest)
+
+        if is_defined(id):
+            query = query.where(sql.GateRequest.id == id)
+        if is_defined(repository_id):
+            query = query.where(sql.GateRequest.repository_id == repository_id)
+        if is_defined(run_id):
+            query = query.where(sql.GateRequest.run_id == run_id)
+        if is_defined(run_attempt):
+            query = query.where(sql.GateRequest.run_attempt == run_attempt)
+        if is_defined(head_sha):
+            query = query.where(sql.GateRequest.head_sha == head_sha)
+        if is_defined(ref):
+            query = query.where(sql.GateRequest.ref == ref)
+        if is_defined(actor):
+            query = query.where(sql.GateRequest.actor == actor)
+        if is_defined(actor_asf_uid):
+            query = query.where(sql.GateRequest.actor_asf_uid == actor_asf_uid)
+        if is_defined(status):
+            query = query.where(sql.GateRequest.status == status)
+        if is_defined(decisions):
+            query = query.where(sql.GateRequest.decisions == decisions)
+        if is_defined(decided):
+            query = query.where(sql.GateRequest.decided == decided)
+
+        return Query(self, query)
+
     async def ns_text_del(self, ns: str, key: str, commit: bool = True) -> None:
         stmt = sqlalchemy.delete(sql.TextValue).where(
             sql.validate_instrumented_attribute(sql.TextValue.ns) == ns,

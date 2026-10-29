@@ -24,6 +24,7 @@ import atr.post.distribution as distribution
 import atr.post.draft as draft
 import atr.post.file as file
 import atr.post.finish as finish
+import atr.post.gates as gates
 import atr.post.keys as keys
 import atr.post.manual as manual
 import atr.post.notifications as notifications
@@ -50,6 +51,7 @@ __all__ = [
     "draft",
     "file",
     "finish",
+    "gates",
     "keys",
     "manual",
     "notifications",

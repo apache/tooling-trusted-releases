@@ -262,6 +262,13 @@ async def github_to_apache(github_numeric_uid: int) -> str:
     return ldap_params.results_list[0].uid[0]
 
 
+async def group_members(base: str) -> frozenset[str]:
+    credentials = get_bind_credentials()
+    if credentials is None:
+        raise UnavailableError("LDAP bind DN or password not configured")
+    return await asyncio.to_thread(_group_members_query, base, *credentials)
+
+
 async def handle_update(payload: dict) -> str | None:
     import atr.cache as cache
     import atr.log as log
@@ -372,6 +379,14 @@ def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:
     if uids:
         return uids[0]
     return None
+
+
+def _group_members_query(base: str, bind_dn: str, bind_password: str) -> frozenset[str]:
+    with Search(bind_dn, bind_password) as ldap_search:
+        result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
+    if (not result) or (len(result) != 1):
+        raise UnavailableError(f"LDAP group {base} not found")
+    return frozenset(parse_dn(member_dn)["uid"][0] for member_dn in result[0].member)
 
 
 async def _revoke_all_credentials(uid: str, log) -> None:

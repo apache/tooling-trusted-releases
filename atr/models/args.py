@@ -92,6 +92,10 @@ class ScoreArgs(FileArgs):
     previous_release_version: safe.VersionKey | None = schema.description("Previous release version")
 
 
+class GateDecision(schema.Strict):
+    request_id: int = schema.description("The GateRequest row whose decision to send to GitHub")
+
+
 class GenerateCycloneDX(schema.Strict):
     """Arguments for the task to generate a CycloneDX SBOM from an artifact."""
 

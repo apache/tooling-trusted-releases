@@ -60,6 +60,7 @@ import atr.db.interaction as interaction
 import atr.errors as errors
 import atr.filters as filters
 import atr.form as form
+import atr.gates as gates
 import atr.jwtoken as jwtoken
 import atr.log as log
 import atr.manager as manager
@@ -599,6 +600,8 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
     csp_header = "; ".join(csp_directives)
     app.add_url_rule("/csp-report", view_func=_csp_report, methods=["POST"])
     app.extensions["csrf"].exempt(_csp_report)
+    app.add_url_rule("/webhooks/github/gate", view_func=gates.webhook, methods=["POST"])
+    app.extensions["csrf"].exempt(gates.webhook)
 
     permissions_policy = ", ".join(
         [

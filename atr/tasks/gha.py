@@ -24,6 +24,7 @@ import aiohttp
 
 import atr.config as config
 import atr.db as db
+import atr.gates as gates
 import atr.log as log
 import atr.models.args as args
 import atr.models.results as results
@@ -62,6 +63,11 @@ def dispatch_workflow_and_payload(
         },
     }
     return workflow, payload
+
+
+@checks.with_model(args.GateDecision)
+async def gate_decision(task_args: args.GateDecision) -> None:
+    await gates.send_decision(task_args.request_id)
 
 
 @checks.with_model(args.WorkflowStatusCheck)
