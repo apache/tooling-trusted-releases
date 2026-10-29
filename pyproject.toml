@@ -75,6 +75,7 @@ test = [
   "playwright>=1.51.0",
   "pytest-asyncio>=0.24",
   "pytest-playwright>=0.7.2",
+  "pytest-xdist>=3.6",
   "pytest>=8.0",
   "pyyaml>=6.0.2",
 ]
@@ -186,7 +187,6 @@ strict-checking = true
 [tool.uv]
 # Dependency cooldown, requires uv 0.9.17+
 exclude-newer = "5 days"
-exclude-newer-package = { certifi = "2026-10-20", virtualenv = "2026-10-22" }
 override-dependencies = ["cryptography>=50.0,<51.0.0","h2>=4.4.1,<4.4.2"]
 required-version = ">=0.9.17"
 

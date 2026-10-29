@@ -62,14 +62,13 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
-          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --frozen --no-dev --group test
 
       - name: Run unit tests
         run: |
-          uv run --frozen pytest -rs tests
+          uv run --frozen pytest -rs -n auto tests
 
       - name: Run actions contract tests
         id: actions-contract
@@ -164,3 +163,9 @@ jobs:
       - name: Run Playwright end-to-end tests
         run: |
           sh tests/run-playwright.sh
+
+      # Our own runners keep the uv cache on disk between jobs rather than
+      # restoring it from GitHub, so drop anything unreachable to stop it growing.
+      - name: Prune the uv cache on our own runner
+        if: always() && runner.environment == 'self-hosted'
+        run: uv cache prune

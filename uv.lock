@@ -6,10 +6,6 @@ requires-python = "==3.14.*"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P5D"
 
-[options.exclude-newer-package]
-certifi = "2026-10-20T21:00:00Z"
-virtualenv = "2026-10-22T21:00:00Z"
-
 [manifest]
 overrides = [
     { name = "cryptography", specifier = ">=50.0,<51.0.0" },
@@ -718,6 +714,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/03/05/03bb9475e54c6d3a040bce8e0fb1fbf85e5a93beb19d2d22c7b0c0c3ceea/exarch-0.3.1-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:02f8ac429a27c4e86ad2bc76f651cb058516f271ddf0d313004df8417d231142", size = 1479984, upload-time = "2026-05-19T14:10:00.456Z" },
     { url = "https://files.pythonhosted.org/packages/c1/39/bb6c31cb97543a4dd6fe0a193b038f2c8fc03c4741f023275560eacce73b/exarch-0.3.1-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:42e2f54698090c3f1430513158b975a9f50aa8eda61504c146517640fe093c45", size = 1602458, upload-time = "2026-05-19T14:10:02.121Z" },
     { url = "https://files.pythonhosted.org/packages/1b/b2/9bf71b77fc9753e4a3413053dd82905cd84067424b368f4dd01f9a3148ce/exarch-0.3.1-cp39-abi3-win_amd64.whl", hash = "sha256:07d8e4909c772e537613bcd254596e8f239088008e9e9c5257521de4f0279993", size = 1066639, upload-time = "2026-05-19T14:10:03.552Z" },
+]
+
+[[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
 ]
 
 [[package]]
@@ -1650,6 +1655,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -2177,6 +2195,7 @@ test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-playwright" },
+    { name = "pytest-xdist" },
     { name = "pyyaml" },
 ]
 
@@ -2247,6 +2266,7 @@ test = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-playwright", specifier = ">=0.7.2" },
+    { name = "pytest-xdist", specifier = ">=3.6" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
