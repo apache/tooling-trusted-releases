@@ -246,14 +246,14 @@
               </li>
               {% if is_test_mode %}
                 <li>
+                  <hr class="dropdown-divider" />
+                </li>
+                <li>
                   <a class="dropdown-item"
                      href="{{ as_url(admin.validate_jwt_get) }}"
                      {% if request.endpoint == 'atr_admin_validate_jwt_get' %}class="active"{% endif %}><i class="bi bi-check-circle"></i> Validate JWT</a>
                 </li>
               {% endif %}
-              <li>
-                <hr class="dropdown-divider" />
-              </li>
             </ul>
           </li>
         {% else %}
