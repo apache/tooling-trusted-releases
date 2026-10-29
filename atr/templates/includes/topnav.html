@@ -135,10 +135,6 @@
                 <a class="dropdown-item" href="{{ as_url(get.user.sessions) }}"><i class="bi bi-shield-lock"></i>
                   Sessions</a>
               </li>
-              <li>
-                <a class="dropdown-item" href="{{ as_url(get.user.permissions) }}"><i class="bi bi-shield-check"></i>
-                  Permissions</a>
-              </li>
             </ul>
           </li>
         {% endif %}
@@ -217,6 +213,10 @@
                 </div>
               </li>
               <li>
+                <a class="dropdown-item{% if request.endpoint == 'atr_get_user_permissions' %} active{% endif %}"
+                   href="{{ as_url(get.user.permissions) }}"><i class="bi bi-shield-check"></i> Permissions</a>
+              </li>
+              <li>
                 <hr class="dropdown-divider" />
               </li>
               <li>
@@ -253,10 +253,6 @@
               {% endif %}
               <li>
                 <hr class="dropdown-divider" />
-              </li>
-              <li>
-                <a class="dropdown-item{% if request.endpoint == 'atr_get_user_permissions' %} active{% endif %}"
-                   href="{{ as_url(get.user.permissions) }}"><i class="bi bi-shield-check"></i> Permissions</a>
               </li>
             </ul>
           </li>
