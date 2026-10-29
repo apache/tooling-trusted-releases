@@ -27,10 +27,12 @@ import pathlib
 import statistics
 import sys
 import time
-from collections.abc import Iterator, Sequence
+import urllib.parse
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
+import aiohttp
 import asfquart
 import asfquart.base as base
 import htpy
@@ -68,6 +70,7 @@ import atr.pgp as pgp
 import atr.principal as principal
 import atr.render as render
 import atr.shared as shared
+import atr.shared.catalog as catalog
 import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
@@ -1015,6 +1018,7 @@ async def catalog_project_get(
                     htpy.td[str(artifact_counts.get(str(release.key), 0))],
                     htpy.td["Yes" if (revision_counts.get(str(release.key), 0) > 0) else "No"],
                     htpy.td[
+                        _catalog_release_artifacts_action(str(committee_key), str(project_key), release.version),
                         _catalog_release_move_action(
                             str(committee_key),
                             str(project_key),
@@ -1076,6 +1080,475 @@ async def _catalog_release_status_action(committee_key: str, project_key: str, r
         confirm=f"Archive {release.version}? It will be archived and its files removed from the distribution area.",
         empty=True,
     )
+
+
+_CATALOG_HEAD_TIMEOUT: Final[int] = 15
+
+
+class CatalogArtifactMoveForm(form.Form):
+    artifact_path: str = form.label("Artifact", widget=form.Widget.HIDDEN)
+    target_project: str = form.label(
+        "Destination project", "The project this file really belongs to.", widget=form.Widget.CUSTOM, default=""
+    )
+
+
+class CatalogArtifactRelocateForm(form.Form):
+    artifact_path: str = form.label("Artifact", widget=form.Widget.HIDDEN)
+    directory: str = form.label(
+        "Directory",
+        "The directory under the dist root the files live in, like maven/plugins. Empty means the dist root.",
+        default="",
+    )
+    force: form.Bool = form.label("Save anyway", "Relocate even if nothing answers at the new location.", default=False)
+
+
+class CatalogArtifactRemoveForm(form.Form):
+    artifact_path: str = form.label("Artifact", widget=form.Widget.HIDDEN)
+
+
+@dataclasses.dataclass
+class CatalogArtifactArgs:
+    path: str = ""
+
+
+@admin.typed
+async def catalog_release_artifact_move_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifact: Literal["artifact"],
+    _move: Literal["move"],
+    query_args: CatalogArtifactArgs,
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifact/move
+
+    Confirm re-filing one artifact row under another project at the same version.
+    """
+    return await _catalog_artifact_move_page(committee_key, project_key, version_key, query_args.path)
+
+
+@admin.typed
+async def catalog_release_artifact_move_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifact: Literal["artifact"],
+    _move: Literal["move"],
+    move_form: CatalogArtifactMoveForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifact/move
+
+    Apply the move, creating the release under the target when that version isn't catalogued there yet.
+    """
+    raw = move_form.target_project.strip()
+    if not raw:
+        raise exceptions.BadRequest("Choose a destination project.")
+    try:
+        target = safe.ProjectKey(raw)
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid project key: {error}") from error
+    release, row = await _catalog_artifact_row(project_key, version_key, move_form.artifact_path)
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        moved = await wafa.catalogue.move_artifact(release.safe_key, row.artifact_path, target)
+    notes = [f"Moved {row.artifact_path} to {target}"]
+    if moved.created_release:
+        notes.append(f"created {target} {version_key} in the catalogue")
+    if moved.dropped_source:
+        notes.append(f"dropped the now empty {project_key} {version_key}")
+    async with db.session() as data:
+        target_project = await data.project(key=str(target)).demand(exceptions.NotFound("Project not found"))
+    # The row now lives under the target, so that is the page to land on
+    return await session.redirect(
+        catalog_release_artifacts_get,
+        success="; ".join(notes),
+        committee_key=str(target_project.committee_key or committee_key),
+        project_key=str(target),
+        version_key=str(version_key),
+    )
+
+
+@admin.typed
+async def catalog_release_artifact_relocate_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifact: Literal["artifact"],
+    _relocate: Literal["relocate"],
+    query_args: CatalogArtifactArgs,
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifact/relocate
+
+    Confirm pointing one artifact row at the directory its files really live in.
+    """
+    return await _catalog_artifact_relocate_page(committee_key, project_key, version_key, query_args.path)
+
+
+@admin.typed
+async def catalog_release_artifact_relocate_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifact: Literal["artifact"],
+    _relocate: Literal["relocate"],
+    relocate_form: CatalogArtifactRelocateForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifact/relocate
+
+    Apply the relocation, once something answers at the new location or the override is ticked.
+    """
+    directory = relocate_form.directory.strip().strip("/")
+    try:
+        new_directory = safe.RelPath(directory) if directory else None
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid directory: {error}") from error
+    release, row = await _catalog_artifact_row(project_key, version_key, relocate_form.artifact_path)
+    urls = _catalog_artifact_urls(row, str(new_directory) if new_directory else None, release.is_archived)
+    statuses = await _catalog_head_statuses(urls.values())
+    missing = [role for role, url in urls.items() if not _catalog_location_ok(statuses.get(url))]
+    if missing and not relocate_form.force:
+        return await session.redirect(
+            catalog_release_artifact_relocate_get,
+            error=f"Nothing answers at the new location for the {', '.join(missing)}."
+            " Tick 'Save anyway' to relocate regardless.",
+            committee_key=str(committee_key),
+            project_key=str(project_key),
+            version_key=str(version_key),
+            path=row.artifact_path,
+        )
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.relocate_artifact(release.safe_key, row.artifact_path, new_directory)
+    return await session.redirect(
+        catalog_release_artifacts_get,
+        success=f"Relocated {row.artifact_path} to {directory or 'the dist root'}",
+        committee_key=str(committee_key),
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )
+
+
+@admin.typed
+async def catalog_release_artifact_remove_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifact: Literal["artifact"],
+    _remove: Literal["remove"],
+    remove_form: CatalogArtifactRemoveForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifact/remove
+
+    Delete one unmanaged artifact row, such as a duplicate the seed filed under the wrong project.
+    """
+    release, row = await _catalog_artifact_row(project_key, version_key, remove_form.artifact_path)
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.remove_artifact(release.safe_key, row.artifact_path)
+    return await session.redirect(
+        catalog_release_artifacts_get,
+        success=f"Removed {row.artifact_path}",
+        committee_key=str(committee_key),
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )
+
+
+@admin.typed
+async def catalog_release_artifacts_check_post(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifacts: Literal["artifacts"],
+    _check: Literal["check"],
+    _check_form: form.Empty,
+) -> str:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifacts/check
+
+    Send a HEAD request to every recorded location for the release's files and show what answered.
+    """
+    return await _catalog_release_artifacts_page(committee_key, project_key, version_key, check=True)
+
+
+@admin.typed
+async def catalog_release_artifacts_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifacts: Literal["artifacts"],
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifacts
+
+    List a release's artifact rows with where each is published, and offer to relocate or remove them.
+    """
+    return await _catalog_release_artifacts_page(committee_key, project_key, version_key, check=False)
+
+
+async def _catalog_artifact_move_page(
+    committee_key: safe.CommitteeKey, project_key: safe.ProjectKey, version_key: safe.VersionKey, artifact_path: str
+) -> str:
+    release, row = await _catalog_artifact_row(project_key, version_key, artifact_path)
+    async with db.session() as data:
+        projects = await data.project().order_by(sql.Project.key).all()
+    targets = [p for p in projects if str(p.key) != str(project_key)]
+    rendered_form = await form.render(
+        model_cls=CatalogArtifactMoveForm,
+        action=f"{_catalog_release_url(str(committee_key), str(project_key), str(version_key))}/artifact/move",
+        submit_label="Move artifact",
+        defaults={"artifact_path": row.artifact_path},
+        custom={
+            "target_project": _catalog_select(
+                "target_project",
+                [(str(p.key), p.name or str(p.key)) for p in targets],
+                "Choose a project",
+            )
+        },
+    )
+    intro = htpy.div[
+        htpy.p[
+            htpy.code[row.artifact_path],
+            f" moves out of {project_key} {release.version} and into the same version under another project.",
+        ],
+        htpy.p(".text-muted")[
+            "Only the catalogue attribution moves; the file stays where it is in dist. The release is"
+            " created under the target if that version isn't catalogued there yet, and this one goes"
+            " if the move leaves it empty."
+        ],
+    ]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Move {row.artifact_path}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+async def _catalog_artifact_relocate_page(
+    committee_key: safe.CommitteeKey, project_key: safe.ProjectKey, version_key: safe.VersionKey, artifact_path: str
+) -> str:
+    release, row = await _catalog_artifact_row(project_key, version_key, artifact_path)
+    urls = _catalog_artifact_urls(row, row.download_path_suffix, release.is_archived)
+    statuses = await _catalog_head_statuses(urls.values())
+    intro = htpy.div[
+        htpy.p[
+            htpy.code[row.artifact_path],
+            " is recorded in ",
+            htpy.code[row.download_path_suffix] if row.download_path_suffix else "the dist root",
+            ", which publishes it at:",
+        ],
+        _catalog_location_list(urls, statuses),
+        htpy.p(".text-muted.mt-3")["The new location is checked the same way before saving."],
+    ]
+    rendered_form = await form.render(
+        model_cls=CatalogArtifactRelocateForm,
+        action=f"{_catalog_release_url(str(committee_key), str(project_key), str(version_key))}/artifact/relocate",
+        submit_label="Relocate",
+        defaults={"artifact_path": row.artifact_path, "directory": row.download_path_suffix or ""},
+    )
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Relocate {row.artifact_path}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+async def _catalog_artifact_row(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, artifact_path: str
+) -> tuple[sql.Release, sql.Artifact]:
+    if not artifact_path:
+        raise exceptions.BadRequest("Choose an artifact.")
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
+        row = await data.artifact(release_key=release.key, artifact_path=artifact_path).demand(
+            exceptions.NotFound("Artifact not found")
+        )
+    return release, row
+
+
+async def _catalog_artifact_row_element(
+    base: str, row: sql.Artifact, urls: dict[str, str], statuses: dict[str, int | None] | None
+) -> htpy.Element:
+    # A managed row keeps ATR's provenance and its workflow lives here, so Move and Remove are greyed
+    remove_form = await form.render(
+        model_cls=CatalogArtifactRemoveForm,
+        action=f"{base}/artifact/remove",
+        form_classes=".d-inline",
+        submit_classes="btn-sm btn-outline-danger",
+        submit_label="Remove",
+        confirm=f"Remove the catalogue row for {row.artifact_path}?",
+        defaults={"artifact_path": row.artifact_path},
+        submit_disabled=row.managed,
+    )
+    encoded = urllib.parse.quote(row.artifact_path, safe="")
+    relocate = htpy.a(".btn.btn-sm.btn-outline-secondary.me-1", href=f"{base}/artifact/relocate?path={encoded}")[
+        "Relocate"
+    ]
+    move: htpy.Element = htpy.a(".btn.btn-sm.btn-outline-secondary.me-1", href=f"{base}/artifact/move?path={encoded}")[
+        "Move"
+    ]
+    if row.managed:
+        move = htpy.span(".btn.btn-sm.btn-outline-secondary.me-1.disabled", title="managed by ATR")["Move"]
+    return htpy.tr[
+        htpy.td[htpy.code[row.artifact_path]],
+        htpy.td[htpy.code[row.download_path_suffix] if row.download_path_suffix else htpy.em["dist root"]],
+        htpy.td["Yes" if row.managed else "No"],
+        htpy.td[f"r{row.svn_revision}" if row.svn_revision else ""],
+        htpy.td[_catalog_location_list(urls, statuses)],
+        htpy.td[relocate, move, remove_form],
+    ]
+
+
+def _catalog_artifact_urls(row: sql.Artifact, directory: str | None, archived: bool) -> dict[str, str]:
+    return catalog.published_urls(
+        directory, row.artifact_path, row.signature_path, row.checksum_path, row.sbom_path, archived
+    )
+
+
+async def _catalog_head_statuses(urls: Iterable[str]) -> dict[str, int | None]:
+    # One HEAD per distinct URL, following closer.lua's redirect so the answer is about the
+    # file on a mirror rather than the redirector. A host that refuses HEAD or doesn't answer
+    # in time reads as unknown, not missing
+    unique = list(dict.fromkeys(urls))
+    semaphore = asyncio.Semaphore(6)
+
+    async def _head(session: aiohttp.ClientSession, url: str) -> int | None:
+        async with semaphore:
+            try:
+                async with session.head(url, allow_redirects=True) as response:
+                    return response.status
+            except aiohttp.ClientError, TimeoutError:
+                return None
+
+    timeout = aiohttp.ClientTimeout(total=_CATALOG_HEAD_TIMEOUT)
+    async with util.create_secure_session(timeout=timeout) as session:
+        statuses = await asyncio.gather(*(_head(session, url) for url in unique))
+    return dict(zip(unique, statuses, strict=True))
+
+
+def _catalog_location_badge(status: int | None) -> htpy.Element:
+    if status is None:
+        return htpy.span(".badge.text-bg-secondary")["no answer"]
+    if _catalog_location_ok(status):
+        return htpy.span(".badge.text-bg-success")["ok"]
+    if status == 404:
+        return htpy.span(".badge.text-bg-danger")["missing"]
+    return htpy.span(".badge.text-bg-warning")[f"HTTP {status}"]
+
+
+def _catalog_location_list(urls: dict[str, str], statuses: dict[str, int | None] | None) -> htpy.Element:
+    return htpy.ul(".list-unstyled.mb-0")[
+        [
+            htpy.li[
+                f"{role}: ",
+                htpy.a(href=url)[url],
+                (" ", _catalog_location_badge(statuses.get(url))) if (statuses is not None) else "",
+            ]
+            for role, url in urls.items()
+        ]
+    ]
+
+
+def _catalog_location_ok(status: int | None) -> bool:
+    return (status is not None) and (200 <= status < 300)
+
+
+async def _catalog_release_artifacts_page(
+    committee_key: safe.CommitteeKey, project_key: safe.ProjectKey, version_key: safe.VersionKey, check: bool
+) -> str:
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
+        rows = await data.artifact(release_key=release.key).order_by(sql.Artifact.artifact_path).all()
+    base = _catalog_release_url(str(committee_key), str(project_key), str(version_key))
+    urls_by_row = {
+        row.artifact_path: _catalog_artifact_urls(row, row.download_path_suffix, release.is_archived) for row in rows
+    }
+    statuses = None
+    if check:
+        statuses = await _catalog_head_statuses(url for urls in urls_by_row.values() for url in urls.values())
+    body = [await _catalog_artifact_row_element(base, row, urls_by_row[row.artifact_path], statuses) for row in rows]
+    table = htpy.table(".table")[
+        htpy.thead[
+            htpy.tr[
+                htpy.th["File"],
+                htpy.th["Directory"],
+                htpy.th["Managed"],
+                htpy.th["SVN"],
+                htpy.th["Published at"],
+                htpy.th["Actions"],
+            ]
+        ],
+        htpy.tbody[body],
+    ]
+    check_form = await form.render(
+        model_cls=form.Empty,
+        action=f"{base}/artifacts/check",
+        form_classes=".d-inline",
+        submit_classes="btn-outline-primary",
+        submit_label="Check locations",
+        empty=True,
+    )
+    return await template.render(
+        "catalog-artifacts.html",
+        committee_key=str(committee_key),
+        project_key=str(project_key),
+        version=release.version,
+        status="archived" if release.is_archived else "current",
+        check_form=check_form,
+        artifacts=table,
+    )
+
+
+def _catalog_release_artifacts_action(committee_key: str, project_key: str, version: str) -> htpy.Element:
+    return htpy.a(
+        ".btn.btn-sm.btn-outline-secondary.me-1",
+        href=f"{_catalog_release_url(committee_key, project_key, version)}/artifacts",
+    )["Artifacts"]
+
+
+def _catalog_release_url(committee_key: str, project_key: str, version_key: str) -> str:
+    return f"/admin/catalog/{committee_key}/project/{project_key}/release/{version_key}"
 
 
 class CatalogReleaseMoveForm(form.Form):

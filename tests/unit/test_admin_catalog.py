@@ -53,3 +53,13 @@ def test_import_preview_warns_about_deletions_and_empty_levels() -> None:
     assert "artifacts.csv was not uploaded" in html
     assert "release alpha-one-1.0.0" in html
     assert "anything unspecified to be deleted" in html
+
+
+def test_location_badges_read_head_statuses() -> None:
+    # A 2xx is ok, a 404 is the file missing, anything else is shown as is, and no answer is unknown
+    assert "ok" in str(admin_module._catalog_location_badge(200))
+    assert "missing" in str(admin_module._catalog_location_badge(404))
+    assert "HTTP 403" in str(admin_module._catalog_location_badge(403))
+    assert "no answer" in str(admin_module._catalog_location_badge(None))
+    assert admin_module._catalog_location_ok(302) is False
+    assert admin_module._catalog_location_ok(204) is True

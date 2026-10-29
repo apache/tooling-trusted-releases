@@ -453,3 +453,126 @@ async def test_delete_project_orphans_a_child_super_pointer_rather_than_deleting
         child = await data.get(sql.Project, "alpha-one-sub")
         assert child is not None
         assert child.super_project_key is None
+
+
+@pytest.mark.asyncio
+async def test_relocate_artifact_allows_a_managed_release(sessionmaker) -> None:
+    # The directory is catalogue metadata, so a release with revisions - the ATR-published case
+    # whose files were then moved by hand in dist - is exactly the one that needs it
+    async with sessionmaker() as data:
+        await _seed_managed_project(data, "alpha", "alpha-one")
+        await _writer(data).relocate_artifact(
+            safe.ReleaseKey("alpha-one-1.0.0"), "apache-alpha-one-1.0.0.tar.gz", safe.RelPath("alpha/plugins")
+        )
+        row = await data.get(sql.Artifact, ("alpha-one", "1.0.0", "apache-alpha-one-1.0.0.tar.gz"))
+        assert row is not None
+        assert row.download_path_suffix == "alpha/plugins"
+
+
+@pytest.mark.asyncio
+async def test_relocate_artifact_refuses_a_no_op(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        with pytest.raises(storage.AccessError, match="already in that directory"):
+            await _writer(data).relocate_artifact(
+                safe.ReleaseKey("alpha-one-1.0.0"), "apache-alpha-one-1.0.0.tar.gz", None
+            )
+
+
+@pytest.mark.asyncio
+async def test_remove_artifact_drops_an_unmanaged_row_and_keeps_a_managed_one(sessionmaker) -> None:
+    # A managed row carries ATR's signing provenance, so it can be relocated but not removed
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one",
+                version="1.0.0",
+                artifact_path="twin.tar.gz",
+                release_key="alpha-one-1.0.0",
+                managed=True,
+            )
+        )
+        await data.commit()
+        writer = _writer(data)
+        with pytest.raises(storage.AccessError, match="managed by ATR"):
+            await writer.remove_artifact(safe.ReleaseKey("alpha-one-1.0.0"), "twin.tar.gz")
+        await writer.remove_artifact(safe.ReleaseKey("alpha-one-1.0.0"), "apache-alpha-one-1.0.0.tar.gz")
+        assert await data.get(sql.Artifact, ("alpha-one", "1.0.0", "apache-alpha-one-1.0.0.tar.gz")) is None
+        assert await data.get(sql.Artifact, ("alpha-one", "1.0.0", "twin.tar.gz")) is not None
+
+
+@pytest.mark.asyncio
+async def test_artifact_corrections_need_a_row_in_that_release(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        with pytest.raises(storage.AccessError, match="not found"):
+            await _writer(data).remove_artifact(safe.ReleaseKey("alpha-one-1.0.0"), "nope.tar.gz")
+
+
+@pytest.mark.asyncio
+async def test_move_artifact_creates_the_target_release_and_drops_the_emptied_source(sessionmaker) -> None:
+    # The seed filed a doxia-sitetools file under maven-doxia: it moves to the right project at
+    # the same version, that release is created with its RELEASE event, and the emptied source goes
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        data.add(sql.Project(key="alpha-two", name="Apache Two", committee_key="alpha"))
+        await data.commit()
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+
+        moved = await _writer(data).move_artifact(
+            safe.ReleaseKey("alpha-one-1.0.0"), "apache-alpha-one-1.0.0.tar.gz", safe.ProjectKey("alpha-two")
+        )
+
+        assert moved == catalogue.ArtifactMove(created_release=True, dropped_source=True)
+        row = await data.get(sql.Artifact, ("alpha-two", "1.0.0", "apache-alpha-one-1.0.0.tar.gz"))
+        assert row is not None
+        assert row.release_key == "alpha-two-1.0.0"
+        target = await data.get(sql.Release, "alpha-two-1.0.0")
+        assert target is not None
+        assert target.phase is sql.ReleasePhase.RELEASE
+        assert await data.get(sql.Release, "alpha-one-1.0.0") is None
+        events = (await data.execute(sqlmodel.select(sql.LifecycleEvent))).scalars().all()
+        assert [(event.version_key, event.event) for event in events] == [
+            ("alpha-two-1.0.0", sql.LifecycleEventType.RELEASE)
+        ]
+
+
+@pytest.mark.asyncio
+async def test_move_artifact_keeps_a_managed_row_and_refuses_a_clash(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        data.add(sql.Project(key="alpha-two", name="Apache Two", committee_key="alpha"))
+        await data.commit()
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        await _seed_release_with_children(data, "alpha-two", "1.0.0")
+        data.add(
+            sql.Artifact(
+                project_key="alpha-two",
+                version="1.0.0",
+                artifact_path="apache-alpha-one-1.0.0.tar.gz",
+                release_key="alpha-two-1.0.0",
+            )
+        )
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one",
+                version="1.0.0",
+                artifact_path="signed.tar.gz",
+                release_key="alpha-one-1.0.0",
+                managed=True,
+            )
+        )
+        await data.commit()
+        writer = _writer(data)
+        with pytest.raises(storage.AccessError, match="already has"):
+            await writer.move_artifact(
+                safe.ReleaseKey("alpha-one-1.0.0"), "apache-alpha-one-1.0.0.tar.gz", safe.ProjectKey("alpha-two")
+            )
+        with pytest.raises(storage.AccessError, match="managed by ATR"):
+            await writer.move_artifact(
+                safe.ReleaseKey("alpha-one-1.0.0"), "signed.tar.gz", safe.ProjectKey("alpha-two")
+            )

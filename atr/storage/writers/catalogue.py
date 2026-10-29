@@ -18,7 +18,7 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, NamedTuple
 
 import sqlalchemy
 import sqlmodel
@@ -39,6 +39,12 @@ import atr.storage.writers.release as release_writer
 _DELETE_CHUNK: Final[int] = 300
 
 type ArtifactFacts = tuple[str | None, int | None, str | None, str | None]
+
+
+class ArtifactMove(NamedTuple):
+    # What a move did beyond the row itself
+    created_release: bool
+    dropped_source: bool
 
 
 class FoundationAdmin:
@@ -110,6 +116,109 @@ class FoundationAdmin:
             moved_release=old_key,
             moved_to_project=to_project,
         )
+
+    async def relocate_artifact(
+        self, release_key: safe.ReleaseKey, artifact_path: str, directory: safe.RelPath | None
+    ) -> None:
+        # Only the row's idea of where its files live changes, so a managed release is fine
+        # here: its revision files are untouched, and this is how a hand move in dist after an
+        # ATR publish gets reflected.
+        key = str(release_key)
+        path = artifact_path
+        new_directory = str(directory) if (directory is not None) else None
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release, row = await self._artifact_row(key, path)
+            if row.download_path_suffix == new_directory:
+                raise storage.AccessError("The artifact is already in that directory.", status=400)
+            row.download_path_suffix = new_directory
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, release.project_key)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            relocated_artifact=path,
+            release_key=key,
+            directory=new_directory,
+        )
+
+    async def remove_artifact(self, release_key: safe.ReleaseKey, artifact_path: str) -> None:
+        # A managed row carries the signing provenance ATR vouched for, and losing it drops the
+        # release's certified badge, so only an unmanaged row (a seed or watcher duplicate) goes
+        key = str(release_key)
+        path = artifact_path
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release, row = await self._artifact_row(key, path)
+            if row.managed:
+                raise storage.AccessError(
+                    f"Artifact '{path}' is managed by ATR; relocate it rather than removing it.", status=409
+                )
+            await self.__data.delete(row)
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, release.project_key)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            removed_artifact=path,
+            release_key=key,
+        )
+
+    async def move_artifact(
+        self, release_key: safe.ReleaseKey, artifact_path: str, target_project_key: safe.ProjectKey
+    ) -> ArtifactMove:
+        # The row keeps its version and its dist directory - only the attribution changes. A
+        # managed row stays put, as its release workflow lives under the source project. The
+        # target release is created when the version isn't catalogued there yet, and a source
+        # release left with no rows goes with its events
+        key = str(release_key)
+        path = artifact_path
+        target_key = str(target_project_key)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release, row = await self._artifact_row(key, path)
+            source_project = release.project_key
+            if row.managed:
+                raise storage.AccessError(
+                    f"Artifact '{path}' is managed by ATR, so it stays with its release.", status=409
+                )
+            if source_project == target_key:
+                raise storage.AccessError("The artifact is already in that project.", status=400)
+            target_project = await self.__data.get(sql.Project, target_key)
+            if target_project is None:
+                raise storage.AccessError(f"Target project '{target_key}' not found.", status=404)
+            if await self.__data.get(sql.Artifact, (target_key, release.version, path)) is not None:
+                raise storage.AccessError(f"{target_key} {release.version} already has {path}.", status=409)
+            target_release = await self.__data.get(sql.Release, f"{target_key}-{release.version}")
+            created_release = target_release is None
+            if target_release is None:
+                target_release = await self._catalogue_release_like(release, target_project)
+            await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
+            row.project_key = target_key
+            row.release_key = target_release.key
+            await self.__data.flush()
+            dropped_source = await self._drop_release_if_empty(key)
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, source_project)
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, target_key)
+            await self._assert_fk_integrity()
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            moved_artifact=path,
+            release_key=key,
+            moved_to_project=target_key,
+        )
+        return ArtifactMove(created_release=created_release, dropped_source=dropped_source)
 
     async def archive_project(self, project_key: safe.ProjectKey) -> None:
         await self._set_project_status(project_key, sql.ProjectStatus.RETIRED)
@@ -746,6 +855,81 @@ class FoundationAdmin:
                 "this page moves catalogued releases only.",
                 status=409,
             )
+
+    async def _artifact_row(self, release_key: str, artifact_path: str) -> tuple[sql.Release, sql.Artifact]:
+        release = await self.__data.get(sql.Release, release_key)
+        if release is None:
+            raise storage.AccessError(f"Release '{release_key}' not found.", status=404)
+        row = await self.__data.get(sql.Artifact, (release.project_key, release.version, artifact_path))
+        if (row is None) or (row.release_key != release_key):
+            raise storage.AccessError(f"Artifact '{artifact_path}' not found in {release_key}.", status=404)
+        return release, row
+
+    async def _catalogue_release_like(self, source: sql.Release, project: sql.Project) -> sql.Release:
+        # The same shape the dist watcher catalogues a release in, dated and archived as the source was
+        try:
+            cycle_name = cycles.cycle_name_for_version(project, source.version)
+        except ValueError:
+            cycle_name = cycles.DEFAULT_CYCLE
+        cycle_key = f"{project.key}-{cycle_name}"
+        if not await self.__data.project_cycle(cycle_key=cycle_key).get():
+            self.__data.add(sql.ProjectCycle(cycle_key=cycle_key, cycle=cycle_name, project_key=project.key, lts=False))
+        target = sql.Release(
+            key=f"{project.key}-{source.version}",
+            phase=sql.ReleasePhase.RELEASE,
+            created=source.created,
+            released=source.released,
+            project_key=project.key,
+            cycle_key=cycle_key,
+            version=source.version,
+            is_archived=source.is_archived,
+            archived=source.archived,
+        )
+        self.__data.add(target)
+        # The release row has to save before the event's foreign key is checked
+        await self.__data.flush()
+        self.__data.add(
+            sql.LifecycleEvent(
+                project_key=project.key,
+                cycle_key=cycle_key,
+                version_key=target.key,
+                event=sql.LifecycleEventType.RELEASE,
+                effective=source.released or source.created,
+            )
+        )
+        if source.archived is not None:
+            self.__data.add(
+                sql.LifecycleEvent(
+                    project_key=project.key,
+                    cycle_key=cycle_key,
+                    version_key=target.key,
+                    event=sql.LifecycleEventType.ARCHIVE,
+                    effective=source.archived,
+                )
+            )
+        return target
+
+    async def _drop_release_if_empty(self, release_key: str) -> bool:
+        # A release with no artifact rows left goes, lifecycle trail included. One with revisions
+        # is a workflow release and stays whatever it holds
+        via = sql.validate_instrumented_attribute
+        for model in (sql.Artifact, sql.Revision):
+            held = await self.__data.execute(
+                sqlmodel.select(sqlalchemy.func.count()).select_from(model).where(via(model.release_key) == release_key)
+            )
+            if int(held.scalar() or 0) > 0:
+                return False
+        event_ids = sqlmodel.select(via(sql.LifecycleEvent.id)).where(
+            via(sql.LifecycleEvent.version_key) == release_key
+        )
+        await self.__data.execute(
+            sqlmodel.delete(sql.LifecycleEvent).where(via(sql.LifecycleEvent.target_event_id).in_(event_ids))
+        )
+        await self.__data.execute(
+            sqlmodel.delete(sql.LifecycleEvent).where(via(sql.LifecycleEvent.version_key) == release_key)
+        )
+        await self.__data.execute(sqlmodel.delete(sql.Release).where(via(sql.Release.key) == release_key))
+        return True
 
     async def _assert_fk_integrity(self) -> None:
         # Flush pending ORM work, then check for dangling references before commit

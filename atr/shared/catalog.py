@@ -154,6 +154,32 @@ def cycle_groups(
     ]
 
 
+def published_urls(
+    directory: str | None,
+    artifact_path: str,
+    signature_path: str | None,
+    checksum_path: str | None,
+    sbom_path: str | None,
+    archived: bool,
+) -> dict[str, str]:
+    """Where each of an artifact's published files is fetched from, keyed by role.
+
+    The stored directory is the file's real dist location, so a moved project's artifacts
+    (graduated from an umbrella, or shifted to the Attic) resolve where they actually live.
+    The signature, checksum and SBOM share the directory. No recorded directory roots at the
+    bare file path."""
+
+    def _dist_url(rel_path: str, kind: util.DownloadFile) -> str:
+        path = f"{directory}/{rel_path}" if directory else rel_path
+        return util.download_url_for_published_path(path, kind, archived=archived)
+
+    urls = {"artifact": _dist_url(artifact_path, util.DownloadFile.ARTIFACT)}
+    for role, rel_path in (("signature", signature_path), ("checksum", checksum_path), ("sbom", sbom_path)):
+        if rel_path:
+            urls[role] = _dist_url(rel_path, util.DownloadFile.METADATA)
+    return urls
+
+
 def sbom_urls(version: models.api.CatalogVersion) -> dict[str, str]:
     return {artifact.artifact_path: artifact.sbom_url for artifact in version.artifacts if artifact.sbom_url}
 
@@ -169,28 +195,11 @@ def version_order(
 
 
 def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.api.CatalogArtifact:
-    artifact_url: str | None = None
-    signature_url: str | None = None
-    checksum_url: str | None = None
-    sbom_url: str | None = None
+    urls: dict[str, str] = {}
     if downloadable:
-        # The stored suffix is the file's real dist location, so a moved project's artifacts
-        # (graduated from an umbrella, or shifted to the Attic) resolve where they actually live. The
-        # signature, checksum and SBOM share the directory. A row with no recorded suffix roots at
-        # the bare file path.
-        suffix = row.download_path_suffix
-
-        def _dist_url(rel_path: str, kind: util.DownloadFile) -> str:
-            path = f"{suffix}/{rel_path}" if suffix else rel_path
-            return util.download_url_for_published_path(path, kind, archived=archived)
-
-        artifact_url = _dist_url(row.artifact_path, util.DownloadFile.ARTIFACT)
-        if row.signature_path:
-            signature_url = _dist_url(row.signature_path, util.DownloadFile.METADATA)
-        if row.checksum_path:
-            checksum_url = _dist_url(row.checksum_path, util.DownloadFile.METADATA)
-        if row.sbom_path:
-            sbom_url = _dist_url(row.sbom_path, util.DownloadFile.METADATA)
+        urls = published_urls(
+            row.download_path_suffix, row.artifact_path, row.signature_path, row.checksum_path, row.sbom_path, archived
+        )
     return models.api.CatalogArtifact(
         artifact_path=row.artifact_path,
         classification=row.classification,
@@ -202,10 +211,10 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
         managed=row.managed,
         dated=row.dated,
         downloadable=downloadable,
-        artifact_url=artifact_url,
-        signature_url=signature_url,
-        checksum_url=checksum_url,
-        sbom_url=sbom_url,
+        artifact_url=urls.get("artifact"),
+        signature_url=urls.get("signature"),
+        checksum_url=urls.get("checksum"),
+        sbom_url=urls.get("sbom"),
     )
 
 

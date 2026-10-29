@@ -1,0 +1,18 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Artifacts: {{ project_key }} {{ version }} ~ ATR{%- endblock title -%}
+
+{%- block description -%}Correct where the catalogue says a release's files are published.{%- endblock description -%}
+
+{% block content %}
+    <h1>Artifacts: {{ project_key }} {{ version }}</h1>
+    <p><a href="/admin/catalog/{{ committee_key }}/project/{{ project_key }}">Back to {{ project_key }}</a></p>
+    <p>
+        The rows for this {{ status }} release, each with where the catalogue publishes it.
+        Check locations sends a HEAD request to every address. Relocate changes a row's
+        directory after checking the new one, Move re-files it under another project at the
+        same version, and Remove drops an unmanaged row.
+    </p>
+    <p>{{ check_form }}</p>
+    {{ artifacts }}
+{% endblock content %}

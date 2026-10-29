@@ -365,3 +365,17 @@ def _release(
         archived=archived,
         is_archived=is_archived,
     )
+
+
+def test_published_urls_follow_the_recorded_directory_and_lifecycle() -> None:
+    # The artifact goes via the mirror network and its companions via the canonical host; an
+    # archived release's files all come from the archive; no directory roots at the bare name
+    current = catalog.published_urls("maven/plugins", "a-1.0.zip", "a-1.0.zip.asc", "a-1.0.zip.sha512", None, False)
+    assert current["artifact"] == f"{constants.CLOSER_LUA_URL}/maven/plugins/a-1.0.zip?action=download"
+    assert current["signature"] == f"{constants.DOWNLOADS_APACHE_URL}/maven/plugins/a-1.0.zip.asc"
+    assert current["checksum"].endswith("/maven/plugins/a-1.0.zip.sha512")
+    assert "sbom" not in current
+    archived = catalog.published_urls(None, "a-1.0.zip", None, None, None, True)
+    assert list(archived) == ["artifact"]
+    assert archived["artifact"].startswith(constants.ARCHIVE_APACHE_URL)
+    assert archived["artifact"].endswith("/a-1.0.zip")
