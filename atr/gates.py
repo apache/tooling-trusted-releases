@@ -15,13 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import dataclasses
 import hashlib
 import hmac
 import json
 import os
+import pathlib
 import re
 import time
+import urllib.parse
 from typing import Any, Final
 
 import aiofiles
@@ -37,79 +38,68 @@ import atr.log as log
 import atr.models.sql as sql
 import atr.util as util
 
-
-@dataclasses.dataclass(frozen=True)
-class Gate:
-    repository: str
-    environment: str
-    workflow: str
-    event: str
-    ref_prefix: str
-    team: str
-
-
+EVENTS: Final[tuple[str, ...]] = ("push", "release", "workflow_dispatch")
+REF_TYPES: Final[dict[str, str]] = {"branch": "heads", "tag": "tags"}
+TEAMS: Final[dict[str, str]] = {"tooling": ldap.LDAP_TOOLING_SERVICE_BASE}
 THRESHOLD: Final[int] = 2
 
 _CALLBACK: Final = re.compile(
     r"https://api\.github\.com/repos/[^/]+/[^/]+/actions/runs/([0-9]+)/deployment_protection_rule"
 )
-_GATES: Final[dict[int, Gate]] = {
-    1423509856: Gate(
-        "apache/tooling-noisy-secrets",
-        "pypi",
-        ".github/workflows/publish.yml",
-        "push",
-        "v",
-        ldap.LDAP_TOOLING_SERVICE_BASE,
-    ),
-}
 _HTTP_TIMEOUT: Final = aiohttp.ClientTimeout(total=30, connect=10)
-_TEST_GATES: Final[dict[int, Gate]] = {
-    1437446590: Gate(
-        "sbp/dps-test",
-        "pypi",
-        ".github/workflows/deploy.yml",
-        "workflow_dispatch",
-        "main",
-        ldap.LDAP_TOOLING_SERVICE_BASE,
-    ),
-}
+_PATTERN: Final = re.compile(r"(?:[^\[\]\\]|\[(?:0-9|a-z|A-Z|[A-Za-z0-9._])+\])+")
 
 
-async def eligible(gate_obj: Gate) -> set[str]:
-    return {uid for uid in await ldap.group_members(gate_obj.team) if await ldap.is_active(uid)}
+async def active(data: db.Session, repository_id: int) -> sql.GateConfig | None:
+    via = sql.validate_instrumented_attribute
+    query = data.gate_config(repository_id=repository_id, status=sql.GateStatus.APPROVED)
+    return await query.order_by(via(sql.GateConfig.decided).desc()).limit(1).get()
 
 
-def gate(repository_id: int) -> Gate | None:
-    if config.is_production_mode():
-        return _GATES.get(repository_id)
-    return _GATES.get(repository_id) or _TEST_GATES.get(repository_id)
+async def eligible(committee_key: str) -> set[str]:
+    return {uid for uid in await ldap.group_members(TEAMS[committee_key]) if await ldap.is_active(uid)}
 
 
-def run_problem(gate_obj: Gate, repository_id: int, run: dict[str, Any]) -> str | None:
+async def lookup(repository: str) -> tuple[int, str]:
+    token = await _installation_token(repository)
+    found = await _github("GET", f"/repos/{repository}", token)
+    return found["id"], found["full_name"]
+
+
+def pattern_supported(pattern: str) -> bool:
+    normal = str(pathlib.PurePosixPath(pattern)) == pattern
+    return (_PATTERN.fullmatch(pattern) is not None) and (not pattern.endswith("**")) and normal
+
+
+def run_problem(gate_obj: sql.GateConfig, repository_id: int, run: dict[str, Any]) -> str | None:
     if run["repository"]["id"] != repository_id:
         return "the run is in another repository"
     if run["path"] != gate_obj.workflow:
         return f"the workflow is {run['path']}, not {gate_obj.workflow}"
     if run["event"] != gate_obj.event:
         return f"the event is {run['event']}, not {gate_obj.event}"
-    if not str(run["head_branch"]).startswith(gate_obj.ref_prefix):
-        return f"the ref {run['head_branch']} does not start with {gate_obj.ref_prefix}"
+    if not pathlib.PurePosixPath(str(run["head_branch"])).full_match(gate_obj.ref_pattern):
+        return f"the ref {run['head_branch']} does not match {gate_obj.ref_pattern}"
     return None
 
 
 async def send_decision(request_id: int) -> None:
     async with db.session() as data:
         request = await data.gate_request(id=request_id).demand(RuntimeError(f"Gate request {request_id} not found"))
-    gate_obj = gate(request.repository_id)
+        gate_obj = await active(data, request.repository_id)
     if gate_obj is None:
         raise RuntimeError(f"No gate covers repository {request.repository_id}")
-    if tally(request.decisions, await eligible(gate_obj)) != request.status:
+    if tally(request.decisions, await eligible(gate_obj.committee_key)) != request.status:
         raise RuntimeError(f"The decision on gate request {request_id} no longer holds")
     token = await _installation_token(gate_obj.repository)
     run = await _github("GET", f"/repos/{gate_obj.repository}/actions/runs/{request.run_id}", token)
     if (run["run_attempt"] != request.run_attempt) or (run["status"] != "waiting"):
         raise RuntimeError(f"Run {request.run_id} is no longer waiting on attempt {request.run_attempt}")
+    problem = run_problem(gate_obj, request.repository_id, run)
+    if (problem is None) and (request.ref != f"refs/{REF_TYPES[gate_obj.ref_type]}/{run['head_branch']}"):
+        problem = f"it was recorded as {request.ref}"
+    if problem is not None:
+        raise RuntimeError(f"Run {request.run_id} no longer passes the gate: {problem}")
     deciders = ", ".join(f"{uid} (ASF)" for uid in sorted(request.decisions))
     try:
         await _review(
@@ -168,7 +158,8 @@ async def _installation_token(repository: str) -> str:
 
 async def _record(payload: dict[str, Any]) -> None:
     repository_id = payload["repository"]["id"]
-    gate_obj = gate(repository_id)
+    async with db.session() as data:
+        gate_obj = await active(data, repository_id)
     match = _CALLBACK.fullmatch(payload["deployment_callback_url"])
     if (gate_obj is None) or (match is None) or (payload["environment"].lower() != gate_obj.environment):
         log.warning(f"Ignoring a deployment protection rule request for repository {repository_id}")
@@ -178,7 +169,7 @@ async def _record(payload: dict[str, Any]) -> None:
     run = await _github("GET", f"/repos/{gate_obj.repository}/actions/runs/{run_id}", token)
     if run["status"] != "waiting":
         return
-    problem = run_problem(gate_obj, repository_id, run)
+    problem = run_problem(gate_obj, repository_id, run) or await _ref_problem(token, gate_obj, run)
     if problem is not None:
         await _review(token, gate_obj, run_id, "rejected", f"ATR refused this run: {problem}")
         return
@@ -194,7 +185,7 @@ async def _record(payload: dict[str, Any]) -> None:
                 run_id=run_id,
                 run_attempt=run["run_attempt"],
                 head_sha=run["head_sha"],
-                ref=run["head_branch"],
+                ref=f"refs/{REF_TYPES[gate_obj.ref_type]}/{run['head_branch']}",
                 actor=run["triggering_actor"]["login"],
                 actor_asf_uid=actor_asf_uid,
                 decisions={},
@@ -204,6 +195,19 @@ async def _record(payload: dict[str, Any]) -> None:
         await data.commit()
 
 
-async def _review(token: str, gate_obj: Gate, run_id: int, state: str, comment: str) -> None:
+async def _ref_problem(token: str, gate_obj: sql.GateConfig, run: dict[str, Any]) -> str | None:
+    ref = f"refs/{REF_TYPES[gate_obj.ref_type]}/{urllib.parse.quote(run['head_branch'])}"
+    try:
+        commit = await _github("GET", f"/repos/{gate_obj.repository}/commits/{ref}", token)
+    except aiohttp.ClientResponseError as e:
+        if e.status != 422:
+            raise
+        return f"{run['head_branch']} is not a {gate_obj.ref_type}"
+    if commit["sha"] != run["head_sha"]:
+        return f"the {gate_obj.ref_type} {run['head_branch']} does not point at the run's commit"
+    return None
+
+
+async def _review(token: str, gate_obj: sql.GateConfig, run_id: int, state: str, comment: str) -> None:
     body = {"environment_name": gate_obj.environment, "state": state, "comment": comment}
     await _github("POST", f"/repos/{gate_obj.repository}/actions/runs/{run_id}/deployment_protection_rule", token, body)

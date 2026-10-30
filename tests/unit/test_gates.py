@@ -18,8 +18,27 @@
 import atr.gates as gates
 import atr.models.sql as sql
 
-_GATE = gates.Gate("o/r", "pypi", ".github/workflows/publish.yml", "push", "v", "cn=team")
+_GATE = sql.GateConfig(
+    repository_id=1,
+    repository="o/r",
+    committee_key="tooling",
+    environment="pypi",
+    workflow=".github/workflows/publish.yml",
+    event="push",
+    ref_type="tag",
+    ref_pattern="v[0-9]*",
+)
 _RUN = {"repository": {"id": 1}, "path": ".github/workflows/publish.yml", "event": "push", "head_branch": "v0.0.1"}
+
+
+def test_pattern_supported() -> None:
+    assert gates.pattern_supported("v[0-9]*")
+    assert gates.pattern_supported("release/**/*")
+    assert not gates.pattern_supported("v[!0-9]*")
+    assert not gates.pattern_supported("v[--!!]*")
+    assert not gates.pattern_supported("v[^0-9]*")
+    assert not gates.pattern_supported("release/**")
+    assert not gates.pattern_supported("./v*")
 
 
 def test_run_problem() -> None:
@@ -28,6 +47,8 @@ def test_run_problem() -> None:
     assert gates.run_problem(_GATE, 1, {**_RUN, "path": ".github/workflows/other.yml"}) is not None
     assert gates.run_problem(_GATE, 1, {**_RUN, "event": "workflow_dispatch"}) is not None
     assert gates.run_problem(_GATE, 1, {**_RUN, "head_branch": "main"}) is not None
+    assert gates.run_problem(_GATE, 1, {**_RUN, "head_branch": "v-test"}) is not None
+    assert gates.run_problem(_GATE, 1, {**_RUN, "head_branch": "evil/v0.0.1"}) is not None
 
 
 def test_signature_valid() -> None:

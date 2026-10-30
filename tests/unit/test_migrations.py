@@ -114,6 +114,11 @@ _ROWS = {
         "INSERT INTO gaterequest (repository_id, run_id, run_attempt, head_sha, ref, actor, status, decisions)"
         " VALUES (1, 1, 1, 'sha', 'v1', 'u', 'PENDING', '{}')",
     ),
+    "0139": (
+        "INSERT INTO gateconfig (repository_id, repository, committee_key, environment, workflow, event,"
+        " ref_type, ref_pattern, status, decisions)"
+        " VALUES (1, 'o/r', 'c', 'e', 'w', 'push', 'tag', 'v*', 'PENDING', '{}')",
+    ),
 }
 
 

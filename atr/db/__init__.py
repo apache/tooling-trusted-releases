@@ -528,6 +528,53 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         execution_result: sqlalchemy.engine.Result = await self.execute(query)
         return execution_result
 
+    def gate_config(
+        self,
+        id: Opt[int] = NOT_SET,
+        repository_id: Opt[int] = NOT_SET,
+        repository: Opt[str] = NOT_SET,
+        committee_key: Opt[str] = NOT_SET,
+        environment: Opt[str] = NOT_SET,
+        workflow: Opt[str] = NOT_SET,
+        event: Opt[str] = NOT_SET,
+        ref_type: Opt[str] = NOT_SET,
+        ref_pattern: Opt[str] = NOT_SET,
+        previous_id: Opt[int | None] = NOT_SET,
+        status: Opt[sql.GateStatus] = NOT_SET,
+        decisions: Opt[dict[str, bool]] = NOT_SET,
+        decided: Opt[datetime.datetime | None] = NOT_SET,
+    ) -> Query[sql.GateConfig]:
+        query = sqlmodel.select(sql.GateConfig)
+
+        if is_defined(id):
+            query = query.where(sql.GateConfig.id == id)
+        if is_defined(repository_id):
+            query = query.where(sql.GateConfig.repository_id == repository_id)
+        if is_defined(repository):
+            query = query.where(sql.GateConfig.repository == repository)
+        if is_defined(committee_key):
+            query = query.where(sql.GateConfig.committee_key == committee_key)
+        if is_defined(environment):
+            query = query.where(sql.GateConfig.environment == environment)
+        if is_defined(workflow):
+            query = query.where(sql.GateConfig.workflow == workflow)
+        if is_defined(event):
+            query = query.where(sql.GateConfig.event == event)
+        if is_defined(ref_type):
+            query = query.where(sql.GateConfig.ref_type == ref_type)
+        if is_defined(ref_pattern):
+            query = query.where(sql.GateConfig.ref_pattern == ref_pattern)
+        if is_defined(previous_id):
+            query = query.where(sql.GateConfig.previous_id == previous_id)
+        if is_defined(status):
+            query = query.where(sql.GateConfig.status == status)
+        if is_defined(decisions):
+            query = query.where(sql.GateConfig.decisions == decisions)
+        if is_defined(decided):
+            query = query.where(sql.GateConfig.decided == decided)
+
+        return Query(self, query)
+
     def gate_request(
         self,
         id: Opt[int] = NOT_SET,

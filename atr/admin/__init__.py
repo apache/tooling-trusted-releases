@@ -102,6 +102,7 @@ _BROWSABLE_MODELS: Final[tuple[type[sqlmodel.SQLModel], ...]] = (
     sql.Committee,
     sql.Distribution,
     sql.DistRule,
+    sql.GateConfig,
     sql.GateRequest,
     sql.KeyAttestable,
     sql.KeyLink,
