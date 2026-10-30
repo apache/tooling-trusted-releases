@@ -64,7 +64,7 @@ repos:
         - scripts/ci/LICENSE-template.txt
         - --fuzzy-match-generates-todo
 - repo: https://github.com/igorshubovych/markdownlint-cli
-  rev: 5b5dddc4fb0f83c3ea1fc5616fa63e115dce83e0  # frozen: v0.49.1
+  rev: cbcdc463be5464e25e3e955a511599a67b9b987f  # frozen: v0.50.0
   hooks:
     - id: markdownlint
       name: run Markdown lints
@@ -124,7 +124,7 @@ repos:
         - '--ignore-vuln'
         - 'PYSEC-2025-183'
 - repo: https://github.com/oxc-project/mirrors-oxlint
-  rev: 5b56cf853a2b0e1e276773824e00111e6312cb09  # frozen: v1.88.0
+  rev: 8ebb1eb700c8785f2ee97c25259a3f24b74a4dcf  # frozen: v1.89.0
   hooks:
     - id: oxlint
       name: lint JS files with Oxlint
@@ -138,7 +138,7 @@ repos:
         - --deny=pedantic
         - --allow=unicorn/prefer-query-selector
 - repo: https://github.com/biomejs/pre-commit
-  rev: 5090c1e080cc8cec15feee68a9355c0f660d3712  # frozen: v2.5.15
+  rev: f9fccc969fb42a59a17a1a430df9f38851f9b2da  # frozen: v2.6.3
   hooks:
     - id: biome-format
       name: format JS files with Biome

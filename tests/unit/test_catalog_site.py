@@ -614,10 +614,12 @@ def test_release_feeds_split_podlings_out_and_sort_by_key() -> None:
     maven = _committee_with_project("maven", "Maven", is_podling=False)
     ant = _committee_with_project("ant", "Ant", is_podling=False)
     amoro = _committee_with_project("amoro", "Amoro", is_podling=True)
+    tooling = _committee_with_project("tooling", "Tooling", is_podling=False)
 
-    projects, podlings = catalog_site._release_feeds([maven, amoro, ant], {}, {})
+    projects, podlings = catalog_site._release_feeds([maven, amoro, tooling, ant], {}, {})
 
-    # Podlings are kept out of the project feed, the rest sorted by key.
+    # Podlings are kept out of the project feed, the rest sorted by key. Tooling isn't a
+    # PMC and has no projects.apache.org page, so it goes in neither feed.
     assert list(projects) == ["ant", "maven"]
     assert list(podlings) == ["amoro"]
     # The podling's maintainer names the PPMC and its own dev list.

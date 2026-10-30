@@ -187,7 +187,7 @@ strict-checking = true
 [tool.uv]
 # Dependency cooldown, requires uv 0.9.17+
 exclude-newer = "5 days"
-override-dependencies = ["cryptography>=50.0,<51.0.0","h2>=4.4.1,<4.4.2"]
+override-dependencies = ["cryptography>=50.0,<51.0.0","h2>=4.4.1,<4.4.2","pyasn1>=0.6.5,<0.6.6"]
 required-version = ">=0.9.17"
 
 [tool.uv.extra-build-dependencies]
