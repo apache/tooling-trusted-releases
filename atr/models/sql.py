@@ -735,6 +735,25 @@ class DistRule(sqlmodel.SQLModel, table=True):
     __table_args__ = (sqlalchemy.Index("ix_distrule_kind", "kind"),)
 
 
+# GateConfig:
+class GateConfig(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    repository_id: int = sqlmodel.Field()
+    repository: str = sqlmodel.Field()
+    committee_key: str = sqlmodel.Field()
+    environment: str = sqlmodel.Field()
+    workflow: str = sqlmodel.Field()
+    event: str = sqlmodel.Field()
+    ref_type: str = sqlmodel.Field()
+    ref_pattern: str = sqlmodel.Field()
+    previous_id: int | None = sqlmodel.Field(default=None)
+    status: GateStatus = sqlmodel.Field(default=GateStatus.PENDING)
+    decisions: dict[str, bool] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    decided: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+
+
 # GateRequest:
 class GateRequest(sqlmodel.SQLModel, table=True):
     id: int | None = sqlmodel.Field(default=None, primary_key=True)
