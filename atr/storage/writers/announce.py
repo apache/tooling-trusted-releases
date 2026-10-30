@@ -237,7 +237,7 @@ class ReleaseManager(CommitteeParticipant):
         else:
             if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
                 await self.__check_publication_artifacts(
-                    unfinished_path, util.svn_publish_target(), public_url, acknowledge_unreachable
+                    unfinished_path, util.svn_publish_target(), public_url, internal_url, acknowledge_unreachable
                 )
             else:
                 await self.__check_local_publication_artifacts(unfinished_path, internal_url, published_revision)
@@ -447,6 +447,7 @@ class ReleaseManager(CommitteeParticipant):
         unfinished_path: safe.StatePath,
         target: util.SvnPublishTarget,
         public_url: str,
+        internal_url: str,
         acknowledge_unreachable: bool,
     ) -> None:
         rel_paths = await self.__artifact_rel_paths(unfinished_path)
@@ -459,7 +460,15 @@ class ReleaseManager(CommitteeParticipant):
                 f" {summary.unprobed} were not checked"
             )
         if missing := summary.missing:
-            raise storage.AccessError(
+            gone = await self.__missing_from_svn(internal_url, [outcome.rel_path for outcome in missing])
+            if gone:
+                raise storage.PublicationMissingError(
+                    f"This release cannot be announced, because {len(gone)} of the files ATR published are no"
+                    f" longer in SVN where it put them; the first is {gone[0]}. They may have been moved or"
+                    " removed after publishing.",
+                    status=409,
+                )
+            raise storage.PublicationMissingError(
                 f"This release cannot be announced yet, because only {summary.reachable} of {summary.total}"
                 f" checked artifacts are available on the download server; the first missing artifact is"
                 f" {missing[0].public_url}. Publication may still be propagating, so please try again later.",
@@ -494,6 +503,17 @@ class ReleaseManager(CommitteeParticipant):
                 rel_paths.append(rel_str)
         rel_paths.sort()
         return rel_paths
+
+    async def __missing_from_svn(self, internal_url: str, rel_paths: list[str]) -> list[str]:
+        # The download server trails SVN, so a file missing there might still be on its way. One
+        # that's gone from SVN too was moved or removed by hand. If SVN can't be read we can't tell
+        # the two apart, so we treat it as still propagating
+        try:
+            present = set(await svn.list_files(internal_url))
+        except (svn.CommandExecutionError, ValueError) as exc:
+            log.warning(f"Could not list {internal_url} to check for moved files: {exc}")
+            return []
+        return [rel_path for rel_path in rel_paths if rel_path not in present]
 
     def __download_path_suffix_from_task(self, task: sql.Task) -> safe.RelPath | None:
         candidate = task.task_args.get("download_path_suffix")

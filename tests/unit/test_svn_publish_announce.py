@@ -26,6 +26,8 @@ import atr.storage as storage
 import atr.storage.writers.announce as announce_writer
 import atr.util as util
 
+_INTERNAL_URL = "https://dist.apache.org/repos/dist/release/project"
+
 
 class FakeExport:
     def __init__(self, tree: dict[str, bytes]) -> None:
@@ -99,7 +101,7 @@ async def test_announce_acknowledgement_overrides_unreachable_server(
     check = getattr(writer, "_ReleaseManager__check_publication_artifacts")
     public_url = f"{constants.DOWNLOADS_APACHE_URL}/project"
 
-    await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, True)
+    await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, _INTERNAL_URL, True)
 
     assert any("unreachable" in warning for warning in warnings)
 
@@ -112,15 +114,61 @@ async def test_announce_blocks_when_artifact_missing(
     artifact.write_text("content", encoding="utf-8")
 
     monkeypatch.setattr(announce_writer.util, "check_propagation", fake_propagation_missing)
+    # Still in SVN, so it's on its way to the download server
+    monkeypatch.setattr(announce_writer.svn, "list_files", mock.AsyncMock(return_value=["artifact.tar.gz"]))
     writer = object.__new__(announce_writer.ReleaseManager)
     check = getattr(writer, "_ReleaseManager__check_publication_artifacts")
     public_url = f"{constants.DOWNLOADS_APACHE_URL}/project"
 
-    with pytest.raises(storage.AccessError) as info:
-        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, True)
+    with pytest.raises(storage.PublicationMissingError) as info:
+        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, _INTERNAL_URL, True)
 
     assert info.value.status == 409
     assert "artifact.tar.gz" in str(info.value)
+    assert "still be propagating" in str(info.value)
+
+
+async def test_announce_blocks_when_artifact_moved_in_svn(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = tmp_path / "artifact.tar.gz"
+    artifact.write_text("content", encoding="utf-8")
+
+    monkeypatch.setattr(announce_writer.util, "check_propagation", fake_propagation_missing)
+    listing = mock.AsyncMock(return_value=["source/artifact.tar.gz"])
+    monkeypatch.setattr(announce_writer.svn, "list_files", listing)
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__check_publication_artifacts")
+    public_url = f"{constants.DOWNLOADS_APACHE_URL}/project"
+
+    with pytest.raises(storage.PublicationMissingError) as info:
+        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, _INTERNAL_URL, True)
+
+    listing.assert_awaited_once_with(_INTERNAL_URL)
+    assert "no longer in SVN where it put them; the first is artifact.tar.gz" in str(info.value)
+    assert "propagating" not in str(info.value)
+
+
+async def test_announce_assumes_propagation_when_svn_cannot_be_listed(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = tmp_path / "artifact.tar.gz"
+    artifact.write_text("content", encoding="utf-8")
+
+    monkeypatch.setattr(announce_writer.util, "check_propagation", fake_propagation_missing)
+    failure = announce_writer.svn.CommandExecutionError(1, "svn: E170013: Unable to connect")
+    monkeypatch.setattr(announce_writer.svn, "list_files", mock.AsyncMock(side_effect=failure))
+    monkeypatch.setattr(announce_writer.log, "warning", lambda _message: None)
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__check_publication_artifacts")
+    public_url = f"{constants.DOWNLOADS_APACHE_URL}/project"
+
+    with pytest.raises(storage.PublicationMissingError) as info:
+        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, _INTERNAL_URL, True)
+
+    assert "still be propagating" in str(info.value)
 
 
 async def test_announce_blocks_when_artifact_not_public(
@@ -136,7 +184,7 @@ async def test_announce_blocks_when_artifact_not_public(
     public_url = f"{constants.DOWNLOADS_APACHE_URL}/project"
 
     with pytest.raises(storage.AccessError) as info:
-        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, True)
+        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, _INTERNAL_URL, True)
 
     assert not isinstance(info.value, storage.PropagationUnreachableError)
     assert info.value.status == 409
@@ -156,7 +204,7 @@ async def test_announce_blocks_when_server_unreachable(
     public_url = f"{constants.DOWNLOADS_APACHE_URL}/project"
 
     with pytest.raises(storage.PropagationUnreachableError) as info:
-        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, False)
+        await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, _INTERNAL_URL, False)
 
     assert info.value.status == 503
     assert "see https://status.apache.org/ for its status." in str(info.value)

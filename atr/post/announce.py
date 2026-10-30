@@ -22,6 +22,7 @@ import urllib.parse
 from typing import Final, Literal
 
 import aiohttp
+import htpy
 import quart
 
 import atr.blueprints.post as post
@@ -43,6 +44,7 @@ _DOWNLOAD_PAGE_KEPT: Final = (
 _DOWNLOAD_PAGE_OVERALL_TIMEOUT: Final = 30
 _DOWNLOAD_PAGE_REDIRECT_LIMIT: Final = 3
 _DOWNLOAD_PAGE_TIMEOUT: Final = aiohttp.ClientTimeout(total=10, connect=5)
+_PUBLICATION_HELP_URL: Final = "/docs/troubleshooting#files-missing-at-announcement"
 _REDIRECT_STATUSES: Final = frozenset({301, 302, 303, 307, 308})
 
 
@@ -106,6 +108,9 @@ async def selected(
                 acknowledge_unreachable=announce_form.announce_unreachable,
                 auto_archive_prior=announce_form.auto_archive,
             )
+    except storage.PublicationMissingError as e:
+        await web.flash_error(htpy.span[str(e), " ", htpy.a(href=_PUBLICATION_HELP_URL)["How to fix this"]])
+        return await session.redirect(get.announce.selected, project_key=str(project_key), version_key=str(version_key))
     except storage.PropagationUnreachableError as e:
         return await session.redirect(
             get.announce.selected,

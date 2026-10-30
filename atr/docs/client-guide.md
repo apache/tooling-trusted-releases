@@ -4,7 +4,7 @@
 
 **Prev**: `5.5.` [Podling releases](podling-releases)
 
-**Next**: `6.` [Release catalog](release-catalog)
+**Next**: `5.7.` [Troubleshooting](troubleshooting)
 
 **Sections**:
 

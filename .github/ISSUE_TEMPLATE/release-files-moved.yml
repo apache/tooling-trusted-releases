@@ -1,0 +1,56 @@
+name: Release files moved after publishing
+description: Ask for ATR's record to be updated after a release's files were moved in svn:dist:release
+title: "Release files moved after publishing: <project> <version>"
+labels: ["catalog", "finish"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when ATR published a release to `svn:dist:release`, its files were then moved, and the new location is the correct one. If the files can live where ATR published them, move them back and announce again instead. See [Files missing at announcement](https://releases.apache.org/docs/troubleshooting#files-missing-at-announcement).
+  - type: input
+    id: project
+    attributes:
+      label: Project
+      description: The project key in ATR
+      placeholder: maven
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 3.10.0
+    validations:
+      required: true
+  - type: input
+    id: published
+    attributes:
+      label: Where ATR published the files
+      description: The directory under `dist/release`
+      placeholder: maven/maven-3/3.10.0
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Where the files are now
+      description: The directory, or directories, under `dist/release` that each file is in now
+      placeholder: |
+        maven/maven-3/3.10.0/source
+        maven/maven-3/3.10.0/binaries
+    validations:
+      required: true
+  - type: dropdown
+    id: announced
+    attributes:
+      label: Has the release been announced?
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: For example, files added by hand that are not in the release in ATR

@@ -14,6 +14,7 @@
 * `5.4.` [Archiving and lifecycle](archiving-and-lifecycle)
 * `5.5.` [Podling releases](podling-releases)
 * `5.6.` [Making a release with the client](client-guide)
+* `5.7.` [Troubleshooting](troubleshooting)
 
 **Sections**:
 
