@@ -1,0 +1,65 @@
+name: Release catalog data
+description: Report releases, versions, projects or links that are wrong in the release catalog
+title: "Catalog data: <project>"
+labels: ["catalog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to report a problem with what the [release catalog](https://release-catalog.apache.org/) shows for a project. See [Reviewing and correcting your catalog](https://releases.apache.org/docs/release-catalog#reviewing-and-correcting-your-catalog) for what to check.
+  - type: input
+    id: committee
+    attributes:
+      label: Committee
+      placeholder: maven
+  - type: input
+    id: projects
+    attributes:
+      label: Projects
+      description: The project keys affected, separated by commas
+      placeholder: maven-doxia, maven-doxia-sitetools
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: The versions affected, if the problem is with particular releases
+      placeholder: 1.4, 1.5
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong
+      multiple: true
+      options:
+        - A release is under the wrong project
+        - A release is missing
+        - A release should not be in the catalog
+        - A release is listed twice
+        - A version is wrong
+        - A release is shown as current but is archived, or the other way round
+        - A release is in the wrong cycle
+        - A download, signature or checksum link is broken
+        - A project is missing, split in two, or should be merged with another
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What the catalog shows now, with links to the catalog pages concerned
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What it should be
+      description: What the catalog should show instead
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting links
+      description: For example the files in `dist/release` or on archive.apache.org, or the vote thread

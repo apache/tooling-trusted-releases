@@ -201,6 +201,7 @@ async def test_finalise_queues_task_and_keeps_files(
         tmp_path / "unfinished" / "example" / "2.0.0" / "00003",
         target,
         public_url,
+        "https://example.invalid/",
         False,
     )
     assert calls == ["flush", "finalise", "commit"]

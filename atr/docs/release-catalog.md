@@ -2,7 +2,7 @@
 
 **Up**: [Documentation](.)
 
-**Prev**: `5.6.` [Making a release with the client](client-guide)
+**Prev**: `5.7.` [Troubleshooting](troubleshooting)
 
 **Next**: `7.` [Developer guide](developer-guide)
 
@@ -113,8 +113,9 @@ We ask every PMC to review its catalog, starting from its committee page on
 * current releases and archived releases are shown as such.
 
 Correcting the structure of a catalog, such as renaming, moving, merging, or deleting projects, or
-moving a release to a different project, is done by the Tooling team. Contact us on
-[dev@tooling.apache.org](mailto:dev@tooling.apache.org) with what needs to change, or to tell us
-that your catalog is correct. Once your PMC is satisfied, we mark the catalog as reviewed and the
-notice is removed from your pages. For larger-scale corrections or agent-led reviews, we can provide
+moving a release to a different project, is done by the Tooling team. To report something that needs
+to change, [open an issue](https://github.com/apache/tooling-trusted-releases/issues/new?template=catalog-data.yml),
+or contact us on [dev@tooling.apache.org](mailto:dev@tooling.apache.org). To tell us that your
+catalog is correct, use the mailing list. Once your PMC is satisfied, we mark the catalog as
+reviewed and the notice is removed from your pages. For larger-scale corrections or agent-led reviews, we can provide
 an export of your PMC's data as held by ATR.

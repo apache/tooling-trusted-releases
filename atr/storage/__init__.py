@@ -78,6 +78,9 @@ class AccessError(RuntimeError):
 class PropagationUnreachableError(AccessError): ...
 
 
+class PublicationMissingError(AccessError): ...
+
+
 # Read
 
 
