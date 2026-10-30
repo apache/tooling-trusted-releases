@@ -133,6 +133,11 @@ _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 _INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
 _ENVIRONMENT.globals["indexing_keys"] = _INDEXING_COMMITTEE_KEYS
 
+# Tooling isn't a PMC. The committee is a stand-in we invent for ourselves to test with, so
+# it has no page on projects.apache.org and its projects are kept out of the summary feeds
+# that stand in for that site's data.
+_TOOLING_COMMITTEE_KEY: Final = "tooling"
+
 # The directory the PURL explainer lives in. ASF PURLs sit straight under apache.org, so
 # there's no bare prefix to land on; the explainer gets a fixed path of its own instead,
 # alongside the committee and project directories. No committee or project is keyed this.
@@ -812,11 +817,14 @@ def _release_feeds(
     """The (project, podling) feeds, each keyed by project key and sorted.
 
     Podlings are split into their own feed, so the project feed stays a projects.json
-    stand-in. Both are sorted by key so a rebuild that changes nothing rewrites the same bytes.
+    stand-in, and Tooling is left out of both for the same reason. Both are sorted by key so
+    a rebuild that changes nothing rewrites the same bytes.
     """
     tlp: dict[str, dict[str, Any]] = {}
     podling: dict[str, dict[str, Any]] = {}
     for committee in committees:
+        if committee.key == _TOOLING_COMMITTEE_KEY:
+            continue
         target = podling if committee.is_podling else tlp
         for project in committee.projects:
             target[project.key] = _project_releases_entry(
