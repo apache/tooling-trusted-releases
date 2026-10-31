@@ -10,21 +10,27 @@
 
 * [Overview](#overview)
 * [What reproducible means](#what-reproducible-means)
+* [How to set up Automated Release Signing](#how-to-set-up-automated-release-signing)
 * [How to set up Trusted Publishing](#how-to-set-up-trusted-publishing)
-* [Configuring repository and workflow paths](#configuring-repository-and-workflow-paths)
 * [GitHub Actions for ATR](#github-actions-for-atr)
 * [How ATR detects automated release keys](#how-atr-detects-automated-release-keys)
 
 ## Overview
 
-Trusted Publishing lets a project sign release artifacts automatically during a GitHub Actions
+Trusted Publishing for a project lets a Release Manager run fully automated releases from CI,
+instead of doing a local build, so everything is visible on CI. This is an optional advanced mode of ATR,
+when projects are ready to get away from classical local release build.
+
+The ASF uses Trusted Publishing to strengthen supply chain integrity for projects that meet
+a few requirements like Automated Release Signing, ie. sign release artifacts automatically during a GitHub Actions
 workflow rather than requiring a release manager to sign each file locally. This is available to
 projects that can demonstrate reproducible builds, meaning that anyone can independently rebuild the
-artifacts from the same source and obtain identical results. The ASF uses Trusted Publishing to
-strengthen supply chain integrity for projects that meet this requirement.
+artifacts from the same source and obtain identical results.
 
-The process involves creating a dedicated GPG signing key for the project, storing it as a GitHub
-repository secret, and registering the public half with ATR. When ATR sees a signature made by a key
+The Automated Release Signing process involves creating a dedicated GPG signing key for the project, storing it as a GitHub
+repository secret, and registering the public half with ATR.
+
+In a second step, Trusted Publishing can be enabled: When ATR sees a configured workflow that uses a signature made by a key
 that follows the automated release key naming convention, it accepts the signature in the same way
 that it would accept one from an individual committer's key.
 
@@ -55,7 +61,7 @@ If you have questions about making your build reproducible, ask on the
 [security-discuss](https://security.apache.org/mailinglist/) mailing list, or in the
 `#security-discuss` channel on the [ASF Slack](https://infra.apache.org/slack.html).
 
-## How to set up Trusted Publishing
+## How to set up Automated Release Signing
 
 ATR Trusted Publishing is built on top of
 [Automated Release Signing](https://infra.apache.org/release-signing.html#automated-release-signing),
@@ -63,7 +69,7 @@ which permits signing in CI provided that all signed artifacts can be built repr
 deploys them to a staging area rather than straight to users, and that every artifact is rebuilt and
 compared on trusted hardware before it is published. ATR is the staging area in this model, and the
 vote is where the comparison happens. The steps below take you from a reproducible build to a
-workflow that ATR will accept.
+build workflow in CI that ATR will accept.
 
 ### Step 1: Get approval from the Security team
 
@@ -123,7 +129,7 @@ rules.
 
 Eligibility alone does not let any workflow act on your releases. You also have to tell ATR which
 repository and which workflows it should trust, as described in
-[configuring repository and workflow paths](#configuring-repository-and-workflow-paths).
+[how to set up Trusted Publishing](#how-to-set-up-trusted-publishing).
 
 ### Step 6: Sign and upload artifacts in your workflow
 
@@ -141,7 +147,10 @@ is the trust model behind Trusted Publishing: the automated signature proves tha
 from a specific GitHub workflow, and the independent rebuild proves that the build output is
 genuine, matching what was built on the GitHub runners.
 
-## Configuring repository and workflow paths
+## How to set up Trusted Publishing
+
+Once Automated Release Signing is available, setting up Trusted Publishing is done by
+configuring repository and workflow paths.
 
 For ATR to accept release operations that a GitHub Actions workflow performs on the project's
 behalf, it has to know which repositories the workflow may run in, and which workflows are permitted
