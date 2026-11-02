@@ -61,13 +61,17 @@ the project's version scheme, described under [Lifecycle](project-configuration#
 Most releases supersede the one before them, so ATR can archive the prior release for you when the
 new one is announced:
 
-1. Enable "Allow auto-archive" on the project's [Finish](project-configuration#finish) tab.
-2. When you start a release, select "Auto archive prior release".
-3. When you announce the release, the announcement form shows the version that will be archived, and
+1. Set up cycles on the project's [Lifecycle](project-configuration#lifecycle) tab: choose semver
+   and fill in **Cycle match**, or choose calver and fill in **Cycle format**.
+2. Enable "Allow auto-archive" on the project's [Finish](project-configuration#finish) tab.
+3. When you start a release, select "Auto archive prior release".
+4. When you announce the release, the announcement form shows the version that will be archived, and
    you can still choose to clear the option there.
 
 The prior release is the previous release in the same cycle, so a new `2.x` release does not archive
-a `1.x` release that is still supported.
+a `1.x` release that is still supported. Because of this, "Allow auto-archive" is hidden until the
+project has cycles. Simple projects have a single cycle, so they can't use it. Choosing semver or
+calver is not enough on its own; the cycle match or cycle format must also be filled in.
 
 ## Archiving outside ATR
 
