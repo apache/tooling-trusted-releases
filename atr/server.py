@@ -886,7 +886,7 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
         test_project.repositories = ["https://gitbox.apache.org/repos/asf/test.git"]
         await data.commit()
 
-        test_client_project = await data.project(key="test-client").get()
+        test_client_project = await data.project(key="test-client", _release_policy=True).get()
         if not test_client_project:
             test_client_project = sql.Project(
                 key="test-client",
@@ -903,6 +903,9 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
         # Non-GitHub for the same reason - the client suite uploads over the API with no commit hash,
         # and a GitHub project with nothing to compare against gets a concern the transcripts don't note
         test_client_project.repositories = ["https://gitbox.apache.org/repos/asf/test-client.git"]
+        if test_client_project.release_policy is None:
+            test_client_project.release_policy = sql.ReleasePolicy()
+        test_client_project.release_policy.vote_mode = sql.VoteMode.TRUSTED
         await data.commit()
 
         # A podling equivalent, so we can exercise incubator/podling behaviours in tests
