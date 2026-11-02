@@ -1003,15 +1003,6 @@ class SignatureProvenanceResults(schema.Strict):
     committees_with_artifact: list[SignatureProvenanceKey]
 
 
-class SshKeyAddArgs(schema.Strict):
-    text: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
-
-
-class SshKeyAddResults(schema.Strict):
-    endpoint: Literal["/ssh-key/add"] = schema.alias("endpoint")
-    fingerprint: str = schema.example("0123456789abcdef0123456789abcdef01234567")
-
-
 class SshKeyDeleteArgs(schema.Strict):
     fingerprint: str = schema.example("0123456789abcdef0123456789abcdef01234567")
 
@@ -1207,7 +1198,6 @@ type Results = Annotated[
     | ReleasesListResults
     | SbomGenerateResults
     | SignatureProvenanceResults
-    | SshKeyAddResults
     | SshKeyDeleteResults
     | SshKeysListResults
     | TaskGetResults
@@ -1273,7 +1263,6 @@ validate_release_upload = validator(ReleaseUploadResults)
 validate_releases_list = validator(ReleasesListResults)
 validate_sbom_generate = validator(SbomGenerateResults)
 validate_signature_provenance = validator(SignatureProvenanceResults)
-validate_ssh_key_add = validator(SshKeyAddResults)
 validate_ssh_key_delete = validator(SshKeyDeleteResults)
 validate_ssh_keys_list = validator(SshKeysListResults)
 validate_task_get = validator(TaskGetResults)

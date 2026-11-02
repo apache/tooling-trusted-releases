@@ -72,10 +72,9 @@ If your project has a GitHub source repository, ATR compares the source archive 
 
 Archive uploads pause while ATR validates them. If an upload times out, run `atr list example 1.0.0` and look at the release's compose page on the website before trying again, because validation may still be running. If validation failed, the compose page says why. Fix the archive and upload it again.
 
-For files over the usual 512 MiB upload limit, or a whole directory of release files, use rsync instead. You need local `rsync` and `ssh` commands and an SSH key registered with ATR:
+For files over the usual 512 MiB upload limit, or a whole directory of release files, use rsync instead. You need local `rsync` and `ssh` commands and an SSH key added on the [keys page](/keys):
 
 ```shell
-atr ssh add "$(cat ~/.ssh/id_ed25519.pub)"
 atr rsync example 1.0.0 ./candidate/
 ```
 
@@ -126,7 +125,7 @@ Once the voting period has ended, compare ATR's tally with the mailing list thre
 atr vote tabulate example 1.0.0
 ```
 
-When the result is clear, record it:
+When the result is clear, record it. Resolve an email vote on the website. If your project uses Trusted Voting, you can use the client:
 
 ```shell
 atr vote resolve example 1.0.0 passed

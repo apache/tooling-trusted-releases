@@ -1870,12 +1870,12 @@ async def test_vote_resolve_api_sends_tally(
 
     await inspect.unwrap(atr.api.vote_resolve)(
         "vote/resolve",
-        SimpleNamespace(project="project", version="1.0.0", resolution=resolution, early_reason=""),
+        SimpleNamespace(project="solr-mcp", version="1.0.0", resolution=resolution, early_reason=""),
     )
 
     tally = f"The vote thread is archived at the following URL:\n\n{thread_url}\n\n{counts}" if counts else ""
     warm.vote.resolve.assert_awaited_once_with(
-        "project",
+        "solr-mcp",
         "1.0.0",
         resolution,
         "Project Chair",

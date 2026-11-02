@@ -72,6 +72,7 @@ import atr.util as util
 type DictResponse = tuple[dict[str, Any], int]
 
 ROUTES_MODULE: Final[Literal[True]] = True
+_EMAIL_VOTE_RESOLVE_PROJECTS: Final[frozenset[str]] = frozenset({"solr-mcp"})
 
 
 @api.typed(
@@ -1296,6 +1297,7 @@ async def publisher_vote_resolve(
     )
     try:
         async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
+            release = await _vote_resolve_release(project.safe_key, data.version, asf_uid)
             # TODO: Get fullname and use instead of asf_uid
             # TODO: Add resolution templating to atr.construct
             _release, _voting_round, _success_message, _error_message = await warm.vote.resolve(
@@ -1304,6 +1306,7 @@ async def publisher_vote_resolve(
                 data.resolution,
                 asf_uid,
                 f"The vote {data.resolution}.",
+                expected_vote_mode=release.effective_vote_mode,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
@@ -1902,36 +1905,6 @@ async def signature_provenance(
         key_asc_text=pgp.certificate_rearmored(armored),
         committees_with_artifact=signing_keys,
     ).model_dump(mode="json"), 200
-
-
-@api.typed(
-    auth_scheme=api_auth.Auth.BEARER,
-    response=(models.api.SshKeyAddResults, 201),
-    rate_limit=(10, datetime.timedelta(hours=1)),
-)
-async def ssh_key_add(
-    _ssh_key_add: Literal["ssh-key/add"],
-    data: models.api.SshKeyAddArgs,
-) -> DictResponse:
-    """
-    URL: POST /ssh-key/add
-
-    Add an SSH key.
-
-    An SSH key is associated with a single user.
-    """
-    if util.contains_private_key_text(data.text):
-        vars(data)["text"] = ""
-        gc.collect()
-        raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
-    asf_uid = _jwt_asf_uid()
-    async with storage.write(asf_uid) as write:
-        wafc = write.as_foundation_committer()
-        fingerprint = await wafc.ssh.add_key(data.text)
-    return models.api.SshKeyAddResults(
-        endpoint="/ssh-key/add",
-        fingerprint=fingerprint,
-    ).model_dump(mode="json"), 201
 
 
 @api.typed(
@@ -2700,18 +2673,27 @@ def _stored_certificate_issuer_match(
     return _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
 
 
-async def _vote_resolve_release_and_body(
-    warm: storage.WriteAsReleaseManager, data: models.api.VoteResolveArgs, asf_uid: str
-) -> tuple[sql.Release, str, str]:
+async def _vote_resolve_release(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, asf_uid: str
+) -> sql.Release:
     async with db.session() as db_data:
         release = await db_data.release(
-            project_key=str(data.project),
-            version=str(data.version),
+            project_key=str(project_key),
+            version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project_release_policy=True,
         ).get()
     if (release is None) or user.embargo_denies(release, asf_uid, is_member=False):
         raise storage.AccessError("Release not found", status=404)
+    if (release.effective_vote_mode != sql.VoteMode.TRUSTED) and (str(project_key) not in _EMAIL_VOTE_RESOLVE_PROJECTS):
+        raise storage.AccessError("Resolving votes through the API is only available in Trusted Vote mode", status=403)
+    return release
+
+
+async def _vote_resolve_release_and_body(
+    warm: storage.WriteAsReleaseManager, data: models.api.VoteResolveArgs, asf_uid: str
+) -> tuple[sql.Release, str, str]:
+    release = await _vote_resolve_release(data.project, data.version, asf_uid)
     if release.committee is None:
         raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)
     fullname = await _ldap_fullname(asf_uid)

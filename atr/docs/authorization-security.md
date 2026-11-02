@@ -138,6 +138,7 @@ Release operations have the following access requirements:
 * Checked via: the release manager storage tier, obtained with `as_project_release_manager`, which
   admits a project's designated release managers (`is_release_manager`) and its PMC members
   (`is_member_of`)
+* Constraint: Through the API, only votes in Trusted Vote mode, except that Solr MCP can also resolve email votes
 
 **Finish a release (publish to distribution)**:
 
@@ -284,6 +285,7 @@ to authenticate rsync uploads.
 
 * Allowed for: Any committer, for their own keys
 * Checked via: `add_key` and `delete_key` on the committer tier
+* Constraint: keys can be added through the web interface only, not the API
 
 **Add a workflow SSH key**:
 
