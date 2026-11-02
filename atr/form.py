@@ -20,7 +20,6 @@ from __future__ import annotations
 import datetime
 import enum
 import pathlib
-import re
 import types
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin
 
@@ -49,8 +48,6 @@ if TYPE_CHECKING:
 DISCRIMINATOR_NAME: Final[str] = "variant"
 DISCRIMINATOR: Final[Any] = schema.discriminator(DISCRIMINATOR_NAME)
 MAX_LIST_ITEMS: Final[int] = 1000
-
-_CONFIRM_PATTERN = re.compile(r"^[A-Za-z0-9 _.,!?-]+$")
 
 
 class Form(schema.Form):
@@ -394,8 +391,9 @@ async def render(  # noqa: C901
         "enctype": "multipart/form-data",
     }
     if confirm:
-        if not _CONFIRM_PATTERN.match(confirm):
-            raise ValueError(f"Invalid characters in confirm message: {confirm!r}")
+        # Read back by form-confirm.js and handed to window.confirm as data, so there is no
+        # string literal to break out of. htpy escapes the attribute, and the message is free
+        # to carry whatever a version or path contains
         form_attrs["data-confirm"] = confirm
 
     return htm.form(form_classes, **form_attrs)[form_children]
