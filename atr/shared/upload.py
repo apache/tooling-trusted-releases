@@ -36,8 +36,8 @@ class AddFilesForm(form.Form):
     file_data: form.FileList = form.label("Files", "Select the files to upload.")
     commit_hash: safe.OptionalCommitHash = form.label(
         "Source commit hash",
-        "The full 40-character source commit these files were built from. "
-        "Required if this project has a GitHub source repository.",
+        "Optional: the full 40-character source commit these files were built from, "
+        "used to compare the source archive against its GitHub repository.",
         widget=form.Widget.TEXT,
         default="",
     )

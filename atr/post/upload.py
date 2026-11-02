@@ -197,9 +197,5 @@ async def _upload_source_override(
     # With several repositories the source is declared per archive, so a release level commit is ignored
     if len(candidates) > 1:
         return db.NOT_SET
-    # The commit hash only means something for a GitHub source, so we insist on it there
-    if candidates and (commit_hash is None):
-        raise storage.AccessError(
-            "This project has a GitHub source repository, so a source commit hash is required.", status=400
-        )
+    # The commit is optional - without one, the compare check raises a concern rather than blocking the upload
     return str(commit_hash) if (commit_hash is not None) else db.NOT_SET

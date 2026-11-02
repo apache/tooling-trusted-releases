@@ -135,21 +135,12 @@ async def test_add_files_json_unexpected_error_includes_traceback(app):
 
 
 @pytest.mark.asyncio
-async def test_upload_source_override_requires_hash_with_github_repo():
-    session = _session_with_repositories({"apache/test"})
-    add_form = mock.MagicMock()
-    add_form.commit_hash = None
-    with mock.patch.object(upload.db, "session", _mock_db_session()):
-        with pytest.raises(upload.storage.AccessError) as exc:
-            await upload._upload_source_override(session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0"))
-    assert exc.value.status == 400
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("repositories", "commit_hash", "expected"),
     [
         ({"apache/test"}, "a" * 40, "a" * 40),
+        # The hash is optional even with a GitHub repository, and the compare check raises a concern instead
+        ({"apache/test"}, None, upload.db.NOT_SET),
         (set(), None, upload.db.NOT_SET),
         (set(), "b" * 40, "b" * 40),
         # With several repositories the source is declared per archive, so a hash here is ignored
