@@ -89,6 +89,7 @@ class FoundationCommitter:
         event: str,
         ref_type: str,
         ref_pattern: str,
+        notify: str,
     ) -> None:
         await self.__own_session()
         if (event not in gates.EVENTS) or (ref_type not in gates.REF_TYPES):
@@ -104,6 +105,11 @@ class FoundationCommitter:
         if (committee_key not in gates.TEAMS) or (config.is_production_mode() and (not named)):
             raise storage.AccessError(f"{repository} cannot have a gate for {committee_key}", status=400)
         await self.__team_member(committee_key)
+        committee = await self.__data.committee(key=committee_key).demand(
+            storage.AccessError(f"Committee {committee_key} not found", status=400)
+        )
+        if notify not in gates.notify_addresses(committee):
+            raise storage.AccessError(f"{notify} is not a {committee_key} mailing list", status=400)
         proposal = sql.GateConfig(
             repository_id=repository_id,
             repository=repository,
@@ -113,6 +119,7 @@ class FoundationCommitter:
             event=event,
             ref_type=ref_type,
             ref_pattern=ref_pattern,
+            notify=notify,
             previous_id=None if (current is None) else current.id,
             decisions={self.__asf_uid: True},
         )

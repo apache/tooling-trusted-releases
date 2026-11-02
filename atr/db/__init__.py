@@ -539,6 +539,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         event: Opt[str] = NOT_SET,
         ref_type: Opt[str] = NOT_SET,
         ref_pattern: Opt[str] = NOT_SET,
+        notify: Opt[str] = NOT_SET,
         previous_id: Opt[int | None] = NOT_SET,
         status: Opt[sql.GateStatus] = NOT_SET,
         decisions: Opt[dict[str, bool]] = NOT_SET,
@@ -564,6 +565,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.GateConfig.ref_type == ref_type)
         if is_defined(ref_pattern):
             query = query.where(sql.GateConfig.ref_pattern == ref_pattern)
+        if is_defined(notify):
+            query = query.where(sql.GateConfig.notify == notify)
         if is_defined(previous_id):
             query = query.where(sql.GateConfig.previous_id == previous_id)
         if is_defined(status):

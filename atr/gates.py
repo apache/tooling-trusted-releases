@@ -32,9 +32,12 @@ import quart
 import sqlalchemy.dialects.sqlite as sqlite
 
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
+import atr.mail as mail
+import atr.models.args as args
 import atr.models.sql as sql
 import atr.util as util
 
@@ -64,6 +67,10 @@ async def lookup(repository: str) -> tuple[int, str]:
     token = await _installation_token(repository)
     found = await _github("GET", f"/repos/{repository}", token)
     return found["id"], found["full_name"]
+
+
+def notify_addresses(committee: sql.Committee) -> list[str]:
+    return [f"private@{committee.key}.apache.org", *committee.mail_addresses]
 
 
 def pattern_supported(pattern: str) -> bool:
@@ -156,6 +163,24 @@ async def _installation_token(repository: str) -> str:
     return token["token"]
 
 
+def _notice(gate_obj: sql.GateConfig, request: sql.GateRequest) -> args.Send:
+    run_url = f"https://github.com/{gate_obj.repository}/actions/runs/{request.run_id}/attempts/{request.run_attempt}"
+    starter = f"{request.actor_asf_uid or 'no linked ASF account'} ({request.actor} on GitHub)"
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=gate_obj.notify,
+        subject=f"Approval needed: {gate_obj.repository} {request.ref}",
+        body=(
+            f"GitHub is holding a run of\n\n  {gate_obj.workflow}\n\nin\n\n  {gate_obj.repository}\n\n"
+            f"until {THRESHOLD} members of its release team approve it in ATR.\n\n"
+            f"Ref: {request.ref}\nCommit: {request.head_sha}\nStarted by: {starter}\nRun: {run_url}\n\n"
+            f"Review it and decide at:\n\n  https://{config.get().APP_HOST}/gates\n"
+        ),
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
 async def _record(payload: dict[str, Any]) -> None:
     repository_id = payload["repository"]["id"]
     async with db.session() as data:
@@ -178,7 +203,7 @@ async def _record(payload: dict[str, Any]) -> None:
     except ldap.LookupError:
         actor_asf_uid = None
     async with db.session() as data:
-        await data.execute(
+        inserted = await data.execute(
             sqlite.insert(sql.GateRequest)
             .values(
                 repository_id=repository_id,
@@ -191,7 +216,17 @@ async def _record(payload: dict[str, Any]) -> None:
                 decisions={},
             )
             .on_conflict_do_nothing()
+            .returning(sql.GateRequest)
         )
+        request = inserted.scalar_one_or_none()
+        if (request is not None) and gate_obj.notify:
+            data.add(
+                sql.Task(
+                    task_type=sql.TaskType.MESSAGE_SEND,
+                    task_args=_notice(gate_obj, request).as_task_args(),
+                    asf_uid=constants.SYSTEM_SERVICE_UID,
+                )
+            )
         await data.commit()
 
 

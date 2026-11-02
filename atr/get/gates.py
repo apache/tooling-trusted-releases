@@ -38,6 +38,7 @@ _FIELDS: Final = (
     ("Event", "event"),
     ("Ref type", "ref_type"),
     ("Branch or tag pattern", "ref_pattern"),
+    ("Notify email address", "notify"),
 )
 
 
@@ -47,7 +48,9 @@ async def config(session: web.Committer, _gates_config: Literal["gates/config"])
     async with db.session() as data:
         approved = await data.gate_config(status=sql.GateStatus.APPROVED).order_by(via(sql.GateConfig.decided)).all()
         pending = await data.gate_config(status=sql.GateStatus.PENDING).order_by(via(sql.GateConfig.id).desc()).all()
+        committees = await data.committee().where(via(sql.Committee.key).in_(tuple(gates.TEAMS))).all()
 
+    addresses = [address for committee in committees for address in gates.notify_addresses(committee)]
     current = {gate.repository_id: gate for gate in approved}
     proposals = [
         _proposal_table(proposal, current.get(proposal.repository_id), session.uid)
@@ -70,7 +73,7 @@ async def config(session: web.Committer, _gates_config: Literal["gates/config"])
         *(
             htm.div(".mb-3")[
                 htpy.label(".form-label", for_=name)[label],
-                _field(name),
+                _field(name, addresses),
             ]
             for label, name in _FIELDS
         ),
@@ -150,7 +153,7 @@ def _decision(row: sql.GateConfig | sql.GateRequest, uid: str, action: str) -> h
     ]
 
 
-def _field(name: str) -> htm.Element | htm.VoidElement:
+def _field(name: str, addresses: list[str]) -> htm.Element | htm.VoidElement:
     if name == "ref_type":
         return htm.div[
             [
@@ -163,7 +166,7 @@ def _field(name: str) -> htm.Element | htm.VoidElement:
                 for ref_type in gates.REF_TYPES
             ]
         ]
-    choices = {"committee_key": tuple(gates.TEAMS), "event": gates.EVENTS}.get(name)
+    choices = {"committee_key": tuple(gates.TEAMS), "event": gates.EVENTS, "notify": addresses}.get(name)
     if choices is None:
         return htpy.input(".form-control", id=name, name=name, required=True)
     return htpy.select(".form-select", id=name, name=name, required=True)[

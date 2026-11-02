@@ -48,7 +48,7 @@ async def decide_config(
 @post.typed
 async def propose(session: web.Committer, _gates_propose: Literal["gates/propose"]) -> web.WerkzeugResponse:
     form_data = await quart.request.form
-    fields = ("repository", "committee_key", "environment", "workflow", "event", "ref_type", "ref_pattern")
+    fields = ("repository", "committee_key", "environment", "workflow", "event", "ref_type", "ref_pattern", "notify")
     values = [form_data.get(name, "").strip() for name in fields]
     if not all(values):
         quart.abort(400, description="Every field of a gate is required")

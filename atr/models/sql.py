@@ -746,6 +746,7 @@ class GateConfig(sqlmodel.SQLModel, table=True):
     event: str = sqlmodel.Field()
     ref_type: str = sqlmodel.Field()
     ref_pattern: str = sqlmodel.Field()
+    notify: str = sqlmodel.Field(default="")
     previous_id: int | None = sqlmodel.Field(default=None)
     status: GateStatus = sqlmodel.Field(default=GateStatus.PENDING)
     decisions: dict[str, bool] = sqlmodel.Field(
