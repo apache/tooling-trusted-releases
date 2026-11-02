@@ -989,7 +989,8 @@ async def catalog_project_get(
     """
     async with db.session() as data:
         await data.project(key=str(project_key)).demand(exceptions.NotFound(f"Project '{project_key}' not found."))
-        releases = await data.release(project_key=str(project_key)).order_by(sql.Release.version).all()
+        unsorted = await data.release(project_key=str(project_key)).all()
+        releases = sorted(unsorted, key=lambda r: (r.released or r.created, r.version), reverse=True)
         release_keys = [str(release.key) for release in releases]
         artifact_counts = await _catalog_release_key_counts(data, sql.Artifact, "release_key", release_keys)
         revision_counts = await _catalog_release_key_counts(data, sql.Revision, "release_key", release_keys)
@@ -1005,6 +1006,7 @@ async def catalog_project_get(
                 htpy.th["Version"],
                 htpy.th["Phase"],
                 htpy.th["Status"],
+                htpy.th["Released"],
                 htpy.th["Artifacts"],
                 htpy.th["Managed"],
                 htpy.th["Actions"],
@@ -1016,10 +1018,12 @@ async def catalog_project_get(
                     htpy.td[htpy.strong[release.version]],
                     htpy.td[release.phase.value],
                     htpy.td["archived" if release.is_archived else "active"],
+                    htpy.td[release.released.date().isoformat() if (release.released is not None) else "-"],
                     htpy.td[str(artifact_counts.get(str(release.key), 0))],
                     htpy.td["Yes" if (revision_counts.get(str(release.key), 0) > 0) else "No"],
                     htpy.td[
                         _catalog_release_artifacts_action(str(committee_key), str(project_key), release.version),
+                        _catalog_release_date_action(str(committee_key), str(project_key), release),
                         _catalog_release_move_action(
                             str(committee_key),
                             str(project_key),
@@ -1039,6 +1043,16 @@ async def catalog_project_get(
         project_key=str(project_key),
         releases=table,
     )
+
+
+def _catalog_release_date_action(committee_key: str, project_key: str, release: sql.Release) -> htpy.Element:
+    # Only a released release has a release date, so anything earlier in the workflow is greyed out
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return htpy.span(".btn.btn-sm.btn-outline-secondary.me-1.disabled", title="not yet released")["Set date"]
+    return htpy.a(
+        ".btn.btn-sm.btn-outline-secondary.me-1",
+        href=f"/admin/catalog/{committee_key}/project/{project_key}/release/{release.version}/date",
+    )["Set date"]
 
 
 def _catalog_release_move_action(committee_key: str, project_key: str, version: str, managed: bool) -> htpy.Element:
@@ -1687,6 +1701,86 @@ async def catalog_release_restore_post(
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
         await wafa.catalogue.restore_release(release.safe_key)
+    return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
+
+
+class CatalogReleaseDateForm(form.Form):
+    released: datetime.date = form.label(
+        "Release date",
+        "The day the release was made, taken as UTC. A catalogued historical release is dated"
+        " from when its files reached the archive, which can run days behind the vote.",
+        required=True,
+    )
+
+
+@admin.typed
+async def catalog_release_date_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _date: Literal["date"],
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/date
+
+    Offer to correct the release date of a single catalogued release.
+    """
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
+    current = release.released.date().isoformat() if (release.released is not None) else None
+    rendered_form = await form.render(
+        model_cls=CatalogReleaseDateForm,
+        submit_label="Set release date",
+        submit_classes="btn-primary",
+        defaults={"released": release.released.date()} if (release.released is not None) else None,
+    )
+    intro = htpy.div[
+        htpy.p[f"Correct the release date of {project_key}-{version_key}."],
+        htpy.p(".text-muted")[
+            f"It is currently dated {current}." if current else "It has no release date recorded.",
+            " The previous date stays in the lifecycle trail as a withdrawn event.",
+        ],
+    ]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Date {project_key}-{version_key}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+@admin.typed
+async def catalog_release_date_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _date: Literal["date"],
+    date_form: CatalogReleaseDateForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/date
+
+    Apply the corrected release date.
+    """
+    released = datetime.datetime.combine(date_form.released, datetime.time.min, tzinfo=datetime.UTC)
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.redate_release(release.safe_key, released)
     return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 

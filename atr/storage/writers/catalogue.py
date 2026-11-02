@@ -18,6 +18,7 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+import datetime
 from typing import Final, NamedTuple
 
 import sqlalchemy
@@ -297,6 +298,76 @@ class FoundationAdmin:
             await self.__data.rollback()
             raise
         self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, restored_release=str(release_key))
+
+    async def redate_release(self, release_key: safe.ReleaseKey, released: datetime.datetime) -> None:
+        key = str(release_key)
+        now = datetime.datetime.now(datetime.UTC)
+        if released > now:
+            raise storage.AccessError(f"Release date {released.date().isoformat()} is in the future.", status=400)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.get(sql.Release, key)
+            if release is None:
+                raise storage.AccessError(f"Release '{key}' not found.", status=404)
+            if release.phase != sql.ReleasePhase.RELEASE:
+                raise storage.AccessError(
+                    f"Release '{key}' has not been released, so there is no date to correct.", status=409
+                )
+            if release.released == released:
+                raise storage.AccessError(
+                    f"Release '{key}' is already dated {released.date().isoformat()}.", status=409
+                )
+            previous = release.released
+            release.released = released
+            # The lifecycle trail is append-only, so a correction withdraws the release event
+            # that carried the wrong date and records a fresh one. Readers take the most recent
+            # event of a kind, so they see the new date; the withdraw row is the audit signal
+            # that the old one no longer stands
+            via = sql.validate_instrumented_attribute
+            prior_event_id = (
+                await self.__data.execute(
+                    sqlmodel.select(via(sql.LifecycleEvent.id))
+                    .where(
+                        via(sql.LifecycleEvent.version_key) == key,
+                        via(sql.LifecycleEvent.event) == sql.LifecycleEventType.RELEASE,
+                    )
+                    .order_by(via(sql.LifecycleEvent.published).desc(), via(sql.LifecycleEvent.id).desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if prior_event_id is not None:
+                self.__data.add(
+                    sql.LifecycleEvent.withdrawing(
+                        prior_event_id,
+                        project_key=release.project_key,
+                        cycle_key=release.cycle_key,
+                        version_key=key,
+                        when=now,
+                    )
+                )
+            self.__data.add(
+                sql.LifecycleEvent(
+                    project_key=release.project_key,
+                    cycle_key=release.cycle_key,
+                    version_key=key,
+                    event=sql.LifecycleEventType.RELEASE,
+                    effective=released,
+                    published=now,
+                )
+            )
+            # The date shows on the project's catalogue pages and orders its releases
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, release.project_key)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            redated_release=key,
+            released=released.isoformat(),
+            previously=previous.isoformat() if (previous is not None) else None,
+        )
 
     async def rename_project(self, old_key: safe.ProjectKey, new_key: safe.ProjectKey, new_name: str | None) -> None:
         old = str(old_key)

@@ -419,6 +419,99 @@ async def test_restore_release_allows_a_legacy_untracked_archival(sessionmaker) 
 
 
 @pytest.mark.asyncio
+async def test_redate_release_sets_the_date_and_withdraws_the_prior_event(sessionmaker) -> None:
+    # The trail is append-only, so the wrong date stays as a withdrawn event beside the new one
+    corrected = datetime.datetime(2019, 12, 28, tzinfo=datetime.UTC)
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+
+        await _writer(data).redate_release(safe.ReleaseKey("alpha-one-1.0.0"), corrected)
+
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        assert release.released == corrected
+        via = sql.validate_instrumented_attribute
+        stmt = sqlmodel.select(sql.LifecycleEvent).order_by(via(sql.LifecycleEvent.id))
+        events = (await data.execute(stmt)).scalars().all()
+        assert [event.event for event in events] == [
+            sql.LifecycleEventType.RELEASE,
+            sql.LifecycleEventType.WITHDRAW,
+            sql.LifecycleEventType.RELEASE,
+        ]
+        original, withdraw, replacement = events
+        assert withdraw.target_event_id == original.id
+        assert replacement.effective == corrected
+        assert replacement.published >= withdraw.published
+        tasks = (await data.execute(sqlmodel.select(sql.Task))).scalars().all()
+        assert [t.task_type for t in tasks] == [sql.TaskType.CATALOG_SITE_GENERATE]
+
+
+@pytest.mark.asyncio
+async def test_redate_release_records_a_first_date_without_a_withdrawal(sessionmaker) -> None:
+    # A release with no release event yet has nothing to retract
+    dated = datetime.datetime(2019, 12, 28, tzinfo=datetime.UTC)
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        data.add(
+            sql.Release(
+                key="alpha-one-1.0.0",
+                project_key="alpha-one",
+                cycle_key="alpha-one-default",
+                version="1.0.0",
+                phase=sql.ReleasePhase.RELEASE,
+                created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+            )
+        )
+        await data.commit()
+
+        await _writer(data).redate_release(safe.ReleaseKey("alpha-one-1.0.0"), dated)
+
+        events = (await data.execute(sqlmodel.select(sql.LifecycleEvent))).scalars().all()
+        assert [event.event for event in events] == [sql.LifecycleEventType.RELEASE]
+        assert events[0].effective == dated
+
+
+@pytest.mark.asyncio
+async def test_redate_release_rejects_the_date_it_already_has(sessionmaker) -> None:
+    dated = datetime.datetime(2019, 12, 28, tzinfo=datetime.UTC)
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        await _writer(data).redate_release(safe.ReleaseKey("alpha-one-1.0.0"), dated)
+
+        with pytest.raises(storage.AccessError, match="already"):
+            await _writer(data).redate_release(safe.ReleaseKey("alpha-one-1.0.0"), dated)
+
+
+@pytest.mark.asyncio
+async def test_redate_release_rejects_a_future_date(sessionmaker) -> None:
+    tomorrow = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+
+        with pytest.raises(storage.AccessError, match="future"):
+            await _writer(data).redate_release(safe.ReleaseKey("alpha-one-1.0.0"), tomorrow)
+
+
+@pytest.mark.asyncio
+async def test_redate_release_refuses_one_not_yet_released(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        release.phase = sql.ReleasePhase.RELEASE_CANDIDATE
+        await data.commit()
+
+        with pytest.raises(storage.AccessError, match="not been released"):
+            await _writer(data).redate_release(
+                safe.ReleaseKey("alpha-one-1.0.0"), datetime.datetime(2019, 12, 28, tzinfo=datetime.UTC)
+            )
+
+
+@pytest.mark.asyncio
 async def test_archive_release_removes_files_from_dist(sessionmaker, monkeypatch) -> None:
     # A catalogue archive acts on a current release, whose files are live in dist, so it
     # queues a removal to take them out.
