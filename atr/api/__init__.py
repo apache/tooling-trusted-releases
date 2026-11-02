@@ -2721,6 +2721,7 @@ async def _vote_resolve_release_and_body(
         {
             "ATR_TALLY": await _vote_resolve_tally(warm, release),
             "COMMITTEE": "Incubator" if release.podling_thread_id else release.committee.display_name,
+            "MAJOR_VERSION": construct.major_version(release.version),
             "OUTCOME": "was cancelled" if (data.resolution == "cancelled") else data.resolution,
             "PROJECT_NAME": release.project.short_display_name,
             "VERSION": release.version,

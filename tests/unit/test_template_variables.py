@@ -51,6 +51,35 @@ def test_finish_policy_form_validates_template_variables() -> None:
         projects.FinishPolicyForm.model_validate(_FINISH_BASE | {"announce_release_template": "{{DISCLAIMER}}"})
 
 
+def test_finish_vote_body_substitutes_major_version() -> None:
+    body = construct.finish_vote_body(
+        "Maven {{MAJOR_VERSION}}.x: {{VERSION}}",
+        {
+            "ATR_TALLY": "",
+            "COMMITTEE": "Maven",
+            "MAJOR_VERSION": construct.major_version("4.0.0-rc-5"),
+            "OUTCOME": "passed",
+            "PROJECT_NAME": "Maven",
+            "VERSION": "4.0.0-rc-5",
+            "YOUR_ASF_ID": "x",
+            "YOUR_FULL_NAME": "X",
+        },
+    )
+    assert body == "Maven 4.x: 4.0.0-rc-5"
+
+
+def test_major_version_accepted_in_every_email_template() -> None:
+    for names in (
+        construct.ANNOUNCE_SUBJECT_VARIABLE_NAMES,
+        construct.ANNOUNCE_VARIABLE_NAMES,
+        construct.CHECKLIST_VARIABLE_NAMES,
+        construct.FINISH_VOTE_VARIABLE_NAMES,
+        construct.VOTE_SUBJECT_VARIABLE_NAMES,
+        construct.VOTE_VARIABLE_NAMES,
+    ):
+        assert construct.unknown_template_variables("{{MAJOR_VERSION}}", names) == []
+
+
 def test_unknown_template_variables() -> None:
     names = construct.ANNOUNCE_SUBJECT_VARIABLE_NAMES
     assert construct.unknown_template_variables("{{PROJECT_NAME}} {{VERSION}}", names) == []

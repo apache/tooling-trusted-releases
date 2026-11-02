@@ -49,6 +49,7 @@ _TEMPLATE_LABELS: Final[dict[TemplateKind, str]] = {
 
 
 class _AnnounceSubjectValues(TypedDict):
+    MAJOR_VERSION: str
     PROJECT_NAME: str
     VERSION: str
 
@@ -61,6 +62,7 @@ class _AnnounceValues(TypedDict):
     HOMEPAGE: str
     LIFECYCLE_PAGE: str
     MAILING_LISTS: str
+    MAJOR_VERSION: str
     PODLING_DISCLAIMER: str
     PROJECT_NAME: str
     PROJECT_KEY: str
@@ -75,6 +77,7 @@ class _AnnounceValues(TypedDict):
 class _ChecklistValues(TypedDict):
     COMMITTEE: str
     HOMEPAGE: str
+    MAJOR_VERSION: str
     PROJECT_NAME: str
     PROJECT_KEY: str
     REVIEW_URL: str
@@ -87,6 +90,7 @@ class _ChecklistValues(TypedDict):
 class _FinishVoteValues(TypedDict):
     ATR_TALLY: str
     COMMITTEE: str
+    MAJOR_VERSION: str
     OUTCOME: str
     PROJECT_NAME: str
     VERSION: str
@@ -96,6 +100,7 @@ class _FinishVoteValues(TypedDict):
 
 class _VoteSubjectValues(TypedDict):
     COMMITTEE: str
+    MAJOR_VERSION: str
     PROJECT_NAME: str
     REVISION: str
     TAG: str
@@ -113,6 +118,7 @@ class _VoteValues(TypedDict):
     FIRST_ROUND_THREAD: str
     HOMEPAGE: str
     KEYS_FILE: str
+    MAJOR_VERSION: str
     MANIFEST_URL: str
     PROJECT_NAME: str
     PROJECT_KEY: str
@@ -148,6 +154,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "KEYS_FILE": "URL to the KEYS file",
     "LIFECYCLE_PAGE": "Lifecycle page URL",
     "MAILING_LISTS": "Mailing lists page URL",
+    "MAJOR_VERSION": "Major version, the version up to its first dot",
     "MANIFEST_URL": "URL to the file manifest for the voted ATR revision",
     "OUTCOME": "Vote outcome - 'passed' or 'failed'",
     "PODLING_DISCLAIMER": "Podling incubation disclaimer",
@@ -267,6 +274,7 @@ async def announce_release_subject_and_body(
         "HOMEPAGE": project.homepage or "",
         "LIFECYCLE_PAGE": project.lifecycle_page or "",
         "MAILING_LISTS": project.mailing_lists or "",
+        "MAJOR_VERSION": major_version(str(options.version_key)),
         "PODLING_DISCLAIMER": _podling_disclaimer(project, committee),
         "PROJECT_NAME": project_display_name,
         "PROJECT_KEY": project.key,
@@ -278,6 +286,7 @@ async def announce_release_subject_and_body(
         "YOUR_FULL_NAME": options.fullname,
     }
     subject_values: _AnnounceSubjectValues = {
+        "MAJOR_VERSION": major_version(str(options.version_key)),
         "PROJECT_NAME": project_display_name,
         "VERSION": str(options.version_key),
     }
@@ -322,6 +331,7 @@ def checklist_body(
     values: _ChecklistValues = {
         "COMMITTEE": committee.display_name,
         "HOMEPAGE": project.homepage or "",
+        "MAJOR_VERSION": major_version(str(version_key)),
         "PROJECT_NAME": project.short_display_name,
         "PROJECT_KEY": project.key,
         "REVIEW_URL": review_url,
@@ -343,6 +353,10 @@ def finish_vote_body(body: str, values: _FinishVoteValues) -> str:
 
 def finish_vote_template_variables() -> list[tuple[str, str]]:
     return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(FINISH_VOTE_VARIABLE_NAMES)]
+
+
+def major_version(version: str) -> str:
+    return version.partition(".")[0]
 
 
 def release_notification(
@@ -498,6 +512,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
 
     subject_values: _VoteSubjectValues = {
         "COMMITTEE": committee.display_name,
+        "MAJOR_VERSION": major_version(str(options.version_key)),
         "PROJECT_NAME": project_display_name,
         "REVISION": revision_number,
         "TAG": revision_tag,
@@ -516,6 +531,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "FIRST_ROUND_THREAD": first_round_paragraph,
         "HOMEPAGE": project.homepage or "",
         "KEYS_FILE": paths.committee_keys_url(committee),
+        "MAJOR_VERSION": major_version(str(options.version_key)),
         "MANIFEST_URL": f"https://{host}{manifest_path}",
         "PROJECT_NAME": project_display_name,
         "PROJECT_KEY": project.key,
@@ -564,7 +580,7 @@ def resolve_download_path_suffix(
 ) -> safe.RelPath | None:
     resolved = template.strip()
     if resolved:
-        resolved = resolved.replace("{{MAJOR_VERSION}}", version.partition(".")[0])
+        resolved = resolved.replace("{{MAJOR_VERSION}}", major_version(version))
         resolved = resolved.replace("{{PROJECT_KEY}}", project_key).replace("{{VERSION}}", version)
         return safe.RelPath(resolved)
     if is_top_level:

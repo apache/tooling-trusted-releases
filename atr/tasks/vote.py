@@ -136,6 +136,7 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
         {
             "ATR_TALLY": atr_tally,
             "COMMITTEE": committee_name,
+            "MAJOR_VERSION": construct.major_version(release.version),
             "OUTCOME": "passed" if passed else "failed",
             "PROJECT_NAME": release.project.short_display_name,
             "VERSION": release.version,

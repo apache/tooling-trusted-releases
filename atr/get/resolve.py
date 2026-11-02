@@ -227,6 +227,7 @@ async def selected(  # noqa: C901
         {
             "ATR_TALLY": atr_tally,
             "COMMITTEE": committee_name,
+            "MAJOR_VERSION": construct.major_version(release.version),
             "OUTCOME": outcome,
             "PROJECT_NAME": release.project.short_display_name,
             "VERSION": release.version,
