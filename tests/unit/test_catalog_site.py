@@ -610,6 +610,33 @@ def test_project_releases_categories_join_with_commas_and_drop_placeholders() ->
     assert catalog_site._categories(None) is None
 
 
+def test_project_document_lists_the_comma_fields_adds_status_and_sorts_keys() -> None:
+    committee = _committee()
+    project = _project(committee, categories="data,storage", programming_languages="c, python")
+    entry = catalog_site._project_releases_entry(project, committee, [])
+
+    document = catalog_site._project_document(entry, project)
+
+    # projects.apache.org's per-project files carry these as lists, not the feed's strings.
+    assert document["category"] == ["data", "storage"]
+    assert document["programming-language"] == ["c", "python"]
+    assert document["status"] == "active"
+    assert list(document) == sorted(document)
+    # The feed entry itself is left as it was.
+    assert entry["category"] == "data, storage"
+    assert "status" not in entry
+
+
+def test_project_document_leaves_out_comma_fields_the_project_does_not_hold() -> None:
+    committee = _committee()
+    project = _project(committee)
+
+    document = catalog_site._project_document(catalog_site._project_releases_entry(project, committee, []), project)
+
+    assert "category" not in document
+    assert "programming-language" not in document
+
+
 def test_release_feeds_split_podlings_out_and_sort_by_key() -> None:
     maven = _committee_with_project("maven", "Maven", is_podling=False)
     ant = _committee_with_project("ant", "Ant", is_podling=False)
