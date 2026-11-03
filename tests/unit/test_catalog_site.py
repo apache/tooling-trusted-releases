@@ -560,6 +560,26 @@ def test_project_releases_maintainer_names_a_podling_ppmc() -> None:
     assert maintainer == {"mbox": "mailto:dev@example.apache.org", "name": "Apache Example PPMC"}
 
 
+def test_project_releases_maintainer_is_the_attic_for_a_retired_pmc() -> None:
+    retired = _committee(key="petri", name="Petri")
+    retired.is_archived = True
+    attic = _committee(key="attic", name="Attic")
+
+    # A stored vote list doesn't survive retirement either
+    for committee, address in ((retired, "dev@petri.apache.org"), (retired, None), (attic, None)):
+        maintainer = catalog_site._dev_list_maintainer(committee, address)
+        assert maintainer == {"mbox": "mailto:general@attic.apache.org", "name": "Apache Attic PMC"}
+
+
+def test_project_releases_maintainer_keeps_a_retired_podling_ppmc() -> None:
+    committee = _committee(key="example", name="Example", is_podling=True)
+    committee.is_archived = True
+
+    maintainer = catalog_site._dev_list_maintainer(committee)
+
+    assert maintainer == {"mbox": "mailto:dev@example.apache.org", "name": "Apache Example PPMC"}
+
+
 def test_project_releases_maintainer_prefers_a_stored_committee_domain_dev_list() -> None:
     committee = _committee(key="db", name="DB")
 

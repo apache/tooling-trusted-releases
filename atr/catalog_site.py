@@ -128,6 +128,13 @@ _ENVIRONMENT.globals["incubator_key"] = _INCUBATOR_COMMITTEE_KEY
 _ATTIC_COMMITTEE_KEY: Final = "attic"
 _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 
+# Nobody maintains a retired PMC's projects but the Attic, so that's who the feed
+# names. The Attic has no dev list - general@ is its public one.
+_ATTIC_MAINTAINER: Final[dict[str, str]] = {
+    "mbox": f"mailto:general@{_ATTIC_COMMITTEE_KEY}.apache.org",
+    "name": "Apache Attic PMC",
+}
+
 # Both index the rest of the catalogue rather than releases of their own, so their
 # pages are written once the walk has been through every committee.
 _INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
@@ -647,7 +654,10 @@ def _dev_list_maintainer(committee: sql.Committee, vote_address: str | None = No
     # The project's own vote list is preferred, but only when it's a development
     # list on the committee's own domain - that domain is how we know it's the committee's,
     # so a private or placeholder address is never published. Otherwise the dev list by ASF
-    # convention, e.g. dev@accumulo.apache.org.
+    # convention, e.g. dev@accumulo.apache.org. A retired PMC hands over to the Attic, but a
+    # retired podling never went there, so it keeps its own.
+    if (committee.is_archived and (not committee.is_podling)) or (committee.key == _ATTIC_COMMITTEE_KEY):
+        return dict(_ATTIC_MAINTAINER)
     role = "PPMC" if committee.is_podling else "PMC"
     name = committee.name or committee.key.title()
     local, _, host = (vote_address or "").partition("@")
