@@ -61,7 +61,8 @@ Each page in the catalog has a JSON counterpart, so that tools can consume the s
   [Lifecycle events](archiving-and-lifecycle#lifecycle-events).
 * `project_releases.json` and `podling_releases.json`, at the root of the site, summarise every
   project and podling with its releases. They mirror the split, and many of the fields, of the ASF's
-  existing `projects.json` and `podlings.json` files.
+  existing `projects.json` and `podlings.json` files. Each entry carries the project's `status`:
+  `active`, `dormant`, `retired` or `standing`.
 * `project.json`, on each project and podling, is its entry from `project_releases.json` or
   `podling_releases.json` on its own, in the same shape as the project's file on projects.apache.org.
 * `activity.json` and `activity.yaml`, on each committee, are the committee's recent activity for

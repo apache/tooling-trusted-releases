@@ -187,9 +187,7 @@ _PROJECT_RELEASES_FILE: Final = "project_releases.json"
 _PODLING_RELEASES_FILE: Final = "podling_releases.json"
 
 # Each entry in the two feeds, written again beside the project's page as a file of its own,
-# shaped like the project's file on projects.apache.org. That carries categories and languages
-# as lists rather than the feed's comma-joined strings, and the project's status alongside.
-# Like the feeds, Tooling doesn't get one.
+# shaped like the project's file on projects.apache.org.
 _PROJECT_DOCUMENT_FILE: Final = "project.json"
 
 # Each committee's recent activity, written beside its page as JSON and YAML: every current
@@ -738,15 +736,14 @@ def _podling_target(podling: sql.Committee) -> str:
     return f"{podling.key}/index.html"
 
 
-def _project_document(entry: dict[str, Any], project: sql.Project) -> dict[str, Any]:
-    """The project's feed entry, with categories and languages split into lists and the
-    project's status added. The keys are sorted.
+def _project_document(entry: dict[str, Any]) -> dict[str, Any]:
+    """The project's feed entry, with categories and languages split into lists. The keys
+    are sorted.
     """
     document = dict(entry)
     for key in ("category", "programming-language"):
         if key in document:
             document[key] = _comma_list(document[key])
-    document["status"] = _project_status(project)
     return {key: document[key] for key in sorted(document)}
 
 
@@ -781,6 +778,7 @@ def _project_releases_entry(
         "pmc": committee.key,
         "license": _ASF_LICENSE_URL,
         "maintainer": [_dev_list_maintainer(committee, vote_address)],
+        "status": _project_status(project),
         "release": [_release_entry(name, release) for release in releases],
     }
 
@@ -1264,10 +1262,9 @@ async def _write_project_releases(
     projects, podlings = _release_feeds(committees, releases_by_project, vote_addresses)
     await _write(site_dir / _PROJECT_RELEASES_FILE, json.dumps(projects, indent=2, default=str))
     await _write(site_dir / _PODLING_RELEASES_FILE, json.dumps(podlings, indent=2, default=str))
-    by_key = {project.key: project for committee in committees for project in committee.projects}
     for key, entry in (projects | podlings).items():
         if (only is None) or (key == only):
-            document = _project_document(entry, by_key[key])
+            document = _project_document(entry)
             await _write(site_dir / key / _PROJECT_DOCUMENT_FILE, json.dumps(document, indent=2, default=str))
 
 
