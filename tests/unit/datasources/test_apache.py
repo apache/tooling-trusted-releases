@@ -23,7 +23,6 @@ from atr.datasources.apache import (
     GroupsData,
     LDAPProjectsData,
     PodlingsData,
-    ProjectsData,
     RetiredCommitteeData,
     WhimsyCommitteeData,
     WhimsyPodlingsData,
@@ -80,13 +79,6 @@ def test_podlings_data_model():
     podling = podlings.get("amoro")
     assert podling is not None
     assert podling.name == "Apache Amoro (Incubating)"
-
-
-def test_projects_data_model():
-    projects = ProjectsData.model_validate(_load_test_data("projects"))
-
-    assert len(projects) == 1
-    assert projects.get("accumulo") is not None
 
 
 def test_retired_committee_data_model():

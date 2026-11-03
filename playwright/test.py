@@ -1156,12 +1156,12 @@ def test_logging_debug(page: Page, credentials: Credentials) -> Callable[[], Non
 
 @slow
 def test_projects_01_update(page: Page, credentials: Credentials) -> None:
-    logging.info("Navigating to the catalog update projects tab")
-    go_to_path(page, "/admin/catalog?tab=update-projects", wait=False)
-    logging.info("Catalog update projects tab loaded")
+    logging.info("Navigating to the catalog update committees tab")
+    go_to_path(page, "/admin/catalog?tab=update-committees", wait=False)
+    logging.info("Catalog update committees tab loaded")
 
-    logging.info("Locating and activating the button to update projects")
-    update_button_locator = page.get_by_role("button", name="Update projects")
+    logging.info("Locating and activating the button to update committees")
+    update_button_locator = page.get_by_role("button", name="Update committees")
     expect(update_button_locator).to_be_enabled()
     update_button_locator.click()
 

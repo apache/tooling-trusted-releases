@@ -152,10 +152,10 @@ type BANNER_RESTORE = Literal["BANNER_RESTORE"]
 type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
 type CATALOG_SITE_REBUILD = Literal["CATALOG_SITE_REBUILD"]
+type COMMITTEES_UPDATE = Literal["COMMITTEES_UPDATE"]
 type LDAP = Literal["LDAP"]
 type NOTIFY_PAT_OWNERS = Literal["NOTIFY_PAT_OWNERS"]
 type PRESENTATIONS_VOTE_BYPASS = Literal["PRESENTATIONS_VOTE_BYPASS"]
-type PROJECTS_UPDATE = Literal["PROJECTS_UPDATE"]
 type REVOKE_ALL_TOKENS = Literal["REVOKE_ALL_TOKENS"]
 type REVOKE_SSH_KEYS = Literal["REVOKE_SSH_KEYS"]
 type REVOKE_TOKENS = Literal["REVOKE_TOKENS"]
@@ -185,6 +185,10 @@ class BrowseAsUserForm(form.Form):
 
 class CatalogSiteRebuildForm(form.Form):
     variant: CATALOG_SITE_REBUILD = form.value(CATALOG_SITE_REBUILD)
+
+
+class CommitteesUpdateForm(form.Form):
+    variant: COMMITTEES_UPDATE = form.value(COMMITTEES_UPDATE)
 
 
 class DeleteReleaseConfirmForm(form.Form):
@@ -245,10 +249,6 @@ class PresentationsVoteBypassForm(form.Form):
         "Resets to off when the web application restarts or reloads.",
         default=False,
     )
-
-
-class ProjectsUpdateForm(form.Form):
-    variant: PROJECTS_UPDATE = form.value(PROJECTS_UPDATE)
 
 
 class ReleaseAgeRow(NamedTuple):
@@ -375,7 +375,7 @@ class TestRosterResetForm(form.Form):
     confirm_reset: Literal["RESET"] = form.label("Confirmation", "Type RESET to confirm.")
 
 
-type CatalogForm = Annotated[ProjectsUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
+type CatalogForm = Annotated[CommitteesUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
 
 
 type SystemForm = Annotated[
@@ -435,7 +435,7 @@ async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"], que
         validation.pagination_args_validate(query_args)
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
-    return await _catalog_page(quart.request.args.get("tab", "update-projects"), query_args)
+    return await _catalog_page(quart.request.args.get("tab", "update-committees"), query_args)
 
 
 @admin.typed
@@ -443,8 +443,8 @@ async def catalog_post(
     session: web.Committer, _catalog: Literal["catalog"], catalog_form: CatalogForm
 ) -> web.WerkzeugResponse:
     match catalog_form:
-        case ProjectsUpdateForm():
-            return await _catalog_projects_update(session)
+        case CommitteesUpdateForm():
+            return await _catalog_committees_update(session)
         case CatalogSiteRebuildForm():
             return await _catalog_site_rebuild(session)
 
@@ -2539,7 +2539,7 @@ def _blank_to_none(value: str) -> str | None:
 
 async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
     tab_items = [
-        htm.Tab("update-projects", "Update", _catalog_projects_update_tab),
+        htm.Tab("update-committees", "Update", _catalog_committees_update_tab),
         htm.Tab("releases", "Current releases", lambda: _catalog_releases_tab(query_args)),
         htm.Tab("admin", "Catalog admin", _catalog_admin_tab),
         htm.Tab("dist-rules", "Dist watcher rules", _catalog_dist_rules_tab),
@@ -2552,35 +2552,40 @@ async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
     return await template.render("admin-blank.html", title="Catalog", content=page.collect())
 
 
-async def _catalog_projects_update(session: web.Committer) -> web.WerkzeugResponse:
+async def _catalog_committees_update(session: web.Committer) -> web.WerkzeugResponse:
     try:
-        task = await tasks.metadata_update(session.asf_uid, include_projects=True)
+        task = await tasks.metadata_update(session.asf_uid)
         await quart.flash(f"Metadata update task has been queued with ID {task.id}.", "success")
     except Exception as e:
         log.exception("Failed to queue metadata update task")
         await quart.flash(f"Failed to queue metadata update: {e!s}", "error")
-    return await session.redirect(catalog_get, tab="update-projects")
+    return await session.redirect(catalog_get, tab="update-committees")
 
 
-async def _catalog_projects_update_tab() -> htm.Element:
+async def _catalog_committees_update_tab() -> htm.Element:
     rendered_form = await form.render(
-        model_cls=ProjectsUpdateForm,
-        action=util.as_url(catalog_post, tab="update-projects"),
-        submit_label="Update projects",
+        model_cls=CommitteesUpdateForm,
+        action=util.as_url(catalog_post, tab="update-committees"),
+        submit_label="Update committees",
         empty=True,
         form_classes="",
     )
     block = htm.Block()
-    block.h2["Update projects"]
-    block.p["Update PMC and podling information in the database from remote data sources."]
+    block.h2["Update committees"]
+    block.p[
+        "Update PMC and podling information in the database from Whimsy and LDAP. "
+        "This runs daily on its own; use this to bring forward the next run."
+    ]
     block.append(
         htm.div(".alert.alert-warning", role="alert")[
-            htm.p[htm.strong["Note:"], " This operation will update all project information, including:"],
+            htm.p[htm.strong["Note:"], " This operation will update all committee information, including:"],
             htm.ul(".mb-0")[
                 htm.li["PMC member lists and release manager assignments"],
                 htm.li["Podling status and basic information"],
-                htm.li["Project metadata and relationships"],
+                htm.li["Committee and podling retirements"],
+                htm.li["Mailing list addresses"],
             ],
+            htm.p(".mb-0.mt-2")["Projects are not touched. They are created and edited in ATR."],
         ]
     )
     block.append(rendered_form)

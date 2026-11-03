@@ -95,29 +95,6 @@ async def data() -> collections.abc.AsyncIterator[db.Session]:
 
 
 @pytest.mark.parametrize(("old_key", "canonical_key", "path"), CASES)
-@pytest.mark.parametrize("existing", [False, True])
-async def test_data_source_import_reuses_canonical_project(
-    data: db.Session, old_key: str, canonical_key: str, path: str, existing: bool
-) -> None:
-    committee = sql.Committee(key=canonical_key.split("-")[0])
-    data.add(committee)
-    if existing:
-        data.add(sql.Project(key=canonical_key, name="Apache Existing", committee=committee))
-    await data.commit()
-    projects = apache.ProjectsData.model_validate(
-        {old_key: {"name": "Apache Incoming", "homepage": "https://example.apache.org/", "pmc": committee.key}}
-    )
-    assert await apache._update_projects(data, projects) == (0 if existing else 1, 0)
-    await data.commit()
-    assert await apache._update_projects(data, projects) == (0, 0)
-    await data.commit()
-    stored = await data.project().all()
-    assert [(project.key, project.name) for project in stored] == [
-        (canonical_key, "Apache Existing" if existing else "Apache Incoming")
-    ]
-
-
-@pytest.mark.parametrize(("old_key", "canonical_key", "path"), CASES)
 async def test_dist_paths_resolve_to_repaired_project(
     data: db.Session, old_key: str, canonical_key: str, path: str
 ) -> None:

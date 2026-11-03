@@ -68,9 +68,9 @@ PMC as a release manager. See [Release manager setup](release-manager-setup).
 Work through [Getting started](getting-started) first, which covers MFA, your signing key, and
 upload credentials. In addition, as a PMC coming from the traditional process, check the following.
 
-* **Your seeded projects.** ATR seeds each committee's projects from DOAP files and observed release
-  activity, so your projects are probably already there. Check that the list reflects your true
-  number of projects. See
+* **Your seeded projects.** Each committee's projects were seeded once, from DOAP files and
+  observed release activity, so your projects are probably already there. Check that the list
+  reflects your true number of projects, and add any that are missing in ATR. See
   [Creating and maintaining projects](projects#creating-and-maintaining-projects).
 * **Your catalog.** The [Release catalog](release-catalog) was built from the files in the
   distribution area and archive, and can attach releases to the wrong project or read a version

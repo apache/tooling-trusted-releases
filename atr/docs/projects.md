@@ -83,8 +83,9 @@ projects*.
   releases.
 * See [Trusted Publishing](trusted-publishing).
 
-Projects are initially defined based on ***DOAP files*** and observed release activity. Once a PMC
-uses ATR, projects are defined both within the platform and via
+The initial set of projects was seeded from ***DOAP files*** and observed release activity. That
+seed was a one-off: ATR is now the record, and projects.apache.org reads from it. New projects are
+created in ATR, and existing ones are edited either within the platform or via
 [`.asf.yaml`](https://github.com/apache/infrastructure-asfyaml#atrsync). See
 [Project configuration](project-configuration) for the metadata fields and naming requirements. The
 tooling team will work with PMCs to properly update their projects.
@@ -128,10 +129,11 @@ through official channels during final release.
 
 ## Creating and maintaining projects
 
-When a PMC first uses ATR, its projects are seeded from ***DOAP files*** and observed release
-activity, so the list is usually already populated. Your first step is to check that list against
-your PMC's [release catalog](https://release-catalog.apache.org) and confirm that it reflects your
-*true number of projects*.
+Every PMC's projects were seeded once, from ***DOAP files*** and observed release activity, so the
+list is usually already populated. Nothing is imported after that: a project that isn't in ATR has
+to be added here. Your first step is to check the list against your PMC's
+[release catalog](https://release-catalog.apache.org) and confirm that it reflects your *true number
+of projects*.
 
 If a project is missing, a committee member can add it using the ***Create a new sub-project*** button under
 their committee in the Committee directory, which opens the ***Add project*** form. You supply two

@@ -29,14 +29,12 @@ if TYPE_CHECKING:
 import aiohttp
 import pydantic
 import sqlalchemy.dialects.sqlite as sqlite
-import sqlmodel
 
 import atr.config as config
 import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.helpers as helpers
-import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.util as util
@@ -47,7 +45,6 @@ _WHIMSY_PEOPLE_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_p
 _WHIMSY_PODLINGS_URL: Final[str] = "https://whimsy.apache.org/public/public_podlings.json"
 _WHIMSY_PROJECTS_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_projects.json"
 _PROJECTS_COMMITTEE_URL: Final[str] = "https://projects.apache.org/json/foundation/committees.json"
-_PROJECTS_PROJECTS_URL: Final[str] = "https://projects.apache.org/json/foundation/projects.json"
 _PROJECTS_PODLINGS_URL: Final[str] = "https://projects.apache.org/json/foundation/podlings.json"
 _PROJECTS_GROUPS_URL: Final[str] = "https://projects.apache.org/json/foundation/groups.json"
 _PONYMAIL_LISTS_URL: Final[str] = "https://lists.apache.org/api/preferences.lua"
@@ -173,102 +170,6 @@ class LDAPPeopleData(schema.Subset):
     people: dict[str, LDAPPersonEntry]
 
 
-class MaintainerInfo(schema.Strict):
-    mbox: str | None = None
-    name: str | None = None
-    homepage: str | None = None
-    mbox_sha1sum: str | None = None
-    nick: str | None = None
-    same_as: str | None = schema.alias_opt("sameAs")
-
-
-class PersonInfo(schema.Strict):
-    name: str | None = None
-    homepage: str | None = None
-    mbox: str | None = None
-
-
-class ChairInfo(schema.Strict):
-    person: PersonInfo | None = schema.alias_opt("Person")
-
-
-class HelperInfo(schema.Strict):
-    name: str | None = None
-    homepage: str | None = None
-
-
-class OnlineAccountInfo(schema.Strict):
-    account_service_homepage: str | None = schema.alias_opt("accountServiceHomepage")
-    account_name: str | None = schema.alias_opt("accountName")
-    account_profile_page: str | None = schema.alias_opt("accountProfilePage")
-
-
-class AccountInfo(schema.Strict):
-    online_account: OnlineAccountInfo | None = schema.alias_opt("OnlineAccount")
-
-
-class ImplementsInfo(schema.Strict):
-    body: str | None = None
-    id: str | None = None
-    resource: str | None = None
-    title: str | None = None
-    url: str | None = None
-
-
-class Release(schema.Strict):
-    created: str | None = None
-    name: str
-    revision: str | None = None
-    file_release: str | None = schema.alias_opt("file-release")
-    description: str | None = None
-    branch: str | None = None
-
-
-class ProjectStatus(schema.Strict):
-    category: list[str] = schema.factory(list)
-    created: str | None = None
-    description: str | None = None
-    programming_language: list[str] = schema.Field(alias="programming-language", default_factory=list)
-    doap: str | None = None
-    homepage: str
-    name: str
-    pmc: str | None
-    shortdesc: str | None = None
-    repository: list[str | dict] = schema.factory(list)
-    release: list[Release] = schema.factory(list)
-    bug_database: str | None = schema.alias_opt("bug-database")
-    download_page: str | None = schema.alias_opt("download-page")
-    license: str | None = None
-    mailing_list: str | None = schema.alias_opt("mailing-list")
-    maintainer: list[MaintainerInfo] = schema.factory(list)
-    implements: list[ImplementsInfo] = schema.factory(list)
-    same_as: str | None = schema.alias_opt("sameAs")
-    developer: list[MaintainerInfo] = schema.factory(list)
-    modified: str | None = None
-    chair: ChairInfo | None = None
-    charter: str | None = None
-    vendor: str | None = None
-    helper: list[HelperInfo] = schema.factory(list)
-    member: list[MaintainerInfo] = schema.factory(list)
-    shortname: str | None = None
-    wiki: str | None = None
-    account: AccountInfo | None = None
-    platform: str | None = None
-
-    @pydantic.field_validator("category", "programming_language", mode="before")
-    @classmethod
-    def _coerce_to_list(cls, v: object) -> list[str]:
-        if isinstance(v, list):
-            return [str(x) for x in v]
-        if isinstance(v, str):
-            return [v] if v else []
-        return []
-
-
-class ProjectsData(helpers.DictRoot[ProjectStatus]):
-    pass
-
-
 class WhimsyPodling(schema.Strict):
     key: str
     status: str
@@ -344,16 +245,6 @@ async def get_people_data() -> LDAPPeopleData:
     return LDAPPeopleData.model_validate(data)
 
 
-async def get_projects_data() -> ProjectsData:
-    """Returns the list of projects."""
-
-    async with util.create_secure_session() as session:
-        async with session.get(_PROJECTS_PROJECTS_URL) as response:
-            response.raise_for_status()
-            data = await response.json()
-    return ProjectsData.model_validate(data)
-
-
 async def get_retired_committee_data() -> RetiredCommitteeData:
     """Returns the list of retired committees."""
 
@@ -385,11 +276,11 @@ async def get_whimsy_podlings_data() -> WhimsyPodlingsData:
     return WhimsyPodlingsData.model_validate(data)
 
 
-async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
-    """Update metadata from remote data sources.
+async def update_metadata() -> tuple[int, int]:
+    """Update committees, podlings, people and retirements from Whimsy and LDAP.
 
-    Committees and podlings update automatically. The top-level project catalogue only
-    refreshes when include_projects is set, which is the admin-triggered path - see #468.
+    Projects aren't touched. The catalogue was seeded once from DOAP files and dist, and since
+    then projects are made and edited in ATR, from where projects.apache.org now reads them.
     """
 
     ldap_projects = await get_ldap_projects_data()
@@ -399,7 +290,6 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
     committees = await get_committee_data()
     retired_committees = await get_retired_committee_data()
     whimsy_podlings = await get_whimsy_podlings_data()
-    projects = await get_projects_data() if include_projects else None
     mailing_lists = await get_mailing_lists_data()
 
     ldap_projects_by_name: Mapping[str, LDAPProject] = {p.name: p for p in ldap_projects.projects}
@@ -431,74 +321,7 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
             current_keys.add("tooling")
             updated_count += await _update_retirements(data, current_keys, retired_committees, whimsy_podlings)
 
-            # Project catalogue and the undiscovered-committee sweep depend on projects.a.o,
-            # so they only run on the admin-triggered update (#468)
-            if projects is not None:
-                added, updated = await _update_projects(data, projects)
-                added_count += added
-                updated_count += updated
-
-                added, updated = await _process_undiscovered(data)
-                added_count += added
-                updated_count += updated
-
     return added_count, updated_count
-
-
-def _coerce_https(url: str | None) -> str | None:
-    # Only the scheme changes - a host with "http" in it (httpcomponents, httpd) is left alone
-    if type(url) is str:
-        return url.replace("http://", "https://", 1)
-    return None
-
-
-def _doap_repository_urls(items: list[str | dict]) -> list[str]:
-    urls: list[str] = []
-    for item in items:
-        if isinstance(item, str):
-            urls.append(str(_coerce_https(item)))
-        elif isinstance(item, dict):
-            location = item.get("location")
-            if isinstance(location, str):
-                urls.append(str(_coerce_https(location)))
-    return urls
-
-
-async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
-    added_count = 0
-    updated_count = 0
-
-    via = sql.validate_instrumented_attribute
-    committees_without_projects = await db.Query(
-        data, sqlmodel.select(sql.Committee).where(~via(sql.Committee.projects).any())
-    ).all()
-    # For all committees that have no associated projects
-    for committee in committees_without_projects:
-        if committee.key == "incubator":
-            continue
-        log.warning(f"Missing top level project for committee {committee.key}")
-        # If a committee is missing, the following code can be activated to fix it
-        # But ideally the fix should be in the upstream data source
-        # project = sql.Project(
-        #     name=committee.name,
-        #     full_name=committee.full_name,
-        #     committee=committee,
-        # )
-        # data.add(project)
-        # added_count += 1
-
-    return added_count, updated_count
-
-
-def _project_status(pmc: sql.Committee, is_dormant: bool, project_status: ProjectStatus) -> sql.ProjectStatus:
-    if pmc.key == "attic":
-        # This must come first, because attic is also a standing committee
-        return sql.ProjectStatus.RETIRED
-    elif is_dormant or str(project_status.name).endswith("(Dormant)"):
-        return sql.ProjectStatus.DORMANT
-    elif util.committee_is_standing(pmc.key):
-        return sql.ProjectStatus.STANDING
-    return sql.ProjectStatus.ACTIVE
 
 
 def _remove_member_release_managers(committee: sql.Committee) -> None:
@@ -638,8 +461,8 @@ async def _update_podlings(
 
         ppmc.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 
-        # Create the associated podling project, but leave an existing one untouched -
-        # same as _update_projects, so manual or .asf.yaml edits aren't reverted
+        # Create the associated podling project, but leave an existing one untouched,
+        # so manual or .asf.yaml edits aren't reverted
         podling = await data.project(key=podling_name).get()
         if not podling:
             podling = sql.Project(
@@ -691,72 +514,12 @@ def canonical_project_key(key: str) -> str:
     # Tidy a projects.json key into an ATR project key: the attic- prefix comes off
     # (the Attic is a steward committee, not part of the key), the webservices PMC ships
     # under its full name, underscores become hyphens, the dormant marker comes off
-    # (it's status), and a few verbose keys remap to shorter ones. Shared with the catalogue
-    # script so its seed keys line up with what the registry sync creates.
+    # (it's status), and a few verbose keys remap to shorter ones.
     key = key.removeprefix("attic-")
     key = key.replace("webservices-", "ws-")
     key = _DORMANT_RE.sub("", key)
     key = key.replace("_", "-")
     return _PROJECT_KEY_REMAP.get(key, key)
-
-
-async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[int, int]:
-    added_count = 0
-    updated_count = 0
-
-    # Add projects and associate them with the right PMC
-    for project_key, project_status in projects.items():
-        # FIXME: webservices PMC is keyed "ws" but its projects use the full name.
-        if project_key.startswith("webservices-"):
-            project_status.pmc = "ws"
-        is_dormant = _DORMANT_RE.search(project_key) is not None
-        project_key = canonical_project_key(project_key)
-
-        # A podling the feed files under the shared Incubator PMC (incubator-annotator,
-        # incubator-pouchdb) is already created above by _update_podlings under its own PPMC, so this
-        # projects.json copy would only duplicate it beneath the Incubator committee - leave it to the
-        # podling path. A graduated podling that kept an incubator- key sits under its own PMC, not the
-        # Incubator, so it isn't caught here. Upstream ideally wouldn't list these; see issue #35
-        if project_status.pmc == "incubator":
-            continue
-
-        if project_status.pmc is None:
-            log.warning(f"project {project_key} has no PMC, skipping")
-            continue
-
-        pmc = await data.committee(key=project_status.pmc).get()
-        if not pmc:
-            log.warning(f"could not find PMC for project {project_key}: {project_status.pmc}")
-            continue
-
-        project_model = await data.project(key=project_key).get()
-        if project_model:
-            continue
-
-        # Check whether the project is retired, whether temporarily or otherwise
-        status = _project_status(pmc, is_dormant, project_status)
-        project_model = sql.Project(key=project_key, committee=pmc, status=status)
-        data.add(project_model)
-        added_count += 1
-
-        # Pass the project name through the validator
-        safe.ProjectKey(project_model.key)
-        project_model.name = str(project_status.name)
-        project_model.categories = ", ".join(project_status.category) or None
-        project_model.description = project_status.description
-        project_model.programming_languages = ", ".join(project_status.programming_language) or None
-
-        project_model.short_description = project_status.shortdesc
-        project_model.homepage = _coerce_https(project_status.homepage)
-        project_model.download_page = _coerce_https(project_status.download_page)
-        project_model.bug_database = _coerce_https(project_status.bug_database)
-        project_model.mailing_lists = _coerce_https(project_status.mailing_list)
-        project_model.repositories = _doap_repository_urls(project_status.repository)
-        # Not coercing standards URLs as these are outside ASF control
-        project_model.standards = [str(impl.url) for impl in project_status.implements if impl.url]
-        project_model.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
-
-    return added_count, updated_count
 
 
 async def _update_retirements(
