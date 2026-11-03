@@ -648,6 +648,49 @@ def unknown_template_variables(text: str, names: frozenset[str]) -> list[str]:
     return sorted({name for name in found if name not in names})
 
 
+def unmanaged_release_warning(
+    committee: sql.Committee,
+    project: sql.Project,
+    version: str,
+    released: datetime.datetime,
+) -> args.Send:
+    # The project has released through ATR before, so a release turning up in dist without
+    # it is either someone going round the process or someone else using their credentials.
+    # The PMC gets it directly and the security list is copied, so nobody has to notice it
+    # in the releases feed. Outside production only the security list is told - a dev or
+    # staging instance shouldn't be writing to a real PMC's private list
+    url = config.get().RELEASE_CATALOG_URL
+    subject = f"Unmanaged release: {project.short_display_name} {version}"
+    body = (
+        f"{project.short_display_name} {version} was committed to the distribution area directly, "
+        "not through ATR.\n\n"
+        f"{project.short_display_name} has previously released through ATR, so this release has had "
+        "no checks run and no vote recorded in ATR. If the PMC did not intend to publish this way, "
+        "please treat it as a possible compromise and check who made the commit.\n\n"
+        f"Committee: {committee.display_name}\n"
+        f"Project: {project.short_display_name}\n"
+        f"Version: {version}\n"
+        f"Committed: {util.format_datetime(released)}\n\n"
+        f"Catalogue entry:\n\n"
+        f"  {url}{project.key}\n"
+    )
+    if config.get().ATR_STATUS == "ALPHA":
+        email_to = _SECURITY_LIST_ADDRESS
+        email_cc: list[str] = []
+    else:
+        email_to = f"private@{committee.key}.apache.org"
+        email_cc = [_SECURITY_LIST_ADDRESS]
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=email_to,
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        email_cc=email_cc,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
 def validate_template_variables(value: str, names: frozenset[str]) -> str:
     unknown = unknown_template_variables(value, names)
     if unknown:

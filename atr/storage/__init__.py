@@ -341,6 +341,7 @@ class WriteAsDistCatalogService(WriteAsSystemService):
         self.release_notify_archived = admin.release.notify_archived
         self.release_notify_seen = admin.release.notify_seen
         self.release_supersede_draft = admin.release.supersede_draft
+        self.release_warn_unmanaged = admin.release.warn_unmanaged
 
 
 class WriteAsKeysReflectionService(WriteAsSystemService):

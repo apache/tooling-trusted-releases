@@ -17,6 +17,7 @@
 
 import datetime
 
+import atr.config as config
 import atr.construct as construct
 import atr.mail as mail
 import atr.models.args as args
@@ -76,6 +77,41 @@ def test_superseding_a_draft_states_the_draft_was_removed():
     send = _notification(detected=True, superseded_draft=True)
 
     assert "has been removed in favour of the published release" in send.body
+
+
+def _warning() -> args.Send:
+    committee = sql.Committee(name="Apache Example", key="example")
+    project = sql.Project(name="Apache Example", key="example")
+    released = datetime.datetime(2026, 11, 3, 12, 0, 0, tzinfo=datetime.UTC)
+    return construct.unmanaged_release_warning(committee, project, "1.2.3", released)
+
+
+def test_unmanaged_warning_goes_to_the_committee_private_list_in_production(monkeypatch):
+    monkeypatch.setattr(config.get(), "ATR_STATUS", "PRODUCTION")
+    send = _warning()
+
+    assert send.email_to == "private@example.apache.org"
+    assert send.email_cc == ["private@tooling.apache.org"]
+    assert send.email_sender == mail.NOREPLY_EMAIL_ADDRESS
+    assert send.footer_category == mail.MailFooterCategory.AUTO
+
+
+def test_unmanaged_warning_goes_only_to_the_security_list_outside_production(monkeypatch):
+    monkeypatch.setattr(config.get(), "ATR_STATUS", "ALPHA")
+    send = _warning()
+
+    assert send.email_to == "private@tooling.apache.org"
+    assert send.email_cc == []
+
+
+def test_unmanaged_warning_subject_and_body_say_what_happened():
+    send = _warning()
+
+    assert send.subject == "Unmanaged release: Example 1.2.3"
+    assert "not through ATR" in send.body
+    assert "has previously released through ATR" in send.body
+    assert "possible compromise" in send.body
+    assert "example" in send.body
 
 
 def test_a_release_that_supersedes_no_draft_does_not_mention_a_removed_draft():

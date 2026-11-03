@@ -341,6 +341,11 @@ async def _notify(
         error = await wadcs.release_notify_seen(project_key, version_key, date, superseded_draft=superseded)
         if error is not None:
             log.warning(f"dist watcher could not notify for {project_key!s} {version_key!s}: {error}")
+        # Every external release goes to the releases list; one for a project that
+        # otherwise releases through ATR also goes to its PMC as a warning
+        error = await wadcs.release_warn_unmanaged(project_key, version_key, date)
+        if error is not None:
+            log.warning(f"dist watcher could not warn about {project_key!s} {version_key!s}: {error}")
     for project_key, version_key in archives:
         error = await wadcs.release_notify_archived(project_key, version_key, date)
         if error is not None:

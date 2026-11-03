@@ -2240,6 +2240,48 @@ class FoundationAdmin(FoundationCommitter):
         )
         return None
 
+    async def warn_unmanaged(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        released: datetime.datetime,
+    ) -> str | None:
+        """Warn the PMC when a project that releases through ATR gets a release that didn't.
+
+        A project with no managed releases is just not using ATR yet, so the releases
+        list notification is enough for it. Once a project has released through ATR,
+        a release appearing in dist without it is worth a direct warning - it has had
+        no checks and no vote, and may not be the PMC's doing at all. Returns None
+        both when the warning is queued and when there's nothing to warn about.
+        """
+        project = await self.__data.project(key=str(project_key), _committee=True).get()
+        if project is None:
+            return f"Project {project_key!s} not found"
+        if project.committee is None:
+            return f"Project {project_key!s} has no committee"
+        managed = await self.__data.artifact(project_key=str(project_key), managed=True).get()
+        if managed is None:
+            return None
+        warning = construct.unmanaged_release_warning(project.committee, project, str(version), released)
+        self.__data.add(
+            sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.MESSAGE_SEND,
+                task_args=warning.as_task_args(),
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                version_key=str(version),
+            )
+        )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version),
+            warned="unmanaged release",
+        )
+        return None
+
     async def __delete_body(
         self,
         release: sql.Release,

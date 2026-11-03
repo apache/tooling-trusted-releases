@@ -233,6 +233,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         classification: Opt[str | None] = NOT_SET,
         svn_revision: Opt[int | None] = NOT_SET,
         download_path_suffix: Opt[str | None] = NOT_SET,
+        managed: Opt[bool] = NOT_SET,
         _release: bool = False,
     ) -> Query[sql.Artifact]:
         query = sqlmodel.select(sql.Artifact)
@@ -262,6 +263,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Artifact.svn_revision == svn_revision)
         if is_defined(download_path_suffix):
             query = query.where(sql.Artifact.download_path_suffix == download_path_suffix)
+        if is_defined(managed):
+            query = query.where(sql.Artifact.managed == managed)
 
         if _release:
             query = query.options(joined_load(sql.Artifact.release))
