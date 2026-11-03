@@ -89,10 +89,32 @@ class _FakePolicy:
             "finish_vote_template_url": "",
             "vote_comment_template_url": "",
             "require_version_in_filenames": False,
+            "auto_archive_prior_release": False,
         }
         defaults.update(fields)
         for key, value in defaults.items():
             setattr(self, key, value)
+
+
+def test_export_includes_auto_archive_prior_release_only_when_set() -> None:
+    enabled = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(auto_archive_prior_release=True, download_path_suffix="example"),
+    )
+    disabled = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(download_path_suffix="example"),
+    )
+
+    enabled_policy = strictyaml.load(projects._asf_yaml_export(enabled)).data["project"]["policy"]
+    disabled_policy = strictyaml.load(projects._asf_yaml_export(disabled)).data["project"]["policy"]
+
+    assert enabled_policy["auto_archive_prior_release"] == "true"
+    assert "auto_archive_prior_release" not in disabled_policy
 
 
 def test_export_includes_download_path_suffix_when_set() -> None:

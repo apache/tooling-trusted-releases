@@ -462,8 +462,10 @@ def _asf_yaml_policy(project: sql.Project) -> dict[str, object]:
 
 def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, object]:
     # Fields that need converting rather than passing straight through. strictyaml serialises
-    # only strings, so the int and bool go out as text.
+    # only strings, so the int and bools go out as text.
     extras: dict[str, object] = {}
+    if release_policy.auto_archive_prior_release:
+        extras["auto_archive_prior_release"] = "true"
     if release_policy.file_tag_mappings:
         extras["file_tag_mappings"] = {tag: list(paths) for tag, paths in release_policy.file_tag_mappings.items()}
     if release_policy.license_check_mode != sql.LicenseCheckMode.BOTH:

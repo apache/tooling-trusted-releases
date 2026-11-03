@@ -451,6 +451,7 @@ class PolicyArgsBase(schema.Strict):
     announce_release_subject: str | None = None
     announce_release_template: str | None = None
     announce_release_template_url: str | None = None
+    auto_archive_prior_release: bool | None = None
     binary_artifact_paths: list[str] | None = None
     file_tag_mappings: dict[str, list[str]] | None = None
     github_compose_workflow_path: list[str] | None = None

@@ -216,8 +216,16 @@ async def _render_page(project: sql.Project, releases: list[sql.Release], can_cr
         htm.strong["release candidate draft"],
         ". You can then add files to this draft before promoting it for voting.",
     ]
+    defaults: dict[str, object] = {
+        "project_key": project.key,
+        "download_path_suffix": project.policy_download_path_suffix,
+    }
     skip = []
-    if not project.policy_auto_archive_prior_release:
+    # A project that allows auto-archive almost always wants it, so we tick the box
+    # and leave the release manager to untick it here or when announcing
+    if project.policy_auto_archive_prior_release:
+        defaults["auto_archive_prior"] = True
+    else:
         skip.append("auto_archive_prior")
     if not can_create_expedited:
         skip.append("expedited")
@@ -228,7 +236,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release], can_cr
         submit_classes="btn-primary btn-lg",
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
-        defaults={"project_key": project.key, "download_path_suffix": project.policy_download_path_suffix},
+        defaults=defaults,
         pre_submit=_cycle_preview(project),
         skip=skip,
     )
