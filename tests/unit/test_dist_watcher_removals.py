@@ -36,8 +36,14 @@ class _Query:
     def __init__(self, result: object) -> None:
         self._result = result
 
+    async def all(self) -> list[object]:
+        return [] if (self._result is None) else [self._result]
+
     async def get(self) -> object:
         return self._result
+
+    def where(self, *_args: object) -> _Query:
+        return self
 
 
 def _data_returning(artifact: object) -> mock.MagicMock:
@@ -210,6 +216,11 @@ def _data_for_release(project: object, existing: object) -> mock.MagicMock:
     return data
 
 
+def _existing(phase: object, is_archived: bool) -> SimpleNamespace:
+    # The catalogued release _source_bundle's files belong to
+    return SimpleNamespace(key="skywalking-banyandb-0.11.0", version="0.11.0", phase=phase, is_archived=is_archived)
+
+
 def _source_bundle() -> catalog._ReleaseFiles:
     bundle = catalog._ReleaseFiles("skywalking", "banyandb", "0.11.0")
     bundle.files.append(("skywalking/banyandb/0.11.0", "banyandb-0.11.0-src.tar.gz", catalog.classify.FileType.SOURCE))
@@ -222,7 +233,7 @@ async def test_republishing_an_archived_release_resolves_to_a_restore() -> None:
     # An archived version seen back in dist has to reach catalogue_release, which restores it;
     # resolution must not skip it the way it skips a version that is still current
     project = SimpleNamespace(key="skywalking-banyandb")
-    archived = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE, is_archived=True)
+    archived = _existing(catalog.sql.ReleasePhase.RELEASE, is_archived=True)
     data = _data_for_release(project, archived)
     resolution = await catalog._resolve_release(dist_rules.empty(), data, _source_bundle())
     assert resolution.supersede is None
@@ -236,7 +247,7 @@ async def test_a_published_release_awaiting_announcement_is_left_alone() -> None
     # A preview has passed its vote and expects its files on dist, so seeing them there is neither
     # a new release to catalogue nor a reason to supersede it
     project = SimpleNamespace(key="skywalking-banyandb")
-    preview = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE_PREVIEW, is_archived=False)
+    preview = _existing(catalog.sql.ReleasePhase.RELEASE_PREVIEW, is_archived=False)
     data = _data_for_release(project, preview)
     resolution = await catalog._resolve_release(dist_rules.empty(), data, _source_bundle())
     assert resolution == catalog._ReleaseResolution(None, None)
@@ -245,7 +256,7 @@ async def test_a_published_release_awaiting_announcement_is_left_alone() -> None
 @pytest.mark.asyncio
 async def test_republishing_a_current_release_stays_a_no_op() -> None:
     project = SimpleNamespace(key="skywalking-banyandb")
-    current = SimpleNamespace(phase=catalog.sql.ReleasePhase.RELEASE, is_archived=False)
+    current = _existing(catalog.sql.ReleasePhase.RELEASE, is_archived=False)
     data = _data_for_release(project, current)
     resolution = await catalog._resolve_release(dist_rules.empty(), data, _source_bundle())
     assert resolution == catalog._ReleaseResolution(None, None)

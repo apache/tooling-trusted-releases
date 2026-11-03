@@ -78,6 +78,8 @@ class Decomposed:
     subproject: str | None
     version: str | None
     source: Literal["dir", "combined", "filename", "unknown"]
+    # The version as the dist path writes it (3.0.0-M3), where version is the lowercased key
+    written_version: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -101,11 +103,12 @@ class DistRules:
         return None
 
     def decompose(self, committee: str, parts: tuple[str, ...], filename: str | None = None) -> Decomposed | None:
-        # The version key is lowercased so a case split (turbine 2.2-RC1 vs 2.2-rc1) is one release
+        # The version key is lowercased so a case split (turbine 2.2-RC1 vs 2.2-rc1) is one release,
+        # and the spelling is kept beside it for the catalogue to store
         decomposed = self._decompose(committee, parts, filename)
         if (decomposed is None) or (decomposed.version is None):
             return decomposed
-        return dataclasses.replace(decomposed, version=decomposed.version.lower())
+        return dataclasses.replace(decomposed, version=decomposed.version.lower(), written_version=decomposed.version)
 
     def project_remap(self, committee: str, subproject: str | None) -> str | None:
         # The project key a dist-path remaps to when the bare-name match can't reach it, or None.

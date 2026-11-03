@@ -276,6 +276,24 @@ def test_repos_subtree_is_not_a_release() -> None:
     assert result is None
 
 
+@pytest.mark.parametrize(
+    ("committee", "parts", "filename", "version", "written_version"),
+    [
+        ("maven", ("plugins",), "maven-changes-plugin-3.0.0-M3-source-release.zip", "3.0.0-m3", "3.0.0-M3"),
+        ("turbine", ("2.2-RC1",), None, "2.2-rc1", "2.2-RC1"),
+        ("maven", ("mvnd", "1.0-m6"), "maven-mvnd-1.0-m6-src.zip", "1.0-m6", "1.0-m6"),
+    ],
+)
+def test_decompose_keeps_the_written_version_beside_the_key(
+    committee: str, parts: tuple[str, ...], filename: str | None, version: str, written_version: str
+) -> None:
+    # The lowercased version keys a release; the spelling is what the catalogue stores (#1812)
+    result = _RULES.decompose(committee, parts, filename)
+    assert result is not None
+    assert result.version == version
+    assert result.written_version == written_version
+
+
 def test_candidate_keys_bridge_underscore_package_names() -> None:
     # An underscored dist package name bridges to the registry's hyphenated key, so candidate_keys
     # offers the hyphenated form rather than only the underscore duplicate

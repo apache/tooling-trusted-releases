@@ -24,6 +24,8 @@ import datetime
 import pathlib
 from typing import Final, NamedTuple
 
+import sqlalchemy
+
 import atr.analysis as analysis
 import atr.classify as classify
 import atr.config as config
@@ -49,7 +51,8 @@ _CHECKSUM_SUFFIXES: Final[tuple[str, ...]] = (".sha512", ".sha256", ".sha1", ".s
 type _ResolvedRelease = tuple[safe.ProjectKey, safe.VersionKey, list[release.ArtifactInput]]
 type _ResolvedArchive = tuple[safe.ProjectKey, safe.VersionKey]
 
-# How a release is identified while a commit is being read: committee, subproject, version
+# How a release is identified while a commit is being read: committee, subproject, version, with
+# the version lowercased so files that spell it differently land in one release
 type _ReleaseKey = tuple[str, str | None, str]
 
 
@@ -72,7 +75,8 @@ class _ReleaseResolution(NamedTuple):
 @dataclasses.dataclass
 class _ReleaseFiles:
     # Added files for one release in a commit as (dir-under-release, basename, classification),
-    # so artifacts pair with companions in the same directory and each file is classified once
+    # so artifacts pair with companions in the same directory and each file is classified once.
+    # The version is as the first file seen writes it (3.0.0-M3), not the lowercased key
     committee: str
     subproject: str | None
     version: str
@@ -216,6 +220,22 @@ def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
     return artifacts
 
 
+async def _catalogued_release(data: db.Session, project_key: str, version: str) -> sql.Release | None:
+    # The release under any spelling of the version, since a commit may write it differently from
+    # the catalogue (3.0.0-M3 against an older 3.0.0-m3). Where a case split left both spellings
+    # catalogued, the one this commit writes wins
+    via = sql.validate_instrumented_attribute
+    matches = await (
+        data.release(project_key=project_key)
+        .where(sqlalchemy.func.lower(via(sql.Release.version)) == version.lower())
+        .all()
+    )
+    for match in matches:
+        if match.version == version:
+            return match
+    return min(matches, key=lambda match: match.key, default=None)
+
+
 def _commit_date(commit: dict) -> datetime.datetime:
     # svn dates look like "2026-06-12 15:23:41 +0000 (Fri, 12 Jun 2026)"
     head = str(commit.get("date", "")).split(" (", 1)[0]
@@ -355,10 +375,10 @@ async def _resolve_archive(
     project = await _resolve_project(rules, data, committee, subproject)
     if project is None:
         return None
-    release_record = await data.release(project_key=project.key, version=version).get()
+    release_record = await _catalogued_release(data, project.key, version)
     if (release_record is None) or release_record.is_archived:
         return None
-    return _safe_keys(project.key, version)
+    return _safe_keys(project.key, release_record.version)
 
 
 async def _resolve_changes(
@@ -393,7 +413,7 @@ async def _resolve_changes(
             if resolved_file is None:
                 continue
             project_key, version_key, release_key = resolved_file
-            if (release_key in published) or (release_key in archived_keys):
+            if (release_key.lower() in published) or (release_key in archived_keys):
                 continue
             archives.append((project_key, version_key))
             archived_keys.add(release_key)
@@ -449,12 +469,13 @@ async def _published_release_keys(
     rules: dist.DistRules, data: db.Session, added: dict[_ReleaseKey, _ReleaseFiles]
 ) -> set[str]:
     # The release keys getting a source published in this commit, resolved the same way
-    # _resolve_release resolves projects, so an archival can tell a replace from a retirement
+    # _resolve_release resolves projects, so an archival can tell a replace from a retirement.
+    # Lowercased, since the catalogue may spell the version differently from this commit
     keys: set[str] = set()
     for rel_files in added.values():
         project = await _resolve_project(rules, data, rel_files.committee, rel_files.subproject)
         if project is not None:
-            keys.add(f"{project.key}-{rel_files.version}")
+            keys.add(f"{project.key}-{rel_files.version}".lower())
     return keys
 
 
@@ -469,16 +490,19 @@ async def _draft_author(data: db.Session, release_record: sql.Release) -> str | 
 
 
 async def _resolve_release(rules: dist.DistRules, data: db.Session, rel_files: _ReleaseFiles) -> _ReleaseResolution:
-    version = rel_files.version
     project = await _resolve_project(rules, data, rel_files.committee, rel_files.subproject)
     if project is None:
-        log.info(f"dist commit for unknown project: {rel_files.committee}/{rel_files.subproject or ''} {version}")
+        log.info(
+            f"dist commit for unknown project: {rel_files.committee}/{rel_files.subproject or ''} {rel_files.version}"
+        )
         return _ReleaseResolution(None, None)
+    existing = await _catalogued_release(data, project.key, rel_files.version)
+    # A release the catalogue already holds keeps its spelling; a new one takes the one dist writes
+    version = existing.version if (existing is not None) else rel_files.version
     keys = _safe_keys(project.key, version)
     if keys is None:
         return _ReleaseResolution(None, None)
     project_key, version_key = keys
-    existing = await data.release(project_key=project.key, version=version).get()
     supersede: _SupersededDraft | None = None
     if existing is not None:
         if existing.phase == sql.ReleasePhase.RELEASE:
@@ -517,13 +541,15 @@ def _sbom_companion(siblings: set[str], artifact: str) -> str | None:
     return None
 
 
-def _add_to_bundle(added: dict[_ReleaseKey, _ReleaseFiles], key: _ReleaseKey, path: str, filename: str) -> None:
+def _add_to_bundle(
+    added: dict[_ReleaseKey, _ReleaseFiles], key: _ReleaseKey, written_version: str, path: str, filename: str
+) -> None:
     # Record one added artifact file against its release's bundle, classified once, so companions
     # pair from the same directory later and a source artifact marks the bundle as a real release
-    committee, subproject, version = key
+    committee, subproject, _ = key
     bundle = added.get(key)
     if bundle is None:
-        bundle = _ReleaseFiles(committee, subproject, version)
+        bundle = _ReleaseFiles(committee, subproject, written_version)
         added[key] = bundle
     rel = path.removeprefix(_RELEASE_PREFIX)
     dirpath = rel.rsplit("/", 1)[0] if "/" in rel else ""
@@ -555,7 +581,8 @@ def _record_decomposed(
     elif flags.startswith("A") and is_dir:
         copied[key] = path.removeprefix(_RELEASE_PREFIX).rstrip("/")
     elif flags.startswith("A") and (filename is not None):
-        _add_to_bundle(added, key, path, filename)
+        written_version = decomposed.written_version or decomposed.version
+        _add_to_bundle(added, key, written_version, path, filename)
 
 
 def _removed_artifact_file(path: str) -> tuple[str, str] | None:
