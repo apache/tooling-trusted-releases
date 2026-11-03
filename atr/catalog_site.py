@@ -112,10 +112,8 @@ _ASSETS: Final[tuple[str, ...]] = (
     "js/min/bootstrap.bundle.min.js",
 )
 
-# A committee counts as "current" while it still has a project that hasn't
-# retired to the Attic.
 _LIVE_PROJECT_STATUSES: Final[frozenset[sql.ProjectStatus]] = frozenset(
-    {sql.ProjectStatus.ACTIVE, sql.ProjectStatus.DORMANT, sql.ProjectStatus.STANDING}
+    {sql.ProjectStatus.ACTIVE, sql.ProjectStatus.STANDING}
 )
 
 # The Incubator holds no releases of its own. Its page is an index of the podlings
