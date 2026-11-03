@@ -165,7 +165,6 @@ async def _installation_token(repository: str) -> str:
 
 def _notice(gate_obj: sql.GateConfig, request: sql.GateRequest) -> args.Send:
     run_url = f"https://github.com/{gate_obj.repository}/actions/runs/{request.run_id}/attempts/{request.run_attempt}"
-    starter = f"{request.actor_asf_uid or 'no linked ASF account'} ({request.actor} on GitHub)"
     return args.Send(
         email_sender=mail.NOREPLY_EMAIL_ADDRESS,
         email_to=gate_obj.notify,
@@ -173,7 +172,7 @@ def _notice(gate_obj: sql.GateConfig, request: sql.GateRequest) -> args.Send:
         body=(
             f"GitHub is holding a run of\n\n  {gate_obj.workflow}\n\nin\n\n  {gate_obj.repository}\n\n"
             f"until {THRESHOLD} members of its release team approve it in ATR.\n\n"
-            f"Ref: {request.ref}\nCommit: {request.head_sha}\nStarted by: {starter}\nRun: {run_url}\n\n"
+            f"Ref: {request.ref}\nCommit: {request.head_sha}\nStarted by: {request.actor} on GitHub\nRun: {run_url}\n\n"
             f"Review it and decide at:\n\n  https://{config.get().APP_HOST}/gates\n"
         ),
         in_reply_to=None,

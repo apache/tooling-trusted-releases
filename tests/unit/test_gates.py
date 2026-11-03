@@ -27,8 +27,24 @@ _GATE = sql.GateConfig(
     event="push",
     ref_type="tag",
     ref_pattern="v[0-9]*",
+    notify="dev@tooling.apache.org",
 )
 _RUN = {"repository": {"id": 1}, "path": ".github/workflows/publish.yml", "event": "push", "head_branch": "v0.0.1"}
+
+
+def test_notice_omits_asf_uid() -> None:
+    request = sql.GateRequest(
+        repository_id=1,
+        run_id=2,
+        run_attempt=1,
+        head_sha="0" * 40,
+        ref="refs/tags/v0.0.1",
+        actor="alice-gh",
+        actor_asf_uid="alice-asf",
+    )
+    notice = gates._notice(_GATE, request)
+    assert "Started by: alice-gh on GitHub\n" in notice.body
+    assert "alice-asf" not in notice.subject + notice.body
 
 
 def test_pattern_supported() -> None:
