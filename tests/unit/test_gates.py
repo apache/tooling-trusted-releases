@@ -32,6 +32,14 @@ _GATE = sql.GateConfig(
 _RUN = {"repository": {"id": 1}, "path": ".github/workflows/publish.yml", "event": "push", "head_branch": "v0.0.1"}
 
 
+def test_may_start() -> None:
+    committee = sql.Committee(committee_members=["pmc"], committers=["rm"], release_managers=["rm"])
+    assert gates._may_start(committee, "pmc")
+    assert gates._may_start(committee, "rm")
+    assert not gates._may_start(committee, "other")
+    assert not gates._may_start(committee, None)
+
+
 def test_notice_omits_asf_uid() -> None:
     request = sql.GateRequest(
         repository_id=1,
@@ -41,9 +49,11 @@ def test_notice_omits_asf_uid() -> None:
         ref="refs/tags/v0.0.1",
         actor="alice-gh",
         actor_asf_uid="alice-asf",
+        status=sql.GateStatus.REJECTED,
     )
     notice = gates._notice(_GATE, request)
     assert "Started by: alice-gh on GitHub\n" in notice.body
+    assert notice.subject.startswith("Automatically rejected: ")
     assert "alice-asf" not in notice.subject + notice.body
 
 

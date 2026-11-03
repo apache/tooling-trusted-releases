@@ -39,10 +39,13 @@ import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
 import atr.models.sql as sql
+import atr.user as user
 import atr.util as util
 
 EVENTS: Final[tuple[str, ...]] = ("push", "release", "workflow_dispatch")
 REF_TYPES: Final[dict[str, str]] = {"branch": "heads", "tag": "tags"}
+STARTER_REASON: Final[str] = "the starter has no known link to this PMC or its release managers"
+STARTER_REFUSAL: Final[str] = f"Automatically rejected: {STARTER_REASON}"
 TEAMS: Final[dict[str, str]] = {"tooling": ldap.LDAP_TOOLING_SERVICE_BASE}
 THRESHOLD: Final[int] = 2
 
@@ -163,17 +166,29 @@ async def _installation_token(repository: str) -> str:
     return token["token"]
 
 
+def _may_start(committee: sql.Committee | None, asf_uid: str | None) -> bool:
+    if asf_uid is None:
+        return False
+    return user.is_committee_member(committee, asf_uid) or user.is_release_manager(committee, asf_uid)
+
+
 def _notice(gate_obj: sql.GateConfig, request: sql.GateRequest) -> args.Send:
     run_url = f"https://github.com/{gate_obj.repository}/actions/runs/{request.run_id}/attempts/{request.run_attempt}"
+    subject = "Approval needed"
+    opening = "GitHub is holding a run of"
+    closing = f"until {THRESHOLD} members of its release team approve it in ATR."
+    if request.status == sql.GateStatus.REJECTED:
+        subject = "Automatically rejected"
+        opening = "ATR automatically rejected a run of"
+        closing = f"because {STARTER_REASON}."
     return args.Send(
         email_sender=mail.NOREPLY_EMAIL_ADDRESS,
         email_to=gate_obj.notify,
-        subject=f"Approval needed: {gate_obj.repository} {request.ref}",
+        subject=f"{subject}: {gate_obj.repository} {request.ref}",
         body=(
-            f"GitHub is holding a run of\n\n  {gate_obj.workflow}\n\nin\n\n  {gate_obj.repository}\n\n"
-            f"until {THRESHOLD} members of its release team approve it in ATR.\n\n"
+            f"{opening}\n\n  {gate_obj.workflow}\n\nin\n\n  {gate_obj.repository}\n\n{closing}\n\n"
             f"Ref: {request.ref}\nCommit: {request.head_sha}\nStarted by: {request.actor} on GitHub\nRun: {run_url}\n\n"
-            f"Review it and decide at:\n\n  https://{config.get().APP_HOST}/gates\n"
+            f"Review it at:\n\n  https://{config.get().APP_HOST}/gates\n"
         ),
         in_reply_to=None,
         footer_category=mail.MailFooterCategory.AUTO,
@@ -199,9 +214,10 @@ async def _record(payload: dict[str, Any]) -> None:
         return
     try:
         actor_asf_uid = await ldap.github_to_apache(run["triggering_actor"]["id"])
-    except ldap.LookupError:
+    except ldap.LookupError, ldap.UnavailableError:
         actor_asf_uid = None
     async with db.session() as data:
+        allowed = _may_start(await data.committee(key=gate_obj.committee_key).get(), actor_asf_uid)
         inserted = await data.execute(
             sqlite.insert(sql.GateRequest)
             .values(
@@ -212,6 +228,7 @@ async def _record(payload: dict[str, Any]) -> None:
                 ref=f"refs/{REF_TYPES[gate_obj.ref_type]}/{run['head_branch']}",
                 actor=run["triggering_actor"]["login"],
                 actor_asf_uid=actor_asf_uid,
+                status=sql.GateStatus.PENDING if allowed else sql.GateStatus.REJECTED,
                 decisions={},
             )
             .on_conflict_do_nothing()
@@ -227,6 +244,8 @@ async def _record(payload: dict[str, Any]) -> None:
                 )
             )
         await data.commit()
+    if not allowed:
+        await _review(token, gate_obj, run_id, "rejected", STARTER_REFUSAL)
 
 
 async def _ref_problem(token: str, gate_obj: sql.GateConfig, run: dict[str, Any]) -> str | None:

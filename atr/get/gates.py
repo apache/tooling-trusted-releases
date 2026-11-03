@@ -136,7 +136,7 @@ async def status(
 def _current_decisions(row: sql.GateConfig | sql.GateRequest) -> str:
     decisions = ", ".join(f"{uid} {'approved' if ok else 'rejected'}" for uid, ok in sorted(row.decisions.items()))
     if row.status != sql.GateStatus.PENDING:
-        return decisions
+        return decisions or "0 votes"
     approvals = len(row.decisions)
     progress = f"{approvals} of {gates.THRESHOLD} approvals, waiting for {gates.THRESHOLD - approvals} more"
     return f"{progress}: {decisions}" if decisions else progress
@@ -211,8 +211,8 @@ def _table(request: sql.GateRequest, gate: sql.GateConfig, latest_sha: str | Non
         changes = htm.a(href=f"{github}/tree/{request.head_sha}")["Full tree"]
     else:
         changes = htm.a(href=f"{github}/compare/{latest_sha}..{request.head_sha}")["Since latest approved"]
-    starter = f"{request.actor_asf_uid or 'no linked ASF account'} ({request.actor} on GitHub)"
-    decision_row = htm.tr[htm.th["Outcome"], htm.td[request.status.value]]
+    starter = f"{request.actor_asf_uid or 'unknown'} ({request.actor} on GitHub)"
+    decision_row = htm.tr[htm.th["Outcome"], htm.td[request.status if request.decisions else gates.STARTER_REFUSAL]]
     if request.status == sql.GateStatus.PENDING:
         decision = _decision(request, uid, util.as_url(post.gates.decide))
         decision_row = htm.tr[htm.th["Your decision"], htm.td[decision]]
