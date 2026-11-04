@@ -435,7 +435,9 @@ async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"], que
         validation.pagination_args_validate(query_args)
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
-    return await _catalog_page(quart.request.args.get("tab", "update-committees"), query_args)
+    tab = quart.request.args.get("tab", "update-committees")
+    release_filter = quart.request.args.get("q", "").strip()
+    return await _catalog_page(tab, query_args, release_filter)
 
 
 @admin.typed
@@ -2537,10 +2539,10 @@ def _blank_to_none(value: str) -> str | None:
     return value or None
 
 
-async def _catalog_page(active_tab: str, query_args: web.PageQuery) -> str:
+async def _catalog_page(active_tab: str, query_args: web.PageQuery, release_filter: str) -> str:
     tab_items = [
         htm.Tab("update-committees", "Update", _catalog_committees_update_tab),
-        htm.Tab("releases", "Current releases", lambda: _catalog_releases_tab(query_args)),
+        htm.Tab("releases", "Current releases", lambda: _catalog_releases_tab(query_args, release_filter)),
         htm.Tab("admin", "Catalog admin", _catalog_admin_tab),
         htm.Tab("dist-rules", "Dist watcher rules", _catalog_dist_rules_tab),
         htm.Tab("reproducible-builds", "Reproducible builds", _catalog_reproducible_builds_tab),
@@ -2592,18 +2594,22 @@ async def _catalog_committees_update_tab() -> htm.Element:
     return block.collect()
 
 
-async def _catalog_releases_tab(query_args: web.PageQuery) -> htm.Element:
+async def _catalog_releases_tab(query_args: web.PageQuery, release_filter: str) -> htm.Element:
     # A release is "current" when it has at least one workflow revision; the
     # imported catalogue has none, so this is the line between the two surfaces
-    has_revisions = sql.latest_revision_number_query().is_not(None)
+    conditions: list[sqlalchemy.ColumnElement[bool]] = [sql.latest_revision_number_query().is_not(None)]
+    if release_filter:
+        # SQLite LIKE is case insensitive for ASCII, and autoescape keeps % and _ literal
+        release_key = sql.validate_instrumented_attribute(sql.Release.key)
+        conditions.append(release_key.contains(release_filter, autoescape=True))
     async with db.session() as data:
         count_result = await data.execute(
-            sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release).where(has_revisions)
+            sqlalchemy.select(sqlalchemy.func.count()).select_from(sql.Release).where(*conditions)
         )
         count = count_result.scalar_one()
         releases = await (
             data.release(_project=True, _committee=True, _revisions=True)
-            .where(has_revisions)
+            .where(*conditions)
             .order_by(sql.Release.key)
             .limit(query_args.limit)
             .offset(query_args.offset)
@@ -2619,6 +2625,7 @@ async def _catalog_releases_tab(query_args: web.PageQuery) -> htm.Element:
         count=count,
         limit=query_args.limit,
         page=page,
+        release_filter=release_filter,
     )
     return htm.div[markupsafe.Markup(content)]
 

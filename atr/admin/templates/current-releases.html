@@ -6,6 +6,22 @@
   <a href="{{ as_url(admin.catalog_get, tab="admin") }}" class="alert-link">Catalog admin</a>.
 </div>
 
+<form method="get" action="{{ as_url(admin.catalog_get) }}" class="row g-2 mb-3">
+  <input type="hidden" name="tab" value="releases">
+  <div class="col-auto">
+    <label for="release-filter" class="visually-hidden">Release name</label>
+    <input type="search" id="release-filter" name="q" class="form-control" placeholder="Filter by release name" value="{{ release_filter }}">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-outline-primary">Filter</button>
+  </div>
+  {% if release_filter %}
+    <div class="col-auto">
+      <a href="{{ as_url(admin.catalog_get, tab="releases") }}" class="btn btn-outline-secondary">Clear</a>
+    </div>
+  {% endif %}
+</form>
+
 {% if release_rows %}
   <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} releases.</p>
 {% endif %}
@@ -65,6 +81,8 @@
       <tr>
         {% if count %}
           <td colspan="7">No releases to show on this page ({{ count }} total).</td>
+        {% elif release_filter %}
+          <td colspan="7">No current releases match "{{ release_filter }}".</td>
         {% else %}
           <td colspan="7">No current releases found.</td>
         {% endif %}
@@ -79,7 +97,7 @@
       {% if page.previous_offset is not none %}
         <li class="page-item">
           <a class="page-link"
-             href="{{ as_url(admin.catalog_get, tab="releases", limit=limit, offset=page.previous_offset) }}">Previous</a>
+             href="{{ as_url(admin.catalog_get, tab="releases", limit=limit, offset=page.previous_offset, q=release_filter or none) }}">Previous</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">Previous</span></li>
@@ -87,7 +105,7 @@
       {% if page.next_offset is not none %}
         <li class="page-item">
           <a class="page-link"
-             href="{{ as_url(admin.catalog_get, tab="releases", limit=limit, offset=page.next_offset) }}">Next</a>
+             href="{{ as_url(admin.catalog_get, tab="releases", limit=limit, offset=page.next_offset, q=release_filter or none) }}">Next</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">Next</span></li>
