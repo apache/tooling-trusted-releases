@@ -322,8 +322,12 @@ async def view(
     """
     page.style[page_styles]
 
+    catalog_url = f"{config.get().RELEASE_CATALOG_URL}{project.key}/"
     title_row = htm.div(".row")[
-        htm.div(".col-md")[htm.h1[project.display_name]],
+        htm.div(".col-md.d-flex.align-items-baseline.flex-wrap.gap-3")[
+            htm.h1[project.display_name],
+            htm.a(".small", href=catalog_url, target="_blank", rel="noopener")["View in catalog"],
+        ],
         htm.div(".col-sm-auto")[htm.span(".badge.text-bg-secondary")[project.status.value.lower()]]
         if (not project.is_active)
         else "",

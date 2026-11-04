@@ -44,7 +44,14 @@
 
     <main class="container py-4 flex-grow-1">
       {% block content %}{% endblock content %}
-      <p class="text-muted small mt-4 mb-0">Last updated {{ last_updated() }}.</p>
+      <p class="text-muted small mt-4 mb-0">
+        Last updated {{ last_updated() }}.
+        {# Every page under a project names it, and the committee-only page passes None.
+           ATR's project pages need a login, so there's nothing there for a crawler to follow #}
+        {% if project is defined and project %}
+          <a href="{{ atr_url() }}projects/{{ project.key }}" target="_blank" rel="nofollow noopener">Manage this project in ATR</a>.
+        {% endif %}
+      </p>
     </main>
 
     {% include "includes/footer.html" %}

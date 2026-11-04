@@ -47,6 +47,7 @@ import strictyaml
 
 import atr.classify as classify
 import atr.cle as cle
+import atr.config as config
 import atr.constants as constants
 import atr.db as db
 import atr.log as log
@@ -79,6 +80,9 @@ _ENVIRONMENT.globals["version"] = metadata.version
 _ENVIRONMENT.globals["commit"] = metadata.commit
 # The footer stamps the render time, so it's evaluated per page rather than at import.
 _ENVIRONMENT.globals["last_updated"] = lambda: datetime.datetime.now(datetime.UTC).strftime("%d %b %Y %H:%M UTC")
+# The site is static, so its links back into ATR have to be absolute. They follow the
+# generating instance's host, which keeps a staging catalog pointing at staging ATR.
+_ENVIRONMENT.globals["atr_url"] = lambda: f"https://{config.get().APP_HOST}/"
 
 # ATR's own stylesheets and the certified badge, copied under the site's assets/
 # so the pages carry the app's look with nothing resolving back to the server.
