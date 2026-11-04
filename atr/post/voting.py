@@ -96,13 +96,7 @@ async def selected(  # noqa: C901
     """
 
     async with db.session() as data:
-        match await interaction.release_ready_to_start_vote(
-            session,
-            project_key,
-            version_key,
-            data,
-            frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
-        ):
+        match await interaction.release_ready_to_start_vote(session, project_key, version_key, data):
             case str() as error:
                 return await session.redirect(
                     get.compose.selected,
@@ -140,12 +134,7 @@ async def selected(  # noqa: C901
         if notify_error is not None:
             return notify_error
 
-        publish_error = await _publish_opt_in_error(
-            session,
-            start_voting_form,
-            vote_mode,
-            committee,
-        )
+        publish_error = await _publish_opt_in_error(session, start_voting_form, committee)
         if publish_error is not None:
             return publish_error
 
@@ -274,16 +263,10 @@ async def _notify_opt_in_error(
 async def _publish_opt_in_error(
     session: web.Committer,
     start_voting_form: shared.voting.StartVotingForm,
-    vote_mode: sql.VoteMode,
     committee: sql.Committee,
 ) -> web.WerkzeugResponse | None:
     if not start_voting_form.automatic_publish_when_resolved:
         return None
-    if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
-        return await session.form_error(
-            "automatic_publish_when_resolved",
-            "Automatic SVN publish is only available in email and Trusted Vote modes.",
-        )
     if not user.is_committee_member(committee, session.uid):
         return await session.form_error(
             "automatic_publish_when_resolved",

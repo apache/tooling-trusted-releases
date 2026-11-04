@@ -148,8 +148,6 @@ them when starting a vote.
   * *Trusted*. ATR sends the vote email, but votes are cast on the vote page in ATR and recorded
     there, with a receipt for each vote sent to the thread. Only in this mode can the vote be
     resolved automatically when it ends.
-  * *Manual*. The vote is held entirely outside ATR. You give ATR the URL of the vote thread and
-    record the result yourself. This mode is not available to podlings.
 * **Minimum voting period.** The shortest time a vote may run, between 72 and 168 hours.
 * **Release checklist.** Markdown text telling voters how to test a release candidate.
 * **Vote comment template.** Starting text for the comment that accompanies a vote, which each voter

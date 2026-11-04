@@ -435,7 +435,6 @@ def project(p: sql.Project) -> AnnotatedDivergences:
     yield from project_security_contact(p)
     yield from project_trusted_publishing(p)
     yield from project_version_pattern(p)
-    yield from project_vote_mode(p)
 
 
 @project_components("Project.calver_format", "Project.cycle_match")
@@ -642,12 +641,6 @@ def project_version_pattern(p: sql.Project) -> Divergences:
         return True
 
     yield from divergences_predicate(okay, "value to be a valid regex or unset", p.version_pattern)
-
-
-@project_components("ReleasePolicy.vote_mode")
-def project_vote_mode(p: sql.Project) -> Divergences:
-    if (p.committee is not None) and p.committee.is_podling and (p.policy_vote_mode == sql.VoteMode.MANUAL):
-        yield Divergence("a podling vote mode other than manual", repr(p.policy_vote_mode.value))
 
 
 def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:

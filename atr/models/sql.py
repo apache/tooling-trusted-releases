@@ -437,7 +437,6 @@ class VersionMethod(enum.StrEnum):
 
 
 class VoteMode(enum.StrEnum):
-    MANUAL = "manual"
     EMAIL = "email"
     TRUSTED = "trusted"
 
@@ -1434,10 +1433,6 @@ Sincerely,
         cc = [str(address) for address in (entry.get("cc") or [])]
         bcc = [str(address) for address in (entry.get("bcc") or [])]
         return to, cc, bcc
-
-    @property
-    def policy_manual_vote(self) -> bool:
-        return self.policy_vote_mode == VoteMode.MANUAL
 
     @property
     def policy_vote_mode(self) -> VoteMode:

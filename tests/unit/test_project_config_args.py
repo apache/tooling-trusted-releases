@@ -239,15 +239,6 @@ def test_full_sync_fills_omitted_policy_fields_with_defaults() -> None:
     assert "vote_recipients" in completed.model_fields_set
     assert "announce_recipients" in completed.model_fields_set
     assert completed.vote_recipients is None
-    assert "manual_vote" not in completed.model_fields_set
-
-
-def test_full_sync_keeps_manual_vote_in_place_of_vote_mode() -> None:
-    args = api.ProjectConfigPolicyArgs.model_validate({"manual_vote": True})
-
-    completed = project_writer._complete_policy_args(args)
-
-    assert "vote_mode" not in completed.model_fields_set
 
 
 def test_full_sync_with_no_policy_block_resets_whole_policy() -> None:

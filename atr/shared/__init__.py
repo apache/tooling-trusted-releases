@@ -25,7 +25,6 @@ import atr.shared.draft as draft
 import atr.shared.finish as finish
 import atr.shared.ignores as ignores
 import atr.shared.keys as keys
-import atr.shared.manual as manual
 import atr.shared.projects as projects
 import atr.shared.published as published
 import atr.shared.resolve as resolve
@@ -75,7 +74,6 @@ __all__ = [
     "finish",
     "ignores",
     "keys",
-    "manual",
     "projects",
     "published",
     "resolve",

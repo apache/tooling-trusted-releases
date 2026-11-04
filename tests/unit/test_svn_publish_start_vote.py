@@ -25,7 +25,6 @@ import atr.config as config
 import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.post.voting as voting_post
 import atr.shared.voting as voting_shared
 import atr.storage as storage
 import atr.storage.writers.vote as vote_writer
@@ -106,29 +105,6 @@ async def test_automatic_publish_uses_carried_original_initiator(monkeypatch) ->
         safe.RelPath("example-1.0"),
         publisher_asf_uid="alice",
     )
-
-
-async def test_email_vote_can_opt_in_to_automatic_publish(monkeypatch) -> None:
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
-    monkeypatch.setattr(voting_post.user, "is_committee_member", lambda _committee, _uid: True)
-    form = voting_shared.StartVotingForm.model_validate(
-        {
-            "csrf_token": "token",
-            "email_to": "dev@example.apache.org",
-            "vote_duration": 72,
-            "subject": "[VOTE] Release example 1.0",
-            "subject_template_hash": "abc",
-            "body": "Please vote.",
-            "automatic_publish_when_resolved": "on",
-            "download_path_suffix": "example-1.0",
-            "vote_mode": "email",
-            "rendered_revision": "00001",
-        }
-    )
-    session = type("Session", (), {"uid": "alice"})()
-    committee = sql.Committee(key="example", name="Example", is_podling=False)
-
-    assert await voting_post._publish_opt_in_error(session, form, sql.VoteMode.EMAIL, committee) is None
 
 
 def test_initiate_args_carry_publish_fields() -> None:

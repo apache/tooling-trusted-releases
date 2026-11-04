@@ -969,7 +969,6 @@ async def policy_get(
         policy_announce_recipients=models.api.RecipientDefaults(
             to=announce_to or None, cc=announce_cc, bcc=announce_bcc
         ),
-        policy_manual_vote=project.policy_manual_vote,
         policy_min_hours=project.policy_min_hours,
         policy_vote_mode=project.policy_vote_mode,
         policy_release_checklist=project.policy_release_checklist,

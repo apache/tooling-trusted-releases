@@ -352,11 +352,9 @@ async def test_cast_trusted_rolls_back_duplicate_receipt_id(sqlite_sessionmaker,
     [
         (False, None, True),
         (False, sql.VoteMode.EMAIL, True),
-        (False, sql.VoteMode.MANUAL, True),
         (False, sql.VoteMode.TRUSTED, True),
         (True, None, True),
         (True, sql.VoteMode.EMAIL, False),
-        (True, sql.VoteMode.MANUAL, False),
         (True, sql.VoteMode.TRUSTED, True),
     ],
 )
@@ -401,7 +399,7 @@ async def test_podling_second_round_preserves_voted_revision(
                 await writer.start_vote_no_commit(
                     safe.ReleaseKey("project-1.0.0"),
                     safe.RevisionNumber("00001"),
-                    allowed_vote_modes=frozenset({vote_mode}),
+                    expected_vote_mode=vote_mode,
                     promote=False,
                 )
             assert error.value.status == 409
@@ -411,7 +409,7 @@ async def test_podling_second_round_preserves_voted_revision(
             release_model, _seq, _mode, _revision = await writer.start_vote_no_commit(
                 safe.ReleaseKey("project-1.0.0"),
                 safe.RevisionNumber("00001"),
-                allowed_vote_modes=frozenset({vote_mode}),
+                expected_vote_mode=vote_mode,
                 promote=False,
             )
             assert release_model.voted_revision_number == voted_revision_number
@@ -493,7 +491,7 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
 
 
 @pytest.mark.asyncio
-async def test_post_vote_dispatches_trusted_email_manual_and_stale(monkeypatch) -> None:
+async def test_post_vote_dispatches_trusted_email_and_stale(monkeypatch) -> None:
     trusted_cast = mock.AsyncMock(return_value=(["dev@project.apache.org"], ""))
     email_send = mock.AsyncMock(return_value=(["dev@project.apache.org", "private@project.apache.org"], ""))
     flash = mock.AsyncMock()
@@ -543,19 +541,6 @@ async def test_post_vote_dispatches_trusted_email_manual_and_stale(monkeypatch) 
 
     trusted_cast.reset_mock()
     email_send.reset_mock()
-    form.vote_mode = sql.VoteMode.MANUAL
-    result = await handler(
-        _route_session(_route_release(sql.VoteMode.MANUAL)),
-        "vote",
-        safe.ProjectKey("project"),
-        safe.VersionKey("1.0.0"),
-        form,
-    )
-    assert result == "redirect"
-    trusted_cast.assert_not_awaited()
-    email_send.assert_not_awaited()
-    assert flash.call_args.args == ("Voting through this form is not available for manual votes.", "error")
-
     flash.reset_mock()
     form.vote_mode = sql.VoteMode.EMAIL
     result = await handler(
@@ -669,20 +654,29 @@ async def test_vote_email_labels_reflect_membership(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("vote_result", ["failed", "cancelled"])
-async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatch, vote_result) -> None:
+async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatch) -> None:
     monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
     async with sqlite_sessionmaker() as data:
         release_model = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-            vote_mode=sql.VoteMode.MANUAL,
+            vote_mode=sql.VoteMode.EMAIL,
             voted_revision_number="00001",
         )
         release_model.vote_started = datetime.datetime.now(datetime.UTC)
         await data.commit()
         writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
-        await writer.resolve_manually(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), vote_result)
+        await writer._resolve_transition(
+            release_model,
+            expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            expected_podling_thread_id=None,
+            new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            new_vote_mode=None,
+            new_vote_resolved=None,
+            new_podling_thread_id=None,
+        )
+        await data.commit()
+        await data.refresh(release_model)
         assert release_model.voted_revision_number is None
         assert await data.release(key=release_model.key, voted_revision_number=None).get() is not None
         data.add(
@@ -701,7 +695,7 @@ async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatc
         release_model, _seq, _mode, _revision = await _release_writer_with_data(data).start_vote_no_commit(
             safe.ReleaseKey("project-1.0.0"),
             safe.RevisionNumber("00002"),
-            allowed_vote_modes=frozenset({sql.VoteMode.EMAIL}),
+            expected_vote_mode=sql.VoteMode.EMAIL,
             promote=True,
         )
         assert release_model.voted_revision_number == "00002"
@@ -721,7 +715,7 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
                 _release, vote_seq, _vote_mode, _revision_number = await writer.start_vote_no_commit(
                     safe.ReleaseKey("project-1.0.0"),
                     safe.RevisionNumber("00001"),
-                    allowed_vote_modes=frozenset({sql.VoteMode.EMAIL}),
+                    expected_vote_mode=sql.VoteMode.EMAIL,
                     promote=True,
                 )
                 data.add(_vote_task(vote_seq, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)))
@@ -747,7 +741,6 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
     [
         (sql.VoteMode.EMAIL, False),
         (sql.VoteMode.TRUSTED, False),
-        (sql.VoteMode.MANUAL, False),
         (sql.VoteMode.TRUSTED, True),
     ],
 )
@@ -762,7 +755,7 @@ async def test_vote_start_records_revision(sqlite_sessionmaker, monkeypatch, vot
         release_model, _seq, actual_mode, revision = await _release_writer_with_data(data).start_vote_no_commit(
             safe.ReleaseKey("project-1.0.0"),
             None,
-            allowed_vote_modes=frozenset({vote_mode}),
+            expected_vote_mode=vote_mode,
             promote=True,
         )
         assert actual_mode == vote_mode
@@ -783,15 +776,24 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
         release_model = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-            vote_mode=sql.VoteMode.MANUAL,
+            vote_mode=sql.VoteMode.EMAIL,
             voted_revision_number=voted_revision_number,
         )
         release_model.vote_started = datetime.datetime.now(datetime.UTC)
         await data.commit()
         writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
-        await writer.resolve_manually(
-            safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "passed", "https://lists.apache.org/thread/vote"
+        await writer._resolve_transition(
+            release_model,
+            expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            expected_podling_thread_id=None,
+            new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+            new_vote_mode=sql.VoteMode.EMAIL,
+            new_vote_resolved=datetime.datetime.now(datetime.UTC),
+            new_podling_thread_id=None,
+            new_vote_thread_url="https://lists.apache.org/thread/vote",
         )
+        await data.commit()
+        await data.refresh(release_model)
         assert release_model.voted_revision_number == voted_revision_number
         assert release_model.latest_revision_number == "00001"
         announce_writer = object.__new__(announce.ReleaseManager)

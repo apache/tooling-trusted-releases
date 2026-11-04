@@ -306,7 +306,6 @@ These checks find stored records that disagree with each other, and stored setti
 | Recipient defaults have only `vote` and `announce` entries. Each has a `to` string and `cc` and `bcc` lists of strings, and every address is on `apache.org` or one of its subdomains. The web forms and policy API do not check these addresses when saving them. An entry with an empty `to` and empty lists is allowed. | [`project_recipient_defaults`](/ref/atr/validate.py) | [`_set_recipient_defaults`](/ref/atr/storage/writers/policy.py), [`_validate_recipient`](/ref/atr/mail.py) |
 | The minimum voting period is unset, 0, or 72 to 168 hours. Template and RAT excludes URLs use HTTPS on an allowed host. A security contact, if set, is `security@apache.org` or the committee's own `security@` address. | [`project_min_hours`](/ref/atr/validate.py), [`project_fetch_urls`](/ref/atr/validate.py), [`project_security_contact`](/ref/atr/validate.py) | [`validation.py`](/ref/atr/models/validation.py) |
 | A Trusted Publishing repository name, if set, has no slash, and every workflow path starts with `.github/workflows/`. | [`project_trusted_publishing`](/ref/atr/validate.py) | [`validate_trusted_publishing_constraints`](/ref/atr/util.py) |
-| A podling project does not use manual voting. | [`project_vote_mode`](/ref/atr/validate.py) | [`edit_vote`](/ref/atr/storage/writers/policy.py) |
 | Each release finalisation task has a completed SVN publication task for the same project, version, and revision. That task has a valid stored result that records the SVN revision. This only audits the task records. Finalisation itself verifies the published files. | [`release_finalise_publication`](/ref/atr/validate.py) | [`release`](/ref/atr/storage/writers/announce.py) |
 | A pending quarantine has a queued or active validation task. Without one, the upload stays pending and blocks the vote. | [`quarantine_pending`](/ref/atr/validate.py) | [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py) |
 | A staging or pending quarantine has no completion time and belongs to a draft. A failed or acknowledged quarantine has a completion time. A recorded prior revision belongs to the same release, even if that revision no longer exists. | `quarantine_completed`, `quarantine_release`, `quarantine_revision` in [`quarantines`](/ref/atr/validate.py) | [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py), [`quarantine.py`](/ref/atr/tasks/quarantine.py) |
@@ -324,8 +323,6 @@ Some rules depend on who is acting or on the moment of the request, so stored re
 * Only the `.asf.yaml` route requires vote recipients on the committee's own `apache.org` subdomain. See [`ProjectConfigArgs`](/ref/atr/models/api.py).
 * The `.asf.yaml` route refuses a cycle matcher for a calver project, because ATR generates it from the calver format. See [`_apply_version_scheme`](/ref/atr/storage/writers/project.py).
 * A release version must match the project's version pattern when the release starts. Later pattern changes do not affect existing releases. See [`_validate_version`](/ref/atr/storage/writers/release.py).
-* The policy API accepts `manual_vote` or `vote_mode` in a request, but not both. See [`PolicyArgsBase`](/ref/atr/models/api.py).
-* Manual vote resolution refuses podling releases. See [`resolve_manually`](/ref/atr/storage/writers/vote.py).
 
 ### Running validation
 
@@ -352,15 +349,13 @@ shared helpers in [`util.py`](/ref/atr/util.py).
 
 Before a vote can start, [`release_ready_to_start_vote`](/ref/atr/db/interaction.py)
 (release_ready_to_start_vote) checks that the release still has a latest revision and that the
-release is still attached to a committee. It also checks that the requested vote mode agrees with
-the stored project policy, so ATR does not let a user start a manual vote for a project configured
-for standard voting, or the reverse.
+release is still attached to a committee.
 
 That same validation step then checks the surrounding release state. The user must be a release
 manager for the project, meaning a PMC member or a designated committer release manager, or an ATR
 administrator. The latest revision must have no blocker results, and the release candidate draft
 must contain files. When ATR actually promotes the release into the voting phase,
-[`promote_to_candidate`](/ref/atr/storage/writers/release.py) (promote_to_candidate) adds a task
+[`start_vote_no_commit`](/ref/atr/storage/writers/release.py) (start_vote_no_commit) adds a task
 state check and refuses the transition while queued or active tasks still exist for that revision.
 
 The same writer atomically enforces that the transition can only happen from the expected latest

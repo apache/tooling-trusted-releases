@@ -26,7 +26,6 @@ import atr.post.file as file
 import atr.post.finish as finish
 import atr.post.gates as gates
 import atr.post.keys as keys
-import atr.post.manual as manual
 import atr.post.notifications as notifications
 import atr.post.projects as projects
 import atr.post.release as release
@@ -53,7 +52,6 @@ __all__ = [
     "finish",
     "gates",
     "keys",
-    "manual",
     "notifications",
     "projects",
     "release",

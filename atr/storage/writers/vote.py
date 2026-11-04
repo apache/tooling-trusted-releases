@@ -370,15 +370,10 @@ class ReleaseManager(CommitteeParticipant):
             release_key = safe.ReleaseKey(release.key)
             if promote is True:
                 # This verifies the state and sets the phase to RELEASE_CANDIDATE
-                allowed_vote_modes = (
-                    frozenset({expected_vote_mode})
-                    if (expected_vote_mode is not None)
-                    else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
-                )
                 release, vote_seq, vote_mode, revision_number = await self.__write_as.release.start_vote_no_commit(
                     release_key,
                     expected_revision,
-                    allowed_vote_modes=allowed_vote_modes,
+                    expected_vote_mode=expected_vote_mode,
                     promote=True,
                     acknowledged_concerns=acknowledged_concerns,
                 )
@@ -386,7 +381,6 @@ class ReleaseManager(CommitteeParticipant):
                 release, vote_seq, vote_mode, revision_number = await self.__write_as.release.start_vote_no_commit(
                     release.safe_key,
                     expected_revision,
-                    allowed_vote_modes=frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
                     promote=False,
                     expected_podling_thread_id=release.podling_thread_id,
                 )
@@ -418,10 +412,6 @@ class ReleaseManager(CommitteeParticipant):
                 if release.expedited:
                     raise storage.AccessError(
                         "Automatic SVN publish is not available for expedited releases", status=403
-                    )
-                if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
-                    raise storage.AccessError(
-                        "Automatic SVN publish is only available in email and Trusted Vote modes", status=403
                     )
                 if not self.__write.authorisation.is_member_of(committee.key):
                     raise storage.AccessError("Automatic SVN publish requires a committee member initiator", status=403)
@@ -566,8 +556,6 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError(f"Invalid recipient selection: {address}", status=400)
         if (expected_vote_mode is not None) and (release.effective_vote_mode != expected_vote_mode):
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
-        if release.effective_vote_mode == sql.VoteMode.MANUAL:
-            raise storage.AccessError("Release is configured for manual voting", status=409)
         # Template fetched now and passed in to avoid fetches while holding the write lock
         second_round_body_template: str | None = None
         if (
@@ -655,73 +643,6 @@ class ReleaseManager(CommitteeParticipant):
             additional_bcc=additional_bcc,
             early_reason=completed_early_reason,
         )
-
-    async def resolve_manually(
-        self,
-        project_key: safe.ProjectKey,
-        version_key: safe.VersionKey,
-        vote_result: Literal["passed", "failed", "cancelled"],
-        vote_thread_url: str | None = None,
-    ) -> str:
-        release = await self.__data.release(
-            project_key=str(project_key),
-            version=str(version_key),
-            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-            _project=True,
-            _committee=True,
-            _release_policy=True,
-            _project_release_policy=True,
-        ).demand(storage.AccessError("Release not found", status=404))
-        storage.ensure_project_active(release.project)
-        self.__write.ensure_release_writable(release)
-
-        if release.effective_vote_mode != sql.VoteMode.MANUAL:
-            raise storage.AccessError("Release is not configured for manual voting", status=409)
-
-        if release.vote_started is None:
-            raise storage.AccessError("Vote has not been started", status=409)
-
-        if (release.project.committee is not None) and release.project.committee.is_podling:
-            raise storage.AccessError("Podling releases require the standard two round vote process", status=409)
-
-        match vote_result:
-            case "passed":
-                await self._resolve_transition(
-                    release,
-                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    expected_podling_thread_id=None,
-                    new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
-                    new_vote_mode=release.effective_vote_mode,
-                    new_vote_resolved=datetime.datetime.now(datetime.UTC),
-                    new_podling_thread_id=None,
-                    new_vote_thread_url=vote_thread_url,
-                )
-                await self.__data.commit()
-                await self.__data.refresh(release)
-                success_message = "Vote marked as passed"
-
-            case "failed" | "cancelled":
-                # The vote_resolved property refers to when the vote succeeded only
-                await self._resolve_transition(
-                    release,
-                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    expected_podling_thread_id=None,
-                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-                    new_vote_mode=None,
-                    new_vote_resolved=None,
-                    new_podling_thread_id=None,
-                )
-                await self.__data.commit()
-                await self.__data.refresh(release)
-                success_message = f"Vote marked as {vote_result}"
-
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            project_key=str(project_key),
-            version_key=str(version_key),
-            vote_result=vote_result,
-        )
-        return success_message
 
     async def __resolve_release(  # noqa: C901
         self,

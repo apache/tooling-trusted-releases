@@ -103,9 +103,6 @@ async def selected(  # noqa: C901
         with_release_policy=True,
         with_project_release_policy=True,
     )
-    if release.effective_vote_mode == sql.VoteMode.MANUAL:
-        raise RuntimeError("This page is for tabulated votes only")
-
     details = None
     committee = None
     thread_id = None

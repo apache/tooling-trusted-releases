@@ -721,9 +721,6 @@ def _complete_policy_args(args: api.ProjectConfigPolicyArgs | None) -> api.Proje
     for field in api.ProjectConfigPolicyArgs.model_fields:
         if field in provided:
             continue
-        # manual_vote and vote_mode are alternatives, and the latter carries the default
-        if (field == "manual_vote") or ((field == "vote_mode") and ("manual_vote" in provided)):
-            continue
         missing[field] = None if field.endswith("_recipients") else getattr(defaults, field)
     return args.model_copy(update=missing)
 

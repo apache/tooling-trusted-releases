@@ -429,7 +429,6 @@ class PolicyGetResults(schema.Strict):
     policy_license_check_mode: sql.LicenseCheckMode
     policy_vote_recipients: RecipientDefaults
     policy_announce_recipients: RecipientDefaults
-    policy_manual_vote: bool
     policy_min_hours: int
     policy_vote_mode: sql.VoteMode = schema.example(sql.VoteMode.EMAIL)
     policy_release_checklist: str
@@ -463,7 +462,6 @@ class PolicyArgsBase(schema.Strict):
     vote_recipients: RecipientDefaults | None = None
     announce_recipients: RecipientDefaults | None = None
     download_path_suffix: str | None = None
-    manual_vote: bool | None = None
     min_hours: int | None = None
     release_checklist: str | None = None
     require_version_in_filenames: bool | None = None
@@ -502,9 +500,6 @@ class PolicyArgsBase(schema.Strict):
 
     @pydantic.model_validator(mode="after")
     def validate_policy_fields(self) -> Self:
-        if ("manual_vote" in self.model_fields_set) and ("vote_mode" in self.model_fields_set):
-            raise ValueError("Specify either 'manual_vote' or 'vote_mode', not both")
-
         if self.min_hours is not None:
             validation.validate_policy_min_hours(self.min_hours)
 

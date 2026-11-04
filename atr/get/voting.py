@@ -56,13 +56,7 @@ async def selected(
     """
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
-        match await interaction.release_ready_to_start_vote(
-            session,
-            project_key,
-            version_key,
-            data,
-            frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
-        ):
+        match await interaction.release_ready_to_start_vote(session, project_key, version_key, data):
             case str() as error:
                 return await session.redirect(
                     compose.selected,

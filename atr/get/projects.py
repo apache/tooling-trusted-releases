@@ -1685,10 +1685,6 @@ def _view_action(project: sql.Project, tab: str) -> str:
 
 def _vote_mode_description(mode: sql.VoteMode) -> str:
     match mode:
-        case sql.VoteMode.MANUAL:
-            return (
-                "The vote is held entirely outside ATR. You provide the vote thread URL and record the result manually."
-            )
         case sql.VoteMode.EMAIL:
             return (
                 "ATR announces the vote, and votes are cast by replying to the thread."
@@ -1702,24 +1698,9 @@ def _vote_mode_description(mode: sql.VoteMode) -> str:
             )
 
 
-def _vote_mode_label(mode: sql.VoteMode) -> str:
-    return mode.value.capitalize()
-
-
 def _vote_mode_radios(project: sql.Project) -> htm.Element:
-    choices = list(sql.VoteMode)
-    if project.committee and project.committee.is_podling:
-        choices = [mode for mode in choices if mode != sql.VoteMode.MANUAL]
-    elements: list[htm.Element | htm.VoidElement] = []
-    if project.policy_vote_mode not in choices:
-        elements.append(
-            htm.div(".alert.alert-warning.mb-3")[
-                f"The current vote mode, {_vote_mode_label(project.policy_vote_mode)}, "
-                "is not available for this project."
-            ]
-        )
     radios = []
-    for mode in choices:
+    for mode in sql.VoteMode:
         radio_id = f"vote_mode_{mode.value}"
         attrs: dict[str, str] = {
             "type": "radio",
@@ -1734,9 +1715,8 @@ def _vote_mode_radios(project: sql.Project) -> htm.Element:
         radios.append(
             htpy.div(".form-check")[
                 htpy.input(**attrs),
-                htpy.label(".form-check-label", for_=radio_id)[_vote_mode_label(mode)],
+                htpy.label(".form-check-label", for_=radio_id)[mode.value.capitalize()],
                 htm.div(".form-text.text-muted.mt-0.mb-2")[_vote_mode_description(mode)],
             ]
         )
-    elements.append(htm.div("#vote_mode")[*radios])
-    return htm.div[*elements]
+    return htm.div("#vote_mode")[*radios]

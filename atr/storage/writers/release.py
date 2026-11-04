@@ -890,7 +890,7 @@ class CommitteeParticipant(FoundationCommitter):
         release_key: safe.ReleaseKey,
         expected_revision: safe.RevisionNumber | None,
         *,
-        allowed_vote_modes: frozenset[sql.VoteMode],
+        expected_vote_mode: sql.VoteMode | None = None,
         promote: bool,
         expected_podling_thread_id: str | None = None,
         acknowledged_concerns: frozenset[str] = frozenset(),
@@ -912,7 +912,7 @@ class CommitteeParticipant(FoundationCommitter):
             vote_mode = release_for_pre_checks.vote_mode
             if vote_mode is None:
                 raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
-        if vote_mode not in allowed_vote_modes:
+        if (expected_vote_mode is not None) and (vote_mode != expected_vote_mode):
             raise storage.AccessError("This release's vote mode does not allow that action", status=409)
 
         # Check for ongoing tasks
@@ -1322,41 +1322,6 @@ class ReleaseManager(CommitteeParticipant):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
-
-    async def promote_to_candidate(
-        self,
-        release_key: safe.ReleaseKey,
-        expected_revision: safe.RevisionNumber,
-        *,
-        allowed_vote_modes: frozenset[sql.VoteMode],
-        acknowledged_concerns: frozenset[str] = frozenset(),
-    ) -> str | None:
-        """Promote a release candidate draft to a new phase."""
-        try:
-            await self.__data.begin_immediate()
-            release, vote_seq, vote_mode, revision_number = await self.start_vote_no_commit(
-                release_key,
-                expected_revision,
-                allowed_vote_modes=allowed_vote_modes,
-                promote=True,
-                acknowledged_concerns=acknowledged_concerns,
-            )
-            await self.__data.commit()
-        except storage.AccessError as e:
-            await self.__data.rollback()
-            return str(e)
-        except Exception:
-            await self.__data.rollback()
-            raise
-
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            release_key=release.key,
-            revision_number=str(revision_number),
-            vote_seq=vote_seq,
-            vote_mode=vote_mode.value,
-        )
-        return None
 
     async def publish_to_svn(
         self,

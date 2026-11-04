@@ -30,7 +30,7 @@ import atr.web as web
 
 
 @post.typed
-async def selected_post(  # noqa: C901
+async def selected_post(
     session: web.Committer,
     _vote: Literal["vote"],
     project_key: safe.ProjectKey,
@@ -57,10 +57,6 @@ async def selected_post(  # noqa: C901
 
     vote = cast_vote_form.decision
     comment = cast_vote_form.comment
-
-    if release.effective_vote_mode == sql.VoteMode.MANUAL:
-        await quart.flash("Voting through this form is not available for manual votes.", "error")
-        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
     if release.effective_vote_mode == sql.VoteMode.TRUSTED:
         if cast_vote_form.vote_seq is None:

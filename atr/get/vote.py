@@ -36,7 +36,6 @@ import atr.form as form
 import atr.get.checklist as checklist
 import atr.get.download as download
 import atr.get.keys as keys
-import atr.get.manual as manual
 import atr.get.resolve as resolve
 import atr.get.root as root
 import atr.htm as htm
@@ -623,18 +622,11 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
     else:
         page.p["Use the resolution page to review votes and record the outcome."]
 
-        if release.effective_vote_mode == sql.VoteMode.MANUAL:
-            resolve_url = util.as_url(
-                manual.resolve_selected,
-                project_key=release.project.key,
-                version_key=release.version,
-            )
-        else:
-            resolve_url = util.as_url(
-                resolve.selected,
-                project_key=release.project.key,
-                version_key=release.version,
-            )
+        resolve_url = util.as_url(
+            resolve.selected,
+            project_key=release.project.key,
+            version_key=release.version,
+        )
         page.div[
             htpy.a(".btn.btn-success", href=resolve_url)[
                 htpy.i(".bi.bi-clipboard-check.me-1"),
@@ -655,10 +647,6 @@ async def _render_section_vote(
 
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
-
-    if release.effective_vote_mode == sql.VoteMode.MANUAL:
-        _render_vote_manual(page)
-        return
 
     vote_recipient = _vote_recipient(release, latest_vote_task)
     if user_category == UserCategory.UNAUTHENTICATED:
@@ -786,15 +774,6 @@ def _render_vote_delivery(
         page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
     if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
-
-
-def _render_vote_manual(page: htm.Block) -> None:
-    page.div(".alert.alert-info", role="alert")[
-        htpy.i(".bi.bi-info-circle.me-2"),
-        "This release uses manual voting. The vote thread is hosted on the project mailing list, ",
-        "and ATR cannot record votes or display the thread for it. ",
-        "To participate, reply to the vote thread directly on the mailing list.",
-    ]
 
 
 def _render_vote_task_warnings(page: htm.Block, latest_vote_task: sql.Task | None) -> None:

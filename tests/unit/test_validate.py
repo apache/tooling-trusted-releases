@@ -329,8 +329,6 @@ def test_project_recipient_defaults(defaults: Any, expected: list[str]) -> None:
             ["project_trusted_publishing"],
             id="path-prefix",
         ),
-        pytest.param(False, {}, {"vote_mode": sql.VoteMode.MANUAL}, [], id="manual"),
-        pytest.param(True, {}, {"vote_mode": sql.VoteMode.MANUAL}, ["project_vote_mode"], id="podling-manual"),
     ],
 )
 def test_project_settings(podling: bool, fields: dict[str, Any], settings: dict[str, Any], expected: list[str]) -> None:

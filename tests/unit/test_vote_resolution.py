@@ -29,15 +29,12 @@ import sqlalchemy.engine as engine
 import atr.api
 import atr.db.interaction as interaction
 import atr.form as form
-import atr.get.manual as manual
 import atr.get.resolve as resolve
 import atr.get.vote
-import atr.htm as htm
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.tabulate as models_tabulate
-import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.storage.writers.vote as vote
@@ -49,40 +46,6 @@ def render_app() -> quart.Quart:
     app.secret_key = "test-secret"
     app.config["TESTING"] = True
     return app
-
-
-def test_automatic_vote_resolve_section_links_to_standard_resolve(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-manual vote releases link to the standard resolution page."""
-
-    def fake_as_url(endpoint, **kwargs) -> str:
-        if endpoint is manual.resolve_selected:
-            return f"/manual/resolve/{kwargs['project_key']}/{kwargs['version_key']}"
-        if endpoint is resolve.selected:
-            return f"/resolve/{kwargs['project_key']}/{kwargs['version_key']}"
-        raise AssertionError(f"Unexpected endpoint: {endpoint}")
-
-    monkeypatch.setattr(atr.get.vote.util, "as_url", fake_as_url)
-
-    page = htm.Block()
-    release = SimpleNamespace(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        vote_mode=sql.VoteMode.EMAIL,
-        effective_vote_mode=sql.VoteMode.EMAIL,
-        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),
-        project=SimpleNamespace(
-            key="project",
-            status=sql.ProjectStatus.ACTIVE,
-            is_active=True,
-            policy_recipients=lambda action: ("", [], []),
-        ),
-        version="1.0.0",
-    )
-
-    atr.get.vote._render_section_resolve(page, release, atr.get.vote.UserCategory.COMMITTER_RM)
-
-    html = str(page.collect())
-    assert 'href="/resolve/project/1.0.0"' in html
-    assert 'href="/manual/resolve/project/1.0.0"' not in html
 
 
 @pytest.mark.asyncio
@@ -327,193 +290,6 @@ def test_format_utc_returns_utc_minute_string() -> None:
     assert resolve.format_utc(datetime.datetime(2026, 1, 2, 3, 4)) == "2026-01-02 03:04 UTC"
     offset = datetime.timezone(datetime.timedelta(hours=1))
     assert resolve.format_utc(datetime.datetime(2026, 1, 2, 4, 4, tzinfo=offset)) == "2026-01-02 03:04 UTC"
-
-
-@pytest.mark.asyncio
-async def test_manual_cancelled_returns_to_draft_and_clears_podling_thread_id() -> None:
-    """Manual cancelled returns the release to draft and clears podling_thread_id."""
-    data = _mock_data()
-    write_as = _mock_write_as()
-    writer = _writer_with_mocks(data, write_as)
-
-    release = _manual_candidate_release(podling_thread_id="thread123")
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=release)
-    data.release = mock.MagicMock(return_value=query)
-    data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-        vote_mode=None,
-        vote_resolved=None,
-        podling_thread_id=None,
-    )
-
-    success = await writer.resolve_manually(
-        _project_key(),
-        _version_key(),
-        "cancelled",
-    )
-
-    assert release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-    assert release.vote_mode is None
-    assert release.vote_resolved is None
-    assert release.podling_thread_id is None
-    assert success == "Vote marked as cancelled"
-    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_manual_failed_returns_to_draft_and_clears_podling_thread_id() -> None:
-    """Manual failed returns the release to draft and clears podling_thread_id (bug fix)."""
-    data = _mock_data()
-    write_as = _mock_write_as()
-    writer = _writer_with_mocks(data, write_as)
-
-    release = _manual_candidate_release(podling_thread_id="thread123")
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=release)
-    data.release = mock.MagicMock(return_value=query)
-    data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-        vote_mode=None,
-        vote_resolved=None,
-        podling_thread_id=None,
-    )
-
-    success = await writer.resolve_manually(
-        _project_key(),
-        _version_key(),
-        "failed",
-    )
-
-    assert release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-    assert release.vote_mode is None
-    assert release.vote_resolved is None
-    assert release.podling_thread_id is None
-    assert success == "Vote marked as failed"
-
-
-@pytest.mark.asyncio
-async def test_manual_passed_retains_candidate_revision() -> None:
-    data = _mock_data()
-    write_as = _mock_write_as()
-    writer = _writer_with_mocks(data, write_as)
-
-    release = _manual_candidate_release()
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=release)
-    data.release = mock.MagicMock(return_value=query)
-    data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_PREVIEW, vote_resolved=datetime.datetime.now(datetime.UTC)
-    )
-
-    success = await writer.resolve_manually(
-        _project_key(),
-        _version_key(),
-        "passed",
-    )
-
-    assert release.phase == sql.ReleasePhase.RELEASE_PREVIEW
-    assert release.vote_resolved is not None
-    assert success == "Vote marked as passed"
-    assert release.latest_revision_number == "00001"
-    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_manual_resolve_page_explains_cancellation_notice_url(
-    monkeypatch: pytest.MonkeyPatch, render_app: quart.Quart
-) -> None:
-    """Manual resolve page explains which thread URL to provide when cancelling."""
-
-    monkeypatch.setattr(
-        manual.util,
-        "as_url",
-        lambda _endpoint, **_kwargs: "/vote/project/1.0.0",
-    )
-
-    async def _no_form_errors(_path: str) -> dict[str, object]:
-        return {}
-
-    monkeypatch.setattr(sessions, "form_error_pop", _no_form_errors)
-
-    release = SimpleNamespace(
-        project=SimpleNamespace(
-            key="project",
-            status=sql.ProjectStatus.ACTIVE,
-            is_active=True,
-            policy_recipients=lambda action: ("", [], []),
-        ),
-        version="1.0.0",
-        short_display_name="Project 1.0.0",
-    )
-
-    async with render_app.test_request_context("/manual/resolve/project/1.0.0"):
-        html = str(await manual._render_resolve_page(release))
-
-    assert "manual vote resolution" in html
-    assert "where you posted the result" in html
-    assert "cancellation notice" in html
-    assert "For a passed vote, ATR stores the vote thread URL" in html
-    assert "it does not store the result thread URL" in html
-
-
-@pytest.mark.asyncio
-async def test_manual_resolve_rejects_concurrent_modification() -> None:
-    """Manual resolve raises AccessError when the release was modified concurrently."""
-    data = _mock_data()
-    write_as = _mock_write_as()
-    writer = _writer_with_mocks(data, write_as)
-
-    release = _manual_candidate_release()
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=release)
-    data.release = mock.MagicMock(return_value=query)
-    data.execute = mock.AsyncMock(return_value=_mock_cursor_result(rowcount=0))
-
-    with pytest.raises(storage.AccessError, match="release state has changed"):
-        await writer.resolve_manually(
-            _project_key(),
-            _version_key(),
-            "passed",
-        )
-
-    data.rollback.assert_awaited()
-    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
-
-
-def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Manual vote releases link to the manual resolution page."""
-
-    def fake_as_url(endpoint, **kwargs) -> str:
-        if endpoint is manual.resolve_selected:
-            return f"/manual/resolve/{kwargs['project_key']}/{kwargs['version_key']}"
-        if endpoint is resolve.selected:
-            return f"/resolve/{kwargs['project_key']}/{kwargs['version_key']}"
-        raise AssertionError(f"Unexpected endpoint: {endpoint}")
-
-    monkeypatch.setattr(atr.get.vote.util, "as_url", fake_as_url)
-
-    page = htm.Block()
-    release = SimpleNamespace(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        latest_revision_number="00001",
-        vote_mode=sql.VoteMode.MANUAL,
-        effective_vote_mode=sql.VoteMode.MANUAL,
-        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
-        project=SimpleNamespace(
-            key="project",
-            status=sql.ProjectStatus.ACTIVE,
-            is_active=True,
-            policy_recipients=lambda action: ("", [], []),
-        ),
-        version="1.0.0",
-    )
-
-    atr.get.vote._render_section_resolve(page, release, atr.get.vote.UserCategory.COMMITTER_RM)
-
-    html = str(page.collect())
-    assert 'href="/manual/resolve/project/1.0.0"' in html
-    assert 'href="/resolve/project/1.0.0"' not in html
 
 
 @pytest.mark.parametrize(
@@ -2083,35 +1859,6 @@ def _latest_vote_task_with_end(offset_hours: int) -> SimpleNamespace:
             "email_cc": ["private@project.apache.org"],
             "email_bcc": ["secretary@project.apache.org"],
         },
-    )
-
-
-def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
-    return SimpleNamespace(
-        key="project-1.0.0",
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        latest_revision_number="00001",
-        vote_mode=sql.VoteMode.MANUAL,
-        effective_vote_mode=sql.VoteMode.MANUAL,
-        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
-        vote_started=datetime.datetime.now(datetime.UTC),
-        vote_resolved=datetime.datetime.now(datetime.UTC),
-        current_vote_seq=None,
-        podling_thread_id=podling_thread_id,
-        version="1.0.0",
-        safe_version_key="1.0.0",
-        project=SimpleNamespace(
-            key="project",
-            status=sql.ProjectStatus.ACTIVE,
-            is_active=True,
-            display_name="Project",
-            release_policy=None,
-            policy_recipients=lambda action: ("", [], []),
-            committee=SimpleNamespace(
-                key="project",
-                is_podling=False,
-            ),
-        ),
     )
 
 

@@ -270,7 +270,6 @@ def test_release_manager_surface_exposes_only_approved_committee_member_writers(
     assert hasattr(warm.policy, "edit_vote")
     assert hasattr(warm.project, "edit_metadata")
     assert hasattr(warm.project, "set_download_page")
-    assert hasattr(warm.release, "promote_to_candidate")
     assert hasattr(warm.vote, "resolve")
     assert hasattr(warm.vote, "start")
     assert hasattr(warm.workflowstatus, "add_workflow_status")

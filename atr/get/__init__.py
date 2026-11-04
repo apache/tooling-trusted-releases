@@ -35,7 +35,6 @@ import atr.get.finish as finish
 import atr.get.gates as gates
 import atr.get.keys as keys
 import atr.get.manifest as manifest
-import atr.get.manual as manual
 import atr.get.preview as preview
 import atr.get.projects as projects
 import atr.get.ref as ref
@@ -73,7 +72,6 @@ __all__ = [
     "gates",
     "keys",
     "manifest",
-    "manual",
     "preview",
     "projects",
     "ref",

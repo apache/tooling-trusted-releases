@@ -66,7 +66,6 @@ async def send(task_args: args.Send, task_id: int | None = None) -> results.Resu
             raise SendError(f"Failed to send to any recipient: {'; '.join(mail_errors)}")
 
     # TODO: Record the vote in the database?
-    # We'd need to sync with manual votes too
     return results.MessageSend(
         kind="message_send",
         mid=mid,

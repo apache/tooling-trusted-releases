@@ -70,8 +70,6 @@ Some options on the vote form behave differently for a podling:
   over to the second round, and publication happens once the second round passes.
 * Automatic vote resolution, which is offered in the Trusted
   [vote mode](project-configuration#vote), is not available for the first round.
-* A podling release cannot use the Manual vote mode, in which a vote is held outside ATR and its
-  result recorded afterwards. It must go through the two rounds described here.
 
 See [Vote phase](vote-phase) and [Staging and voting](staging-and-voting) for everything that is
 common to all votes.

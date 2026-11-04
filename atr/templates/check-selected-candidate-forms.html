@@ -1,7 +1,4 @@
-{% if release_vote_mode.value != "manual" %}
-  {% include "check-selected-vote-email.html" %}
-
-{% endif %}
+{% include "check-selected-vote-email.html" %}
 
 {% if can_vote and form %}
   <h2>Cast your vote</h2>

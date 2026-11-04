@@ -322,27 +322,19 @@ class ReleaseManager(CommitteeParticipant):
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
-        vote_mode = form.vote_mode
-        if (vote_mode == models.sql.VoteMode.MANUAL) and (project.committee and project.committee.is_podling):
-            raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
-
-        release_policy.vote_mode = vote_mode
-
-        if release_policy.vote_mode in {models.sql.VoteMode.EMAIL, models.sql.VoteMode.TRUSTED}:
-            _set_recipient_defaults(
-                release_policy, models.sql.RecipientAction.VOTE, form.email_to, form.email_cc, form.email_bcc
-            )
-            self.__set_min_hours(form.min_hours, project, release_policy)
-            release_policy.release_checklist = form.release_checklist or ""
-            release_policy.vote_comment_template = form.vote_comment_template or ""
-            release_policy.vote_comment_template_url = form.vote_comment_template_url.strip()
-            self.__set_start_vote_subject(form.start_vote_subject or "", project, release_policy)
-            self.__set_start_vote_template(form.start_vote_template or "", project, release_policy)
-            release_policy.start_vote_template_url = form.start_vote_template_url.strip()
-            self.__set_finish_vote_template(form.finish_vote_template or "", project, release_policy)
-            release_policy.finish_vote_template_url = form.finish_vote_template_url.strip()
-        elif release_policy.vote_mode != models.sql.VoteMode.MANUAL:
-            raise ValueError(f"Unsupported vote mode: {release_policy.vote_mode}")
+        release_policy.vote_mode = form.vote_mode
+        _set_recipient_defaults(
+            release_policy, models.sql.RecipientAction.VOTE, form.email_to, form.email_cc, form.email_bcc
+        )
+        self.__set_min_hours(form.min_hours, project, release_policy)
+        release_policy.release_checklist = form.release_checklist or ""
+        release_policy.vote_comment_template = form.vote_comment_template or ""
+        release_policy.vote_comment_template_url = form.vote_comment_template_url.strip()
+        self.__set_start_vote_subject(form.start_vote_subject or "", project, release_policy)
+        self.__set_start_vote_template(form.start_vote_template or "", project, release_policy)
+        release_policy.start_vote_template_url = form.start_vote_template_url.strip()
+        self.__set_finish_vote_template(form.finish_vote_template or "", project, release_policy)
+        release_policy.finish_vote_template_url = form.finish_vote_template_url.strip()
 
         await self.__commit_and_log(str(str(project_key)))
 
@@ -475,12 +467,10 @@ async def _apply_policy_update_no_commit(
     project_key: models.safe.ProjectKey,
     update: models.api.PolicyUpdateArgs,
 ) -> None:
-    project, release_policy = await _get_or_create_policy(data, project_key)
-    excluded_fields = {"manual_vote", "project", "vote_mode"} | set(_RECIPIENT_API_FIELDS)
+    _, release_policy = await _get_or_create_policy(data, project_key)
+    excluded_fields = {"project"} | set(_RECIPIENT_API_FIELDS)
     fields_to_update = update.model_fields_set - excluded_fields
     normalised_values: dict[str, Any] = {}
-
-    _set_policy_vote_mode_from_api(project, release_policy, update)
 
     for field, action in _RECIPIENT_API_FIELDS.items():
         if field in update.model_fields_set:
@@ -598,30 +588,6 @@ def _normalise_trusted_publishing_update(
     util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
 
     return normalised_values
-
-
-def _set_policy_vote_mode_from_api(
-    project: models.sql.Project,
-    release_policy: models.sql.ReleasePolicy,
-    update: models.api.PolicyUpdateArgs,
-) -> None:
-    if "vote_mode" in update.model_fields_set:
-        if update.vote_mode is None:
-            raise ValueError("Field 'vote_mode' does not accept null")
-        if (update.vote_mode == models.sql.VoteMode.MANUAL) and project.committee and project.committee.is_podling:
-            raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
-        release_policy.vote_mode = update.vote_mode
-        return
-    if "manual_vote" not in update.model_fields_set:
-        return
-    if update.manual_vote is None:
-        raise ValueError("Field 'manual_vote' does not accept null")
-    if update.manual_vote:
-        if project.committee and project.committee.is_podling:
-            raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
-        release_policy.vote_mode = models.sql.VoteMode.MANUAL
-    else:
-        release_policy.vote_mode = models.sql.VoteMode.EMAIL
 
 
 def _set_recipient_defaults(
