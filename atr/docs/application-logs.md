@@ -4,7 +4,7 @@
 
 **Prev**: `7.22.` [File handling](file-handling)
 
-**Next**: `8.` [Glossary](glossary)
+**Next**: `8.` [Admin dashboards](admin-dashboards)
 
 **Sections**:
 

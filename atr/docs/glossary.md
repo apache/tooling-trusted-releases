@@ -1,8 +1,8 @@
-# 8. Glossary
+# 9. Glossary
 
 **Up**: [Documentation](.)
 
-**Prev**: `7.23.` [Application logs](application-logs)
+**Prev**: `8.` [Admin dashboards](admin-dashboards)
 
 **Next**: (none)
 
