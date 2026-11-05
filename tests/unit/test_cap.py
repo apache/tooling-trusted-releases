@@ -172,6 +172,30 @@ def cap_config(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "consequence"),
+    [
+        (sql.ApprovalAction.ARCHIVE, "mark the project dormant"),
+        (sql.ApprovalAction.UNARCHIVE, "mark the project active again"),
+    ],
+)
+async def test_cap_create_approval_question_states_consequence(
+    monkeypatch: pytest.MonkeyPatch, action: sql.ApprovalAction, consequence: str
+) -> None:
+    create = mock.AsyncMock()
+    monkeypatch.setattr(util, "cap_mint_token", mock.AsyncMock(return_value="tok"))
+    monkeypatch.setattr(util, "cap_create_question", create)
+    closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+    await util.cap_create_approval_question(
+        action, safe.ProjectKey("commons-foo"), "Apache Commons Foo", "commons", "alice", closes_at
+    )
+    kwargs = create.call_args.kwargs
+    assert consequence in kwargs["description"]
+    assert "Attic" not in kwargs["description"]
+    assert kwargs["title"] == f"[ATR] {action.value.capitalize()} project commons-foo"
+
+
+@pytest.mark.asyncio
 async def test_cap_create_question_error(monkeypatch: pytest.MonkeyPatch, cap_config: None) -> None:
     _patch_http(monkeypatch, 500, "boom")
     with pytest.raises(util.FetchError):
@@ -299,6 +323,18 @@ def test_completion_eligibility_blocks_new_drafts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_request_approval_allows_unarchive_of_dormant(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = FakeData(None)
+    data.project_row = sql.Project(key="commons-foo", committee_key="commons", status=sql.ProjectStatus.DORMANT)
+    wacm = project.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "commons")
+    monkeypatch.setattr(project.tasks, "cap_approval_resolve", mock.AsyncMock())
+    closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+    approval = await wacm.request_approval(safe.ProjectKey("commons-foo"), sql.ApprovalAction.UNARCHIVE, 42, closes_at)
+    assert approval.action == sql.ApprovalAction.UNARCHIVE
+    assert approval.status == sql.ApprovalStatus.PENDING
+
+
+@pytest.mark.asyncio
 async def test_request_approval_question_id_collision(monkeypatch: pytest.MonkeyPatch) -> None:
     data = FakeData(None)
     data.commit = mock.AsyncMock(
@@ -311,6 +347,27 @@ async def test_request_approval_question_id_collision(monkeypatch: pytest.Monkey
     closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
     with pytest.raises(storage.AccessError, match="already recorded"):
         await wacm.request_approval(safe.ProjectKey("commons-foo"), sql.ApprovalAction.ARCHIVE, 42, closes_at)
+
+
+@pytest.mark.asyncio
+async def test_request_approval_refuses_archive_of_dormant() -> None:
+    data = FakeData(None)
+    data.project_row = sql.Project(key="commons-foo", committee_key="commons", status=sql.ProjectStatus.DORMANT)
+    wacm = project.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "commons")
+    closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+    with pytest.raises(storage.AccessError, match="archived"):
+        await wacm.request_approval(safe.ProjectKey("commons-foo"), sql.ApprovalAction.ARCHIVE, 42, closes_at)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [sql.ProjectStatus.ACTIVE, sql.ProjectStatus.RETIRED, sql.ProjectStatus.STANDING])
+async def test_request_approval_refuses_unarchive_unless_dormant(status: sql.ProjectStatus) -> None:
+    data = FakeData(None)
+    data.project_row = sql.Project(key="commons-foo", committee_key="commons", status=status)
+    wacm = project.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "commons")
+    closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+    with pytest.raises(storage.AccessError, match="not dormant"):
+        await wacm.request_approval(safe.ProjectKey("commons-foo"), sql.ApprovalAction.UNARCHIVE, 42, closes_at)
 
 
 @pytest.mark.asyncio
@@ -428,6 +485,20 @@ async def test_resolve_unexpected_error_reenqueues(monkeypatch: pytest.MonkeyPat
     assert data.row.status == sql.ApprovalStatus.PENDING
     reenqueue.assert_awaited_once()
     assert reenqueue.call_args.kwargs["attempt"] == 1
+
+
+def test_unarchive_eligibility_allows_dormant_sole_project() -> None:
+    # Unarchival adds an active project, so the committee's other projects don't matter
+    project = sql.Project(key="commons-foo", status=sql.ProjectStatus.DORMANT)
+    assert projects._action_eligibility_error(project, sql.ApprovalAction.UNARCHIVE, 0) is None
+
+
+@pytest.mark.parametrize("status", [sql.ProjectStatus.ACTIVE, sql.ProjectStatus.RETIRED, sql.ProjectStatus.STANDING])
+def test_unarchive_eligibility_refuses_unless_dormant(status: sql.ProjectStatus) -> None:
+    project = sql.Project(key="commons-foo", status=status)
+    error = projects._action_eligibility_error(project, sql.ApprovalAction.UNARCHIVE, 2)
+    assert error is not None
+    assert "not dormant" in error
 
 
 def _approval_row(

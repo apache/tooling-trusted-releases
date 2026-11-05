@@ -114,7 +114,7 @@ async def select(
     )
 
 
-# Retired PMCs (which keep their own committee key) and the Attic's own projects fold into a single
+# Dissolved PMCs (which keep their own committee key) and the Attic's own projects fold into a single
 # Attic card on the releases list, matching how the catalogue collapses them under the Attic
 _ATTIC_COMMITTEE_KEY: Final = "attic"
 
@@ -148,7 +148,7 @@ def _committee_release_catalog(
         if committee is None:
             # Nothing to group it under here, so skip it. Shouldn't happen in practice.
             continue
-        # A retired PMC (kept its own key) or an Attic-homed project lands on the Attic card
+        # A dissolved PMC (kept its own key) or an Attic-homed project lands on the Attic card
         if (attic is not None and not committee.is_podling) and (
             committee.is_archived or (committee.key == _ATTIC_COMMITTEE_KEY)
         ):

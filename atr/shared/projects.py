@@ -656,6 +656,10 @@ class DeleteSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
+class UnarchiveSelectedProject(form.Form):
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+
+
 type ProjectViewForm = Annotated[
     ComposePolicyForm
     | EditCycleDatesForm

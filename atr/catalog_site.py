@@ -125,12 +125,12 @@ _LIVE_PROJECT_STATUSES: Final[frozenset[sql.ProjectStatus]] = frozenset(
 _INCUBATOR_COMMITTEE_KEY: Final = "incubator"
 _ENVIRONMENT.globals["incubator_key"] = _INCUBATOR_COMMITTEE_KEY
 
-# The Attic holds the PMCs that have retired. They reach it either as one of the
-# Attic's own projects or as a committee that kept its key, so its page merges both.
+# The Attic holds the projects of PMCs the board has dissolved. They reach it either as
+# the Attic's own projects or under a committee that kept its key, so its page merges both.
 _ATTIC_COMMITTEE_KEY: Final = "attic"
 _ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
 
-# Nobody maintains a retired PMC's projects but the Attic, so that's who the feed
+# Nobody maintains a dissolved PMC's projects but the Attic, so that's who the feed
 # names. The Attic has no dev list - general@ is its public one.
 _ATTIC_MAINTAINER: Final[dict[str, str]] = {
     "mbox": f"mailto:general@{_ATTIC_COMMITTEE_KEY}.apache.org",
@@ -232,7 +232,7 @@ class _AtticProject:
 
 @dataclasses.dataclass
 class _AtticEntry:
-    # A retired PMC (or one of the Attic's own projects), with the subprojects it kept
+    # A dissolved PMC (or one of the Attic's own projects), with the subprojects it kept
     name: str
     href: str
     retired: datetime.datetime | None
@@ -552,8 +552,8 @@ async def _attic_committee_entry(data: db.Session, committee: sql.Committee) -> 
 async def _attic_entries(
     data: db.Session, projects: Sequence[sql.Project], committees: Sequence[sql.Committee]
 ) -> list[_AtticEntry]:
-    # A retired PMC is filed either under the Attic itself or as a committee that kept its own
-    # key. The Attic's own projects have no committee date, so they're entries on their own
+    # A dissolved PMC's projects are filed either under the Attic itself or under a committee
+    # that kept its own key. The Attic's own projects have no committee date, so they're entries on their own
     entries: list[_AtticEntry] = []
     for project in projects:
         own = await _attic_project(data, project)
@@ -597,6 +597,11 @@ def _categories(commas: str | None) -> str | None:
 
 def _comma_list(commas: str) -> list[str]:
     return [token.strip() for token in commas.split(",") if token.strip()]
+
+
+def _committee_dissolved(committee: sql.Committee) -> bool:
+    # A retired podling goes back to the Incubator, which the back link checks first
+    return committee.is_archived or (committee.key == _ATTIC_COMMITTEE_KEY)
 
 
 async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
@@ -654,8 +659,8 @@ def _dev_list_maintainer(committee: sql.Committee, vote_address: str | None = No
     # The project's own vote list is preferred, but only when it's a development
     # list on the committee's own domain - that domain is how we know it's the committee's,
     # so a private or placeholder address is never published. Otherwise the dev list by ASF
-    # convention, e.g. dev@accumulo.apache.org. A retired PMC hands over to the Attic, but a
-    # retired podling never went there, so it keeps its own.
+    # convention, e.g. dev@accumulo.apache.org. A dissolved PMC's projects go to the Attic,
+    # but a retired podling's never went there, so it keeps its own.
     if (committee.is_archived and (not committee.is_podling)) or (committee.key == _ATTIC_COMMITTEE_KEY):
         return dict(_ATTIC_MAINTAINER)
     role = "PPMC" if committee.is_podling else "PMC"
@@ -1028,6 +1033,7 @@ async def _write_committee_index(
         archived_subprojects=archived,
         subproject_summaries=await _subproject_summaries(data, (*current, *archived)),
         retired=committee.is_archived,
+        committee_dissolved=_committee_dissolved(committee),
         keys_url=paths.committee_keys_url(committee),
         root="../",
     )
@@ -1175,7 +1181,7 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
         await _guarded_write("Attic index", attic_index)
         current.append(attic)
         captions[attic.key] = _counted(len(attic.projects) + len(retired_committees), "retired TLP")
-    # A retired committee keeps its pages, but drops off the front page, so the index
+    # A dissolved committee keeps its pages, but drops off the front page, so the index
     # stays a list of where releases are still coming from.
     await _guarded_write("front page", _write_front_page(data, site_dir, committees, current, captions))
 
@@ -1204,6 +1210,9 @@ async def _write_project(
     project_dir = site_dir / project.key
     root = "../"
     retired = project.status not in _LIVE_PROJECT_STATUSES
+    # Only a dissolved committee's projects belong to the Attic - a project its PMC
+    # archived stays with the PMC, so the way back depends on the committee alone
+    committee_dissolved = _committee_dissolved(committee)
     # The signing keys are published per committee, beside the release files themselves
     keys_url = paths.committee_keys_url(committee)
     subproject_summaries = await _subproject_summaries(data, (*subprojects, *archived_subprojects))
@@ -1225,6 +1234,7 @@ async def _write_project(
             groups=current_groups,
             has_archive=bool(archived),
             retired=retired,
+            committee_dissolved=committee_dissolved,
             keys_url=keys_url,
             root=root,
         ),
@@ -1237,6 +1247,7 @@ async def _write_project(
             versions=archived,
             groups=archived_groups,
             retired=retired,
+            committee_dissolved=committee_dissolved,
             keys_url=keys_url,
             root=root,
         ),

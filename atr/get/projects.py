@@ -186,13 +186,17 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
 
     action_forms: dict[str, htm.Element] = {}
     for project in projects:
-        if not project.is_active:
+        is_dormant = project.status == sql.ProjectStatus.DORMANT
+        if not (project.is_active or is_dormant):
             continue
         if not (user.is_committee_member(project.committee, session.uid) or session.is_admin):
             continue
         approval = approvals_by_project.get(str(project.key))
         if approval is not None:
             action_forms[str(project.key)] = await _approval_request_element(approval)
+            continue
+        if is_dormant:
+            action_forms[str(project.key)] = await _unarchive_form(project)
             continue
         if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
             continue
@@ -223,7 +227,7 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
                 confirm=(
                     "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
                     " ready to archive only if the vote passes, and you must then return to complete it, which"
-                    " deletes any draft releases and retires the project."
+                    " deletes any draft releases and marks the project dormant."
                 ),
             )
 
@@ -569,6 +573,8 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
         ).get()
     if approval is not None:
         return await _approval_request_element(approval)
+    if project.status == sql.ProjectStatus.DORMANT:
+        return await _unarchive_form(project)
     delete_form = None
     releases = project.releases_including_embargoed
     if not releases:
@@ -597,7 +603,7 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
             confirm=(
                 "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
                 " ready to archive only if the vote passes, and you must then return to complete it, which"
-                " deletes any draft releases and retires the project."
+                " deletes any draft releases and marks the project dormant."
             ),
         )
     return delete_form
@@ -794,7 +800,8 @@ async def _render_actions_card(
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Actions"]]
     with card.block(htm.div, classes=".card-body.d-flex.flex-column.align-items-start.gap-2") as body:
-        if project.is_active and not is_sole_active_project:
+        # A dormant project is offered unarchival, which the sole-project rule doesn't limit
+        if (project.is_active and (not is_sole_active_project)) or (project.status == sql.ProjectStatus.DORMANT):
             action_form = await _delete_form(project)
             if action_form:
                 body.append(action_form)
@@ -1679,6 +1686,23 @@ def _textarea_with_variables(
     elements.append(details)
 
     return htm.div[elements]
+
+
+async def _unarchive_form(project: sql.Project) -> htm.Element:
+    return await form.render(
+        model_cls=shared.projects.UnarchiveSelectedProject,
+        action=util.as_url(post.projects.unarchive),
+        form_classes=".d-inline-block.m-0",
+        submit_classes="btn-sm btn-outline-secondary",
+        submit_label="Request unarchival",
+        empty=True,
+        defaults={"project_key": str(project.key)},
+        confirm=(
+            "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+            " ready to unarchive only if the vote passes, and you must then return to complete it, which"
+            " makes the project active again. Its archived releases stay archived."
+        ),
+    )
 
 
 def _view_action(project: sql.Project, tab: str) -> str:

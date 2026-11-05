@@ -75,6 +75,7 @@ class DistributionPlatformValue:
 class ApprovalAction(enum.StrEnum):
     ARCHIVE = "archive"
     DELETE = "delete"
+    UNARCHIVE = "unarchive"
 
 
 class ApprovalStatus(enum.StrEnum):

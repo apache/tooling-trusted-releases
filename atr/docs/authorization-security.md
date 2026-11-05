@@ -333,7 +333,7 @@ Project metadata and lifecycle operations span two tiers.
 * Allowed for: PMC members
 * Obtained with: `as_committee_member`
 
-**Archive or delete a project** (`archive`, `delete`):
+**Archive, unarchive or delete a project** (`archive`, `unarchive`, `delete`):
 
 * Allowed for: PMC members
 * Obtained with: `as_committee_member`

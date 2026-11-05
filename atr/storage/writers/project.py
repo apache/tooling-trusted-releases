@@ -405,7 +405,13 @@ class CommitteeMember(ReleaseManager):
         cap_question_id: int,
         closes_at: datetime.datetime,
     ) -> sql.ApprovalRequest:
-        await self.__validate_project_in_committee(project_key)
+        project = await self.__project_in_committee(project_key)
+        # Unarchival is the one action asked of a project that isn't active
+        if action == sql.ApprovalAction.UNARCHIVE:
+            if project.status != sql.ProjectStatus.DORMANT:
+                raise storage.AccessError(f"Project '{project_key}' is not dormant, so it can't be unarchived.")
+        else:
+            storage.ensure_project_active(project)
         approval = sql.ApprovalRequest(
             project_key=str(project_key),
             committee_key=self.__committee_key,
@@ -443,6 +449,31 @@ class CommitteeMember(ReleaseManager):
         )
         return approval
 
+    async def unarchive(self, project_key: safe.ProjectKey, approval_request_id: int) -> None:
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            await self.__claim_approval(approval_request_id, project_key, sql.ApprovalAction.UNARCHIVE)
+            # Only the PMC's own archival is undone here. A retired project's committee was
+            # dissolved, so there's no PMC left to bring it back
+            project = await self.__data.project(key=str(project_key), status=sql.ProjectStatus.DORMANT).get()
+            if not project:
+                raise storage.AccessError(f"Project '{project_key}' is not dormant, so it can't be unarchived.")
+            if project.committee_key != self.__committee_key:
+                raise storage.AccessError(
+                    f"Project {project_key} is not in committee {self.__committee_key}", status=403
+                )
+            project.status = sql.ProjectStatus.ACTIVE
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            approval_request_id=approval_request_id,
+        )
+
     async def __claim_approval(
         self, approval_request_id: int, project_key: safe.ProjectKey, action: sql.ApprovalAction
     ) -> None:
@@ -469,12 +500,16 @@ class CommitteeMember(ReleaseManager):
             else []
         )
 
-    async def __validate_project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
+    async def __project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
         project = await self.__data.project(key=str(project_key)).demand(
             storage.AccessError(f"Project '{project_key}' not found.", status=404)
         )
         if project.committee_key != self.__committee_key:
             raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        return project
+
+    async def __validate_project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
+        project = await self.__project_in_committee(project_key)
         storage.ensure_project_active(project)
         return project
 

@@ -198,6 +198,79 @@ async def test_delete_with_releases_rolls_back() -> None:
     data.delete.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_unarchive_committee_mismatch_rolls_back() -> None:
+    target = SimpleNamespace(key="alpha-one", committee_key="beta", status=sql.ProjectStatus.DORMANT)
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.approval_request = mock.MagicMock(return_value=_query(get=_approval(sql.ApprovalAction.UNARCHIVE)))
+    data.project = mock.MagicMock(side_effect=[_query(get=target)])
+    writer = _writer(data)
+
+    with pytest.raises(storage.AccessError, match="not in committee"):
+        await writer.unarchive(safe.ProjectKey("alpha-one"), 7)
+
+    data.rollback.assert_awaited_once()
+    data.commit.assert_not_awaited()
+    assert target.status == sql.ProjectStatus.DORMANT
+
+
+@pytest.mark.asyncio
+async def test_unarchive_dormant_project_commits() -> None:
+    target = SimpleNamespace(key="alpha-one", committee_key="alpha", status=sql.ProjectStatus.DORMANT)
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.approval_request = mock.MagicMock(return_value=_query(get=_approval(sql.ApprovalAction.UNARCHIVE)))
+    data.project = mock.MagicMock(side_effect=[_query(get=target)])
+    writer = _writer(data)
+
+    await writer.unarchive(safe.ProjectKey("alpha-one"), 7)
+
+    assert data.project.call_args.kwargs["status"] == sql.ProjectStatus.DORMANT
+    data.begin_immediate.assert_awaited_once()
+    data.commit.assert_awaited_once()
+    data.rollback.assert_not_awaited()
+    assert target.status == sql.ProjectStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_unarchive_not_dormant_rolls_back() -> None:
+    # The project is looked up as dormant, so a retired or active one isn't found
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.approval_request = mock.MagicMock(return_value=_query(get=_approval(sql.ApprovalAction.UNARCHIVE)))
+    data.project = mock.MagicMock(side_effect=[_query(get=None)])
+    writer = _writer(data)
+
+    with pytest.raises(storage.AccessError, match="not dormant"):
+        await writer.unarchive(safe.ProjectKey("alpha-one"), 7)
+
+    data.rollback.assert_awaited_once()
+    data.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unarchive_with_archive_approval_rolls_back() -> None:
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.approval_request = mock.MagicMock(return_value=_query(get=_approval(sql.ApprovalAction.ARCHIVE)))
+    writer = _writer(data)
+
+    with pytest.raises(storage.AccessError, match="does not match"):
+        await writer.unarchive(safe.ProjectKey("alpha-one"), 7)
+
+    data.rollback.assert_awaited_once()
+    data.commit.assert_not_awaited()
+
+
 def _approval(action: sql.ApprovalAction, committee_key: str = "alpha") -> SimpleNamespace:
     return SimpleNamespace(
         status=sql.ApprovalStatus.APPROVED, project_key="alpha-one", committee_key=committee_key, action=action

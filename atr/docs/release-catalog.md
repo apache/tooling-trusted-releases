@@ -47,8 +47,8 @@ The catalog follows the same structure as the rest of ATR, described in [Project
   thread where ATR knows it.
 
 Podlings are grouped together on a single Incubator page, which lists current podlings and retired
-podlings separately. Retired projects are gathered on a single Attic page, which links to each
-project's archived releases.
+podlings separately. Projects that have retired to the Attic are displayed on a dedicated Attic
+page.
 
 ## Machine readable data
 

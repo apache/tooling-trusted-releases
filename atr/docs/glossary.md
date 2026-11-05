@@ -68,7 +68,8 @@ page that covers it in full.
 * **SBOM** - software bill of materials, a list of the components in an artifact. See
   [SBOM workflows](sbom-workflows).
 * **Contingent Approval** - a vote held through the Contingent Approval Portal (CAP), used to
-  approve retiring a project. See [Retiring a project](archiving-and-lifecycle#retiring-a-project).
+  approve archiving, unarchiving or deleting a project. See
+  [Archiving a project](archiving-and-lifecycle#archiving-a-project).
 
 ## Keys and credentials
 

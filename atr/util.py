@@ -455,27 +455,24 @@ async def cap_create_approval_question(
     token = await cap_mint_token()
     match action:
         case sql.ApprovalAction.ARCHIVE:
-            verb = action.value
             approval_type = constants.CAP_ARCHIVE_APPROVAL_TYPE
-            consequence = "ATR will mark the project RETIRED"
-            subject = f"the project {project_key} ({display_name})"
-            title = f"[ATR] {verb.capitalize()} project {project_key}"
+            consequence = "ATR will mark the project dormant"
         case sql.ApprovalAction.DELETE:
-            verb = action.value
             approval_type = constants.CAP_DELETE_APPROVAL_TYPE
             consequence = "ATR will permanently delete the project and its metadata"
-            subject = f"the project {project_key} ({display_name})"
-            title = f"[ATR] {verb.capitalize()} project {project_key}"
-    completion = f"an authorised {committee_key} PMC member may complete the {verb} in ATR"
+        case sql.ApprovalAction.UNARCHIVE:
+            approval_type = constants.CAP_UNARCHIVE_APPROVAL_TYPE
+            consequence = "ATR will mark the project active again, so it can make releases"
+    completion = f"an authorised {committee_key} PMC member may complete the {action.value} in ATR"
     description = (
-        f"{requested_by} has requested, through ATR, to {verb} {subject}. "
+        f"{requested_by} has requested, through ATR, to {action.value} the project {display_name} ({project_key}). "
         f"If this vote passes, {consequence}, and {completion}. "
         f"This request was filed by Apache Trusted Releases on behalf of {requested_by}."
     )
     return await cap_create_question(
         token,
         project_id=committee_key,
-        title=title,
+        title=f"[ATR] {action.value.capitalize()} project {project_key}",
         description=description,
         target_audience=f"Binding voters: {committee_key} PMC members",
         approval_type=approval_type,

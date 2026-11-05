@@ -14,7 +14,7 @@
 * [Archiving the prior release automatically](#archiving-the-prior-release-automatically)
 * [Archiving outside ATR](#archiving-outside-atr)
 * [Lifecycle events](#lifecycle-events)
-* [Retiring a project](#retiring-a-project)
+* [Archiving a project](#archiving-a-project)
 
 ## Overview
 
@@ -100,23 +100,34 @@ The document follows the
 If you correct a cycle date, ATR publishes the change as a correction in the way the standard
 defines, so you can fix a mistake without hiding it from consumers of the feed.
 
-## Retiring a project
+## Archiving a project
 
-A project that is no longer maintained can be retired. Retiring a project requires ***Contingent
+A committee can archive a project it no longer works on. Archiving a project requires ***Contingent
 Approval*** from the committee, which is a vote held through the ASF's Contingent Approval Portal
 (***CAP***), currently at [cap-test.apache.org](https://cap-test.apache.org/). Committee members
 cast their votes on the portal. A member of the committee uses "Request archival" in the Actions
 card on the project page, which starts the vote. It is offered once all the project's releases have
 been archived, and only where the committee has another active project. If the vote passes, the
-member who asked returns to complete the archival, which deletes any draft releases and retires the
-project.
+member who asked returns to complete the archival, which deletes any draft releases and marks the
+project as dormant.
+
+A dormant project cannot be edited and cannot start releases. It stays with its committee, and its
+archived releases remain in the release catalog.
+
+A committee can bring a dormant project back. A member of the committee uses "Request unarchival"
+in the same Actions card, which starts a Contingent Approval vote in the same way. If the vote
+passes, the member who asked returns to complete the unarchival, which makes the project active
+again. Its archived releases stay archived.
 
 A project that has never had a release, for example one created by mistake, is offered "Request
 deletion" instead. It works in the same way, and completing it removes the project from ATR
-altogether rather than retiring it.
+altogether rather than archiving it.
 
-A retired project cannot be edited and cannot start releases. Its archived releases remain in the
-release catalog, and the project is listed on the catalog's Attic page.
+Contingent Approval is not available to podlings. Archiving a podling is a decision for the
+Incubator PMC.
 
-Contingent Approval is not available to podlings. Retiring a podling is a decision for the Incubator
-PMC.
+### When a committee is dissolved
+
+When the board dissolves a committee by resolution, its projects retire to the Attic, and the
+release catalog lists them on its Attic page. A retired project cannot be unarchived by a
+committee, since there is no longer a committee to bring it back.

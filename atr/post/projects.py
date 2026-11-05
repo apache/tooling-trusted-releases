@@ -154,6 +154,18 @@ async def delete(
 
 
 @post.typed
+async def unarchive(
+    session: web.Committer,
+    _project_unarchive: Literal["project/unarchive"],
+    unarchive_selected_project_form: shared.projects.UnarchiveSelectedProject,
+) -> web.WerkzeugResponse:
+    """
+    URL: /project/unarchive
+    """
+    return await _request_approval(session, unarchive_selected_project_form.project_key, sql.ApprovalAction.UNARCHIVE)
+
+
+@post.typed
 async def view(
     session: web.Committer,
     _projects: Literal["projects"],
@@ -185,6 +197,23 @@ def _action_eligibility_error(
     *,
     completing: bool = False,
     requested_at: datetime.datetime | None = None,
+) -> str | None:
+    # Unarchival brings back a project the PMC archived, and adds to the committee's active
+    # projects rather than taking one away, so the archive and delete checks don't apply
+    if action == sql.ApprovalAction.UNARCHIVE:
+        return _unarchive_eligibility_error(project)
+    return _archive_or_delete_eligibility_error(
+        project, action, active_sibling_count, completing=completing, requested_at=requested_at
+    )
+
+
+def _archive_or_delete_eligibility_error(
+    project: sql.Project,
+    action: sql.ApprovalAction,
+    active_sibling_count: int,
+    *,
+    completing: bool,
+    requested_at: datetime.datetime | None,
 ) -> str | None:
     if not project.is_active:
         return f"Project '{project.key}' is not active."
@@ -232,6 +261,9 @@ async def _complete_action(
         wacm = await _write_as_committee_member(write, session, project_key)
         if action == sql.ApprovalAction.DELETE:
             await wacm.project.delete(project_key, approval_request_id)
+            return
+        if action == sql.ApprovalAction.UNARCHIVE:
+            await wacm.project.unarchive(project_key, approval_request_id)
             return
         for version in draft_versions:
             try:
@@ -656,6 +688,12 @@ async def _request_approval(
         return await _persist_approval(
             session, wacm, project_key, committee_key, action, question.question_id, closes_at
         )
+
+
+def _unarchive_eligibility_error(project: sql.Project) -> str | None:
+    if project.status != sql.ProjectStatus.DORMANT:
+        return f"Project '{project.key}' is not dormant, so it can't be unarchived."
+    return None
 
 
 async def _write_as_committee_member(
