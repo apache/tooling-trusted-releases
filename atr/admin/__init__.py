@@ -25,6 +25,7 @@ import json
 import os
 import pathlib
 import statistics
+import string
 import sys
 import time
 import urllib.parse
@@ -2805,14 +2806,23 @@ def _catalog_regeneration_status(in_flight: Sequence[sql.Task]) -> htm.Element:
 
 async def _catalog_admin_tab() -> htm.Element:
     async with db.session() as data:
-        committees = await data.committee().order_by(sql.Committee.key).all()
+        committees = await data.committee().all()
 
-    listing = htpy.ul(".list-group")[
-        [
-            htpy.li(".list-group-item")[htpy.a(href=f"/admin/catalog/{committee.key}")[committee.name or committee.key]]
-            for committee in committees
-        ]
-    ]
+    # Sorted by the name shown, so each letter's committees sit together, and the first
+    # of each letter carries the anchor the letter links to
+    labelled = sorted(
+        ((committee.name or committee.key, committee) for committee in committees), key=lambda pair: pair[0].casefold()
+    )
+    letters: set[str] = set()
+    items = []
+    for label, committee in labelled:
+        letter = label[:1].upper()
+        anchor = None
+        if (letter in string.ascii_uppercase) and (letter not in letters):
+            letters.add(letter)
+            anchor = f"letter-{letter.lower()}"
+        items.append(htpy.li(".list-group-item", id=anchor)[htpy.a(href=f"/admin/catalog/{committee.key}")[label]])
+    listing = htpy.ul(".list-group")[items]
     block = htm.Block()
     block.append(
         htm.div(".alert.alert-warning", role="alert")[
@@ -2828,9 +2838,22 @@ async def _catalog_admin_tab() -> htm.Element:
         "Choose a committee to review and correct its catalogued projects:"
         " archive, rename, or move projects between committees."
     ]
+    block.append(_catalog_letter_nav(letters))
     block.append(listing)
     block.p(".mt-3")[htm.a(href="/admin/catalog/dump")["Dump full catalog contents"]]
     return block.collect()
+
+
+def _catalog_letter_nav(letters: set[str]) -> htpy.Element:
+    # Every letter is shown so the row never shifts, but only those with a committee link anywhere
+    return htpy.nav(".d-flex.flex-wrap.gap-2.mb-3", {"aria-label": "Committees by letter"})[
+        [
+            htpy.a(href=f"#letter-{letter.lower()}")[letter]
+            if (letter in letters)
+            else htpy.span(".text-muted")[letter]
+            for letter in string.ascii_uppercase
+        ]
+    ]
 
 
 async def _catalog_dist_rules_tab() -> htm.Element:
