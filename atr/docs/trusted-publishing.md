@@ -12,6 +12,7 @@
 * [What reproducible means](#what-reproducible-means)
 * [How to set up Trusted Publishing](#how-to-set-up-trusted-publishing)
 * [Configuring repository and workflow paths](#configuring-repository-and-workflow-paths)
+* [Protecting the branch or tag](#protecting-the-branch-or-tag)
 * [GitHub Actions for ATR](#github-actions-for-atr)
 * [How ATR detects automated release keys](#how-atr-detects-automated-release-keys)
 
@@ -190,6 +191,45 @@ git ref, then looks for a project whose release policy lists that workflow path 
 being requested and whose repository matches the token: the policy's repository name when one is
 set, or otherwise any GitHub repository in the project metadata. If there is no match, the request
 is refused. The committee must also be eligible for Trusted Publishing, as described below.
+
+## Protecting the branch or tag
+
+When a workflow uploads files, ATR asks GitHub whether the branch or tag that the workflow ran from was protected when it reached that commit. It asks once for each commit on each branch or tag in a release, and keeps the answer. If ATR can't confirm this, it records a concern on the release, which a release manager must acknowledge before starting a vote. The upload itself is not refused.
+
+This matters because anyone who can push to your repository could otherwise create a branch or tag pointing to their own commit, or move an existing one, and then run your workflow from it.
+
+GitHub keeps a record of each push that a [ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets) covers, and ATR reads that record. Classic branch protection alone leaves no record, so it produces a concern. ATR can only see the past month of records, so a branch or tag that last changed before then also produces a concern. The ruleset needs these rules, and must already be active when the branch or tag changes:
+
+| Branch or tag | Rules needed |
+| --- | --- |
+| Tag | `creation`, `update` |
+| Branch | `creation`, and either `update`, or `pull_request` and `non_fast_forward` |
+
+ATR doesn't check reviews, so a `pull_request` rule that requires no approvals is enough.
+
+Only people allowed to bypass `creation` and `update` rules can create or move the branches and tags they cover, so pushing a release tag is normally a bypass. ATR accepts a bypass made by a member of the committee or one of its release managers, and records a concern for anyone else. Don't use the `exempt` bypass mode, because it leaves no record.
+
+For example, this `.asf.yaml` protects tags starting with `v`, and lets anybody with write access to the repository push them:
+
+```yaml
+github:
+  rulesets:
+    - name: "Release tags"
+      target: tag
+      enforcement: active
+      conditions:
+        ref_name:
+          include:
+            - "refs/tags/v*"
+          exclude: []
+      bypass_actors:
+        - actor_id: 4
+          actor_type: RepositoryRole
+          bypass_mode: always
+      rules:
+        - type: creation
+        - type: update
+```
 
 ## GitHub Actions for ATR
 

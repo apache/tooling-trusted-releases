@@ -46,6 +46,7 @@ import atr.tasks.checks.hashing as hashing
 import atr.tasks.checks.license as license
 import atr.tasks.checks.parity as parity
 import atr.tasks.checks.paths as paths
+import atr.tasks.checks.protection as protection
 import atr.tasks.checks.rat as rat
 import atr.tasks.checks.sbom as sbom_check
 import atr.tasks.checks.signature as signature
@@ -272,6 +273,9 @@ async def draft_checks(
         if release.project.committee is not None:
             if release.project.committee.is_podling:
                 is_podling = True
+        protection_check_task = await _protection_check_task(asf_uid, release, revision_number)
+        if protection_check_task:
+            await _add_task(data, protection_check_task)
         path_check_task = await queued(
             asf_uid,
             sql.TaskType.PATHS_CHECK,
@@ -472,6 +476,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return metadata.update
         case sql.TaskType.PATHS_CHECK:
             return paths.check
+        case sql.TaskType.PROTECTION_CHECK:
+            return protection.check
         case sql.TaskType.QUARANTINE_VALIDATE:
             return quarantine.validate
         case sql.TaskType.RAT_CHECK:
@@ -920,6 +926,31 @@ async def _has_sbom_task(
             await checks.resolve_extra_args(sbom_check.INPUT_EXTRA_ARGS, release, path_str),
             file=path_str,
         ),
+    )
+
+
+async def _protection_check_task(
+    asf_uid: str, release: sql.Release, revision_number: safe.RevisionNumber
+) -> sql.Task | None:
+    payload = await attestable.latest_github_tp_payload(release.safe_project_key, release.safe_version_key)
+    if payload is None:
+        return None
+    upload = {"repository": payload.repository, "ref": payload.ref, "sha": payload.sha}
+    return await queued(
+        asf_uid,
+        sql.TaskType.PROTECTION_CHECK,
+        release,
+        revision_number,
+        check_cache_key=await checks.resolve_cache_key(
+            resolve(sql.TaskType.PROTECTION_CHECK),
+            protection.CHECK_VERSION,
+            protection.INPUT_POLICY_KEYS,
+            release,
+            revision_number,
+            {"release": release.key, **upload},
+            ignore_path=True,
+        ),
+        extra_args=upload,
     )
 
 

@@ -301,6 +301,7 @@ class TaskType(enum.StrEnum):
     MESSAGE_SEND = "message_send"
     METADATA_UPDATE = "metadata_update"
     PATHS_CHECK = "paths_check"
+    PROTECTION_CHECK = "protection_check"
     QUARANTINE_VALIDATE = "quarantine_validate"
     RAT_CHECK = "rat_check"
     RELEASE_FINALISE = "release_finalise"
@@ -368,6 +369,8 @@ class TaskType(enum.StrEnum):
                 return "Metadata update"
             case TaskType.PATHS_CHECK:
                 return "Paths check"
+            case TaskType.PROTECTION_CHECK:
+                return "Protection check"
             case TaskType.QUARANTINE_VALIDATE:
                 return "Quarantine validation"
             case TaskType.RAT_CHECK:

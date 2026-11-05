@@ -143,6 +143,7 @@ class AppConfig:
     SVN_PUBLISH_URL = _config_secrets("SVN_PUBLISH_URL", STATE_DIR, default=None, cast=str)
     SVN_DIST_PUBLIC_URL = _ENVIRONMENT_CONFIG("SVN_DIST_PUBLIC_URL", default="https://dist.apache.org/repos/dist/atr")
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
+    GITHUB_RULES_TOKEN = _config_secrets("GITHUB_RULES_TOKEN", STATE_DIR, default=None, cast=str)
     GITHUB_APP_ID = _config_secrets("GITHUB_APP_ID", STATE_DIR, default=None, cast=str)
     GITHUB_APP_WEBHOOK_SECRET = _config_secrets("GITHUB_APP_WEBHOOK_SECRET", STATE_DIR, default=None, cast=str)
     CAP_API_BASE_URL = _ENVIRONMENT_CONFIG("CAP_API_BASE_URL", default="https://cap-test.apache.org")
