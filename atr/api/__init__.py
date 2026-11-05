@@ -2275,6 +2275,7 @@ async def vote_start(
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
                 second_round_email_to=data.second_round_email_to,
+                expected_vote_mode=release.effective_vote_mode,
                 expected_revision=scanned_revision,
                 notify_when_finished=data.notify_when_finished,
                 automatic_resolve_when_finished=data.automatic_resolve_when_finished,

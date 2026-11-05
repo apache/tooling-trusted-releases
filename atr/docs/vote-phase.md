@@ -37,17 +37,19 @@ Both the Release Manager and the wider PMC have a part to play in this phase:
 
 * The ***Release Manager*** starts the vote, links to the artifacts under vote, and, when the vote
   is over, tallies the result and resolves it.
-* PMC members review the candidate and cast their votes on the vote thread. Whose votes are binding
+* PMC members review the candidate and cast their votes, on the vote page in ATR or on the vote
+  thread according to the project's [vote mode](project-configuration#vote). Whose votes are binding
   is a matter of [ASF policy](https://www.apache.org/legal/release-policy.html#release-approval).
 
 ## Casting and resolving the vote
 
-ATR keeps the candidate and its artifacts staged for the whole of the vote, and tallies the votes
-from the vote thread on the mailing list. The tally is there to help, but the Release Manager must
-check it against the thread before relying on it. When the vote is complete the Release Manager
-resolves it: a passing vote moves the candidate on to the finish phase, and a failed or canceled
-vote returns it to compose so that it can be revised. When starting the vote, the Release Manager
-can also ask ATR to publish the release automatically once the vote resolves successfully, as
+ATR keeps the candidate and its artifacts staged for the whole of the vote. In Trusted vote mode,
+ATR records each vote itself, and replies to the vote thread are not counted. In Email vote mode,
+ATR tallies the votes from the vote thread on the mailing list. That tally is there to help, but the
+Release Manager must check it against the thread before relying on it. When the vote is complete the
+Release Manager resolves it: a passing vote moves the candidate on to the finish phase, and a failed
+or canceled vote returns it to compose so that it can be revised. When starting the vote, the Release
+Manager can also ask ATR to publish the release automatically once the vote resolves successfully, as
 described in [Promoting to release](promoting-to-release). See
 [Staging and voting](staging-and-voting) for how staging, vote emails, and resolution work in ATR.
 

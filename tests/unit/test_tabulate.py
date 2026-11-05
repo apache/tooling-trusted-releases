@@ -16,6 +16,7 @@
 # under the License.
 
 import contextlib
+import time
 import unittest.mock as mock
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from types import SimpleNamespace
 import pytest
 
 import atr.db.interaction as interaction
+import atr.models.sql as sql
 import atr.models.tabulate as models_tabulate
 import atr.tabulate as tabulate
 import atr.user as user
@@ -103,6 +105,14 @@ async def test_vote_committee_returns_project_committee_for_podling_round_one(
     result = await tabulate.vote_committee("threadid", release)
 
     assert result is committee
+
+
+def test_vote_outcome_applies_the_default_minimum_to_a_saved_policy_without_one() -> None:
+    release = SimpleNamespace(project=sql.Project(key="x", release_policy=sql.ReleasePolicy()))
+
+    _passed, outcome = tabulate.vote_outcome(release, int(time.time()), {})
+
+    assert "still open" in outcome
 
 
 def test_vote_outcome_format_fails_when_binding_minus_one_equals_plus_one() -> None:

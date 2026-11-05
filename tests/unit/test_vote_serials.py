@@ -695,7 +695,7 @@ async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatc
         release_model, _seq, _mode, _revision = await _release_writer_with_data(data).start_vote_no_commit(
             safe.ReleaseKey("project-1.0.0"),
             safe.RevisionNumber("00002"),
-            expected_vote_mode=sql.VoteMode.EMAIL,
+            expected_vote_mode=sql.VoteMode.TRUSTED,
             promote=True,
         )
         assert release_model.voted_revision_number == "00002"
@@ -715,7 +715,7 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
                 _release, vote_seq, _vote_mode, _revision_number = await writer.start_vote_no_commit(
                     safe.ReleaseKey("project-1.0.0"),
                     safe.RevisionNumber("00001"),
-                    expected_vote_mode=sql.VoteMode.EMAIL,
+                    expected_vote_mode=sql.VoteMode.TRUSTED,
                     promote=True,
                 )
                 data.add(_vote_task(vote_seq, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)))

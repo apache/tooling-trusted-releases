@@ -40,6 +40,7 @@ import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage.writers.catalogue as catalogue
+import atr.storage.writers.project as project_writer
 
 
 @pytest.fixture
@@ -305,6 +306,65 @@ async def test_import_hangs_a_new_project_under_its_longest_prefix_sibling(sessi
         assert one is not None and extra is not None
         assert one.super_project_key == "alpha"
         assert extra.super_project_key == "alpha-one"
+
+
+@pytest.mark.asyncio
+async def test_import_keeps_a_new_project_on_email_votes_if_its_committee_has_them(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        email_policy = sql.ReleasePolicy(vote_mode=sql.VoteMode.EMAIL)
+        data.add(sql.Committee(key="alpha", name="Alpha", is_podling=False))
+        data.add(sql.Project(key="alpha", name="Apache Alpha", committee_key="alpha", release_policy=email_policy))
+        data.add(sql.Committee(key="beta", name="Beta", is_podling=False))
+        data.add(sql.Project(key="beta", name="Apache Beta", committee_key="beta"))
+        await data.commit()
+
+        for committee in ("alpha", "beta"):
+            rows = {"projects": [_project_row(f"{committee}-one", committee)]}
+            await _writer(data).import_catalogue_csvs(rows, committee, catalogue_diff.Mode.ADDITIVE)
+
+        data.expire_all()
+        alpha_one = await data.project(key="alpha-one", _release_policy=True).demand(RuntimeError("missing"))
+        beta_one = await data.project(key="beta-one", _release_policy=True).demand(RuntimeError("missing"))
+        assert alpha_one.policy_vote_mode == sql.VoteMode.EMAIL
+        assert beta_one.policy_vote_mode == sql.VoteMode.TRUSTED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing", "key", "expected"),
+    [
+        pytest.param({"alpha": None}, "beta", sql.VoteMode.TRUSTED, id="no-project-on-email"),
+        pytest.param({"alpha": sql.VoteMode.EMAIL}, "beta", sql.VoteMode.EMAIL, id="a-project-on-email"),
+        pytest.param(
+            {"alpha": sql.VoteMode.TRUSTED, "gamma": sql.VoteMode.EMAIL},
+            "alpha-one",
+            sql.VoteMode.TRUSTED,
+            id="parent-with-settings",
+        ),
+        pytest.param(
+            {"alpha": None, "gamma": sql.VoteMode.EMAIL},
+            "alpha-one",
+            sql.VoteMode.TRUSTED,
+            id="parent-without-settings",
+        ),
+    ],
+)
+async def test_new_project_vote_mode(
+    sessionmaker, existing: dict[str, sql.VoteMode | None], key: str, expected: sql.VoteMode
+) -> None:
+    async with sessionmaker() as data:
+        data.add(sql.Committee(key="committee", name="Committee", is_podling=False))
+        for project_key, mode in existing.items():
+            policy = None if (mode is None) else sql.ReleasePolicy(vote_mode=mode)
+            data.add(sql.Project(key=project_key, name=project_key, committee_key="committee", release_policy=policy))
+        await data.commit()
+
+        project = await project_writer._build_and_add_project(
+            data, "tester", safe.CommitteeKey("committee"), key, safe.ProjectKey(key)
+        )
+        await data.commit()
+
+        assert project.policy_vote_mode == expected
 
 
 @pytest.mark.asyncio

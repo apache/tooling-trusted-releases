@@ -738,6 +738,10 @@ async def _build_and_add_project(
     )
     if super_project and super_project.release_policy:
         project.release_policy = super_project.release_policy.duplicate()
+    elif (super_project is None) and any(
+        sibling.policy_vote_mode == sql.VoteMode.EMAIL for sibling in committee_projects
+    ):
+        project.release_policy = sql.ReleasePolicy(vote_mode=sql.VoteMode.EMAIL)
     data.add(project)
     return project
 

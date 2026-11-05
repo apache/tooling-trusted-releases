@@ -476,7 +476,7 @@ def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, obje
         extras["file_tag_mappings"] = {tag: list(paths) for tag, paths in release_policy.file_tag_mappings.items()}
     if release_policy.license_check_mode != sql.LicenseCheckMode.BOTH:
         extras["license_check_mode"] = release_policy.license_check_mode.value
-    if release_policy.vote_mode != sql.VoteMode.EMAIL:
+    if release_policy.vote_mode != sql.VoteMode.TRUSTED:
         extras["vote_mode"] = release_policy.vote_mode.value
     if release_policy.min_hours is not None:
         extras["min_hours"] = str(release_policy.min_hours)

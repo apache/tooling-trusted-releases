@@ -46,6 +46,10 @@ _TEMPLATE_LABELS: Final[dict[TemplateKind, str]] = {
     "start_vote": "vote email template",
     "vote_comment": "vote comment template",
 }
+_VOTE_INSTRUCTIONS: Final[dict[sql.VoteMode, str]] = {
+    sql.VoteMode.EMAIL: "You can vote on ATR at the URL above, or manually by replying to this email.",
+    sql.VoteMode.TRUSTED: "Please vote on ATR at the URL above. Replies to this email are not counted.",
+}
 
 
 class _AnnounceSubjectValues(TypedDict):
@@ -128,6 +132,7 @@ class _VoteValues(TypedDict):
     REVISION: str
     TAG: str
     VERSION: str
+    VOTE_INSTRUCTIONS: str
     YOUR_ASF_ID: str
     YOUR_FULL_NAME: str
 
@@ -168,6 +173,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "TAG": "Revision tag, if set",
     "VERSION": "Version name",
     "VOTE_ENDS_UTC": "Vote end date and time in UTC",
+    "VOTE_INSTRUCTIONS": "How to cast a vote, according to the vote mode",
     "YOUR_ASF_ID": "Your Apache UID",
     "YOUR_FULL_NAME": "Your full name",
 }
@@ -460,6 +466,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             version=str(options.version_key),
             _project=True,
             _committee=True,
+            _project_release_policy=True,
         ).demand(RuntimeError(f"Release {options.project_key} {options.version_key} not found"))
         if not release.committee:
             raise RuntimeError(f"Release {options.project_key} {options.version_key} has no committee")
@@ -541,6 +548,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "REVISION": revision_number,
         "TAG": revision_tag,
         "VERSION": str(options.version_key),
+        "VOTE_INSTRUCTIONS": _VOTE_INSTRUCTIONS[release.effective_vote_mode],
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }

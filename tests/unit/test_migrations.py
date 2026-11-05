@@ -121,17 +121,80 @@ _ROWS = {
     ),
 }
 
+_INSERT_COMMITTEE = (
+    "INSERT INTO committee (key, is_podling, committee_members, committers, release_managers, keys_mode)"
+    " VALUES ('{key}', 0, '[\"member\"]', '[]', '[]', 'AUTOMATIC')"
+)
+_INSERT_POLICY = (
+    "INSERT INTO releasepolicy (id, vote_mode, release_checklist, start_vote_template, announce_release_template,"
+    " binary_artifact_paths, source_artifact_paths, github_compose_workflow_path, github_vote_workflow_path,"
+    " github_finish_workflow_path) VALUES ({id}, '{mode}', '', '', '', '[]', '[]', '[]', '[]', '[]')"
+)
+_INSERT_PROJECT = (
+    "INSERT INTO project (key, committee_key, status, created) VALUES ('{key}', '{committee}', '{status}', 0)"
+)
+_TRUSTED_DEFAULT_ROWS = (
+    *[_INSERT_COMMITTEE.format(key=key) for key in ("edited", "moved", "polaris", "saved", "started", "trusted")],
+    *[
+        _INSERT_PROJECT.format(key=key, committee=committee, status=status)
+        for key, committee, status in (
+            ("edited", "edited", "ACTIVE"),
+            ("moved", "moved", "ACTIVE"),
+            ("moved-archived", "moved", "RETIRED"),
+            ("polaris", "polaris", "ACTIVE"),
+            ("saved", "saved", "ACTIVE"),
+            ("saved-sibling", "saved", "ACTIVE"),
+            ("started", "started", "ACTIVE"),
+            ("started-archived", "started", "RETIRED"),
+            ("started-sibling", "started", "ACTIVE"),
+            ("trusted", "trusted", "ACTIVE"),
+            ("trusted-sibling", "trusted", "ACTIVE"),
+        )
+    ],
+    _INSERT_POLICY.format(id=1, mode="EMAIL"),
+    _INSERT_POLICY.format(id=2, mode="TRUSTED"),
+    "UPDATE project SET release_policy_id = 1 WHERE key = 'saved'",
+    "UPDATE project SET release_policy_id = 2 WHERE key = 'trusted'",
+    "UPDATE project SET updated_by = 'member' WHERE key = 'edited'",
+    "UPDATE project SET updated_by = 'outsider' WHERE key = 'moved'",
+    "INSERT INTO revisioncounter (release_key, last_allocated_number) VALUES ('started-1.0', 1)",
+    "INSERT INTO votecounter (release_key, last_allocated_number) VALUES ('moved-archived-1.0', 1)",
+    "INSERT INTO votecounter (release_key, last_allocated_number) VALUES ('trusted-1.0', 1)",
+    "INSERT INTO release (key, project_key, version, phase, created, package_managers, sboms, cycle_key, activity_at)"
+    " VALUES ('moved-1.0', 'moved', '1.0', 'RELEASE', 0, '[]', '[]', 'moved-1', 0)",
+)
+
+
+def test_trusted_default_keeps_committees_with_activity_on_email(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0142_2026.11.05_6213b479")
+    with engine.begin() as connection:
+        for statement in _TRUSTED_DEFAULT_ROWS:
+            connection.exec_driver_sql(statement)
+
+    command.upgrade(alembic_config, "0143_2026.11.05_71710c28")
+
+    with engine.connect() as connection:
+        policies = connection.exec_driver_sql(
+            "SELECT p.key, rp.vote_mode FROM project AS p JOIN releasepolicy AS rp ON rp.id = p.release_policy_id"
+        ).all()
+    assert dict(tuple(row) for row in policies) == {
+        "edited": "EMAIL",
+        "polaris": "EMAIL",
+        "saved": "EMAIL",
+        "saved-sibling": "EMAIL",
+        "started": "EMAIL",
+        "started-archived": "EMAIL",
+        "started-sibling": "EMAIL",
+        "trusted": "TRUSTED",
+    }
+
 
 def test_upgrade_populated_database(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = pathlib.Path(__file__).resolve().parents[2]
-    database = tmp_path / "database" / "atr.db"
-    database.parent.mkdir()
-    monkeypatch.setattr(config.get(), "STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(config.get(), "SQLITE_DB_PATH", "database/atr.db")
-    alembic_config = alembic.config.Config(str(root / "alembic.ini"))
-    alembic_config.set_main_option("script_location", str(root / "migrations"))
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
     command.upgrade(alembic_config, "0001")
-    engine = sqlalchemy.create_engine(f"sqlite:///{database}", poolclass=sqlalchemy.pool.NullPool)
     with engine.begin() as connection:
         context = migration.MigrationContext.configure(connection)
         with operations.Operations(context).batch_alter_table("task") as batch_op:
@@ -161,3 +224,16 @@ def test_upgrade_populated_database(tmp_path: pathlib.Path, monkeypatch: pytest.
             for constraint in table.constraints:
                 if isinstance(constraint, sqlalchemy.CheckConstraint):
                     assert f"CONSTRAINT {constraint.name} CHECK" in definitions[table.name], constraint.name
+
+
+def _alembic_setup(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[alembic.config.Config, sqlalchemy.Engine]:
+    root = pathlib.Path(__file__).resolve().parents[2]
+    database = tmp_path / "database" / "atr.db"
+    database.parent.mkdir()
+    monkeypatch.setattr(config.get(), "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(config.get(), "SQLITE_DB_PATH", "database/atr.db")
+    alembic_config = alembic.config.Config(str(root / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(root / "migrations"))
+    return alembic_config, sqlalchemy.create_engine(f"sqlite:///{database}", poolclass=sqlalchemy.pool.NullPool)

@@ -65,6 +65,7 @@ project:
     programming_languages:
     - python
   policy:
+    vote_mode: email
     vote_recipients:
       to: private@test.apache.org
       cc:

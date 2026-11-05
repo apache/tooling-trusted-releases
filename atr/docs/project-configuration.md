@@ -142,7 +142,9 @@ them when starting a vote.
 
 * **Default vote recipient**, with optional CC and BCC recipients. The mailing list that vote emails
   go to.
-* **Vote mode.** How votes are cast and counted:
+* **Vote mode.** How votes are cast and counted. Trusted is the default. A new project takes the mode
+  of its parent project if it has one, and otherwise uses Email if its committee has a project on
+  Email:
   * *Email*. ATR sends the vote email, and votes are cast by replying to the thread. ATR tallies the
     replies when the vote is resolved.
   * *Trusted*. ATR sends the vote email, but votes are cast on the vote page in ATR and recorded

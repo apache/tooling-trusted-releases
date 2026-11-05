@@ -111,9 +111,7 @@ def vote_outcome(
     if start_unixtime is not None:
         duration_hours = (now - start_unixtime) / 3600
 
-    min_duration_hours = 72
-    if release.project.release_policy is not None:
-        min_duration_hours = release.project.release_policy.min_hours or None
+    min_duration_hours = release.project.policy_min_hours or None
     duration_hours_remaining = None
     if min_duration_hours is not None:
         duration_hours_remaining = min_duration_hours - duration_hours

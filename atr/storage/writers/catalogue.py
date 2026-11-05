@@ -719,7 +719,7 @@ class FoundationAdmin:
         # Adds in FK order: projects, then releases, then artifacts
         for add in diff.adds:
             if isinstance(add, catalogue_rows.ProjectRow):
-                self.__data.add(add.to_sql())
+                await self._add_project(add)
         await self.__data.flush()
         added = [str(add.key) for add in diff.adds if isinstance(add, catalogue_rows.ProjectRow)]
         await self._resolve_super_projects(added + orphaned)
@@ -740,6 +740,13 @@ class FoundationAdmin:
         for release_repoint in diff.release_repoints:
             await self._repoint_one_release(release_repoint)
         await self._assert_fk_integrity()
+
+    async def _add_project(self, add: catalogue_rows.ProjectRow) -> None:
+        project = add.to_sql()
+        siblings = await self.__data.project(committee_key=str(add.committee_key), _release_policy=True).all()
+        if any(sibling.policy_vote_mode == sql.VoteMode.EMAIL for sibling in siblings):
+            project.release_policy = sql.ReleasePolicy(vote_mode=sql.VoteMode.EMAIL)
+        self.__data.add(project)
 
     def _audit_import(self, diff: catalogue_diff.CatalogueDiff, committee_key: str, mode: catalogue_diff.Mode) -> None:
         counts = diff.counts

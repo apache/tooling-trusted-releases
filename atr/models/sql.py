@@ -1388,7 +1388,7 @@ Please review the release candidate and vote accordingly.
 [ ] +0 Abstain
 [ ] -1 Do not release this package (please provide specific comments)
 
-You can vote on ATR at the URL above, or manually by replying to this email.
+{{VOTE_INSTRUCTIONS}}
 
 The vote is open for {{DURATION}} hours.
 
@@ -1451,7 +1451,7 @@ Sincerely,
     @property
     def policy_vote_mode(self) -> VoteMode:
         if (policy := self.release_policy) is None:
-            return VoteMode.EMAIL
+            return VoteMode.TRUSTED
         return policy.vote_mode
 
     @property
@@ -2423,7 +2423,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     recipient_defaults: dict[str, Any] = sqlmodel.Field(
         default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
-    vote_mode: VoteMode = sqlmodel.Field(default=VoteMode.EMAIL)
+    vote_mode: VoteMode = sqlmodel.Field(default=VoteMode.TRUSTED)
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
     vote_comment_template: str = sqlmodel.Field(default="")

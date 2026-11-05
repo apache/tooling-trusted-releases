@@ -195,7 +195,13 @@ async def test_start_vote_subject_and_body_renders_defaults(
         homepage=None,
         repositories=[],
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=commit_hash)
+    release = SimpleNamespace(
+        key="myproject-1.0.0",
+        committee=committee,
+        project=project,
+        commit_hash=commit_hash,
+        effective_vote_mode=sql.VoteMode.TRUSTED,
+    )
     revision = SimpleNamespace(number="1", tag=None)
 
     async def no_release_policy(_data, _project_key):
@@ -246,7 +252,13 @@ async def test_start_vote_body_renders_commit_token(monkeypatch, commit_hash: st
         homepage=None,
         repositories=[],
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=commit_hash)
+    release = SimpleNamespace(
+        key="myproject-1.0.0",
+        committee=committee,
+        project=project,
+        commit_hash=commit_hash,
+        effective_vote_mode=sql.VoteMode.TRUSTED,
+    )
     revision = SimpleNamespace(number="1", tag=None)
 
     async def no_release_policy(_data, _project_key):
@@ -288,6 +300,24 @@ async def test_start_vote_body_renders_first_round_paragraph_only_where_template
     assert omitted_body == "Please vote"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("vote_mode", "instructions"),
+    [
+        (sql.VoteMode.EMAIL, "You can vote on ATR at the URL above, or manually by replying to this email."),
+        (sql.VoteMode.TRUSTED, "Please vote on ATR at the URL above. Replies to this email are not counted."),
+    ],
+)
+async def test_start_vote_body_tells_voters_how_to_vote_in_each_mode(
+    monkeypatch, vote_mode: sql.VoteMode, instructions: str
+) -> None:
+    template = sql.Project(key="x").policy_start_vote_default
+
+    body = await _second_round_start_vote_body(monkeypatch, template, vote_mode)
+
+    assert f"\n\n{instructions}\n\nThe vote is open for 72 hours." in body
+
+
 def test_substitute_does_not_rescan_replacement_values() -> None:
     result = construct._substitute(
         "{{PROJECT_NAME}} {{VERSION}} {{UNKNOWN}}",
@@ -306,7 +336,9 @@ def _mock_session_factory(data: MockDBSession):
     return _session
 
 
-async def _second_round_start_vote_body(monkeypatch, template: str) -> str:
+async def _second_round_start_vote_body(
+    monkeypatch, template: str, vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED
+) -> str:
     committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
@@ -315,7 +347,9 @@ async def _second_round_start_vote_body(monkeypatch, template: str) -> str:
         homepage=None,
         repositories=[],
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=None)
+    release = SimpleNamespace(
+        key="myproject-1.0.0", committee=committee, project=project, commit_hash=None, effective_vote_mode=vote_mode
+    )
     revision = SimpleNamespace(number="1", tag=None)
 
     monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")
