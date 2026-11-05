@@ -222,23 +222,37 @@ class FoundationAdmin:
         return ArtifactMove(created_release=created_release, dropped_source=dropped_source)
 
     async def archive_project(self, project_key: safe.ProjectKey) -> None:
-        await self._set_project_status(project_key, sql.ProjectStatus.RETIRED)
-        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, archived_project=str(project_key))
+        status = await self._set_project_status(project_key, archive=True)
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid, archived_project=str(project_key), status=status.value
+        )
 
     async def restore_project(self, project_key: safe.ProjectKey) -> None:
-        await self._set_project_status(project_key, sql.ProjectStatus.ACTIVE)
+        await self._set_project_status(project_key, archive=False)
         self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, restored_project=str(project_key))
 
-    async def _set_project_status(self, project_key: safe.ProjectKey, status: sql.ProjectStatus) -> None:
+    async def _set_project_status(self, project_key: safe.ProjectKey, *, archive: bool) -> sql.ProjectStatus:
         key = str(project_key)
         await self.__data.begin_immediate()
         self.__data.expire_all()
         try:
-            project = await self.__data.project(key=key).get()
+            project = await self.__data.project(key=key, _committee=True).get()
             if project is None:
                 raise storage.AccessError(f"Project '{key}' not found.", status=404)
-            if project.status == status:
-                raise storage.AccessError(f"Project '{key}' is already {status.value}.", status=409)
+            # Archiving matches what the PMC's own archival does, unless the committee is gone,
+            # in which case the project retires with it. A restore brings back either, so an
+            # admin can undo a retirement that was a mistake
+            if archive:
+                if not project.is_active:
+                    raise storage.AccessError(f"Project '{key}' is {project.status.value}, not active.", status=409)
+                # A retired podling's projects are retired too, though they're not in the Attic
+                committee = project.committee
+                retired = (committee is not None) and (committee.is_archived or committee.in_attic)
+                status = sql.ProjectStatus.RETIRED if retired else sql.ProjectStatus.DORMANT
+            else:
+                if not project.is_archived:
+                    raise storage.AccessError(f"Project '{key}' is {project.status.value}, not archived.", status=409)
+                status = sql.ProjectStatus.ACTIVE
             # the committee index sorts projects into current and archived by status, so the whole site goes stale
             project.status = status
             project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
@@ -247,6 +261,7 @@ class FoundationAdmin:
         except Exception:
             await self.__data.rollback()
             raise
+        return status
 
     async def archive_release(self, release_key: safe.ReleaseKey) -> None:
         key = str(release_key)

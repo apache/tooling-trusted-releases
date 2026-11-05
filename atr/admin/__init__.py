@@ -526,7 +526,7 @@ async def catalog_committee_get(
 
     rows = []
     for project, release_count, artifact_count in summaries:
-        status_action = await _catalog_status_action(str(committee_key), project)
+        status_action = await _catalog_status_action(committee, project)
         rows.append((project, release_count, artifact_count, status_action))
 
     table = htpy.table(".table")[
@@ -543,7 +543,7 @@ async def catalog_committee_get(
             [
                 htpy.tr[
                     htpy.td[htpy.strong[project.key]],
-                    htpy.td[project.status.value],
+                    htpy.td[project.status.value, _catalog_retired_badge(committee, project)],
                     htpy.td[str(release_count)],
                     htpy.td[str(artifact_count)],
                     htpy.td[
@@ -925,7 +925,7 @@ async def catalog_archive_post(
     """
     URL: POST /catalog/<committee_key>/archive/<project_key>
 
-    Retire a catalogued project, keeping its releases and artifacts in place.
+    Archive a catalogued project, keeping its releases and artifacts in place.
     """
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
@@ -945,7 +945,7 @@ async def catalog_restore_post(
     """
     URL: POST /catalog/<committee_key>/restore/<project_key>
 
-    Bring a retired project back to active.
+    Bring an archived project, dormant or retired, back to active.
     """
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
@@ -953,26 +953,59 @@ async def catalog_restore_post(
     return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
 
 
-async def _catalog_status_action(committee_key: str, project: sql.Project) -> htm.Element:
-    # A live project can be retired, and a retired one brought back. Both are one-way status
-    # flips, so we render them as small POST buttons rather than a whole confirmation page
-    if project.status == sql.ProjectStatus.ACTIVE:
+def _catalog_projects_retired(committee: sql.Committee) -> bool:
+    # A retired podling's projects are retired as well as those in the Attic
+    return committee.is_archived or committee.in_attic
+
+
+def _catalog_retired_badge(committee: sql.Committee, project: sql.Project) -> htpy.Element | None:
+    # An active project under a committee whose projects are retired is out of step, most
+    # likely restored by an admin, so it's marked where it can't be missed
+    if not (project.is_active and _catalog_projects_retired(committee)):
+        return None
+    return htpy.span(".badge.text-bg-danger.ms-2")[f"Active, though {_catalog_retired_reason(committee)}"]
+
+
+def _catalog_retired_reason(committee: sql.Committee) -> str:
+    # Why a committee's projects are retired, worded to follow "even though" or "though"
+    if committee.key == "attic":
+        return "it belongs to the Attic"
+    if committee.is_podling:
+        return "its podling has retired"
+    return "its committee has been dissolved"
+
+
+async def _catalog_status_action(committee: sql.Committee, project: sql.Project) -> htm.Element | None:
+    # A live project can be archived, and an archived one brought back. Both are one-way status
+    # flips, so we render them as small POST buttons rather than a whole confirmation page.
+    # A standing project is neither, so it gets no button
+    if project.is_active:
+        outcome = (
+            f"is marked retired, since {_catalog_retired_reason(committee)}"
+            if _catalog_projects_retired(committee)
+            else "is marked dormant, so its PMC can unarchive it"
+        )
         return await form.render(
             model_cls=form.Empty,
-            action=f"/admin/catalog/{committee_key}/archive/{project.key}",
+            action=f"/admin/catalog/{committee.key}/archive/{project.key}",
             form_classes=".d-inline",
             submit_classes="btn-sm btn-outline-warning me-1",
             submit_label="Archive",
-            confirm=f"Archive {project.key}? It stays catalogued but is marked retired.",
+            confirm=f"Archive {project.key}? It stays catalogued and {outcome}.",
             empty=True,
         )
+    if not project.is_archived:
+        return None
+    confirm = f"Restore {project.key} to active?"
+    if _catalog_projects_retired(committee):
+        confirm = f"Restore {project.key} to active, even though {_catalog_retired_reason(committee)}?"
     return await form.render(
         model_cls=form.Empty,
-        action=f"/admin/catalog/{committee_key}/restore/{project.key}",
+        action=f"/admin/catalog/{committee.key}/restore/{project.key}",
         form_classes=".d-inline",
         submit_classes="btn-sm btn-outline-secondary me-1",
         submit_label="Restore",
-        confirm=f"Restore {project.key} to active?",
+        confirm=confirm,
         empty=True,
     )
 

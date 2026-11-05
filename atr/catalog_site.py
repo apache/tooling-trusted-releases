@@ -599,11 +599,6 @@ def _comma_list(commas: str) -> list[str]:
     return [token.strip() for token in commas.split(",") if token.strip()]
 
 
-def _committee_dissolved(committee: sql.Committee) -> bool:
-    # A retired podling goes back to the Incubator, which the back link checks first
-    return committee.is_archived or (committee.key == _ATTIC_COMMITTEE_KEY)
-
-
 async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
     """Fold the released artifacts onto the committee card that shows them on the front page."""
     releases = await data.release(phase=sql.ReleasePhase.RELEASE, _committee=True, _project=True).all()
@@ -1033,7 +1028,7 @@ async def _write_committee_index(
         archived_subprojects=archived,
         subproject_summaries=await _subproject_summaries(data, (*current, *archived)),
         retired=committee.is_archived,
-        committee_dissolved=_committee_dissolved(committee),
+        in_attic=committee.in_attic,
         keys_url=paths.committee_keys_url(committee),
         root="../",
     )
@@ -1210,9 +1205,6 @@ async def _write_project(
     project_dir = site_dir / project.key
     root = "../"
     retired = project.status not in _LIVE_PROJECT_STATUSES
-    # Only a dissolved committee's projects belong to the Attic - a project its PMC
-    # archived stays with the PMC, so the way back depends on the committee alone
-    committee_dissolved = _committee_dissolved(committee)
     # The signing keys are published per committee, beside the release files themselves
     keys_url = paths.committee_keys_url(committee)
     subproject_summaries = await _subproject_summaries(data, (*subprojects, *archived_subprojects))
@@ -1234,7 +1226,9 @@ async def _write_project(
             groups=current_groups,
             has_archive=bool(archived),
             retired=retired,
-            committee_dissolved=committee_dissolved,
+            # A project its PMC archived stays with the PMC, so the way back depends on
+            # whether the committee's projects are in the Attic, not on the project
+            in_attic=committee.in_attic,
             keys_url=keys_url,
             root=root,
         ),
@@ -1247,7 +1241,7 @@ async def _write_project(
             versions=archived,
             groups=archived_groups,
             retired=retired,
-            committee_dissolved=committee_dissolved,
+            in_attic=committee.in_attic,
             keys_url=keys_url,
             root=root,
         ),

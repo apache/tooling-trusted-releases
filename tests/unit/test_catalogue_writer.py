@@ -281,9 +281,36 @@ async def test_delete_project_removes_project_and_contents(sessionmaker) -> None
 
 
 @pytest.mark.asyncio
-async def test_archive_project_marks_it_retired(sessionmaker) -> None:
+async def test_archive_project_marks_it_dormant(sessionmaker) -> None:
     async with sessionmaker() as data:
         await _seed_project(data, "alpha", "alpha-one")
+
+        await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+        project = await data.get(sql.Project, "alpha-one")
+        assert project is not None
+        assert project.status == sql.ProjectStatus.DORMANT
+
+
+@pytest.mark.asyncio
+async def test_archive_project_under_a_dissolved_committee_marks_it_retired(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _dissolve(data, "alpha")
+
+        await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+        project = await data.get(sql.Project, "alpha-one")
+        assert project is not None
+        assert project.status == sql.ProjectStatus.RETIRED
+
+
+@pytest.mark.asyncio
+async def test_archive_project_under_a_retired_podling_marks_it_retired(sessionmaker) -> None:
+    # A retired podling's projects aren't in the Attic, but they're retired all the same
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one", is_podling=True)
+        await _dissolve(data, "alpha")
 
         await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
 
@@ -306,22 +333,49 @@ async def test_restore_project_returns_it_to_active(sessionmaker) -> None:
 
 
 @pytest.mark.asyncio
-async def test_archive_rejects_a_project_already_in_that_status(sessionmaker) -> None:
+async def test_restore_project_brings_back_a_retired_project(sessionmaker) -> None:
+    # Admins can undo a retirement that was a mistake, even under a dissolved committee
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _dissolve(data, "alpha")
+        await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+        await _writer(data).restore_project(safe.ProjectKey("alpha-one"))
+
+        project = await data.get(sql.Project, "alpha-one")
+        assert project is not None
+        assert project.status == sql.ProjectStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_a_project_that_is_not_active(sessionmaker) -> None:
     async with sessionmaker() as data:
         await _seed_project(data, "alpha", "alpha-one")
         await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
 
-        with pytest.raises(storage.AccessError, match="already"):
+        with pytest.raises(storage.AccessError, match="not active"):
             await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
 
 
 @pytest.mark.asyncio
-async def test_restore_rejects_a_project_already_in_that_status(sessionmaker) -> None:
+@pytest.mark.parametrize("status", [sql.ProjectStatus.ACTIVE, sql.ProjectStatus.STANDING])
+async def test_restore_rejects_a_project_that_is_not_archived(sessionmaker, status) -> None:
     async with sessionmaker() as data:
         await _seed_project(data, "alpha", "alpha-one")
+        project = await data.get(sql.Project, "alpha-one")
+        assert project is not None
+        project.status = status
+        await data.commit()
 
-        with pytest.raises(storage.AccessError, match="already"):
+        with pytest.raises(storage.AccessError, match="not archived"):
             await _writer(data).restore_project(safe.ProjectKey("alpha-one"))
+
+
+async def _dissolve(data: db.Session, committee_key: str) -> None:
+    committee = await data.get(sql.Committee, committee_key)
+    assert committee is not None
+    committee.is_archived = True
+    await data.commit()
 
 
 @pytest.mark.asyncio

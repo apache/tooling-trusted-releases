@@ -1159,6 +1159,11 @@ class Committee(sqlmodel.SQLModel, table=True):
         name = self.name or self.key.title()
         return f"{name} (Incubating)" if self.is_podling else name
 
+    @property
+    def in_attic(self) -> bool:
+        """Whether the committee's projects are in the Attic: it was dissolved, or it is the Attic."""
+        return (self.is_archived and (not self.is_podling)) or (self.key == "attic")
+
     def mark_updated(self, *, by: str, update_type: UpdateType) -> None:
         self.updated = datetime.datetime.now(datetime.UTC)
         self.updated_by = by
