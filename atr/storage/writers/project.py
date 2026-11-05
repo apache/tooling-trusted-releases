@@ -179,8 +179,8 @@ class ReleaseManager(CommitteeParticipant):
         )
         if project.committee_key != self.__committee_key:
             raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
-        if project.status == sql.ProjectStatus.RETIRED:
-            raise storage.AccessError(f"Project '{project.key}' is retired; metadata edits are disabled.")
+        if project.is_archived:
+            raise storage.AccessError(f"Project '{project.key}' is archived; metadata edits are disabled.")
         return project
 
 
@@ -280,21 +280,17 @@ class CommitteeMember(ReleaseManager):
                     f"Project {project_key} is not in committee {self.__committee_key}", status=403
                 )
 
-            # TODO: when a project has current or archived releases, archiving the project
-            # should be allowed and should cascade-archive the current releases as well -
-            # for now we just block, and only drafts are handled (deleted by the caller)
-            post_draft_phases = {
-                sql.ReleasePhase.RELEASE_CANDIDATE,
-                sql.ReleasePhase.RELEASE_PREVIEW,
-                sql.ReleasePhase.RELEASE,
-            }
-            if any(r.phase in post_draft_phases for r in project.releases_including_embargoed):
+            # Archived releases stay with the project. The caller deletes drafts first, and
+            # anything else still live blocks archival
+            # TODO: archive current releases along with the project, rather than blocking
+            unarchived = [r for r in project.releases_including_embargoed if not r.is_archived]
+            if any(r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in unarchived):
                 raise storage.AccessError(
                     f"Cannot archive project '{project_key}' because it has active releases;"
                     " complete or remove them first."
                 )
 
-            if project.releases_including_embargoed:
+            if unarchived:
                 raise storage.AccessError(
                     f"Cannot archive project '{project_key}' because it still has draft releases;"
                     " delete them and try again."
@@ -309,7 +305,7 @@ class CommitteeMember(ReleaseManager):
                         f"Cannot archive project '{project_key}' because it is the only project in its committee."
                     )
 
-            project.status = sql.ProjectStatus.RETIRED
+            project.status = sql.ProjectStatus.DORMANT
             await self.__data.commit()
         except Exception:
             await self.__data.rollback()

@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from types import SimpleNamespace
-
 import htpy
 import pytest
 
@@ -25,8 +23,9 @@ import atr.render as render
 import atr.storage as storage
 
 
-def test_archived_project_banner_returns_element_for_retired() -> None:
-    project = SimpleNamespace(status=sql.ProjectStatus.RETIRED)
+@pytest.mark.parametrize("status", [sql.ProjectStatus.DORMANT, sql.ProjectStatus.RETIRED])
+def test_archived_project_banner_returns_element_for_archived(status: sql.ProjectStatus) -> None:
+    project = sql.Project(key="p", status=status)
     banner = render.archived_project_banner(project)
     assert isinstance(banner, htpy.Element)
     html = str(banner)
@@ -34,8 +33,9 @@ def test_archived_project_banner_returns_element_for_retired() -> None:
     assert "archived" in html
 
 
-def test_archived_project_banner_returns_none_for_active() -> None:
-    project = SimpleNamespace(status=sql.ProjectStatus.ACTIVE)
+@pytest.mark.parametrize("status", [sql.ProjectStatus.ACTIVE, sql.ProjectStatus.STANDING])
+def test_archived_project_banner_returns_none_for_unarchived(status: sql.ProjectStatus) -> None:
+    project = sql.Project(key="p", status=status)
     assert render.archived_project_banner(project) is None
 
 

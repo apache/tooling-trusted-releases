@@ -2415,7 +2415,7 @@ async def test_archive_project(
     """
     URL: POST /test/archive-project
 
-    Set a project to RETIRED status (test mode only).
+    Set a project to DORMANT status, as a PMC archive does (test mode only).
     """
     if not config.is_test_mode():
         return quart.abort(404)
@@ -2424,7 +2424,7 @@ async def test_archive_project(
         if not project:
             return quart.abort(404)
         project = await session.merge(project)
-        project.status = sql.ProjectStatus.RETIRED
+        project.status = sql.ProjectStatus.DORMANT
         await session.commit()
     return {"ok": True, "project_key": str(data.project_key)}, 200
 

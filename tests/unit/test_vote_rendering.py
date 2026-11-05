@@ -315,6 +315,7 @@ async def test_trusted_rendering_round_two_carryover_shows_carried_card_and_resu
         podling_thread_id="thread-abc",
         project=SimpleNamespace(
             key="myproject",
+            is_archived=False,
             policy_vote_comment_template="Default comment",
             policy_vote_comment_template_url="",
             status=sql.ProjectStatus.ACTIVE,
@@ -636,6 +637,7 @@ def _release(vote_mode: sql.VoteMode, current_vote_seq: int | None = 1) -> Simpl
         podling_thread_id=None,
         project=SimpleNamespace(
             key="project",
+            is_archived=False,
             policy_vote_comment_template="Default comment",
             policy_vote_comment_template_url="",
             status=sql.ProjectStatus.ACTIVE,

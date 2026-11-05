@@ -289,15 +289,13 @@ async def view(
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     is_release_manager = bool(project.committee and user.is_release_manager(project.committee, session.uid))
     is_privileged = session.is_admin
-    can_edit_metadata = (is_committee_member or is_release_manager or is_privileged) and (
-        project.status != sql.ProjectStatus.RETIRED
-    )
+    can_edit_metadata = (is_committee_member or is_release_manager or is_privileged) and (not project.is_archived)
     can_edit_policy = (is_committee_member or is_release_manager or is_privileged) and (
         project.status == sql.ProjectStatus.ACTIVE
     )
-    can_manage_taxonomy = (is_committee_member or is_privileged) and (project.status != sql.ProjectStatus.RETIRED)
+    can_manage_taxonomy = (is_committee_member or is_privileged) and (not project.is_archived)
     can_manage_project_actions = is_committee_member or is_privileged
-    can_start_release = (is_committee_member or is_privileged) and (project.status != sql.ProjectStatus.RETIRED)
+    can_start_release = (is_committee_member or is_privileged) and (not project.is_archived)
     is_sole_active_project = (project.committee is not None) and (active_committee_projects <= 1)
 
     if user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):

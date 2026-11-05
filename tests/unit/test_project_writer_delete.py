@@ -68,8 +68,52 @@ async def test_archive_sole_active_project_locks_then_rolls_back() -> None:
 
 
 @pytest.mark.asyncio
+async def test_archive_with_active_release_rolls_back() -> None:
+    released = SimpleNamespace(phase=sql.ReleasePhase.RELEASE, is_archived=False)
+    target = SimpleNamespace(
+        key="alpha-one", committee_key="alpha", status=sql.ProjectStatus.ACTIVE, releases_including_embargoed=[released]
+    )
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.approval_request = mock.MagicMock(return_value=_query(get=_approval(sql.ApprovalAction.ARCHIVE)))
+    data.project = mock.MagicMock(side_effect=[_query(get=target)])
+    writer = _writer(data)
+
+    with pytest.raises(storage.AccessError, match="active releases"):
+        await writer.archive(safe.ProjectKey("alpha-one"), 7)
+
+    data.rollback.assert_awaited_once()
+    data.commit.assert_not_awaited()
+    assert target.status == sql.ProjectStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_archive_with_only_archived_releases_commits() -> None:
+    archived = SimpleNamespace(phase=sql.ReleasePhase.RELEASE, is_archived=True)
+    target = SimpleNamespace(
+        key="alpha-one", committee_key="alpha", status=sql.ProjectStatus.ACTIVE, releases_including_embargoed=[archived]
+    )
+    other = SimpleNamespace(key="alpha-two", committee_key="alpha")
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.approval_request = mock.MagicMock(return_value=_query(get=_approval(sql.ApprovalAction.ARCHIVE)))
+    data.project = mock.MagicMock(side_effect=[_query(get=target), _query(all_=[target, other])])
+    writer = _writer(data)
+
+    await writer.archive(safe.ProjectKey("alpha-one"), 7)
+
+    data.commit.assert_awaited_once()
+    data.rollback.assert_not_awaited()
+    assert target.status == sql.ProjectStatus.DORMANT
+
+
+@pytest.mark.asyncio
 async def test_archive_with_drafts_rolls_back() -> None:
-    draft = SimpleNamespace(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
+    draft = SimpleNamespace(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, is_archived=False)
     target = SimpleNamespace(
         key="alpha-one", committee_key="alpha", status=sql.ProjectStatus.ACTIVE, releases_including_embargoed=[draft]
     )

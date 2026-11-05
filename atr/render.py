@@ -101,7 +101,7 @@ _STATUS_LABELS: Final[dict[sql.CheckResultStatus, str]] = {
 
 
 def archived_project_banner(project: sql.Project, message: str = "") -> htm.Element | None:
-    if project.status != sql.ProjectStatus.RETIRED:
+    if not project.is_archived:
         return None
     return htm.div(".alert.alert-warning.mb-4")[f"This project is archived. {message}"]
 

@@ -1300,6 +1300,11 @@ class Project(sqlmodel.SQLModel, table=True):
         return self.status == ProjectStatus.ACTIVE
 
     @property
+    def is_archived(self) -> bool:
+        """Whether the project is archived, by its PMC (dormant) or with its PMC (retired)."""
+        return self.status in {ProjectStatus.DORMANT, ProjectStatus.RETIRED}
+
+    @property
     def github_repositories(self) -> set[str]:
         # Only the metadata says where the source lives - the policy's repository is where upload workflows run
         return {
