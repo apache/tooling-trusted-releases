@@ -1,5 +1,7 @@
 {% extends "catalog_site_base.html" %}
 
+{% from "_release_counts.html" import release_counts %}
+
 {%- block title -%}ASF Release Catalog{%- endblock title -%}
 
 {%- block description -%}Released and archived artifacts for Apache Software Foundation projects.{%- endblock description -%}
@@ -26,42 +28,41 @@
         <div class="col">
           <div class="card h-100 shadow-sm page-committee-card">
             <div class="card-body">
+              {# A committee with a single project has nothing to choose from, so the card opens
+                 the project itself - but the Incubator and Attic index the rest of the catalogue,
+                 so their cards always open their own page, whatever stray project they might hold #}
+              {% if committee.projects | length == 1 and committee.key not in indexing_keys %}
+                {% set page = committee.projects[0].key %}
+                {% set project_page = true %}
+              {% else %}
+                {% set page = committee.key %}
+                {# A committee with a project of its own name opens on that project's page #}
+                {% set project_page = committee.projects | selectattr("key", "equalto", committee.key) | list | length > 0 %}
+              {% endif %}
+              {% set target = page ~ "/index.html" %}
+              {# The counts open the lists they count, which only a project page has. A committee
+                 page with no project of its own name lists subprojects instead, so there the
+                 counts stay plain text #}
+              {% set active_href = (root ~ page ~ "/index.html#active-releases") if project_page else None %}
+              {% set archived_href = (root ~ page ~ "/archive.html") if project_page else None %}
               <div class="row align-items-center">
                 <div class="col">
-                  {# A committee with a single project has nothing to choose from, so the card opens
-                     the project itself - but the Incubator and Attic index the rest of the catalogue,
-                     so their cards always open their own page, whatever stray project they might hold #}
-                  {% if committee.projects | length == 1 and committee.key not in indexing_keys %}
-                    {% set target = committee.projects[0].key ~ "/index.html" %}
-                  {% else %}
-                    {% set target = committee.key ~ "/index.html" %}
-                  {% endif %}
-                  <h2 class="card-title fs-4 mb-0">
+                  <h2 class="card-title fs-4 mb-0 pb-0 border-bottom-0">
                     <a href="{{ root }}{{ target }}"
                        class="text-decoration-none stretched-link">{{ committee.display_name }}</a>
                   </h2>
-                  {% if summary %}
-                    <p class="text-muted small mb-0 mt-1">
-                      {% if summary.caption %}
-                        {{ summary.caption }}
-                      {% else %}
-                        {{ summary.release_count }} {{ "release" if summary.release_count == 1 else "releases" }}
-                        {%- if summary.latest_date %} &middot; latest {{ summary.latest_date.strftime("%Y-%m-%d") }}{% endif %}
-                      {% endif %}
-                    </p>
-                    {# The projects ride along hidden so a search matches on their names too. A
-                       project the search hits shows its own link, sitting above the card's stretched
-                       link, so it opens the project rather than its whole committee #}
-                    {% if summary.projects %}
-                      <ul class="list-unstyled small mb-0">
-                        {% for project in summary.projects %}
-                          <li class="mt-1 d-none page-project-match"
-                              data-project-name="{{ project.name }}">
-                            <a href="{{ root }}{{ project.target }}" class="position-relative z-2">{{ project.name }} &rarr;</a>
-                          </li>
-                        {% endfor %}
-                      </ul>
-                    {% endif %}
+                  {# The projects ride along hidden so a search matches on their names too. A
+                     project the search hits shows its own link, sitting above the card's stretched
+                     link, so it opens the project rather than its whole committee #}
+                  {% if summary and summary.projects %}
+                    <ul class="list-unstyled small mb-0">
+                      {% for project in summary.projects %}
+                        <li class="mt-1 d-none page-project-match"
+                            data-project-name="{{ project.name }}">
+                          <a href="{{ root }}{{ project.target }}" class="position-relative z-2">{{ project.name }} &rarr;</a>
+                        </li>
+                      {% endfor %}
+                    </ul>
                   {% endif %}
                 </div>
                 <div class="col-5 col-lg-4 text-center">
@@ -76,6 +77,19 @@
                 </div>
               </div>
             </div>
+            {# The summary sits in the footer so it lines up along the bottom of each row of cards,
+               however many lines the names above it take. A footer with one line to show is
+               padded to two, so the shading starts at the same height on every card in the row #}
+            {% if summary %}
+              <div class="card-footer text-muted small">
+                {% if summary.caption %}
+                  <span class="d-block">{{ summary.caption }}</span>
+                {% else %}
+                  {{ release_counts(summary.release_count, summary.archived_count, summary.latest_date, active_href, archived_href) }}
+                {% endif %}
+                {% if summary.caption or not summary.latest_date %}<span class="d-block">&nbsp;</span>{% endif %}
+              </div>
+            {% endif %}
           </div>
         </div>
       {% endfor %}

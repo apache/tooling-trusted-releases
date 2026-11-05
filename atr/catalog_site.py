@@ -244,6 +244,7 @@ class _AtticEntry:
 @dataclasses.dataclass
 class _CommitteeSummary:
     release_count: int
+    archived_count: int
     latest_date: datetime.datetime | None
     projects: list[_ProjectLink]
     # Shown in place of the release count: the Incubator and Attic index committees, not releases
@@ -603,14 +604,16 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
     """Fold the released artifacts onto the committee card that shows them on the front page."""
     releases = await data.release(phase=sql.ReleasePhase.RELEASE, _committee=True, _project=True).all()
     counts: dict[str, int] = {}
+    archived_counts: dict[str, int] = {}
     latest: dict[str, datetime.datetime] = {}
     for release in releases:
-        if release.is_archived:
-            continue
         committee = release.project.committee
         if committee is None:
             continue
         key = _INCUBATOR_COMMITTEE_KEY if committee.is_podling else committee.key
+        if release.is_archived:
+            archived_counts[key] = archived_counts.get(key, 0) + 1
+            continue
         counts[key] = counts.get(key, 0) + 1
         released = release.released
         if (released is not None) and ((key not in latest) or (released > latest[key])):
@@ -633,10 +636,11 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
     return {
         key: _CommitteeSummary(
             release_count=counts.get(key, 0),
+            archived_count=archived_counts.get(key, 0),
             latest_date=latest.get(key),
             projects=links.get(key, []),
         )
-        for key in (set(counts) | set(links))
+        for key in (set(counts) | set(archived_counts) | set(links))
     }
 
 
@@ -1105,7 +1109,9 @@ async def _write_front_page(
     for key, caption in captions.items():
         summary = summaries.get(key)
         if summary is None:
-            summaries[key] = _CommitteeSummary(release_count=0, latest_date=None, projects=[], caption=caption)
+            summaries[key] = _CommitteeSummary(
+                release_count=0, archived_count=0, latest_date=None, projects=[], caption=caption
+            )
         else:
             summary.caption = caption
     await _write_root_index(site_dir, listed, summaries)

@@ -1,0 +1,20 @@
+{# The one way the catalogue summarises a project's releases (#1805): the latest release date
+   on a line of its own, then the active and archived counts together, dropping whichever is
+   zero. Each count links to its list when given somewhere to go #}
+{% macro count_link(count, label, href) -%}
+  {%- if href -%}
+    <a href="{{ href }}" class="position-relative z-2 text-decoration-none">{{ count }} {{ label }}</a>
+  {%- else -%}
+    {{ count }} {{ label }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro release_counts(active, archived, latest=None, active_href=None, archived_href=None) -%}
+  {%- if latest %}<span class="d-block">Latest release: {{ latest.strftime("%Y-%m-%d") }}</span>{% endif -%}
+  <span class="d-block">
+    {%- if active %}{{ count_link(active, "active", active_href) }}{% endif -%}
+    {%- if active and archived %} &middot; {% endif -%}
+    {%- if archived %}{{ count_link(archived, "archived", archived_href) }}{% endif -%}
+    {%- if not (active or archived) %}No releases{% endif -%}
+  </span>
+{%- endmacro %}
