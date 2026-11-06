@@ -18,7 +18,7 @@
 import dataclasses
 import datetime
 from collections.abc import Callable, Sequence
-from typing import Annotated, Any, Literal, Self, TypeVar
+from typing import Annotated, Any, Final, Literal, Self, TypeVar
 
 import pydantic
 
@@ -27,6 +27,17 @@ from . import safe, schema, sql, tabulate, validation
 T = TypeVar("T")
 
 type TrustedWorkflowPhase = Literal["compose", "vote", "finish"]
+
+# The policy fields that the .asf.yaml route refuses, by name so the error can say why
+_TRUSTED_PUBLISHING_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "github_compose_workflow_path",
+        "github_finish_workflow_path",
+        "github_repository_branch",
+        "github_repository_name",
+        "github_vote_workflow_path",
+    }
+)
 
 
 class ResultsTypeError(TypeError):
@@ -445,6 +456,9 @@ class PolicyGetResults(schema.Strict):
 class PolicyArgsBase(schema.Strict):
     """
     Base class to allow one endpoint to take a project key and another not
+
+    The trusted publishing settings are not here on purpose. They're a credential,
+    so only PolicyUpdateArgs carries them and the .asf.yaml route can't reach them.
     """
 
     announce_release_subject: str | None = None
@@ -453,11 +467,6 @@ class PolicyArgsBase(schema.Strict):
     auto_archive_prior_release: bool | None = None
     binary_artifact_paths: list[str] | None = None
     file_tag_mappings: dict[str, list[str]] | None = None
-    github_compose_workflow_path: list[str] | None = None
-    github_finish_workflow_path: list[str] | None = None
-    github_repository_branch: str | None = None
-    github_repository_name: str | None = None
-    github_vote_workflow_path: list[str] | None = None
     license_check_mode: sql.LicenseCheckMode | None = None
     vote_recipients: RecipientDefaults | None = None
     announce_recipients: RecipientDefaults | None = None
@@ -518,6 +527,22 @@ class PolicyArgsBase(schema.Strict):
             if template_url is not None:
                 validation.validate_fetch_url(template_url)
 
+        return self
+
+
+class PolicyUpdateArgs(PolicyArgsBase):
+    project: safe.ProjectKey = schema.example("example")
+    # A workflow registered here acts in ATR as the PMC with no login or MFA, so
+    # these are a credential. They can only arrive on a committer's own token, which
+    # is why they sit on this class rather than the base the .asf.yaml route shares
+    github_compose_workflow_path: list[str] | None = None
+    github_finish_workflow_path: list[str] | None = None
+    github_repository_branch: str | None = None
+    github_repository_name: str | None = None
+    github_vote_workflow_path: list[str] | None = None
+
+    @pydantic.model_validator(mode="after")
+    def validate_trusted_publishing_fields(self) -> Self:
         github_repository_name = self.github_repository_name
         if github_repository_name is not None:
             validation.validate_github_repository_name(github_repository_name.strip())
@@ -534,10 +559,6 @@ class PolicyArgsBase(schema.Strict):
         validation.validate_trusted_publishing_workflow_paths(workflow_paths)
 
         return self
-
-
-class PolicyUpdateArgs(PolicyArgsBase):
-    project: safe.ProjectKey = schema.example("example")
 
 
 class PolicyUpdateResults(schema.Strict):
@@ -633,7 +654,21 @@ class ProjectConfigProjectArgs(schema.Strict):
 
 
 class ProjectConfigPolicyArgs(PolicyArgsBase):
-    pass
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _refuse_trusted_publishing_fields(cls, data: Any) -> Any:
+        # Strict would refuse these as unknown keys anyway, but the reason deserves
+        # saying: a file that anyone with push access can edit is no place to keep
+        # what amounts to a credential, so these are only ever set in ATR itself
+        if not isinstance(data, dict):
+            return data
+        named = sorted(_TRUSTED_PUBLISHING_FIELDS & set(data))
+        if named:
+            raise ValueError(
+                f"Trusted publishing is configured in ATR, not through .asf.yaml, so these fields are not"
+                f" accepted here: {', '.join(named)}"
+            )
+        return data
 
 
 class ProjectConfigArgs(schema.Strict):

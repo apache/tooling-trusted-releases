@@ -247,6 +247,31 @@ def test_full_sync_with_no_policy_block_resets_whole_policy() -> None:
     assert "release_checklist" in completed.model_fields_set
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("github_repository_name", "example"),
+        ("github_repository_branch", "main"),
+        ("github_compose_workflow_path", [".github/workflows/compose.yml"]),
+        ("github_vote_workflow_path", [".github/workflows/vote.yml"]),
+        ("github_finish_workflow_path", [".github/workflows/finish.yml"]),
+    ],
+)
+def test_project_config_rejects_trusted_publishing_settings(field: str, value: object) -> None:
+    # These are a credential rather than metadata, so the .asf.yaml route refuses
+    # them by name instead of as a generic unknown key
+    with pytest.raises(pydantic.ValidationError, match=re.escape("configured in ATR, not through .asf.yaml")):
+        _project_config(**{field: value})
+
+
+def test_full_sync_leaves_trusted_publishing_settings_alone() -> None:
+    # A full sync resets every field the route can set, which must never
+    # include these, or a push could quietly disarm a project's restrictions
+    completed = project_writer._complete_policy_args(None)
+
+    assert not {field for field in completed.model_fields_set if field.startswith("github_")}
+
+
 def test_full_sync_clears_omitted_project_fields_but_not_name() -> None:
     project = _project()
     args = api.ProjectConfigProjectArgs.model_validate({"description": "Kept"})

@@ -196,8 +196,6 @@ def test_export_includes_set_policy_fields() -> None:
             min_hours=48,
             start_vote_subject="[VOTE] Custom {{VERSION}}",
             announce_release_subject="[ANNOUNCE] Custom {{VERSION}}",
-            github_repository_name="apache/example",
-            github_compose_workflow_path=[".github/workflows/compose.yml"],
         ),
     )
 
@@ -214,9 +212,28 @@ def test_export_includes_set_policy_fields() -> None:
         "start_vote_subject": "[VOTE] Custom {{VERSION}}",
         "announce_recipients": {"to": "announce@example.apache.org"},
         "announce_release_subject": "[ANNOUNCE] Custom {{VERSION}}",
-        "github_repository_name": "apache/example",
-        "github_compose_workflow_path": [".github/workflows/compose.yml"],
     }
+
+
+def test_export_omits_trusted_publishing_settings() -> None:
+    # .asf.yaml can't set these, so exporting them would hand back a file that
+    # the processor strips on the next push
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(
+            github_repository_name="example",
+            github_repository_branch="main",
+            github_compose_workflow_path=[".github/workflows/compose.yml"],
+            github_vote_workflow_path=[".github/workflows/vote.yml"],
+            github_finish_workflow_path=[".github/workflows/finish.yml"],
+        ),
+    )
+
+    loaded = strictyaml.load(projects._asf_yaml_export(project)).data["project"]
+
+    assert "policy" not in loaded
 
 
 def test_export_includes_the_date_format_a_calver_project_authors() -> None:

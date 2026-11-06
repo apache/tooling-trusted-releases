@@ -115,6 +115,10 @@ The Trusted Publishing tab names the GitHub repository, branch, and workflows th
 to act on the project's releases. See
 [Configuring repository and workflow paths](trusted-publishing#configuring-repository-and-workflow-paths).
 
+These settings can only be changed here, by a committee member. They are not part of `.asf.yaml`
+synchronization: a registered workflow acts as the PMC without a login, which makes them a
+credential rather than metadata, which should not be configurable by just anyone with repository access.
+
 ## Compose
 
 The Compose tab controls how ATR checks the files in a candidate:
@@ -191,7 +195,8 @@ The Finish tab sets the defaults for publishing and announcing a release:
 
 You can manage project metadata in ATR or in the `project` block of your repository's `.asf.yaml`
 file. Committee members can use **Export .asf.yaml** on the project page to get the current
-configuration as a starting point.
+configuration as a starting point. Trusted Publishing settings are **not** configurable this way as they
+authorise access to your ATR projects from GitHub, and must be configured in ATR.
 
 For example, the Maven Filtering project has the following metadata:
 
