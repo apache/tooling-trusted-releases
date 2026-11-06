@@ -503,7 +503,7 @@ async def _step_04_command_validate(
         ### Calls _step_06a_validate_read_permissions ###
         #################################################
         validated_release, file_patterns = await _step_06a_validate_read_permissions(
-            ssh_uid, project, release, project_key, version_key, tag
+            ssh_uid, project, release, project_key, version_key, tag, server._github_read_only
         )
         return project_key, version_key, file_patterns, validated_release
 
@@ -564,6 +564,7 @@ async def _step_06a_validate_read_permissions(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     tag: str | None,
+    github_read_only: bool,
 ) -> tuple[sql.Release | None, list[str] | None]:
     """Validate permissions for a read request."""
     if release is None:
@@ -576,6 +577,8 @@ async def _step_06a_validate_read_permissions(
     }
     if release.phase not in allowed_read_phases:
         raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
+    if github_read_only and release.is_embargoed and (release.phase != sql.ReleasePhase.RELEASE_PREVIEW):
+        raise RsyncArgsError(f"Release '{release.key}' is embargoed, so this workflow key cannot download it")
 
     if release.is_embargoed:
         read_allowed = not user.embargo_denies(release, ssh_uid, is_member=False)

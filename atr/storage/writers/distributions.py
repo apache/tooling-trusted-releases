@@ -118,7 +118,9 @@ class ReleaseManager(CommitteeParticipant):
         version: models.safe.VersionKey,
         staging: bool,
     ) -> models.sql.Task:
-        await self.__validate_release_in_committee(release_key)
+        release = await self.__validate_release_in_committee(release_key)
+        if staging and release.is_embargoed:
+            raise storage.AccessError("Embargoed releases cannot be distributed to staging", status=403)
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
             task_args=args.DistributionWorkflow(

@@ -196,6 +196,8 @@ async def stage_record(
 async def _automate_form_page(project: safe.ProjectKey, version: safe.VersionKey, staging: bool) -> str:
     """Helper to render the distribution automation form page."""
     release = await shared.distribution.release_validated(project, version, staging=staging)
+    if staging and release.is_embargoed:
+        raise base.ASFQuartException("Embargoed releases cannot be distributed to staging", errorcode=403)
 
     block = htm.Block()
     render.html_nav_phase(block, str(project), str(version), staging=staging)
