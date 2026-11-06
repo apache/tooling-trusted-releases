@@ -137,7 +137,8 @@ async def project_yaml(
         project.display_name,
         ". Add it to your repository's ",
         htm.code[".asf.yaml"],
-        " to keep this metadata in sync from the repository side.",
+        " to keep this metadata in sync from the repository side. The Trusted Publishing settings are not",
+        " included, as those can only be set in ATR.",
     ]
     page.append(_render_asf_yaml_mode_choice(full=full))
 
@@ -488,6 +489,8 @@ def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, obje
 def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, object]:
     # Read release_policy directly, not the policy_* properties - those fall back to the
     # default templates, and we only want fields that have actually been set.
+    # The trusted publishing settings are left out: .asf.yaml can't set them, so a
+    # file that carried them would fail validation on the next push.
     fields: dict[str, object] = {}
     for field in (
         "announce_release_subject",
@@ -501,8 +504,6 @@ def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, obje
         "vote_comment_template",
         "vote_comment_template_url",
         "release_checklist",
-        "github_repository_name",
-        "github_repository_branch",
         "download_path_suffix",
         "rat_excludes_url",
     ):
@@ -514,9 +515,6 @@ def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, obje
         "source_artifact_paths",
         "source_excludes_lightweight",
         "source_excludes_rat",
-        "github_compose_workflow_path",
-        "github_vote_workflow_path",
-        "github_finish_workflow_path",
     ):
         value = getattr(release_policy, field)
         if value:

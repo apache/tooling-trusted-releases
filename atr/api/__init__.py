@@ -1028,7 +1028,8 @@ async def project_config_upsert(
     Creates a project under the specified key if it does not yet exist.
     Otherwise, updates all specified fields for an existing project. With
     sync_mode "full", every field this endpoint can set but the caller omitted
-    is reset to its default as well.
+    is reset to its default as well. The trusted publishing settings are not
+    accepted here in either mode; they are set in ATR by a committee member.
 
     Requires a system token. This endpoint backs the .asf.yaml processor, which
     establishes upstream that the caller may act for the named committee. For an

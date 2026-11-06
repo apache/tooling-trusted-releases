@@ -744,7 +744,9 @@ async def _build_and_add_project(
 
 def _complete_policy_args(args: api.ProjectConfigPolicyArgs | None) -> api.ProjectConfigPolicyArgs:
     # Full sync treats an omitted policy field as "set to the default", so we
-    # fill each one in and let the normal edit path apply and validate them
+    # fill each one in and let the normal edit path apply and validate them.
+    # The trusted publishing settings aren't on this model, so a full sync
+    # leaves them exactly as they are
     args = args or api.ProjectConfigPolicyArgs()
     provided = args.model_fields_set
     defaults = sql.ReleasePolicy()
