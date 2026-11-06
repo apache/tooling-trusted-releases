@@ -206,7 +206,7 @@ async def _record(payload: dict[str, Any]) -> None:
     run_id = int(match.group(1))
     token = await _installation_token(gate_obj.repository)
     run = await _github("GET", f"/repos/{gate_obj.repository}/actions/runs/{run_id}", token)
-    if run["status"] != "waiting":
+    if run["status"] == "completed":
         return
     problem = run_problem(gate_obj, repository_id, run) or await _ref_problem(token, gate_obj, run)
     if problem is not None:
