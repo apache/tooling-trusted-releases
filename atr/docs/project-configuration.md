@@ -113,7 +113,7 @@ which are published in the [Release catalog](release-catalog#machine-readable-da
 
 The Trusted Publishing tab names the GitHub repository, branch, and workflows that ATR should trust
 to act on the project's releases. See
-[Configuring repository and workflow paths](trusted-publishing#configuring-repository-and-workflow-paths).
+[Configuring repository and workflow paths](trusted-publishing#how-to-set-up-trusted-publishing).
 
 ## Compose
 
