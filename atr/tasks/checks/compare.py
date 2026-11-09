@@ -52,11 +52,19 @@ _DEFAULT_EMAIL: Final[str] = "atr@localhost"
 _DEFAULT_USER: Final[str] = "atr"
 _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
     "PKG-INFO": ["pyproject.toml"],
+    "DEPENDENCIES": ["pom.xml"],
+    "DEPENDENCIES.txt": ["pom.xml"],
+    "LICENSE": ["pom.xml"],
+    "LICENSE.txt": ["pom.xml"],
+    "NOTICE": ["pom.xml"],
+    "NOTICE.txt": ["pom.xml"],
+    "DISCLAIMER": ["pom.xml"],
+    "DISCLAIMER.txt": ["pom.xml"],
 }
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "8"
+CHECK_VERSION: Final[str] = "9"
 
 
 @dataclasses.dataclass

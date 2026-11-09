@@ -1027,6 +1027,65 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
 
 
 @pytest.mark.asyncio
+async def test_source_trees_permits_maven_resource_bundles_when_pom_xml_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    payload = _make_payload()
+    checkout = CheckoutRecorder()
+    cache_dir = temp_dir / "cache"
+    (cache_dir / "artifact").path.mkdir(parents=True)
+    (cache_dir / "artifact" / "pom.xml").path.write_text("<project/>\n")
+    find_root = FindArchiveRootRecorder("artifact")
+    # The ASF parent POM adds all of these at once when the repository lacks them
+    compare = CompareRecorder(invalid={"DEPENDENCIES", "LICENSE", "NOTICE", "DISCLAIMER"})
+    tmp_root = temp_dir / "temporary-root"
+
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
+    monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
+
+    await atr.tasks.checks.compare.source_trees(args)
+
+    assert len(recorder.concern_calls) == 0
+    assert len(recorder.note_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_source_trees_rejects_maven_resource_bundles_without_pom_xml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    payload = _make_payload()
+    checkout = CheckoutRecorder()
+    cache_dir = temp_dir / "cache"
+    (cache_dir / "artifact").path.mkdir(parents=True)
+    find_root = FindArchiveRootRecorder("artifact")
+    # Without a pom.xml witness the added file has nothing to vouch for it, so it stays a concern
+    compare = CompareRecorder(invalid={"DEPENDENCIES"})
+    tmp_root = temp_dir / "temporary-root"
+
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
+    monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
+
+    await atr.tasks.checks.compare.source_trees(args)
+
+    assert len(recorder.concern_calls) == 1
+    assert len(recorder.note_calls) == 0
+
+
+@pytest.mark.asyncio
 async def test_checkout_returns_none_for_http_auth_failures(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
