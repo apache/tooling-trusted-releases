@@ -11,6 +11,19 @@
   </div>
 </div>
 
+{% if edit_form %}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Edit IP restrictions for <code>{{ edit_token.label or edit_token.id }}</code></h5>
+    </div>
+    <div class="card-body">
+      <p>Changes take effect immediately, both for new token exchanges and for JWTs already issued
+        from this token.</p>
+      {{ edit_form }}
+    </div>
+  </div>
+{% endif %}
+
 {% if rows %}
   <div class="card">
     <div class="card-header">
@@ -22,7 +35,7 @@
           <tr>
             <th>Label</th>
             <th>Created by</th>
-            <th>Allowed IP</th>
+            <th>Allowed IPs</th>
             <th>Created</th>
             <th>Expires</th>
             <th>Last used</th>
@@ -30,7 +43,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for token, revoke_form in rows %}
+          {% for token, edit_url, revoke_form in rows %}
             <tr>
               <td>{{ token.label or "" }}</td>
               <td><code>{{ token.created_by }}</code></td>
@@ -46,7 +59,12 @@
               <td>
                 {% if token.last_used %}{{ format_datetime(token.last_used) }}{% else %}Never{% endif %}
               </td>
-              <td>{{ revoke_form }}</td>
+              <td>
+                <div class="d-flex gap-2 align-items-center">
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ edit_url }}">Edit IPs</a>
+                  {{ revoke_form }}
+                </div>
+              </td>
             </tr>
           {% endfor %}
         </tbody>

@@ -851,8 +851,8 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
     # processor). The JWTs they mint carry the fixed system identity, skip
     # the LDAP check, and gain system privileges.
     is_system: bool = sqlmodel.Field(default=False)
-    # Optional single IP or CIDR the token may be exchanged from. Null means no
-    # restriction.
+    # Optional comma separated list of IPs or CIDRs the token may be exchanged
+    # from. Null means no restriction.
     allowed_ip: str | None = None
 
     @property
@@ -865,9 +865,19 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
         if client_ip is None:
             return False
         try:
-            return ipaddress.ip_address(client_ip) in ipaddress.ip_network(self.allowed_ip, strict=False)
+            address = ipaddress.ip_address(client_ip)
+            # Mixed address families compare as not contained rather than
+            # raising, so a v4 client against a v6 network is simply denied
+            return any(address in network for network in self.parse_allowed_ips(self.allowed_ip))
         except ValueError:
             return False
+
+    @staticmethod
+    def parse_allowed_ips(value: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        # A bare address is accepted as its own single host network. Any
+        # entry that fails to parse raises ValueError for the caller to handle
+        parts = [part.strip() for part in value.split(",")]
+        return [ipaddress.ip_network(part, strict=False) for part in parts if part]
 
 
 # PubSubFailure:

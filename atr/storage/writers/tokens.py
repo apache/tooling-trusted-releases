@@ -405,6 +405,26 @@ class FoundationAdmin(FoundationCommitter):
             action="rotate_jwt_signing_key",
         )
 
+    async def set_system_token_allowed_ip(self, token_id: int, allowed_ip: str | None) -> bool:
+        pat = await self.__data.personal_access_token(id=token_id, is_system=True).get()
+        if pat is None:
+            return False
+        previous_allowed_ip = pat.allowed_ip
+        pat.allowed_ip = allowed_ip
+        await self.__data.commit()
+        # Both values go to the audit log so a tightening or loosening of the
+        # restriction can be traced later
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            pat_hash=pat.token_hash,
+            token_id=token_id,
+            is_system=True,
+            allowed_ip=allowed_ip,
+            previous_allowed_ip=previous_allowed_ip,
+        )
+        log.auth_event("system_pat_ip_update", self.__asf_uid, pat_hash=pat.token_hash, name=pat.label)
+        return True
+
 
 def hash_pat(pat_text: str) -> str:
     return hashlib.sha3_256(pat_text.encode()).hexdigest()

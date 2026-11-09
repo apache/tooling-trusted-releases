@@ -122,6 +122,29 @@ def test_allows_ip() -> None:
     assert cidr.allows_ip("10.1.2.3") is True
     assert cidr.allows_ip("11.0.0.1") is False
 
+    multiple = _make_pat(allowed_ip="10.0.0.0/8, 192.168.1.5,2001:db8::/32")
+    assert multiple.allows_ip("10.1.2.3") is True
+    assert multiple.allows_ip("192.168.1.5") is True
+    assert multiple.allows_ip("192.168.1.6") is False
+    assert multiple.allows_ip("2001:db8::1") is True
+    assert multiple.allows_ip("2001:db9::1") is False
+    assert multiple.allows_ip(None) is False
+
+    # One bad entry poisons the whole list rather than silently widening it
+    malformed = _make_pat(allowed_ip="10.0.0.0/8, not-an-ip")
+    assert malformed.allows_ip("10.1.2.3") is False
+
+    # Stray separators leave nothing to match, which denies rather than allows
+    empty_entries = _make_pat(allowed_ip=", ,")
+    assert empty_entries.allows_ip("10.1.2.3") is False
+
+
+def test_parse_allowed_ips() -> None:
+    networks = sql.PersonalAccessToken.parse_allowed_ips(" 1.2.3.4 ,10.0.0.0/8,, ")
+    assert [str(network) for network in networks] == ["1.2.3.4/32", "10.0.0.0/8"]
+    with pytest.raises(ValueError):
+        sql.PersonalAccessToken.parse_allowed_ips("1.2.3.4, nope")
+
 
 def test_is_expired() -> None:
     now = datetime.datetime.now(tz=datetime.UTC)
@@ -377,6 +400,34 @@ async def test_writer_revoke_system_token() -> None:
     empty = FakeWriteData(tokens=[])
     writer_empty = atr.storage.writers.tokens.FoundationAdmin(write, FakeWriteAs(), empty)
     assert await writer_empty.revoke_system_token(999) is False
+
+
+@pytest.mark.asyncio
+async def test_writer_set_system_token_allowed_ip() -> None:
+    token = _make_pat(is_system=True, allowed_ip="10.0.0.0/8")
+    token.id = 7
+    write = FakeWrite("admin")
+    write_as = FakeWriteAs()
+    data = FakeWriteData(tokens=[token])
+    writer = atr.storage.writers.tokens.FoundationAdmin(write, write_as, data)
+
+    assert await writer.set_system_token_allowed_ip(7, "10.0.0.0/8, 192.168.1.5") is True
+    assert token.allowed_ip == "10.0.0.0/8, 192.168.1.5"
+    audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
+    assert audit_kwargs["allowed_ip"] == "10.0.0.0/8, 192.168.1.5"
+    assert audit_kwargs["previous_allowed_ip"] == "10.0.0.0/8"
+
+    # Clearing the restriction stores null, which allows_ip reads as unrestricted
+    assert await writer.set_system_token_allowed_ip(7, None) is True
+    assert token.allowed_ip is None
+    assert token.allows_ip("203.0.113.9") is True
+
+    # Only system tokens are reachable through this path
+    user_token = _make_pat(is_system=False)
+    user_token.id = 8
+    writer_user = atr.storage.writers.tokens.FoundationAdmin(write, FakeWriteAs(), FakeWriteData(tokens=[user_token]))
+    assert await writer_user.set_system_token_allowed_ip(8, "10.0.0.1") is False
+    assert user_token.allowed_ip is None
 
 
 def _apply_pat_filters(

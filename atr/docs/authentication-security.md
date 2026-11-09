@@ -181,8 +181,10 @@ properties:
 * **Storage**: ATR stores only SHA3-256 hashes, never the plaintext PAT
 * **Revocation**: Users can revoke their own PATs at any time; admins can revoke all PATs for any
   user via the "Revoke user tokens" tab of the admin Users dashboard
-* **IP restriction**: A PAT may optionally be bound to a single IP or CIDR. When set, JWT issuance
-  is refused from any other address
+* **IP restriction**: A system-level PAT may optionally be bound to one or more IPs or CIDRs, separated by
+  commas. When set, JWT issuance is refused from any other address, and JWTs already issued from the
+  PAT are rejected from any other address too. Administrators can change the restriction on the
+  System tokens tab
 * **Purpose**: PATs are used solely to obtain JWTs; they cannot be used directly for API access
 
 Only authenticated committers (signed in via ASF OAuth) can create PATs. Each user can have multiple

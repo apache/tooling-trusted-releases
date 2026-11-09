@@ -20,7 +20,6 @@ import collections
 import dataclasses
 import datetime
 import hashlib
-import ipaddress
 import json
 import os
 import pathlib
@@ -162,6 +161,7 @@ type REVOKE_SSH_KEYS = Literal["REVOKE_SSH_KEYS"]
 type REVOKE_TOKENS = Literal["REVOKE_TOKENS"]
 type ROTATE_JWT = Literal["ROTATE_JWT"]
 type SYSTEM_TOKEN_CREATE = Literal["SYSTEM_TOKEN_CREATE"]
+type SYSTEM_TOKEN_EDIT = Literal["SYSTEM_TOKEN_EDIT"]
 type SYSTEM_TOKEN_REVOKE = Literal["SYSTEM_TOKEN_REVOKE"]
 type TEST_MESSAGE = Literal["TEST_MESSAGE"]
 
@@ -264,6 +264,9 @@ class ReleaseAgeRow(NamedTuple):
 class SessionsQuery(web.PageQuery):
     limit: int = 250
     revocation_id: str | None = None
+    # Query parsing leaves optional fields as raw strings, so the system
+    # tokens tab compares this against str(token.id)
+    edit: str | None = None
 
 
 class RestoreBannerForm(form.Form):
@@ -311,14 +314,16 @@ class ValidateJwtForm(form.Form):
         return token
 
 
+_ALLOWED_IPS_DOCUMENTATION: Final[str] = (
+    "Optional IP addresses or CIDRs the token may be exchanged from, separated by commas. "
+    "Leave blank for no restriction."
+)
+
+
 class CreateSystemTokenForm(form.Form):
     variant: SYSTEM_TOKEN_CREATE = form.value(SYSTEM_TOKEN_CREATE)
     label: str = form.label("Label", "A name to identify this system token.")
-    allowed_ip: str = form.label(
-        "Allowed IP",
-        "Optional single IP or CIDR the token may be exchanged from. Leave blank for no restriction.",
-        default="",
-    )
+    allowed_ip: str = form.label("Allowed IPs", _ALLOWED_IPS_DOCUMENTATION, default="")
 
     @pydantic.field_validator("label", mode="after")
     @classmethod
@@ -333,14 +338,18 @@ class CreateSystemTokenForm(form.Form):
     @pydantic.field_validator("allowed_ip", mode="after")
     @classmethod
     def validate_allowed_ip(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            return ""
-        try:
-            ipaddress.ip_network(value, strict=False)
-        except ValueError as e:
-            raise ValueError("Allowed IP must be a valid IP address or CIDR") from e
-        return value
+        return _validate_allowed_ips(value)
+
+
+class EditSystemTokenForm(form.Form):
+    variant: SYSTEM_TOKEN_EDIT = form.value(SYSTEM_TOKEN_EDIT)
+    token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
+    allowed_ip: str = form.label("Allowed IPs", _ALLOWED_IPS_DOCUMENTATION, default="")
+
+    @pydantic.field_validator("allowed_ip", mode="after")
+    @classmethod
+    def validate_allowed_ip(cls, value: str) -> str:
+        return _validate_allowed_ips(value)
 
 
 class RevokeSystemTokenForm(form.Form):
@@ -396,6 +405,7 @@ type UsersForm = Annotated[
     | RevokeUserSSHKeysForm
     | RotateJwtKeyForm
     | CreateSystemTokenForm
+    | EditSystemTokenForm
     | RevokeSystemTokenForm,
     form.DISCRIMINATOR,
 ]
@@ -2507,10 +2517,8 @@ async def users_post(
             return await _users_revoke_ssh_keys(session, users_form)
         case RotateJwtKeyForm():
             return await _users_rotate_jwt(session)
-        case CreateSystemTokenForm():
-            return await _users_system_token_create(session, users_form)
-        case RevokeSystemTokenForm():
-            return await _users_system_token_revoke(session, users_form)
+        case CreateSystemTokenForm() | EditSystemTokenForm() | RevokeSystemTokenForm():
+            return await _users_system_token(session, users_form)
 
 
 @admin.typed
@@ -3927,7 +3935,7 @@ async def _users_page(
             lambda: _users_revoke_all_tokens_tab(session, query_args.revocation_id),
         ),
         htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
-        htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session)),
+        htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session, query_args.edit)),
         htm.Tab("rotate-jwt", "Rotate JWT key", _users_rotate_jwt_tab),
         htm.Tab("embargo-denials", "Embargo denials", _users_embargo_denials_tab),
     ]
@@ -4196,6 +4204,18 @@ async def _users_sessions_tab(query_args: SessionsQuery) -> htm.Element:
     return block.collect()
 
 
+async def _users_system_token(
+    session: web.Committer, token_form: CreateSystemTokenForm | EditSystemTokenForm | RevokeSystemTokenForm
+) -> web.WerkzeugResponse:
+    match token_form:
+        case CreateSystemTokenForm():
+            return await _users_system_token_create(session, token_form)
+        case EditSystemTokenForm():
+            return await _users_system_token_edit(session, token_form)
+        case RevokeSystemTokenForm():
+            return await _users_system_token_revoke(session, token_form)
+
+
 async def _users_system_token_create(
     session: web.Committer, create_form: CreateSystemTokenForm
 ) -> web.WerkzeugResponse:
@@ -4222,6 +4242,19 @@ async def _users_system_token_create(
     return await session.redirect(users_get, tab="system-tokens")
 
 
+async def _users_system_token_edit(session: web.Committer, edit_form: EditSystemTokenForm) -> web.WerkzeugResponse:
+    allowed_ip = edit_form.allowed_ip or None
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        updated = await wafa.tokens.set_system_token_allowed_ip(edit_form.token_id, allowed_ip)
+
+    if updated:
+        await quart.flash("System token IP restrictions updated.", "success")
+    else:
+        await quart.flash("System token not found.", "info")
+    return await session.redirect(users_get, tab="system-tokens")
+
+
 async def _users_system_token_revoke(
     session: web.Committer, revoke_form: RevokeSystemTokenForm
 ) -> web.WerkzeugResponse:
@@ -4236,15 +4269,26 @@ async def _users_system_token_revoke(
     return await session.redirect(users_get, tab="system-tokens")
 
 
-async def _users_system_tokens_tab(session: web.Committer) -> htm.Element:
+async def _users_system_tokens_tab(session: web.Committer, edit: str | None) -> htm.Element:
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
         tokens = await wafa.tokens.list_system_tokens()
 
     action = util.as_url(users_post, tab="system-tokens")
     create_form = await form.render(model_cls=CreateSystemTokenForm, action=action, submit_label="Create system token")
+    edit_form = None
+    edit_token = None
     rows = []
     for token in tokens:
+        if str(token.id) == edit:
+            edit_token = token
+            edit_form = await form.render(
+                model_cls=EditSystemTokenForm,
+                action=action,
+                submit_label="Save IP restrictions",
+                cancel_url=util.as_url(users_get, tab="system-tokens"),
+                defaults={"token_id": token.id, "allowed_ip": token.allowed_ip or ""},
+            )
         revoke_form = await form.render(
             model_cls=RevokeSystemTokenForm,
             action=action,
@@ -4255,14 +4299,31 @@ async def _users_system_tokens_tab(session: web.Committer) -> htm.Element:
             defaults={"token_id": token.id},
             empty=True,
         )
-        rows.append((token, revoke_form))
+        edit_url = util.as_url(users_get, tab="system-tokens", edit=token.id)
+        rows.append((token, edit_url, revoke_form))
     content = await template.render(
         "system-tokens.html",
         create_form=create_form,
+        edit_form=edit_form,
+        edit_token=edit_token,
         rows=rows,
         format_datetime=util.format_datetime,
     )
     return htm.div[markupsafe.Markup(content)]
+
+
+def _validate_allowed_ips(value: str) -> str:
+    # Entries keep the spelling the admin typed, so 1.2.3.4 stays as is rather
+    # than becoming 1.2.3.4/32, but whitespace and empty entries are tidied away
+    parts = [part.strip() for part in value.split(",")]
+    parts = [part for part in parts if part]
+    if not parts:
+        return ""
+    try:
+        sql.PersonalAccessToken.parse_allowed_ips(value)
+    except ValueError as e:
+        raise ValueError("Allowed IPs must be valid IP addresses or CIDRs, separated by commas") from e
+    return ", ".join(parts)
 
 
 async def _validate_jwt_page(rendered_form: htm.Element, result: dict[str, Any] | None) -> str:

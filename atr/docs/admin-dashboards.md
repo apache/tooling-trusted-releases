@@ -62,7 +62,7 @@ Each dashboard has a GET handler that draws the page and a matching POST handler
 | Revoke tokens | `revoke-tokens` | Revoke one user’s tokens. **Also revokes system tokens the user created.** See below. |
 | Revoke all user PATs | `revoke-all-tokens` | Revoke every user’s PATs in one action. Does not revoke system tokens. Afterwards a notice lets you email the affected users, change the site banner, or do nothing. |
 | Revoke SSH keys | `revoke-ssh-keys` | Revoke a user’s SSH keys. |
-| System tokens | `system-tokens` | Create and revoke system tokens for service identities. |
+| System tokens | `system-tokens` | Create and revoke system tokens for service identities, and edit their IP restrictions. |
 | Rotate JWT key | `rotate-jwt` | Rotate the JWT signing key immediately. This invalidates all currently usable JWTs. |
 | Embargo denials | `embargo-denials` | Recent embargo access denials, newest first. Each row shows the time, release key, requesting user (or Anonymous), any admin acting as that user, source IP and request ID. |
 
