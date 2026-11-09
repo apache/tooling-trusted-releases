@@ -71,10 +71,10 @@ RUN set -eux; \
     rm -rf /tmp/apache-rat
 
 # WORKDIR /var/run
-ENV SYFT_VERSION=1.52.0
-ENV SYFT_INSTALL_SHA256=ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
-ENV SYFT_SHA256_amd64=15a52d0122953081d16e6695f48055216a4de293bb005948663bb739a63880f9
-ENV SYFT_SHA256_arm64=27563e0bee8b2f4c938e1d5a8c3391cf7f4b2481aec2eb74778d0d9ec4fffadc
+ENV SYFT_VERSION=1.55.0
+ENV SYFT_INSTALL_SHA256=787fe2aa12311f7dd8e1d9337dfc6e25f091396c958937293a2d3c0eca2ff8ce
+ENV SYFT_SHA256_amd64=64c9631c3560336c55c549df0de08cd577d02399c9de807ac390960a4ed5c351
+ENV SYFT_SHA256_arm64=4f8068b25551a42991a292a42078519fdc739a97a6f6310e1dcf1367a258c1c2
 # RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
 # Faster than a go-install; the resulting binary is pinned by SHA after install
 RUN case "$TARGETARCH" in \
@@ -87,7 +87,7 @@ RUN case "$TARGETARCH" in \
     sh /tmp/syft-install.sh -b /usr/local/bin "v${SYFT_VERSION}" && \
     echo "${SYFT_SHA256}  /usr/local/bin/syft" | sha256sum -c - && \
     rm -f /tmp/syft-install.sh
-ENV SBOMQS_VERSION=2.1.2
+ENV SBOMQS_VERSION=2.1.3
 RUN GOPATH=/usr/local GOTOOLCHAIN=auto go install github.com/interlynk-io/sbomqs/v2@v${SBOMQS_VERSION}
 
 ENV CDXCLI_VERSION=0.33.1

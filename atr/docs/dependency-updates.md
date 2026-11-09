@@ -96,12 +96,12 @@ to a specific version in [`Dockerfile.alpine`](/ref/Dockerfile.alpine):
 
 * **Apache RAT** (`0.18`) - downloaded from the ASF distribution mirrors and checked against the
   published `.sha512` checksum.
-* **syft** (`1.52.0`) - installed through the pinned upstream `install.sh`, which is itself verified
+* **syft** (`1.55.0`) - installed through the pinned upstream `install.sh`, which is itself verified
   against a recorded sha256; the resulting binary is then verified against a per-architecture
   sha256.
 * **cyclonedx-cli** (`0.33.1`) - downloaded as a per-architecture release asset and verified against
   a per-architecture sha256.
-* **sbomqs** (`2.1.2`) - built with `go install` at a pinned version, which resolves and verifies
+* **sbomqs** (`2.1.3`) - built with `go install` at a pinned version, which resolves and verifies
   each module against the Go checksum database.
 
 Updating a tool means editing its version and its checksum in the Dockerfile and rebuilding the
