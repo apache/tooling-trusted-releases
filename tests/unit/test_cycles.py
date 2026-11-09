@@ -53,6 +53,28 @@ def test_cycle_name_returns_default_when_cycle_match_unset():
     assert cycles.cycle_name_for_version(project, "1.0.0") == "default"
 
 
+async def test_ensure_project_cycle_adds_missing_cycle_row():
+    project = SimpleNamespace(key="example", cycle_match=r"(\d+)\..*")
+    data = _CycleSession(existing=set())
+    assert await cycles.ensure_project_cycle(data, project, "1.7.8") == "example-1"
+    assert [(c.cycle_key, c.cycle) for c in data.added] == [("example-1", "1")]
+
+
+async def test_ensure_project_cycle_raises_when_version_does_not_match():
+    project = SimpleNamespace(key="example", cycle_match=r"(\d+)\..*")
+    data = _CycleSession(existing=set())
+    with pytest.raises(ValueError, match="does not match"):
+        await cycles.ensure_project_cycle(data, project, "garbage")
+    assert data.added == []
+
+
+async def test_ensure_project_cycle_reuses_existing_cycle_row():
+    project = SimpleNamespace(key="example", cycle_match=r"(\d+)\..*")
+    data = _CycleSession(existing={"example-8"})
+    assert await cycles.ensure_project_cycle(data, project, "8.2.0") == "example-8"
+    assert data.added == []
+
+
 def test_cycle_name_supports_named_cycle_via_capture():
     project = SimpleNamespace(key="example", cycle_match=r"^(\w+)-\d+\.\d+$")
     assert cycles.cycle_name_for_version(project, "stable-2.5") == "stable"
@@ -328,6 +350,26 @@ def test_prior_release_simple_skips_candidates_without_released_date():
     project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
     candidates = [_release("1.0.0", None), _release("1.1.0", None)]
     assert cycles.prior_release_in_cycle(project, "1.2.0", candidates) is None
+
+
+class _CycleQuery:
+    def __init__(self, found: bool) -> None:
+        self._found = found
+
+    async def get(self) -> object | None:
+        return object() if self._found else None
+
+
+class _CycleSession:
+    def __init__(self, existing: set[str]) -> None:
+        self._existing = existing
+        self.added: list[sql.ProjectCycle] = []
+
+    def add(self, row: sql.ProjectCycle) -> None:
+        self.added.append(row)
+
+    def project_cycle(self, cycle_key: str) -> _CycleQuery:
+        return _CycleQuery(cycle_key in self._existing)
 
 
 def _release(version: str, released: datetime.datetime | None = None) -> SimpleNamespace:

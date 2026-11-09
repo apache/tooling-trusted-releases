@@ -74,6 +74,27 @@ def display_name(cycle_name: str) -> str:
     return "No lifecycle information" if cycle_name == DEFAULT_CYCLE else f"Version {cycle_name}"
 
 
+async def ensure_project_cycle(data: db.Session, project: sql.Project, version: str) -> str:
+    """Resolve the cycle a new release belongs to, creating the cycle row if needed.
+
+    Every path that creates a release must go through this, or the release
+    lands in the default cycle and drops out of auto-archive. Raises
+    ValueError if the version doesn't resolve to a cycle.
+    """
+    cycle_name = cycle_name_for_version(project, version)
+    cycle_key = f"{project.key}-{cycle_name}"
+    if not await data.project_cycle(cycle_key=cycle_key).get():
+        data.add(
+            sql.ProjectCycle(
+                cycle_key=cycle_key,
+                cycle=cycle_name,
+                project_key=project.key,
+                lts=False,
+            )
+        )
+    return cycle_key
+
+
 def headings_needed(cycle_names: Iterable[str]) -> bool:
     """Whether a project's cycles are worth heading at all.
 

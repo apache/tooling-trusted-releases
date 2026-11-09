@@ -37,6 +37,7 @@ import asyncssh.mac as mac
 import ssh_audit.builtin_policies as builtin_policies
 
 import atr.config as config
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.ldap as ldap
@@ -769,12 +770,17 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
             if version_key_error := util.version_key_error(str(version_key)):
                 # This should ideally be caught by path validation, but double check
                 raise RuntimeError(f'Invalid version name "{version_key}": {version_key_error}')
+            try:
+                cycle_key = await cycles.ensure_project_cycle(data, project, str(version_key))
+            except ValueError as exc:
+                raise RsyncArgsError(str(exc)) from exc
             # Create a new release object
             log.info(f"Creating new release object for {release_key}")
             release = sql.Release(
                 project_key=project.key,
                 project=project,
                 version=str(version_key),
+                cycle_key=cycle_key,
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
                 created=datetime.datetime.now(datetime.UTC),
             )

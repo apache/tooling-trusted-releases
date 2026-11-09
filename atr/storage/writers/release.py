@@ -200,24 +200,6 @@ async def _assert_no_existing_release(
     raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
 
 
-async def _ensure_project_cycle(data: db.Session, project: sql.Project, version: safe.VersionKey) -> str:
-    try:
-        cycle_name = cycles.cycle_name_for_version(project, str(version))
-    except ValueError as exc:
-        raise storage.AccessError(str(exc)) from exc
-    cycle_key = f"{project.key}-{cycle_name}"
-    if not await data.project_cycle(cycle_key=cycle_key).get():
-        data.add(
-            sql.ProjectCycle(
-                cycle_key=cycle_key,
-                cycle=cycle_name,
-                project_key=project.key,
-                lts=False,
-            )
-        )
-    return cycle_key
-
-
 def _normalise_signature_field(value: object) -> str | None:
     if isinstance(value, str):
         stripped = value.strip()
@@ -331,7 +313,10 @@ async def _start_release(
         raise storage.AccessError("Expedited releases are not available for podling projects.", status=400)
     await _assert_no_existing_release(data, project, project_key, version)
     _validate_version(project, version)
-    cycle_key = await _ensure_project_cycle(data, project, version)
+    try:
+        cycle_key = await cycles.ensure_project_cycle(data, project, str(version))
+    except ValueError as exc:
+        raise storage.AccessError(str(exc)) from exc
 
     now = datetime.datetime.now(datetime.UTC)
     # Null defers to the project policy default; keep it null when the release manager left
