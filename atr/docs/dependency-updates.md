@@ -105,7 +105,8 @@ to a specific version in [`Dockerfile.alpine`](/ref/Dockerfile.alpine):
   each module against the Go checksum database.
 
 Updating a tool means editing its version and its checksum in the Dockerfile and rebuilding the
-image. The weekly tool freshness workflow reports newer releases of these tools.
+image. The weekly tool freshness workflow reports newer releases of these tools, and counts a
+GitHub release only once it is at least 5 days old.
 
 ## Implementation references
 

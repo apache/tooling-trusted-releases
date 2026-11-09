@@ -23,12 +23,13 @@ This is notify only. It never fails the build; it prints a report of the pinned 
 that are behind their latest upstream version, so a scheduled workflow can raise or
 refresh a tracking issue. Someone can then test the newer version before bumping it.
 
-The GitHub-hosted tools are resolved from their latest release. Apache RAT is resolved
+The GitHub-hosted tools are resolved from their GitHub releases. Apache RAT is resolved
 from ATR's own release catalogue, which already tracks Apache versions, rather than from
-GitHub.
+GitHub. GitHub releases published in the last 5 days are ignored, as a cooldown.
 """
 
 import asyncio
+import datetime
 import os
 import pathlib
 import re
@@ -37,6 +38,7 @@ from typing import Final, NamedTuple
 
 import aiohttp
 
+_COOLDOWN: Final = datetime.timedelta(days=5)
 _DOCKERFILE: Final = pathlib.Path("Dockerfile.alpine")
 _GITHUB_API: Final = "https://api.github.com"
 
@@ -83,22 +85,36 @@ def _github_headers() -> dict[str, str]:
 
 
 async def _github_latest(session: aiohttp.ClientSession, repo: str) -> str | None:
-    url = f"{_GITHUB_API}/repos/{repo}/releases/latest"
+    url = f"{_GITHUB_API}/repos/{repo}/releases"
     try:
-        async with session.get(url, headers=_github_headers()) as response:
+        async with session.get(url, headers=_github_headers(), params={"per_page": "100"}) as response:
             if response.status != 200:
                 return None
             data = await response.json()
     except aiohttp.ClientError:
         return None
-    tag = data.get("tag_name")
-    return tag.lstrip("v") if isinstance(tag, str) else None
+    releases = [
+        (release["tag_name"].lstrip("v"), release["published_at"])
+        for release in data
+        if not (release["draft"] or release["prerelease"])
+    ]
+    return _github_settled(releases)
 
 
 async def _github_result(session: aiohttp.ClientSession, var: str, current: str | None) -> _Result:
     repo, label = _GITHUB_TOOLS[var]
     latest = None if current is None else await _github_latest(session, repo)
     return _Result(tool=label, current=current or "unknown", latest=latest)
+
+
+def _github_settled(releases: list[tuple[str, str]]) -> str | None:
+    cutoff = datetime.datetime.now(datetime.UTC) - _COOLDOWN
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for version, published in releases:
+        parsed = _parse_version(version)
+        if (parsed is not None) and (datetime.datetime.fromisoformat(published) <= cutoff):
+            candidates.append((parsed, version))
+    return max(candidates)[1] if candidates else None
 
 
 def _is_behind(current: str, latest: str) -> bool:
@@ -164,6 +180,7 @@ def _report(behind: list[_Result], unknown: list[_Result]) -> None:
     else:
         print("## Dockerfile tools are up to date\n")
         print("Every pinned tool matches its latest upstream release.\n")
+    print(f"GitHub releases are only counted once they are at least {_COOLDOWN.days} days old.\n")
     if unknown:
         names = ", ".join(sorted(result.tool for result in unknown))
         print(f"Could not determine the latest version for: {names}.")

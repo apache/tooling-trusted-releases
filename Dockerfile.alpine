@@ -84,7 +84,7 @@ RUN case "$TARGETARCH" in \
     esac && \
     curl -fsSL https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh -o /tmp/syft-install.sh && \
     echo "${SYFT_INSTALL_SHA256}  /tmp/syft-install.sh" | sha256sum -c - && \
-    sh /tmp/syft-install.sh -b /usr/local/bin "v${SYFT_VERSION}" && \
+    DOWNLOAD_TAG_INSTALL_SCRIPT=false sh /tmp/syft-install.sh -b /usr/local/bin "v${SYFT_VERSION}" && \
     echo "${SYFT_SHA256}  /usr/local/bin/syft" | sha256sum -c - && \
     rm -f /tmp/syft-install.sh
 ENV SBOMQS_VERSION=2.1.3
