@@ -3586,19 +3586,33 @@ async def _system_tasks_tab(minutes: int) -> htm.Element:
     via = sql.validate_instrumented_attribute
     now = datetime.datetime.now(datetime.UTC)
     cutoff = now - datetime.timedelta(minutes=minutes)
+    when_column = sqlalchemy.func.coalesce(via(sql.Task.started), via(sql.Task.scheduled), via(sql.Task.added))
 
     async with db.session() as data:
         statement = (
             sqlmodel.select(sql.Task)
             .where(
+                # Recurring tasks are added well before they're due, so check scheduled as well
                 # Always show active tasks since they're running now!
                 sqlalchemy.or_(
                     via(sql.Task.added) >= cutoff,
+                    via(sql.Task.scheduled) >= cutoff,
                     via(sql.Task.status) == sql.TaskStatus.ACTIVE,
                 ),
                 sqlalchemy.or_(sqlalchemy.not_(via(sql.Task.scheduled) > now), via(sql.Task.scheduled).is_(None)),
             )
-            .order_by(via(sql.Task.added).desc())
+            # Sort on when the task ran, or when it was due if it hasn't started yet
+            # Within the same minute, active comes before queued, which comes before anything finished
+            .order_by(
+                sqlalchemy.func.strftime("%Y-%m-%d %H:%M", when_column).desc(),
+                sqlalchemy.case(
+                    (via(sql.Task.status) == sql.TaskStatus.ACTIVE, 0),
+                    (via(sql.Task.status) == sql.TaskStatus.QUEUED, 1),
+                    else_=2,
+                ),
+                when_column.desc(),
+                via(sql.Task.id).desc(),
+            )
         )
         recent_tasks = (await data.execute(statement)).scalars().all()
         scheduled_stmt = (
@@ -3622,7 +3636,7 @@ async def _system_tasks_tab(minutes: int) -> htm.Element:
                 htpy.th["ID"],
                 htpy.th["Type"],
                 htpy.th["Status"],
-                htpy.th["Added"],
+                htpy.th["When"],
                 htpy.th["Took"],
                 htpy.th["Project"],
                 htpy.th["Version"],
@@ -3645,12 +3659,13 @@ async def _system_tasks_tab(minutes: int) -> htm.Element:
                 took_text = f"{took_seconds:.1f}s"
             else:
                 took_text = ""
+            when = task.started or task.scheduled or task.added
             tbody.append(
                 htpy.tr(class_=status_class.lstrip(".") if status_class else None)[
                     htpy.td[str(task.id)],
                     htpy.td[task.task_type.value],
                     htpy.td[task.status.value],
-                    htpy.td[task.added.strftime("%H:%M:%S") if task.added else ""],
+                    htpy.td[when.strftime("%Y-%m-%d %H:%M:%S")],
                     htpy.td[took_text],
                     htpy.td[task.project_key or ""],
                     htpy.td[task.version_key or ""],
