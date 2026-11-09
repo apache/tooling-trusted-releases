@@ -93,10 +93,11 @@ async def test_collect_batches_packages_and_preserves_missing_observations(monke
     assert create.call_args.kwargs["public"] is True
 
 
-async def test_collect_empty_never_opens_session(monkeypatch) -> None:
+@pytest.mark.parametrize("keys", [[], ["pkg:github/actions/checkout"]])
+async def test_collect_empty_never_opens_session(monkeypatch, keys) -> None:
     create = mock.Mock()
     monkeypatch.setattr(observations.util, "create_secure_session", create)
-    assert await observations.collect([]) == {}
+    assert await observations.collect(keys) == {}
     create.assert_not_called()
 
 
@@ -168,3 +169,21 @@ async def test_collect_missing_mirror_is_unknown_but_outage_raises(monkeypatch) 
     session.responses = [Response([package]), Response({}, 503)]
     with pytest.raises(aiohttp.ClientError):
         await observations.collect(["pkg:npm/a"])
+
+
+async def test_collect_skips_github_keys_and_alternative_registry_records(monkeypatch) -> None:
+    session = Session(
+        [
+            Response(
+                [
+                    {"purl": "pkg:gem/rake", "rankings": {"average": "1"}},
+                    {"purl": "pkg:gem/rake?repository_url=https://gem.coop", "rankings": {"average": "2"}},
+                ]
+            )
+        ]
+    )
+    monkeypatch.setattr(observations.util, "create_secure_session", mock.Mock(return_value=session))
+    result = await observations.collect(["pkg:gem/rake", "pkg:github/actions/checkout"])
+    assert set(result) == {"pkg:gem/rake"}
+    assert result["pkg:gem/rake"]["rankings_average"] == 1.0
+    assert session.calls[0][1]["json"]["purls"] == ["pkg:gem/rake"]

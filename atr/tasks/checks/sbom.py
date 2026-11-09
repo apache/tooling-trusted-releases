@@ -38,7 +38,7 @@ import atr.tasks.task as task
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
 CHECK_VERSION: Final[str] = "3"
-REVIEW_VERSION: Final = "4"
+REVIEW_VERSION: Final = "5"
 RISK_THRESHOLD: Final = 0.6
 _DEADLINE_SECONDS: Final = 540
 

@@ -33,6 +33,7 @@ _USER_AGENT: Final = f"ATR/{metadata.version} (https://releases.apache.org; mail
 
 
 async def collect(keys: list[str]) -> dict[str, dict[str, Any]]:
+    keys = [key for key in keys if not key.startswith("pkg:github/")]
     if not keys:
         return {}
     async with util.create_secure_session(timeout=_TIMEOUT, public=True) as session:
@@ -92,6 +93,9 @@ async def _packages(session: aiohttp.ClientSession, keys: list[str]) -> dict[str
             _status(response)
             records = await streaming.project_records(response.content, streaming.PACKAGE_FIELDS)
         for record in records:
+            purl = maintenance.package_url(record.get("purl"))
+            if (purl is not None) and ("repository_url" in purl.qualifiers):
+                continue
             key = maintenance.package_key(record.get("purl", ""))
             if (key is None) or (key not in batch) or (key in packages):
                 raise ValueError("Unexpected or duplicate package in ecosyste.ms response")
