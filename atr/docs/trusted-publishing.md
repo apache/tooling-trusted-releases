@@ -267,6 +267,32 @@ Each action's README has the full list of inputs and some example workflows. Whe
 release in ATR, the upload page also shows an example workflow already filled in with your project
 name.
 
+### Uploading through the API
+
+`upload-to-atr` uploads with rsync over SSH. A build tool that already talks to the ATR API, such as
+a Maven plugin, can use Trusted Publishing without `ssh` or `rsync` by exchanging its GitHub OIDC
+token for a short lived ATR JWT:
+
+```shell
+POST /api/publisher/jwt/create
+{"publisher": "github", "jwt": "<GitHub OIDC token>"}
+```
+
+The request takes the same optional `source_commit` and `declare_sources` fields as the SSH
+registration that `upload-to-atr` makes. The response carries a `jwt` to send as
+`Authorization: Bearer` to `/api/release/create` and `/api/release/store`. The workflow has to be
+listed under the compose [workflow path](#workflow-paths), and everything in the list above applies
+to it too. There are three limits to know about:
+
+* The JWT works for the one project that the workflow is registered to, and only for creating a
+  release and storing files in it.
+* It lasts five minutes and can't be refreshed. Request a new OIDC token and exchange again if the
+  upload needs longer. A single file that takes more than five minutes to send is not cut off.
+* Each OIDC token can be exchanged once, and a token that has registered an SSH key can't then be
+  exchanged for a JWT.
+* The source commit is set at the exchange. `/api/release/store` refuses a `source_commit` of its
+  own when it is called with this JWT.
+
 ### Projects with several source repositories
 
 When the project metadata lists more than one GitHub repository, ATR cannot tell which repository a

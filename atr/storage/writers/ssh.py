@@ -24,6 +24,7 @@ import sqlalchemy.exc
 import sqlmodel
 
 import atr.db as db
+import atr.jwtoken as jwtoken
 import atr.mail as mail
 import atr.models.github as github
 import atr.models.safe as safe
@@ -96,6 +97,49 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def add_workflow_jwt(
+        self,
+        github_uid: str,
+        github_nid: int,
+        project_key: safe.ProjectKey,
+        github_payload: github.TrustedPublisherPayload,
+        *,
+        source_commit: safe.CommitHash | None = None,
+        declare_sources: bool = True,
+    ) -> jwtoken.ProjectToken:
+        # The HTTP counterpart of add_workflow_key, for workflows that upload through the API and not rsync
+        now = int(time.time())
+        token = jwtoken.issue_for_project(self.__asf_uid, project_key)
+        # A token is exchanged once only, whether for a key or a JWT, so this rejects the replay before any row exists
+        await self.__consume_jti(github_payload, now, token.expires)
+        wj_source_commit = str(source_commit) if (source_commit is not None) else None
+        self.__data.add(
+            sql.WorkflowJwt(
+                jti=token.jti,
+                project_key=str(project_key),
+                asf_uid=self.__asf_uid,
+                github_uid=github_uid,
+                github_nid=github_nid,
+                # The GitHub token's own nbf and exp have been checked, and the row's expires takes over from here
+                github_payload=github_payload.model_dump(exclude={"exp", "nbf"}),
+                source_commit=wj_source_commit,
+                declare_sources=declare_sources,
+                expires=token.expires,
+            )
+        )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            jti=token.jti,
+            project_key=str(project_key),
+            github_uid=github_uid,
+            github_nid=github_nid,
+            source_commit=wj_source_commit,
+            declare_sources=declare_sources,
+            expires=token.expires,
+        )
+        return token
 
     async def add_workflow_key(
         self,

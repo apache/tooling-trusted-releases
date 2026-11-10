@@ -32,6 +32,28 @@ _DISTANT_EXPIRY = 2**31 - 1
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("source_commit", [None, safe.CommitHash("d" * 40)])
+async def test_declared_source_commit_is_stored_with_the_jwt(
+    monkeypatch: pytest.MonkeyPatch, source_commit: safe.CommitHash | None
+) -> None:
+    monkeypatch.setattr(ssh.jwtoken, "_signing_key", lambda: "a" * 64)
+    data = _data()
+    writer = _writer(data)
+
+    token = await writer.add_workflow_jwt(
+        "test-user", 12345, safe.ProjectKey("alpha-one"), _payload(), source_commit=source_commit, declare_sources=False
+    )
+
+    row = _added_of_type(data, sql.WorkflowJwt)[0]
+    assert (row.jti, row.expires) == (token.jti, token.expires)
+    assert (row.project_key, row.asf_uid, row.github_uid, row.github_nid) == ("alpha-one", "tester", "test-user", 12345)
+    assert row.source_commit == (str(source_commit) if (source_commit is not None) else None)
+    assert row.declare_sources is False
+    assert row.github_payload["sha"] == "0" * 40
+    assert "source_commit" not in row.github_payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_commit", [None, safe.CommitHash("d" * 40)])
 async def test_declared_source_commit_is_stored_with_the_key(
     monkeypatch: pytest.MonkeyPatch, source_commit: safe.CommitHash | None
 ) -> None:
@@ -62,6 +84,21 @@ async def test_recorded_token_expiry_follows_the_token_rather_than_the_key(monke
     record = _added_of_type(data, sql.WorkflowJti)[0]
     assert record.expires == _DISTANT_EXPIRY
     assert record.expires > key_expires
+
+
+@pytest.mark.asyncio
+async def test_token_presented_a_second_time_mints_no_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ssh.jwtoken, "_signing_key", lambda: "a" * 64)
+    data = _data()
+    data.flush = mock.AsyncMock(side_effect=_integrity_error())
+    writer = _writer(data)
+
+    with pytest.raises(storage.AccessError, match="already been used"):
+        await writer.add_workflow_jwt("test-user", 12345, safe.ProjectKey("alpha-one"), _payload())
+
+    data.rollback.assert_awaited_once()
+    data.commit.assert_not_awaited()
+    assert not _added_of_type(data, sql.WorkflowJwt)
 
 
 @pytest.mark.asyncio
@@ -96,6 +133,21 @@ async def test_token_presented_once_is_recorded_and_mints_a_key(monkeypatch: pyt
     recorded = _added_of_type(data, sql.WorkflowJti)
     assert [record.jti for record in recorded] == ["test-jti"]
     assert _added_of_type(data, sql.WorkflowSSHKey)
+
+
+@pytest.mark.asyncio
+async def test_token_presented_once_is_recorded_and_mints_a_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ssh.jwtoken, "_signing_key", lambda: "a" * 64)
+    data = _data()
+    writer = _writer(data)
+
+    token = await writer.add_workflow_jwt("test-user", 12345, safe.ProjectKey("alpha-one"), _payload())
+
+    assert token.jwt
+    data.rollback.assert_not_awaited()
+    data.commit.assert_awaited_once()
+    # The same table that ssh/register writes to, so a token spent on a key can't then buy a JWT
+    assert [record.jti for record in _added_of_type(data, sql.WorkflowJti)] == ["test-jti"]
 
 
 def _added_of_type(data: mock.MagicMock, model: type) -> list:

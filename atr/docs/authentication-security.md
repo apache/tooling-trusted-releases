@@ -352,6 +352,36 @@ the key, so a token replayed within its validity window fails on the primary key
 Rows are pruned once the token's own `exp` has passed. Tokens are not single-use across the other
 OIDC endpoints, because a workflow mints one token per job and presents it to several of them.
 
+### Project JWTs
+
+A workflow that uploads through the HTTP API and not rsync calls `/publisher/jwt/create`, which
+exchanges its OIDC token for a project JWT. The checks are the ones `/publisher/ssh/register`
+makes, including that the actor is a member of the project's committee, and the exchange records
+the OIDC token's `jti` in the same `workflowjti` table, so one OIDC token yields a key or a JWT and
+never both.
+
+A project JWT is an ATR JWT with three limits:
+
+* **Routes.** It carries an `atr_prj` claim naming one project. `api_auth.authenticate_header`
+  refuses it on every route whose auth scheme is not `bearer_project`, which is `release/create` and
+  `release/store` only. A new route has to opt in before a project JWT can reach it.
+* **Project.** On those two routes `api_auth.authorize_project` compares the project in the request
+  with the one in the claim before the handler runs, and before any upload body is read.
+* **Lifetime.** It lasts five minutes with no leeway and no refresh. A workflow that needs longer
+  requests a new OIDC token and exchanges again. Authentication happens when a request starts, so
+  an upload that takes longer than five minutes is not cut off.
+
+Each project JWT has a `workflowjwt` row under its own `jti`, holding the project, the user, the
+OIDC claims and its expiry. `jwtoken.verify` reads the row on every request and refuses the token if
+the row is missing, revoked, expired, or names a different project or user. An administrator who
+revokes a user's API tokens revokes their project JWTs too.
+
+The row also holds the source commit and the `declare_sources` choice that the workflow gave at the
+exchange. `release/store` passes these and the OIDC claims to the revision writer, as the SSH server
+does for an rsync upload, so the revision gets the same `.github-tp.json` record and the same
+protection and compare checks. A `source_commit` in the `release/store` query string is refused for
+a project JWT, because the commit is fixed at the exchange.
+
 ## SSH authentication
 
 ATR provides an SSH server for rsync file upload, and for automated release artifact uploads from

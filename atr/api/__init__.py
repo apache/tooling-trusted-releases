@@ -43,6 +43,7 @@ import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
+import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
@@ -1172,6 +1173,49 @@ async def publisher_distribution_record(
     ).model_dump(mode="json"), 200
 
 
+@api.typed(
+    auth_scheme=api_auth.Auth.BODY_OIDC,
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
+async def publisher_jwt_create(
+    _publisher_jwt_create: Literal["publisher/jwt/create"],
+    data: models.api.PublisherJwtCreateArgs,
+) -> DictResponse:
+    """
+    URL: POST /publisher/jwt/create
+
+    Exchange a Trusted Publisher JWT for a short lived ATR JWT.
+
+    The ATR JWT can create a release and store files in it, for the one project that the workflow
+    is registered to. It lasts five minutes and can't be refreshed, and each Trusted Publisher JWT
+    can be exchanged only once.
+    """
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
+        interaction.TrustedProjectPhase.COMPOSE,
+    )
+    payload = ctx.payload
+    async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
+        token = await wacm.ssh.add_workflow_jwt(
+            payload.actor,
+            payload.actor_id,
+            project.safe_key,
+            payload,
+            source_commit=data.source_commit,
+            declare_sources=data.declare_sources,
+        )
+
+    return models.api.PublisherJwtCreateResults(
+        endpoint="/publisher/jwt/create",
+        asfuid=asf_uid,
+        project=project.safe_key,
+        jwt=token.jwt,
+        expires=token.expires,
+    ).model_dump(mode="json"), 200
+
+
 @api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def publisher_release_announce(
     _publisher_release_announce: Literal["publisher/release/announce"],
@@ -1677,6 +1721,7 @@ async def release_store(
         source_commit = safe.CommitHash(query_args.source_commit.strip().lower()) if query_args.source_commit else None
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
+    github_payload, source_commit, declare_sources = await _release_store_sources(source_commit)
 
     source = ""
     try:
@@ -1692,7 +1737,14 @@ async def release_store(
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(project)
             result = await wacp.release.store_file(
-                project, version, relpath, pathlib.Path(source), expected_revision, source_commit
+                project,
+                version,
+                relpath,
+                pathlib.Path(source),
+                expected_revision,
+                source_commit,
+                github_payload=github_payload,
+                declare_sources=declare_sources,
             )
     except (datatypes.PhaseMismatchError, datatypes.RevisionMismatchError) as e:
         raise exceptions.Conflict(str(e))
@@ -2614,6 +2666,22 @@ async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: 
     template = await construct.resolve_template(release.project, "announce_release")
     _, body = await construct.announce_release_subject_and_body("", template.body, options)
     return body, fullname
+
+
+async def _release_store_sources(
+    source_commit: safe.CommitHash | None,
+) -> tuple[models.github.TrustedPublisherPayload | None, safe.CommitHash | None, bool]:
+    claims = getattr(quart.g, "jwt_claims", {})
+    if jwtoken.project_scope(claims) is None:
+        return None, source_commit, True
+    # A project JWT brings the sources that its workflow declared at the exchange, and the request can't change them
+    if source_commit is not None:
+        raise exceptions.BadRequest("The source commit is set when this token is issued, and can't be given here")
+    async with db.session() as data:
+        row = await data.workflow_jwt(jti=claims["jti"]).demand(exceptions.Unauthorized("Token has been revoked"))
+    github_payload = models.github.TrustedPublisherPayload.model_validate(row.github_payload)
+    declared = safe.CommitHash(row.source_commit) if (row.source_commit is not None) else None
+    return github_payload, declared, row.declare_sources
 
 
 async def _resolve_signing_key_from_signature(

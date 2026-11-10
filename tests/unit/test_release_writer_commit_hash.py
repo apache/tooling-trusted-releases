@@ -28,6 +28,7 @@ import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
 import atr.models.api as api
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.source as source
@@ -115,6 +116,33 @@ async def test_set_commit_hash_refuses_several_repositories(data: db.Session):
         await writer.set_commit_hash(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "a" * 40)
     assert exc.value.status == 400
     assert await data.revision(release_key="project-1.0.0").get() is None
+
+
+@pytest.mark.parametrize("declared", [safe.CommitHash("c" * 40), None])
+async def test_store_file_keeps_the_workflow_token_with_the_revision(
+    data: db.Session,
+    tmp_path: pathlib.Path,
+    github_payload: github.TrustedPublisherPayload,
+    declared: safe.CommitHash | None,
+):
+    writer = await _writer(data, ["https://github.com/apache/test"])
+    pk, vk = safe.ProjectKey("project"), safe.VersionKey("1.0.0")
+    stored = tmp_path / "temporary" / "stored"
+    stored.write_bytes(b"hello")
+
+    result = await writer.store_file(
+        pk, vk, safe.RelPath("README.txt"), stored, None, declared, github_payload=github_payload
+    )
+
+    assert isinstance(result, sql.Revision)
+    # What the protection check and the compare check go on, and what an upload over rsync leaves behind too
+    kept = await attestable.latest_github_tp_payload(pk, vk)
+    assert (kept is not None) and (kept.sha == github_payload.sha)
+    recorded = await source.read(pk, vk, safe.RevisionNumber("00001"))
+    assert recorded.default == github_payload.sha
+    assert recorded.declared == (str(declared) if (declared is not None) else None)
+    # The workflow's commit is a declaration, and never the override that a person's upload would set
+    assert recorded.override is None
 
 
 @pytest.mark.parametrize(

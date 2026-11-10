@@ -51,6 +51,7 @@ import atr.log as log
 import atr.models.api as api
 import atr.models.args as args
 import atr.models.attestable as attestable_models
+import atr.models.github as github
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -1187,10 +1188,19 @@ class CommitteeParticipant(FoundationCommitter):
         source: pathlib.Path,
         expected_revision: safe.RevisionNumber | None,
         source_commit: safe.CommitHash | None = None,
+        *,
+        github_payload: github.TrustedPublisherPayload | None = None,
+        declare_sources: bool = True,
     ) -> sql.Revision | sql.Quarantined:
         validated_path = relpath.as_path()
         description = f"Store via API: {validated_path}"
-        source_override = await self.__source_override(project_key, version_key, source_commit)
+        source_override: db.Opt[str | None] = db.NOT_SET
+        declared = None
+        if github_payload is None:
+            source_override = await self.__source_override(project_key, version_key, source_commit)
+        else:
+            # A workflow's commit is a declaration alongside the signed one in its token, as it is over rsync
+            declared = source_commit
 
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             target_path = path / validated_path
@@ -1205,7 +1215,10 @@ class CommitteeParticipant(FoundationCommitter):
             description=description,
             modify=modify,
             expected_revision=expected_revision,
+            github_payload=github_payload,
+            source_commit=declared,
             source_override=source_override,
+            declare_sources=declare_sources,
         )
         return await self.__stored_revision(project_key, version_key, result)
 

@@ -777,6 +777,22 @@ class PublisherReleaseAnnounceResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class PublisherJwtCreateArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    source_commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
+    # False when the workflow builds from more than one repository, and declares each archive itself
+    declare_sources: bool = schema.default_example(True, True)
+
+
+class PublisherJwtCreateResults(schema.Strict):
+    endpoint: Literal["/publisher/jwt/create"] = schema.alias("endpoint")
+    asfuid: str = schema.example("user")
+    project: safe.ProjectKey = schema.example("example")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    expires: int = schema.example(1713547200)
+
+
 class PublisherReleaseSourceArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
