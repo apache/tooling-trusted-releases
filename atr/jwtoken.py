@@ -36,6 +36,7 @@ import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
+import atr.models.safe as safe
 import atr.user as user
 import atr.util as util
 
@@ -43,6 +44,9 @@ _ALGORITHM: Final[str] = "HS256"
 _ATR_JWT_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_ISSUER: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_LEEWAY_SECONDS: Final[int] = 2 * 60
+# A project JWT comes from a Trusted Publishing token exchange, and can't outlive the GitHub token it came from
+_ATR_JWT_PROJECT_CLAIM: Final[str] = "atr_prj"
+_ATR_JWT_PROJECT_TTL: Final[int] = 5 * 60
 _ATR_JWT_TTL: Final[int] = 30 * 60
 _GITHUB_OIDC_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 # Events where the ref and sha in the token are the ones a committer chose to run. Others, such as
@@ -111,22 +115,32 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, sys
     # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
     # by a single internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS
     # deployments, which this is not
-    now = datetime.datetime.now(tz=datetime.UTC)
-    payload = {
-        "sub": uid,
-        "iss": _ATR_JWT_ISSUER,
-        "aud": _ATR_JWT_AUDIENCE,
-        "iat": now,
-        "nbf": now,
-        "exp": now + datetime.timedelta(seconds=ttl),
-        "jti": secrets.token_hex(128 // 8),
-    }
+    payload = _claims(uid, ttl)
     if pat_hash:
         payload["atr_th"] = pat_hash
     if system:
         payload["atr_sys"] = True
     log.auth_event("jwt_issuance", uid, pat_hash=pat_hash if pat_hash else None)
     return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
+
+
+def issue_for_project(uid: str, project_key: safe.ProjectKey) -> str:
+    # Only routes that opt in accept a project JWT, and only for this project
+    payload = _claims(uid, _ATR_JWT_PROJECT_TTL)
+    payload[_ATR_JWT_PROJECT_CLAIM] = str(project_key)
+    log.auth_event("jwt_issuance", uid, project_key=str(project_key))
+    return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
+
+
+def project_scope(claims: dict[str, Any]) -> str | None:
+    """The one project that these claims are limited to, or None when they aren't limited."""
+    if _ATR_JWT_PROJECT_CLAIM not in claims:
+        return None
+    project_key = claims[_ATR_JWT_PROJECT_CLAIM]
+    # The claim being there at all is what limits the token, so a value we can't use must never read as unlimited
+    if (not isinstance(project_key, str)) or (not project_key):
+        raise jwt.InvalidTokenError("Invalid Bearer JWT project")
+    return project_key
 
 
 def setup_signing_key(app: base.QuartApp) -> None:
@@ -145,6 +159,7 @@ async def verify(token: str) -> dict[str, Any]:
     log.set_asf_uid(asf_uid)
     claims = _decode(token)
     log.debug(f"JWT claims: {claims}")
+    _project_claims_check(claims)
     if not isinstance(asf_uid, str):
         log.auth_failure("jwt_token", "jwt_subject_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT subject")
@@ -232,6 +247,19 @@ def write_new_signing_key() -> str:
     return key
 
 
+def _claims(uid: str, ttl: int) -> dict[str, Any]:
+    now = datetime.datetime.now(tz=datetime.UTC)
+    return {
+        "sub": uid,
+        "iss": _ATR_JWT_ISSUER,
+        "aud": _ATR_JWT_AUDIENCE,
+        "iat": now,
+        "nbf": now,
+        "exp": now + datetime.timedelta(seconds=ttl),
+        "jti": secrets.token_hex(128 // 8),
+    }
+
+
 def _decode(token: str) -> dict[str, Any]:
     return jwt.decode(
         token,
@@ -280,6 +308,18 @@ def _jwt_key_tmp_path() -> pathlib.Path:
 
 def _new_signing_key() -> str:
     return secrets.token_hex(256 // 8)
+
+
+def _project_claims_check(claims: dict[str, Any]) -> None:
+    if project_scope(claims) is None:
+        return
+    # A project JWT acts for a committer in one project, so it can't also be a system or PAT token
+    if claims.get("atr_sys") or claims.get("atr_th"):
+        log.auth_failure("jwt_token", "jwt_project_claims_invalid")
+        raise jwt.InvalidTokenError("Invalid Bearer JWT project")
+    # The leeway is for clocks that disagree, and we both issue and check this token
+    if claims["exp"] <= datetime.datetime.now(tz=datetime.UTC).timestamp():
+        raise jwt.ExpiredSignatureError("Signature has expired")
 
 
 def _read_signing_key() -> str | None:

@@ -92,6 +92,9 @@ def typed(
                 await common.parse_body(body_param, body_safe_params, kwargs)
             if query_param is not None:
                 await common.parse_query(query_param, query_safe_params, kwargs)
+            auth.authorize_project(
+                auth_scheme, [kwargs.get(param[0]) for param in (body_param, query_param) if param is not None]
+            )
 
             if auth_scheme in auth.BODY_SCHEMES:
                 body = kwargs.get(body_param[0]) if (body_param is not None) else None

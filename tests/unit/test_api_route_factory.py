@@ -33,8 +33,19 @@ import atr.jwtoken as jwtoken
 
 
 def test_auth_enum_matches_the_declared_schemes() -> None:
-    assert {member.value for member in api_auth.Auth} == {"public", "bearer", "system_bearer", "body_oidc", "pat"}
-    assert api_auth.HEADER_SCHEMES == {api_auth.Auth.BEARER, api_auth.Auth.SYSTEM_BEARER}
+    assert {member.value for member in api_auth.Auth} == {
+        "public",
+        "bearer",
+        "bearer_project",
+        "system_bearer",
+        "body_oidc",
+        "pat",
+    }
+    assert api_auth.HEADER_SCHEMES == {
+        api_auth.Auth.BEARER,
+        api_auth.Auth.BEARER_PROJECT,
+        api_auth.Auth.SYSTEM_BEARER,
+    }
     assert api_auth.BODY_SCHEMES == {api_auth.Auth.BODY_OIDC}
 
 
@@ -119,7 +130,7 @@ async def test_header_auth_runs_before_body_validation(
 def test_security_scheme_is_applied_only_for_header_levels() -> None:
     attribute = quart_schema.openapi.QUART_SCHEMA_SECURITY_ATTRIBUTE
 
-    for level in (api_auth.Auth.BEARER, api_auth.Auth.SYSTEM_BEARER):
+    for level in (api_auth.Auth.BEARER, api_auth.Auth.BEARER_PROJECT, api_auth.Auth.SYSTEM_BEARER):
 
         async def handler() -> tuple[dict, int]:
             return {}, 200

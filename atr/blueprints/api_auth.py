@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 class Auth(enum.StrEnum):
     PUBLIC = "public"
     BEARER = "bearer"
+    BEARER_PROJECT = "bearer_project"
     SYSTEM_BEARER = "system_bearer"
     BODY_OIDC = "body_oidc"
     PAT = "pat"
@@ -61,7 +62,9 @@ class Auth(enum.StrEnum):
 # run before the body is parsed. Body-credential schemes carry the credential in
 # the request body, so they run after parsing. PUBLIC and PAT enforce nothing
 # here (PAT routes validate the PAT from the body themselves).
-HEADER_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BEARER, Auth.SYSTEM_BEARER})
+# BEARER_PROJECT is BEARER for routes that also take a project JWT, which every
+# other scheme refuses.
+HEADER_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BEARER, Auth.BEARER_PROJECT, Auth.SYSTEM_BEARER})
 BODY_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BODY_OIDC})
 
 _TP_ALERT_APP_EXTENSION: Final[str] = "tp_alert_throttle"
@@ -189,6 +192,27 @@ async def authenticate_header(scheme: Auth) -> None:
     claims = await jwtoken.authenticate()
     if (scheme is Auth.SYSTEM_BEARER) and (not claims.get("atr_sys")):
         raise base.ASFQuartException("System privileges required", errorcode=403)
+    # Refused here and not in the handlers, so that a route has to opt in before a project JWT can reach it
+    if (scheme is not Auth.BEARER_PROJECT) and (jwtoken.project_scope(claims) is not None):
+        log.auth_failure("jwt_token", "jwt_project_route_refused")
+        raise base.ASFQuartException("This token cannot be used with this endpoint", errorcode=403)
+
+
+def authorize_project(scheme: Auth, arguments: list[Any]) -> None:
+    """Hold a project JWT to its own project, given the parsed body and query of the request."""
+    if scheme is not Auth.BEARER_PROJECT:
+        return
+    claims = getattr(quart.g, "jwt_claims", None)
+    if claims is None:
+        raise base.ASFQuartException("Authentication required", errorcode=401)
+    project_key = jwtoken.project_scope(claims)
+    if project_key is None:
+        return
+    # A request that names no project is refused too, as there's nothing to hold the token to
+    requested = {str(argument.project) for argument in arguments if getattr(argument, "project", None) is not None}
+    if requested != {project_key}:
+        log.auth_failure("jwt_token", "jwt_project_mismatch")
+        raise base.ASFQuartException(f"This token can only be used for project '{project_key}'", errorcode=403)
 
 
 def security_scheme_for(scheme: Auth) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

@@ -1393,7 +1393,7 @@ async def release_commit(
 
 
 @api.typed(
-    auth_scheme=api_auth.Auth.BEARER,
+    auth_scheme=api_auth.Auth.BEARER_PROJECT,
     response=(models.api.ReleaseCreateResults, 201),
     rate_limit=(10, datetime.timedelta(hours=1)),
 )
@@ -1652,7 +1652,7 @@ async def release_source(
 
 
 @api.typed(
-    auth_scheme=api_auth.Auth.BEARER,
+    auth_scheme=api_auth.Auth.BEARER_PROJECT,
     method="POST",
     response=[(models.api.ReleaseStoreResults, 201), (models.api.ReleaseStoreResults, 202)],
 )
