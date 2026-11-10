@@ -2212,7 +2212,7 @@ class FoundationAdmin(FoundationCommitter):
             return f"Project {project_key!s} not found"
         if project.committee is None:
             return f"Project {project_key!s} has no committee"
-        managed = await self.__data.artifact(project_key=str(project_key), managed=True).get()
+        managed = await self.__data.artifact(project_key=str(project_key), managed=True).limit(1).get()
         if managed is None:
             return None
         warning = construct.unmanaged_release_warning(project.committee, project, str(version), released)

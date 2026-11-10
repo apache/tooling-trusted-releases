@@ -94,6 +94,23 @@ async def test_warns_when_the_project_has_a_managed_release(sessionmaker) -> Non
         )
 
 
+async def test_warns_when_the_project_has_several_managed_releases(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed(data, managed=True)
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one", version="0.8.0", artifact_path="apache-alpha-one-0.8.0.tar.gz", managed=True
+            )
+        )
+        await data.commit()
+        writer, _ = _writer(data)
+
+        error = await writer.warn_unmanaged(safe.ProjectKey("alpha-one"), safe.VersionKey("1.0.0"), _RELEASED)
+
+        assert error is None
+        assert len(await _queued_tasks(data)) == 1
+
+
 async def test_stays_quiet_when_the_project_has_only_catalogued_releases(sessionmaker) -> None:
     async with sessionmaker() as data:
         await _seed(data, managed=False)
