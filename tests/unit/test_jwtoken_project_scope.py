@@ -18,6 +18,7 @@
 import asyncio
 import importlib
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from types import SimpleNamespace
 from typing import Any, Final
 
@@ -25,11 +26,18 @@ import asfquart.base as base
 import jwt
 import pytest
 import quart
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlmodel
 
 import atr.blueprints.api as api_blueprint
 import atr.blueprints.api_auth as api_auth
+import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.models.safe as safe
+import atr.models.sql as sql
+
+type _Stored = Callable[..., Awaitable[None]]
 
 _PROJECT: Final = safe.ProjectKey("example")
 _SIGNING_KEY: Final[str] = "a" * 64
@@ -98,11 +106,13 @@ async def test_authenticate_header_takes_a_project_token_on_the_project_scheme(
 
 
 def test_issue_for_project_limits_the_token_to_five_minutes_and_one_project() -> None:
-    claims = jwt.decode(jwtoken.issue_for_project("alice", _PROJECT), options={"verify_signature": False})
+    token = jwtoken.issue_for_project("alice", _PROJECT)
+    claims = jwt.decode(token.jwt, options={"verify_signature": False})
 
     assert claims["sub"] == "alice"
     assert claims["atr_prj"] == "example"
     assert claims["exp"] - claims["iat"] == 5 * 60
+    assert (token.jti, token.expires) == (claims["jti"], claims["exp"])
     assert "atr_th" not in claims
     assert "atr_sys" not in claims
 
@@ -142,15 +152,68 @@ def test_project_scope_refuses_an_unusable_claim(value: object) -> None:
 
 
 @pytest.mark.asyncio
-async def test_verify_takes_a_project_token(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_verify_refuses_a_project_token_with_no_row(stored: _Stored) -> None:
+    token = jwtoken.issue_for_project("alice", _PROJECT)
+
+    with pytest.raises(base.ASFQuartException) as exc_info:
+        await jwtoken.verify(token.jwt)
+    assert exc_info.value.errorcode == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", [{"revoked": True}, {"project_key": "other"}, {"asf_uid": "bob"}])
+async def test_verify_refuses_a_project_token_whose_row_disagrees(stored: _Stored, change: dict[str, Any]) -> None:
+    token = jwtoken.issue_for_project("alice", _PROJECT)
+    await stored(token, **change)
+
+    with pytest.raises(base.ASFQuartException) as exc_info:
+        await jwtoken.verify(token.jwt)
+    assert exc_info.value.errorcode == 401
+
+
+@pytest.mark.asyncio
+async def test_verify_refuses_a_project_token_whose_row_has_expired(stored: _Stored) -> None:
+    token = jwtoken.issue_for_project("alice", _PROJECT)
+    await stored(token, expires=int(time.time()) - 1)
+
+    with pytest.raises(jwt.ExpiredSignatureError):
+        await jwtoken.verify(token.jwt)
+
+
+@pytest.mark.asyncio
+async def test_verify_takes_a_project_token_with_its_row(stored: _Stored) -> None:
+    token = jwtoken.issue_for_project("alice", _PROJECT)
+    await stored(token)
+
+    claims = await jwtoken.verify(token.jwt)
+
+    assert jwtoken.project_scope(claims) == "example"
+
+
+@pytest.fixture
+async def stored(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[_Stored]:
+    engine = sqlalchemy.ext.asyncio.create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=sqlalchemy.pool.StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(sqlmodel.SQLModel.metadata.create_all)
+    sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
+
     async def is_active(_asf_uid: str) -> bool:
         return True
 
+    async def store(token: jwtoken.ProjectToken, **changes: Any) -> None:
+        fields = {"jti": token.jti, "project_key": "example", "asf_uid": "alice", "expires": token.expires}
+        async with sessionmaker() as data:
+            data.add(sql.WorkflowJwt(github_uid="alice-gh", github_nid=1, **(fields | changes)))
+            await data.commit()
+
     monkeypatch.setattr(jwtoken.ldap, "is_active", is_active)
-
-    claims = await jwtoken.verify(jwtoken.issue_for_project("alice", _PROJECT))
-
-    assert jwtoken.project_scope(claims) == "example"
+    monkeypatch.setattr(jwtoken.db, "session", sessionmaker)
+    yield store
+    await engine.dispose()
 
 
 def _authorize(claims: dict[str, Any], arguments: list[Any]) -> None:

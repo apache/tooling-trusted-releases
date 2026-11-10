@@ -1071,6 +1071,25 @@ class WorkflowJti(sqlmodel.SQLModel, table=True):
     consumed: int = sqlmodel.Field()
 
 
+# WorkflowJwt:
+class WorkflowJwt(sqlmodel.SQLModel, table=True):
+    # The jti of a project JWT that ATR issued in exchange for a GitHub OIDC token
+    jti: str = sqlmodel.Field(primary_key=True, **example("0123456789abcdef"))
+    project_key: str = sqlmodel.Field(index=True)
+    asf_uid: str = sqlmodel.Field(index=True)
+    github_uid: str = sqlmodel.Field()
+    github_nid: int = sqlmodel.Field()
+    github_payload: dict[str, Any] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    # Declared by the workflow rather than signed by GitHub, so kept out of github_payload
+    source_commit: str | None = sqlmodel.Field(default=None)
+    # Whether the archives this token uploads are taken to come from the workflow's own repository
+    declare_sources: bool = sqlmodel.Field(default=True)
+    expires: int = sqlmodel.Field(index=True)
+    revoked: bool = sqlmodel.Field(default=False)
+
+
 # WorkflowSSHKey:
 class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     fingerprint: str = sqlmodel.Field(primary_key=True, index=True)

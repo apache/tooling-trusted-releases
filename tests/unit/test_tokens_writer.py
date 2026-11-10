@@ -129,3 +129,47 @@ async def test_revocation_notice_failed_queue_preserves_audience(sqlite_sessionm
         assert task.task_args["email_to"] == "admin@apache.org"
         assert task.task_args["email_bcc"] == []
         assert "pat_revocation_notice" not in task.task_args
+
+
+async def test_revoke_all_user_tokens_revokes_project_jwts(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        for jti, asf_uid in [("a", "alice"), ("b", "bob")]:
+            data.add(
+                sql.WorkflowJwt(
+                    jti=jti, project_key="example", asf_uid=asf_uid, github_uid=asf_uid, github_nid=1, expires=0
+                )
+            )
+        await data.commit()
+        write_as = mock.MagicMock()
+        write_as.mail.send = mock.AsyncMock()
+        writer = object.__new__(tokens.FoundationAdmin)
+        writer._FoundationAdmin__write_as = write_as
+        writer._FoundationAdmin__data = data
+        writer._FoundationAdmin__asf_uid = "admin"
+
+        assert await writer.revoke_all_user_tokens("alice") == 1
+
+        rows = {row.jti: row.revoked for row in await data.workflow_jwt().all()}
+        assert rows == {"a": True, "b": False}
+        write_as.append_to_audit_log.assert_called_once_with(
+            target_asf_uid="alice", tokens_revoked=0, project_jwts_revoked=1
+        )
+        assert await writer.revoke_all_user_tokens("alice") == 0
+
+
+async def test_revoke_all_users_tokens_revokes_project_jwts(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        data.add(
+            sql.WorkflowJwt(
+                jti="a", project_key="example", asf_uid="alice", github_uid="alice", github_nid=1, expires=0
+            )
+        )
+        await data.commit()
+        writer = object.__new__(tokens.FoundationAdmin)
+        writer._FoundationAdmin__write_as = mock.MagicMock()
+        writer._FoundationAdmin__data = data
+        writer._FoundationAdmin__asf_uid = "admin"
+
+        assert await writer.revoke_all_users_tokens() is None
+
+        assert [row.revoked for row in await data.workflow_jwt().all()] == [True]

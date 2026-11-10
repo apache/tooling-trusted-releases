@@ -145,7 +145,12 @@ async def _workflow_auth_maintenance() -> None:
         statement = sqlmodel.delete(sql.WorkflowJti).where(via(sql.WorkflowJti.expires) < now)
         result = await data.execute(statement)
         jtis_deleted = getattr(result, "rowcount", 0) or 0
+        statement = sqlmodel.delete(sql.WorkflowJwt).where(via(sql.WorkflowJwt.expires) < now)
+        result = await data.execute(statement)
+        jwts_deleted = getattr(result, "rowcount", 0) or 0
         await data.commit()
+        if jwts_deleted > 0:
+            log.info(f"Purged {jwts_deleted} expired workflow project JWTs")
         if keys_deleted > 0:
             log.info(f"Purged {keys_deleted} expired workflow SSH keys")
         if jtis_deleted > 0:

@@ -1334,6 +1334,23 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def workflow_jwt(
+        self,
+        jti: Opt[str] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
+        asf_uid: Opt[str] = NOT_SET,
+    ) -> Query[sql.WorkflowJwt]:
+        query = sqlmodel.select(sql.WorkflowJwt)
+
+        if is_defined(jti):
+            query = query.where(sql.WorkflowJwt.jti == jti)
+        if is_defined(project_key):
+            query = query.where(sql.WorkflowJwt.project_key == project_key)
+        if is_defined(asf_uid):
+            query = query.where(sql.WorkflowJwt.asf_uid == asf_uid)
+
+        return Query(self, query)
+
     def workflow_ssh_key(
         self,
         fingerprint: Opt[str] = NOT_SET,

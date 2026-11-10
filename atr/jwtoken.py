@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as datetime
 import os
 import pathlib
@@ -62,6 +63,13 @@ _GITHUB_OIDC_ISSUER: Final[str] = "https://token.actions.githubusercontent.com"
 _GITHUB_TRUSTED_DOMAINS: Final[list[str]] = ["token.actions.githubusercontent.com"]
 _JWT_KEY_APP_EXTENSION: Final[str] = "jwt_secret_key"
 _JWT_KEY_HEX_LENGTH: Final[int] = (256 // 8) * 2
+
+
+@dataclasses.dataclass(frozen=True)
+class ProjectToken:
+    jwt: str
+    jti: str
+    expires: int
 
 
 def activate_signing_key(key: str) -> None:
@@ -124,12 +132,17 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, sys
     return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
 
-def issue_for_project(uid: str, project_key: safe.ProjectKey) -> str:
+def issue_for_project(uid: str, project_key: safe.ProjectKey) -> ProjectToken:
     # Only routes that opt in accept a project JWT, and only for this project
+    # It's refused until a WorkflowJwt row is stored under its jti, which is the caller's job
     payload = _claims(uid, _ATR_JWT_PROJECT_TTL)
     payload[_ATR_JWT_PROJECT_CLAIM] = str(project_key)
     log.auth_event("jwt_issuance", uid, project_key=str(project_key))
-    return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
+    return ProjectToken(
+        jwt=jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM),
+        jti=payload["jti"],
+        expires=int(payload["exp"].timestamp()),
+    )
 
 
 def project_scope(claims: dict[str, Any]) -> str | None:
@@ -172,6 +185,7 @@ async def verify(token: str) -> dict[str, Any]:
 
     # audit_guidance Revalidating PAT on each request ensures PAT deletion immediately revokes all JWTs issued therefrom
     await _revalidate_pat(claims, is_system)
+    await _revalidate_project(claims)
     return claims
 
 
@@ -372,6 +386,23 @@ async def _revalidate_pat(claims: dict[str, Any], is_system: bool) -> None:
     if pat.is_expired:
         log.auth_failure("jwt_token", "pat_expired")
         raise base.ASFQuartException("Personal Access Token expired", errorcode=401)
+
+
+async def _revalidate_project(claims: dict[str, Any]) -> None:
+    project_key = project_scope(claims)
+    if project_key is None:
+        return
+    async with db.session() as data:
+        row = await data.workflow_jwt(jti=claims["jti"]).get()
+    # A project JWT is only as good as its row, so a token with no row is refused like a revoked one
+    if (row is None) or row.revoked:
+        log.auth_failure("jwt_token", "jwt_project_revoked")
+        raise base.ASFQuartException("Token has been revoked", errorcode=401)
+    if (row.project_key != project_key) or (row.asf_uid != claims.get("sub")):
+        log.auth_failure("jwt_token", "jwt_project_mismatch")
+        raise base.ASFQuartException("Token has been revoked", errorcode=401)
+    if row.expires <= datetime.datetime.now(tz=datetime.UTC).timestamp():
+        raise jwt.ExpiredSignatureError("Signature has expired")
 
 
 def _signing_key() -> str:

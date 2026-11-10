@@ -336,15 +336,25 @@ class FoundationAdmin(FoundationCommitter):
             )
         )
         tokens = await self.__data.query_all(stmt)
-        count = len(tokens)
         for token in tokens:
             await self.__data.delete(token)
+        # A project JWT has no PAT behind it, so it's revoked through its own row
+        project_jwts = await self.__data.query_all(
+            sqlmodel.select(sql.WorkflowJwt).where(
+                via(sql.WorkflowJwt.asf_uid) == target_asf_uid,
+                via(sql.WorkflowJwt.revoked).is_(False),
+            )
+        )
+        for project_jwt in project_jwts:
+            project_jwt.revoked = True
+        count = len(tokens) + len(project_jwts)
 
         if count > 0:
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 target_asf_uid=target_asf_uid,
-                tokens_revoked=count,
+                tokens_revoked=len(tokens),
+                project_jwts_revoked=len(project_jwts),
             )
             log.auth_event("pat_bulk_revoke", target_asf_uid, by=self.__asf_uid)
             message = mail.Message(
@@ -365,6 +375,10 @@ class FoundationAdmin(FoundationCommitter):
             .returning(via(sql.PersonalAccessToken.asfuid))
         )
         owners = (await self.__data.execute(stmt)).scalars().all()
+        # Project JWTs go too, though they live five minutes and so aren't counted or notified
+        await self.__data.execute(
+            sqlmodel.update(sql.WorkflowJwt).where(via(sql.WorkflowJwt.revoked).is_(False)).values(revoked=True)
+        )
         if not owners:
             await self.__data.commit()
             return None

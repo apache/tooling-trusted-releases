@@ -119,6 +119,11 @@ _ROWS = {
         " ref_type, ref_pattern, status, decisions)"
         " VALUES (1, 'o/r', 'c', 'e', 'w', 'push', 'tag', 'v*', 'PENDING', '{}')",
     ),
+    "0144": (
+        "INSERT INTO workflowjwt (jti, project_key, asf_uid, github_uid, github_nid, github_payload,"
+        " declare_sources, expires, revoked)"
+        " VALUES ('jti', 'p', 'u', 'g', 1, '{}', 1, 0, 0)",
+    ),
 }
 
 _INSERT_COMMITTEE = (
