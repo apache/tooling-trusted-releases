@@ -183,8 +183,10 @@ The Finish tab sets the defaults for publishing and announcing a release:
   [Publishing to ASF Distribution Area](promoting-to-release#publishing-to-asf-distribution-area)
   for the default layout.
 * **Allow auto-archive.** Lets a new release archive the previous release in the same cycle when it
-  is announced. This option only appears once the project has a **Cycle match** or **Cycle format**
-  on the [Lifecycle](#lifecycle) tab. See
+  is announced. A project has a single cycle unless it has a **Cycle match**, or a **Cycle format**
+  with a part in parentheses, on the [Lifecycle](#lifecycle) tab. If you support more than one line
+  at a time, set up cycles before enabling this, or a release in one line might archive a release in
+  another. See
   [Archiving the prior release automatically](archiving-and-lifecycle#archiving-the-prior-release-automatically).
 * **Announce release subject** and **Announce release template.** The subject and body of the
   announcement email, which can use variables in the same way as the vote templates.

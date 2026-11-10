@@ -511,7 +511,8 @@ class FinishPolicyForm(form.Form):
     )
     archive_prior_release: form.Bool = form.label(
         "Allow auto-archive",
-        "If enabled, allows a new release to auto archive the prior release in the cycle",
+        "If enabled, allows a new release to auto archive the prior release in the cycle."
+        " If you support more than one line at a time, set up cycles on the Lifecycle tab first.",
         widget=form.Widget.CHECKBOX,
         default=False,
     )

@@ -70,7 +70,7 @@ The files should soon become visible at `https://downloads.apache.org/<committee
 ## Removing superseded releases
 
 Once a release has been superseded, it should be archived, which removes its files from the
-distribution area. If the project has cycles set up and auto-archive enabled in its settings, select
+distribution area. If the project has auto-archive enabled in its settings, select
 "Auto archive prior release" to do this for the previous release in the same cycle when you announce
 the new release. See
 [Archiving and lifecycle](archiving-and-lifecycle) for the policy behind this, the other ways to

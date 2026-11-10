@@ -236,6 +236,16 @@ def test_prior_release_semver_ranks_two_part_versions():
     assert prior.version == "4.1"
 
 
+def test_prior_release_semver_ranks_single_number_versions():
+    # Parent POMs number their releases 38, 39, 40 with no cycles, and 40 sorts
+    # before 9 as text
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    candidates = [_release("9", _ts(1)), _release("39", _ts(5)), _release("40", _ts(10))]
+    prior = cycles.prior_release_in_cycle(project, "41", candidates)
+    assert prior is not None
+    assert prior.version == "40"
+
+
 def test_latest_release_semver_ranks_two_part_versions():
     project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
     # 4.10 is later than 4.9 though it sorts before it as text.

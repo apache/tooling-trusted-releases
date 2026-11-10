@@ -51,12 +51,7 @@ def ensure_cycle_match(page: Page, cycle_match: str) -> None:
 
 
 def ensure_policy_auto_archive(page: Page, enabled: bool) -> None:
-    """Toggle the project-level auto-archive policy if it isn't where we want it.
-
-    Requires cycle_match to be set first, otherwise the policy form skips
-    the archive_prior_release field entirely.
-    """
-    ensure_cycle_match(page, CYCLE_MATCH)
+    """Toggle the project-level auto-archive policy if it isn't where we want it."""
     root_helpers.visit(page, FINISH_POLICY_URL)
     checkbox = page.locator("input#archive_prior_release")
     if checkbox.is_checked() == enabled:

@@ -1047,7 +1047,7 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
                 "announce_release_template": announce_release_template_widget,
                 "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE, readonly=readonly),
             },
-            skip=["email_cc", "email_bcc", *(["archive_prior_release"] if not project.cycle_match else [])],
+            skip=["email_cc", "email_bcc"],
             flash_error_data=flash_error_data,
             readonly=readonly,
         )
