@@ -1199,7 +1199,7 @@ class CommitteeParticipant(FoundationCommitter):
         if github_payload is None:
             source_override = await self.__source_override(project_key, version_key, source_commit)
         else:
-            # A workflow's commit is a declaration alongside the signed one in its token, as it is over rsync
+            # With a token the commit is the workflow's declaration, not an override
             declared = source_commit
 
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:

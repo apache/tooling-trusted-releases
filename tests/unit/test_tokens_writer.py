@@ -18,6 +18,7 @@
 import datetime
 import unittest.mock as mock
 from collections.abc import AsyncIterator
+from typing import Final
 
 import pytest
 import sqlalchemy
@@ -25,9 +26,13 @@ import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.models.github as github
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.writers.tokens as tokens
+
+# Far enough ahead that a project JWT row is still live
+_LATER: Final[int] = 2**31 - 1
 
 
 @pytest.fixture
@@ -42,6 +47,25 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
     sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
     yield sessionmaker
     await engine.dispose()
+
+
+async def test_consume_workflow_jti_commits_and_then_refuses_the_same_token(
+    sqlite_sessionmaker, github_payload: github.TrustedPublisherPayload
+) -> None:
+    async with sqlite_sessionmaker() as data:
+        writer = object.__new__(tokens.CommitteeParticipant)
+        writer._CommitteeParticipant__data = data
+        await writer.consume_workflow_jti(github_payload, 0)
+        # The caller goes on to fail, and never commits anything itself
+        await data.rollback()
+
+    async with sqlite_sessionmaker() as data:
+        assert [row.jti for row in await data.query_all(sqlmodel.select(sql.WorkflowJti))] == ["test-jti"]
+        writer = object.__new__(tokens.CommitteeParticipant)
+        writer._CommitteeParticipant__data = data
+        with pytest.raises(storage.AccessError, match="already been used") as exc_info:
+            await writer.consume_workflow_jti(github_payload, 0)
+        assert exc_info.value.status == 409
 
 
 async def test_revoke_all_users_tokens_keeps_system_tokens(sqlite_sessionmaker) -> None:
@@ -131,12 +155,37 @@ async def test_revocation_notice_failed_queue_preserves_audience(sqlite_sessionm
         assert "pat_revocation_notice" not in task.task_args
 
 
-async def test_revoke_all_user_tokens_revokes_project_jwts(sqlite_sessionmaker) -> None:
+async def test_revoke_all_project_jwts_revokes_and_records_the_live_ones(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
-        for jti, asf_uid in [("a", "alice"), ("b", "bob")]:
+        for jti, expires in [("a", _LATER), ("b", _LATER), ("c", 0)]:
             data.add(
                 sql.WorkflowJwt(
-                    jti=jti, project_key="example", asf_uid=asf_uid, github_uid=asf_uid, github_nid=1, expires=0
+                    jti=jti, project_key="example", asf_uid="alice", github_uid="alice", github_nid=1, expires=expires
+                )
+            )
+        await data.commit()
+        write_as = mock.MagicMock()
+        writer = object.__new__(tokens.FoundationAdmin)
+        writer._FoundationAdmin__write_as = write_as
+        writer._FoundationAdmin__data = data
+        writer._FoundationAdmin__asf_uid = "admin"
+
+        assert await writer.revoke_all_project_jwts() == 2
+
+        rows = {row.jti: row.revoked for row in await data.workflow_jwt().all()}
+        assert rows == {"a": True, "b": True, "c": False}
+        write_as.append_to_audit_log.assert_called_once_with(project_jwts_revoked=2)
+        assert await writer.revoke_all_project_jwts() == 0
+        write_as.append_to_audit_log.assert_called_once()
+
+
+async def test_revoke_all_user_tokens_revokes_project_jwts(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        # Row c has expired
+        for jti, asf_uid, expires in [("a", "alice", _LATER), ("b", "bob", _LATER), ("c", "alice", 0)]:
+            data.add(
+                sql.WorkflowJwt(
+                    jti=jti, project_key="example", asf_uid=asf_uid, github_uid=asf_uid, github_nid=1, expires=expires
                 )
             )
         await data.commit()
@@ -150,26 +199,8 @@ async def test_revoke_all_user_tokens_revokes_project_jwts(sqlite_sessionmaker) 
         assert await writer.revoke_all_user_tokens("alice") == 1
 
         rows = {row.jti: row.revoked for row in await data.workflow_jwt().all()}
-        assert rows == {"a": True, "b": False}
+        assert rows == {"a": True, "b": False, "c": False}
         write_as.append_to_audit_log.assert_called_once_with(
             target_asf_uid="alice", tokens_revoked=0, project_jwts_revoked=1
         )
         assert await writer.revoke_all_user_tokens("alice") == 0
-
-
-async def test_revoke_all_users_tokens_revokes_project_jwts(sqlite_sessionmaker) -> None:
-    async with sqlite_sessionmaker() as data:
-        data.add(
-            sql.WorkflowJwt(
-                jti="a", project_key="example", asf_uid="alice", github_uid="alice", github_nid=1, expires=0
-            )
-        )
-        await data.commit()
-        writer = object.__new__(tokens.FoundationAdmin)
-        writer._FoundationAdmin__write_as = mock.MagicMock()
-        writer._FoundationAdmin__data = data
-        writer._FoundationAdmin__asf_uid = "admin"
-
-        assert await writer.revoke_all_users_tokens() is None
-
-        assert [row.revoked for row in await data.workflow_jwt().all()] == [True]

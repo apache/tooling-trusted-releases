@@ -135,13 +135,11 @@ async def test_store_file_keeps_the_workflow_token_with_the_revision(
     )
 
     assert isinstance(result, sql.Revision)
-    # What the protection check and the compare check go on, and what an upload over rsync leaves behind too
     kept = await attestable.latest_github_tp_payload(pk, vk)
     assert (kept is not None) and (kept.sha == github_payload.sha)
     recorded = await source.read(pk, vk, safe.RevisionNumber("00001"))
     assert recorded.default == github_payload.sha
     assert recorded.declared == (str(declared) if (declared is not None) else None)
-    # The workflow's commit is a declaration, and never the override that a person's upload would set
     assert recorded.override is None
 
 

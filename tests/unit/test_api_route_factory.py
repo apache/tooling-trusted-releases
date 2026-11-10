@@ -60,7 +60,7 @@ async def test_authenticate_body_is_a_noop_for_non_body_levels() -> None:
 async def test_authenticate_header_accepts_a_valid_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_authenticate() -> dict[str, object]:
+    async def fake_authenticate(*, allow_project: bool = False) -> dict[str, object]:
         return {"sub": "alice", "atr_sys": True}
 
     monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
@@ -74,7 +74,7 @@ async def test_authenticate_header_accepts_a_valid_token(
 async def test_authenticate_header_propagates_token_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_authenticate() -> dict[str, object]:
+    async def fake_authenticate(*, allow_project: bool = False) -> dict[str, object]:
         raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401)
 
     monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
@@ -88,7 +88,7 @@ async def test_authenticate_header_propagates_token_failures(
 async def test_authenticate_header_requires_system_claim_for_system_bearer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_authenticate() -> dict[str, object]:
+    async def fake_authenticate(*, allow_project: bool = False) -> dict[str, object]:
         return {"sub": "alice"}
 
     monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
@@ -125,6 +125,39 @@ async def test_header_auth_runs_before_body_validation(
     assert response.status_code == 401, (
         f"expected 401 (auth before body validation), got {response.status_code}: {await response.get_data()!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_project_token_is_held_to_its_project_by_the_route_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A project JWT for one project is refused by POST /api/release/create for another.
+
+    Goes through the registered route, so it covers the authorize_project call in the factory.
+    """
+    import asfquart
+    import quart
+
+    import atr.blueprints as blueprints
+
+    async def fake_authenticate(*, allow_project: bool = False) -> dict[str, object]:
+        claims: dict[str, object] = {"sub": "alice", "jti": "jti", "atr_prj": "example"}
+        quart.g.jwt_claims = claims
+        return claims
+
+    monkeypatch.setattr("atr.blueprints._export_routes", lambda _: None)
+    monkeypatch.setattr("asfquart.APP", None)
+    monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
+
+    app = asfquart.construct("test")
+    # Needed for body validation
+    quart_schema.QuartSchema(app)
+    blueprints.register(app)
+
+    client = app.test_client()
+    response = await client.post("/api/release/create", json={"project": "other", "version": "1.0.0"})
+    assert response.status_code == 403, f"got {response.status_code}: {await response.get_data()!r}"
+    assert b"can only be used for project 'example'" in await response.get_data()
 
 
 def test_security_scheme_is_applied_only_for_header_levels() -> None:

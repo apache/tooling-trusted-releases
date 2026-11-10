@@ -20,11 +20,9 @@ from __future__ import annotations
 
 import time
 
-import sqlalchemy.exc
 import sqlmodel
 
 import atr.db as db
-import atr.jwtoken as jwtoken
 import atr.mail as mail
 import atr.models.github as github
 import atr.models.safe as safe
@@ -98,49 +96,6 @@ class CommitteeParticipant(FoundationCommitter):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
-    async def add_workflow_jwt(
-        self,
-        github_uid: str,
-        github_nid: int,
-        project_key: safe.ProjectKey,
-        github_payload: github.TrustedPublisherPayload,
-        *,
-        source_commit: safe.CommitHash | None = None,
-        declare_sources: bool = True,
-    ) -> jwtoken.ProjectToken:
-        # The HTTP counterpart of add_workflow_key, for workflows that upload through the API and not rsync
-        now = int(time.time())
-        token = jwtoken.issue_for_project(self.__asf_uid, project_key)
-        # A token is exchanged once only, whether for a key or a JWT, so this rejects the replay before any row exists
-        await self.__consume_jti(github_payload, now, token.expires)
-        wj_source_commit = str(source_commit) if (source_commit is not None) else None
-        self.__data.add(
-            sql.WorkflowJwt(
-                jti=token.jti,
-                project_key=str(project_key),
-                asf_uid=self.__asf_uid,
-                github_uid=github_uid,
-                github_nid=github_nid,
-                # The GitHub token's own nbf and exp have been checked, and the row's expires takes over from here
-                github_payload=github_payload.model_dump(exclude={"exp", "nbf"}),
-                source_commit=wj_source_commit,
-                declare_sources=declare_sources,
-                expires=token.expires,
-            )
-        )
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            jti=token.jti,
-            project_key=str(project_key),
-            github_uid=github_uid,
-            github_nid=github_nid,
-            source_commit=wj_source_commit,
-            declare_sources=declare_sources,
-            expires=token.expires,
-        )
-        return token
-
     async def add_workflow_key(
         self,
         github_uid: str,
@@ -156,9 +111,10 @@ class CommitteeParticipant(FoundationCommitter):
         # Twenty minutes to upload all files
         ttl = 20 * 60
         expires = now + ttl
-        # A token mints one key only, so this rejects the replay before any key exists
-        await self.__consume_jti(github_payload, now, now + ttl)
+        # Before the token is consumed, so a key we can't read doesn't use it up
         fingerprint = util.key_ssh_fingerprint(key)
+        # A token is exchanged once only, so this rejects the replay before any key exists
+        await self.__write_as.tokens.consume_workflow_jti(github_payload, now + ttl)
         # Exclude nbf and exp as we've already validated this key - now protected by workflowkey "expires"
         json_payload = github_payload.model_dump(exclude={"exp", "nbf"})
         wsk_source_commit = str(source_commit) if (source_commit is not None) else None
@@ -187,17 +143,6 @@ class CommitteeParticipant(FoundationCommitter):
             expires=expires,
         )
         return fingerprint, expires
-
-    async def __consume_jti(self, github_payload: github.TrustedPublisherPayload, now: int, fallback: int) -> None:
-        # Fall back to the key's own lifetime if the token carried no exp, so the row outlives any replay
-        record = sql.WorkflowJti(jti=github_payload.jti, expires=github_payload.exp or fallback, consumed=now)
-        self.__data.add(record)
-        try:
-            # The primary key does the work; a second flush of the same jti cannot succeed
-            await self.__data.flush()
-        except sqlalchemy.exc.IntegrityError as e:
-            await self.__data.rollback()
-            raise storage.AccessError("Trusted Publisher token has already been used", status=409) from e
 
 
 class CommitteeMember(CommitteeParticipant):

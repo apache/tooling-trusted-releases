@@ -54,6 +54,7 @@ import atr.models.validation as validation
 import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
+import atr.ratelimit as ratelimit
 import atr.shared as shared
 import atr.shared.catalog as catalog
 import atr.storage as storage
@@ -74,6 +75,10 @@ type DictResponse = tuple[dict[str, Any], int]
 
 ROUTES_MODULE: Final[Literal[True]] = True
 _EMAIL_VOTE_RESOLVE_PROJECTS: Final[frozenset[str]] = frozenset({"solr-mcp"})
+# Per committer per project. A project JWT lasts 5 minutes, so a long upload needs 12 an hour
+_TRUSTED_PUBLISHER_EXCHANGE_HOURLY: Final[int] = 30
+# Per address, before the token is verified. Loose, as GitHub runners share addresses between projects
+_TRUSTED_PUBLISHER_FLOOD_LIMIT: Final[tuple[int, datetime.timedelta]] = (60, datetime.timedelta(hours=1))
 
 
 @api.typed(
@@ -426,10 +431,7 @@ async def committees_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed(
-    auth_scheme=api_auth.Auth.BODY_OIDC,
-    rate_limit=(10, datetime.timedelta(hours=1)),
-)
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC, rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT)
 async def distribute_ssh_register(
     _distribute_ssh_register: Literal["distribute/ssh/register"],
     data: models.api.DistributeSshRegisterArgs,
@@ -458,6 +460,7 @@ async def distribute_ssh_register(
     async with db.session() as _data:
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
     await interaction.trusted_workflow_run(payload, int(data.task_id), data.project_key)
+    await _trusted_publisher_rate_limit("distribute/ssh/register", release.safe_project_key, asf_uid)
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -1173,10 +1176,7 @@ async def publisher_distribution_record(
     ).model_dump(mode="json"), 200
 
 
-@api.typed(
-    auth_scheme=api_auth.Auth.BODY_OIDC,
-    rate_limit=(10, datetime.timedelta(hours=1)),
-)
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC, rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT)
 async def publisher_jwt_create(
     _publisher_jwt_create: Literal["publisher/jwt/create"],
     data: models.api.PublisherJwtCreateArgs,
@@ -1197,8 +1197,9 @@ async def publisher_jwt_create(
         interaction.TrustedProjectPhase.COMPOSE,
     )
     payload = ctx.payload
+    await _trusted_publisher_rate_limit("publisher/jwt/create", project.safe_key, asf_uid)
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
-        token = await wacm.ssh.add_workflow_jwt(
+        token = await wacm.tokens.issue_workflow_jwt(
             payload.actor,
             payload.actor_id,
             project.safe_key,
@@ -1279,10 +1280,7 @@ async def publisher_release_source(
     ).model_dump(mode="json"), 201
 
 
-@api.typed(
-    auth_scheme=api_auth.Auth.BODY_OIDC,
-    rate_limit=(10, datetime.timedelta(hours=1)),
-)
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC, rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT)
 async def publisher_ssh_register(
     _publisher_ssh_register: Literal["publisher/ssh/register"],
     data: models.api.PublisherSshRegisterArgs,
@@ -1303,6 +1301,7 @@ async def publisher_ssh_register(
         interaction.TrustedProjectPhase.COMPOSE,
     )
     payload = ctx.payload
+    await _trusted_publisher_rate_limit("publisher/ssh/register", project.safe_key, asf_uid)
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -2674,7 +2673,7 @@ async def _release_store_sources(
     claims = getattr(quart.g, "jwt_claims", {})
     if jwtoken.project_scope(claims) is None:
         return None, source_commit, True
-    # A project JWT brings the sources that its workflow declared at the exchange, and the request can't change them
+    # For a project JWT the sources were set at the exchange
     if source_commit is not None:
         raise exceptions.BadRequest("The source commit is set when this token is issued, and can't be given here")
     async with db.session() as data:
@@ -2741,6 +2740,13 @@ def _stored_certificate_issuer_match(
     if parsed is None:
         return None
     return _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
+
+
+async def _trusted_publisher_rate_limit(scope: str, project_key: safe.ProjectKey, asf_uid: str) -> None:
+    # Keyed by project and committer, as GitHub runners share addresses
+    await ratelimit.check(
+        scope, f"{project_key}:{asf_uid}", _TRUSTED_PUBLISHER_EXCHANGE_HOURLY, datetime.timedelta(hours=1)
+    )
 
 
 async def _vote_resolve_release(

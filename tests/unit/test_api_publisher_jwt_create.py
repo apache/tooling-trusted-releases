@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import inspect
 import unittest.mock as mock
 from types import SimpleNamespace
@@ -33,7 +34,9 @@ async def test_publisher_jwt_create_exchanges_as_a_committee_member_of_the_compo
     project = SimpleNamespace(safe_key=safe.ProjectKey("example"), committee=SimpleNamespace(key="example"))
     lookup = mock.AsyncMock(return_value=("alice", project))
     wacm = mock.MagicMock()
-    wacm.ssh.add_workflow_jwt = mock.AsyncMock(return_value=jwtoken.ProjectToken(jwt="token", jti="jti", expires=99))
+    wacm.tokens.issue_workflow_jwt = mock.AsyncMock(
+        return_value=jwtoken.ProjectToken(jwt="token", jti="jti", expires=99)
+    )
     write = mock.MagicMock()
     write.return_value.__aenter__.return_value = wacm
     monkeypatch.setattr(
@@ -41,6 +44,8 @@ async def test_publisher_jwt_create_exchanges_as_a_committee_member_of_the_compo
     )
     monkeypatch.setattr(api.interaction, "trusted_project_for_payload", lookup)
     monkeypatch.setattr(storage, "write_as_committee_member", write)
+    limit = mock.AsyncMock()
+    monkeypatch.setattr(api.ratelimit, "check", limit)
     source_commit = safe.CommitHash("d" * 40)
 
     response, status = await inspect.unwrap(api.publisher_jwt_create)(
@@ -57,6 +62,7 @@ async def test_publisher_jwt_create_exchanges_as_a_committee_member_of_the_compo
     }
     lookup.assert_awaited_once_with(payload, "alice", api.interaction.TrustedProjectPhase.COMPOSE)
     write.assert_called_once_with("example", "alice")
-    wacm.ssh.add_workflow_jwt.assert_awaited_once_with(
+    limit.assert_awaited_once_with("publisher/jwt/create", "example:alice", 30, datetime.timedelta(hours=1))
+    wacm.tokens.issue_workflow_jwt.assert_awaited_once_with(
         "alice-gh", 7, safe.ProjectKey("example"), payload, source_commit=source_commit, declare_sources=False
     )

@@ -41,18 +41,16 @@ import atr.models.safe as safe
 import atr.user as user
 import atr.util as util
 
+# Project JWTs come from the Trusted Publishing exchange. This runs from the exchange, not the GitHub token's exp
+PROJECT_JWT_TTL: Final[int] = 5 * 60
+
 _ALGORITHM: Final[str] = "HS256"
 _ATR_JWT_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_ISSUER: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_LEEWAY_SECONDS: Final[int] = 2 * 60
-# A project JWT comes from a Trusted Publishing token exchange, and can't outlive the GitHub token it came from
 _ATR_JWT_PROJECT_CLAIM: Final[str] = "atr_prj"
-_ATR_JWT_PROJECT_TTL: Final[int] = 5 * 60
 _ATR_JWT_TTL: Final[int] = 30 * 60
 _GITHUB_OIDC_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
-# Events where the ref and sha in the token are the ones a committer chose to run. Others, such as
-# pull_request_target, carry the default branch's ref while running on behalf of somebody else's change
-_GITHUB_OIDC_EVENTS: Final[frozenset[str]] = frozenset({"push", "release", "workflow_dispatch"})
 _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
     "enterprise": "the-asf",
     "enterprise_id": "212555",
@@ -63,6 +61,18 @@ _GITHUB_OIDC_ISSUER: Final[str] = "https://token.actions.githubusercontent.com"
 _GITHUB_TRUSTED_DOMAINS: Final[list[str]] = ["token.actions.githubusercontent.com"]
 _JWT_KEY_APP_EXTENSION: Final[str] = "jwt_secret_key"
 _JWT_KEY_HEX_LENGTH: Final[int] = (256 // 8) * 2
+
+
+class GitHubEventError(base.ASFQuartException):
+    """A GitHub OIDC token from a workflow event that ATR doesn't accept."""
+
+    def __init__(self, event_name: object) -> None:
+        accepted = ", ".join(sorted(constants.GITHUB_TRUSTED_EVENTS))
+        super().__init__(
+            f"GitHub OIDC event {event_name} is not accepted, the workflow must be triggered by one of: {accepted}",
+            errorcode=401,
+        )
+        self.event_name = event_name
 
 
 @dataclasses.dataclass(frozen=True)
@@ -79,12 +89,12 @@ def activate_signing_key(key: str) -> None:
     app.extensions[_JWT_KEY_APP_EXTENSION] = key
 
 
-async def authenticate() -> dict[str, Any]:
+async def authenticate(*, allow_project: bool = False) -> dict[str, Any]:
     # Verify the request's Bearer JWT, stash the claims on quart.g, and return
     # them. Raises ASFQuartException(401) on any token problem.
     token = _extract_bearer_token(quart.request)
     try:
-        claims = await verify(token)
+        claims = await verify(token, allow_project=allow_project)
     except jwt.ExpiredSignatureError as exc:
         log.auth_failure("jwt_token", "jwt_token_expired")
         raise base.ASFQuartException("Token has expired", errorcode=401) from exc
@@ -120,9 +130,10 @@ def bearer_subject(request: quart.Request) -> str | None:
 
 def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, system: bool = False) -> str:
     # audit_guidance no explicit typ header or token_type claim is added: the aud claim (_ATR_JWT_AUDIENCE)
-    # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
-    # by a single internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS
-    # deployments, which this is not
+    # already acts as an explicit token type discriminator, and every ATR JWT is verified by a single
+    # internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS deployments,
+    # which this is not. A project JWT (issue_for_project) is told apart by its atr_prj claim, which
+    # that one verifier refuses unless the caller asks for project JWTs
     payload = _claims(uid, ttl)
     if pat_hash:
         payload["atr_th"] = pat_hash
@@ -133,9 +144,8 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, sys
 
 
 def issue_for_project(uid: str, project_key: safe.ProjectKey) -> ProjectToken:
-    # Only routes that opt in accept a project JWT, and only for this project
-    # It's refused until a WorkflowJwt row is stored under its jti, which is the caller's job
-    payload = _claims(uid, _ATR_JWT_PROJECT_TTL)
+    # The caller has to store a WorkflowJwt row under the jti, or verify will refuse the token
+    payload = _claims(uid, PROJECT_JWT_TTL)
     payload[_ATR_JWT_PROJECT_CLAIM] = str(project_key)
     log.auth_event("jwt_issuance", uid, project_key=str(project_key))
     return ProjectToken(
@@ -150,7 +160,7 @@ def project_scope(claims: dict[str, Any]) -> str | None:
     if _ATR_JWT_PROJECT_CLAIM not in claims:
         return None
     project_key = claims[_ATR_JWT_PROJECT_CLAIM]
-    # The claim being there at all is what limits the token, so a value we can't use must never read as unlimited
+    # A malformed claim shouldn't read as no claim
     if (not isinstance(project_key, str)) or (not project_key):
         raise jwt.InvalidTokenError("Invalid Bearer JWT project")
     return project_key
@@ -163,7 +173,7 @@ def setup_signing_key(app: base.QuartApp) -> None:
     app.extensions[_JWT_KEY_APP_EXTENSION] = key
 
 
-async def verify(token: str) -> dict[str, Any]:
+async def verify(token: str, *, allow_project: bool = False) -> dict[str, Any]:
     # We get the uid for logging here, which does allow faked UIDs to be used, but they'll only be used
     # to be set in an auth_failure log which would show the claimed UID, which we explicitly want for audit context
     # (even if it's not real, we want to know someone tried to auth as that user)
@@ -173,6 +183,10 @@ async def verify(token: str) -> dict[str, Any]:
     claims = _decode(token)
     log.debug(f"JWT claims: {claims}")
     _project_claims_check(claims)
+    # Refused by default, so only callers that ask for project JWTs get one
+    if (not allow_project) and (project_scope(claims) is not None):
+        log.auth_failure("jwt_token", "jwt_project_refused")
+        raise base.ASFQuartException("This token cannot be used with this endpoint", errorcode=403)
     if not isinstance(asf_uid, str):
         log.auth_failure("jwt_token", "jwt_subject_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT subject")
@@ -194,8 +208,8 @@ async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
     Validate a github OIDC token. Note that the "jti" claim is parsed but is not consumed/rejected here
     by design, as multiple calls are expected from a single workflow without re-generating a new token.
 
-    Where we *do* enforce single-use jti is in the SSH register - a single token can only be used to issue
-    a single SSH key.
+    Where we *do* enforce single-use jti is in the SSH register and the JWT exchange - a single token can
+    only be used to issue a single SSH key or a single project JWT.
     """
     header = jwt.get_unverified_header(token)
     dangerous_headers = {"jku", "x5u", "jwk"}
@@ -304,12 +318,8 @@ def _github_oidc_claims_check(payload: dict[str, Any]) -> None:
                 errorcode=401,
             )
     event_name = payload.get("event_name")
-    if event_name not in _GITHUB_OIDC_EVENTS:
-        accepted = ", ".join(sorted(_GITHUB_OIDC_EVENTS))
-        raise base.ASFQuartException(
-            f"GitHub OIDC event {event_name} is not accepted, the workflow must be triggered by one of: {accepted}",
-            errorcode=401,
-        )
+    if event_name not in constants.GITHUB_TRUSTED_EVENTS:
+        raise GitHubEventError(event_name)
 
 
 def _jwt_key_path() -> pathlib.Path:
@@ -327,11 +337,11 @@ def _new_signing_key() -> str:
 def _project_claims_check(claims: dict[str, Any]) -> None:
     if project_scope(claims) is None:
         return
-    # A project JWT acts for a committer in one project, so it can't also be a system or PAT token
+    # A project JWT can't also be a system or PAT token
     if claims.get("atr_sys") or claims.get("atr_th"):
         log.auth_failure("jwt_token", "jwt_project_claims_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT project")
-    # The leeway is for clocks that disagree, and we both issue and check this token
+    # No leeway on expiry for project JWTs
     if claims["exp"] <= datetime.datetime.now(tz=datetime.UTC).timestamp():
         raise jwt.ExpiredSignatureError("Signature has expired")
 
@@ -394,7 +404,7 @@ async def _revalidate_project(claims: dict[str, Any]) -> None:
         return
     async with db.session() as data:
         row = await data.workflow_jwt(jti=claims["jti"]).get()
-    # A project JWT is only as good as its row, so a token with no row is refused like a revoked one
+    # No row is treated the same as a revoked one
     if (row is None) or row.revoked:
         log.auth_failure("jwt_token", "jwt_project_revoked")
         raise base.ASFQuartException("Token has been revoked", errorcode=401)

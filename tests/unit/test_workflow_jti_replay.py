@@ -25,6 +25,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.writers.ssh as ssh
+import atr.storage.writers.tokens as tokens
 
 # Comfortably beyond the key's own twenty-minute lifetime
 _DISTANT_EXPIRY = 2**31 - 1
@@ -35,11 +36,11 @@ _DISTANT_EXPIRY = 2**31 - 1
 async def test_declared_source_commit_is_stored_with_the_jwt(
     monkeypatch: pytest.MonkeyPatch, source_commit: safe.CommitHash | None
 ) -> None:
-    monkeypatch.setattr(ssh.jwtoken, "_signing_key", lambda: "a" * 64)
+    monkeypatch.setattr(tokens.jwtoken, "_signing_key", lambda: "a" * 64)
     data = _data()
-    writer = _writer(data)
+    writer = _token_writer(data)
 
-    token = await writer.add_workflow_jwt(
+    token = await writer.issue_workflow_jwt(
         "test-user", 12345, safe.ProjectKey("alpha-one"), _payload(), source_commit=source_commit, declare_sources=False
     )
 
@@ -88,32 +89,51 @@ async def test_recorded_token_expiry_follows_the_token_rather_than_the_key(monke
 
 @pytest.mark.asyncio
 async def test_token_presented_a_second_time_mints_no_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ssh.jwtoken, "_signing_key", lambda: "a" * 64)
+    monkeypatch.setattr(tokens.jwtoken, "_signing_key", lambda: "a" * 64)
     data = _data()
-    data.flush = mock.AsyncMock(side_effect=_integrity_error())
-    writer = _writer(data)
+    data.commit = mock.AsyncMock(side_effect=_integrity_error())
+    writer = _token_writer(data)
+    issue = mock.Mock()
+    monkeypatch.setattr(tokens.jwtoken, "issue_for_project", issue)
 
     with pytest.raises(storage.AccessError, match="already been used"):
-        await writer.add_workflow_jwt("test-user", 12345, safe.ProjectKey("alpha-one"), _payload())
+        await writer.issue_workflow_jwt("test-user", 12345, safe.ProjectKey("alpha-one"), _payload())
 
     data.rollback.assert_awaited_once()
-    data.commit.assert_not_awaited()
+    data.commit.assert_awaited_once()
     assert not _added_of_type(data, sql.WorkflowJwt)
+    issue.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_token_presented_a_second_time_mints_no_further_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ssh.util, "key_ssh_fingerprint", lambda _key: "SHA256:fingerprint")
     data = _data()
-    data.flush = mock.AsyncMock(side_effect=_integrity_error())
+    data.commit = mock.AsyncMock(side_effect=_integrity_error())
     writer = _writer(data)
 
     with pytest.raises(storage.AccessError, match="already been used"):
         await writer.add_workflow_key("test-user", 12345, safe.ProjectKey("alpha-one"), "ssh-ed25519 AAAA", _payload())
 
     data.rollback.assert_awaited_once()
-    data.commit.assert_not_awaited()
+    data.commit.assert_awaited_once()
     assert not _added_of_type(data, sql.WorkflowSSHKey)
+
+
+@pytest.mark.asyncio
+async def test_token_is_not_consumed_for_a_key_that_cannot_be_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unreadable(_key: str) -> str:
+        raise ValueError("Invalid SSH key")
+
+    monkeypatch.setattr(ssh.util, "key_ssh_fingerprint", unreadable)
+    data = _data()
+    writer = _writer(data)
+
+    with pytest.raises(ValueError, match="Invalid SSH key"):
+        await writer.add_workflow_key("test-user", 12345, safe.ProjectKey("alpha-one"), "not a key", _payload())
+
+    assert not _added_of_type(data, sql.WorkflowJti)
+    data.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -129,7 +149,8 @@ async def test_token_presented_once_is_recorded_and_mints_a_key(monkeypatch: pyt
     assert fingerprint == "SHA256:fingerprint"
     assert expires > 0
     data.rollback.assert_not_awaited()
-    data.commit.assert_awaited_once()
+    # Once for the token's jti, then once for the key
+    assert data.commit.await_count == 2
     recorded = _added_of_type(data, sql.WorkflowJti)
     assert [record.jti for record in recorded] == ["test-jti"]
     assert _added_of_type(data, sql.WorkflowSSHKey)
@@ -137,16 +158,16 @@ async def test_token_presented_once_is_recorded_and_mints_a_key(monkeypatch: pyt
 
 @pytest.mark.asyncio
 async def test_token_presented_once_is_recorded_and_mints_a_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ssh.jwtoken, "_signing_key", lambda: "a" * 64)
+    monkeypatch.setattr(tokens.jwtoken, "_signing_key", lambda: "a" * 64)
     data = _data()
-    writer = _writer(data)
+    writer = _token_writer(data)
 
-    token = await writer.add_workflow_jwt("test-user", 12345, safe.ProjectKey("alpha-one"), _payload())
+    token = await writer.issue_workflow_jwt("test-user", 12345, safe.ProjectKey("alpha-one"), _payload())
 
     assert token.jwt
     data.rollback.assert_not_awaited()
-    data.commit.assert_awaited_once()
-    # The same table that ssh/register writes to, so a token spent on a key can't then buy a JWT
+    assert data.commit.await_count == 2
+    # The same table that ssh/register uses
     assert [record.jti for record in _added_of_type(data, sql.WorkflowJti)] == ["test-jti"]
 
 
@@ -203,7 +224,16 @@ def _payload(**overrides: object) -> github.TrustedPublisherPayload:
     return github.TrustedPublisherPayload.model_validate(defaults)
 
 
+def _token_writer(data: mock.MagicMock) -> tokens.CommitteeParticipant:
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "tester"
+    return tokens.CommitteeParticipant(write, mock.MagicMock(), data, "alpha")
+
+
 def _writer(data: mock.MagicMock) -> ssh.CommitteeParticipant:
     write = mock.MagicMock()
     write.authorisation.asf_uid = "tester"
-    return ssh.CommitteeParticipant(write, mock.MagicMock(), data, "alpha")
+    write_as = mock.MagicMock()
+    # add_workflow_key calls consume_workflow_jti on the tokens writer
+    write_as.tokens = tokens.CommitteeParticipant(write, write_as, data, "alpha")
+    return ssh.CommitteeParticipant(write, write_as, data, "alpha")

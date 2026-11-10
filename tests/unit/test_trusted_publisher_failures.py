@@ -27,6 +27,7 @@ import pytest
 
 import atr.blueprints.api_auth as api_auth
 import atr.db.interaction as interaction
+import atr.jwtoken as jwtoken
 
 _SECRET_DETAIL = "internal-detail-that-must-not-leak"
 
@@ -122,6 +123,42 @@ async def test_held_back_failure_is_logged_but_not_emailed(
     await _authenticate()
 
     assert recorder.auth_failures == [("trusted_publisher", "issuer_invalid")]
+    assert recorder.warnings == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_name", ["pull_request_target", "workflow_run"])
+async def test_refused_event_from_an_untrusted_trigger_alerts(
+    monkeypatch: pytest.MonkeyPatch, recorder: _Recorder, event_name: str
+) -> None:
+    refused = jwtoken.GitHubEventError(event_name)
+    _validate_raising(monkeypatch, refused)
+    _throttle_returns(monkeypatch, 0)
+
+    rejected = await _authenticate()
+
+    assert rejected is refused
+    assert recorder.auth_failures == [("trusted_publisher", "event_untrusted")]
+    assert [w["reason"] for w in recorder.warnings] == ["event_untrusted"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_name", ["schedule", "pull_request", None])
+async def test_refused_event_is_logged_without_alerting(
+    monkeypatch: pytest.MonkeyPatch, recorder: _Recorder, event_name: str | None
+) -> None:
+    refused = jwtoken.GitHubEventError(event_name)
+    _validate_raising(monkeypatch, refused)
+
+    def unexpected_alert(self: object, reason: str, now: float) -> int | None:
+        raise AssertionError("a workflow's trigger must not reach the alert throttle")
+
+    monkeypatch.setattr(api_auth._TrustedPublisherAlertThrottle, "due", unexpected_alert)
+
+    rejected = await _authenticate()
+
+    assert rejected is refused
+    assert recorder.auth_failures == [("trusted_publisher", "event_refused")]
     assert recorder.warnings == []
 
 

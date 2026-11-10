@@ -21,8 +21,10 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
+import time
 import uuid
 
+import sqlalchemy.exc
 import sqlmodel
 
 import atr.constants as constants
@@ -33,6 +35,8 @@ import atr.ldap as ldap
 import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
+import atr.models.github as github
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -156,6 +160,61 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def consume_workflow_jti(self, github_payload: github.TrustedPublisherPayload, fallback: int) -> None:
+        """Record a GitHub OIDC token as exchanged, refusing a replay."""
+        # Fall back to the lifetime of what's being issued if the token carried no exp, so the row outlives any replay
+        record = sql.WorkflowJti(
+            jti=github_payload.jti, expires=github_payload.exp or fallback, consumed=int(time.time())
+        )
+        self.__data.add(record)
+        try:
+            # The primary key does the work; a second insert of the same jti cannot succeed
+            await self.__data.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            await self.__data.rollback()
+            raise storage.AccessError("Trusted Publisher token has already been used", status=409) from e
+
+    async def issue_workflow_jwt(
+        self,
+        github_uid: str,
+        github_nid: int,
+        project_key: safe.ProjectKey,
+        github_payload: github.TrustedPublisherPayload,
+        *,
+        source_commit: safe.CommitHash | None = None,
+        declare_sources: bool = True,
+    ) -> jwtoken.ProjectToken:
+        # Consumed first, so a replay is refused before anything is issued
+        await self.consume_workflow_jti(github_payload, int(time.time()) + jwtoken.PROJECT_JWT_TTL)
+        token = jwtoken.issue_for_project(self.__asf_uid, project_key)
+        wj_source_commit = str(source_commit) if (source_commit is not None) else None
+        self.__data.add(
+            sql.WorkflowJwt(
+                jti=token.jti,
+                project_key=str(project_key),
+                asf_uid=self.__asf_uid,
+                github_uid=github_uid,
+                github_nid=github_nid,
+                # Exclude nbf and exp as we've already validated the token - now protected by the row's expires
+                github_payload=github_payload.model_dump(exclude={"exp", "nbf"}),
+                source_commit=wj_source_commit,
+                declare_sources=declare_sources,
+                expires=token.expires,
+            )
+        )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            jti=token.jti,
+            project_key=str(project_key),
+            github_uid=github_uid,
+            github_nid=github_nid,
+            source_commit=wj_source_commit,
+            declare_sources=declare_sources,
+            expires=token.expires,
+        )
+        return token
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -325,8 +384,24 @@ class FoundationAdmin(FoundationCommitter):
             raise storage.AccessError("This PAT revocation belongs to another administrator", status=403)
         return revocation
 
+    async def revoke_all_project_jwts(self) -> int:
+        """Revoke every project JWT that could still be used. Returns count of revoked tokens."""
+        via = sql.validate_instrumented_attribute
+        statement = (
+            sqlmodel.update(sql.WorkflowJwt)
+            .where(via(sql.WorkflowJwt.revoked).is_(False), via(sql.WorkflowJwt.expires) > int(time.time()))
+            .values(revoked=True)
+        )
+        result = await self.__data.execute(statement)
+        count = getattr(result, "rowcount", 0) or 0
+        await self.__data.commit()
+        if count > 0:
+            self.__write_as.append_to_audit_log(project_jwts_revoked=count)
+            log.auth_event("project_jwt_all_users_revoke", self.__asf_uid, project_jwts_revoked=count)
+        return count
+
     async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
-        """Revoke all PATs that a specified user owns or created. Returns count of revoked tokens."""
+        """Revoke all PATs that a specified user owns or created, and their project JWTs. Returns count revoked."""
         # OR on created_by so a user's system PATs go too.
         via = sql.validate_instrumented_attribute
         stmt = sqlmodel.select(sql.PersonalAccessToken).where(
@@ -339,10 +414,12 @@ class FoundationAdmin(FoundationCommitter):
         for token in tokens:
             await self.__data.delete(token)
         # A project JWT has no PAT behind it, so it's revoked through its own row
+        # Expired rows are left for the maintenance task
         project_jwts = await self.__data.query_all(
             sqlmodel.select(sql.WorkflowJwt).where(
                 via(sql.WorkflowJwt.asf_uid) == target_asf_uid,
                 via(sql.WorkflowJwt.revoked).is_(False),
+                via(sql.WorkflowJwt.expires) > int(time.time()),
             )
         )
         for project_jwt in project_jwts:
@@ -375,10 +452,6 @@ class FoundationAdmin(FoundationCommitter):
             .returning(via(sql.PersonalAccessToken.asfuid))
         )
         owners = (await self.__data.execute(stmt)).scalars().all()
-        # Project JWTs go too, though they live five minutes and so aren't counted or notified
-        await self.__data.execute(
-            sqlmodel.update(sql.WorkflowJwt).where(via(sql.WorkflowJwt.revoked).is_(False)).values(revoked=True)
-        )
         if not owners:
             await self.__data.commit()
             return None

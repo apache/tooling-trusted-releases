@@ -2562,7 +2562,8 @@ async def validate_jwt_post(
         result["claims_unverified_error"] = f"{type(exc).__name__}: {exc}"
 
     try:
-        result["claims_verified"] = await jwtoken.verify(token)
+        # Project JWTs are refused by default, but this page should validate any ATR JWT
+        result["claims_verified"] = await jwtoken.verify(token, allow_project=True)
         result["valid"] = True
     except Exception as exc:
         result["validation_error"] = {
@@ -3996,7 +3997,11 @@ async def _users_revocation_notice_tab(session: web.Committer, revocation_id: st
 
 async def _users_revoke_all_tokens(session: web.Committer) -> web.WerkzeugResponse:
     async with storage.write(session) as write:
-        revocation = await write.as_foundation_admin().tokens.revoke_all_users_tokens()
+        wafa = write.as_foundation_admin()
+        revocation = await wafa.tokens.revoke_all_users_tokens()
+        project_jwts = await wafa.tokens.revoke_all_project_jwts()
+    if project_jwts > 0:
+        await quart.flash(f"Revoked {util.plural(project_jwts, 'workflow project JWT')}.", "success")
     if revocation is None:
         await quart.flash("No user PATs found.", "info")
         return await session.redirect(users_get, tab="revoke-all-tokens")

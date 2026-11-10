@@ -1338,7 +1338,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         jti: Opt[str] = NOT_SET,
         project_key: Opt[str] = NOT_SET,
+        expires: Opt[int] = NOT_SET,
         asf_uid: Opt[str] = NOT_SET,
+        github_uid: Opt[str] = NOT_SET,
+        github_nid: Opt[int] = NOT_SET,
     ) -> Query[sql.WorkflowJwt]:
         query = sqlmodel.select(sql.WorkflowJwt)
 
@@ -1346,8 +1349,14 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.WorkflowJwt.jti == jti)
         if is_defined(project_key):
             query = query.where(sql.WorkflowJwt.project_key == project_key)
+        if is_defined(expires):
+            query = query.where(sql.WorkflowJwt.expires == expires)
         if is_defined(asf_uid):
             query = query.where(sql.WorkflowJwt.asf_uid == asf_uid)
+        if is_defined(github_uid):
+            query = query.where(sql.WorkflowJwt.github_uid == github_uid)
+        if is_defined(github_nid):
+            query = query.where(sql.WorkflowJwt.github_nid == github_nid)
 
         return Query(self, query)
 

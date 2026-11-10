@@ -282,7 +282,7 @@ The request takes the same optional `source_commit` and `declare_sources` fields
 registration that `upload-to-atr` makes. The response carries a `jwt` to send as
 `Authorization: Bearer` to `/api/release/create` and `/api/release/store`. The workflow has to be
 listed under the compose [workflow path](#workflow-paths), and everything in the list above applies
-to it too. There are three limits to know about:
+to it too. There are a few limits to be aware of:
 
 * The JWT works for the one project that the workflow is registered to, and only for creating a
   release and storing files in it.
