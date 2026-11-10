@@ -45,6 +45,9 @@ _ATR_JWT_ISSUER: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_LEEWAY_SECONDS: Final[int] = 2 * 60
 _ATR_JWT_TTL: Final[int] = 30 * 60
 _GITHUB_OIDC_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
+# Events where the ref and sha in the token are the ones a committer chose to run. Others, such as
+# pull_request_target, carry the default branch's ref while running on behalf of somebody else's change
+_GITHUB_OIDC_EVENTS: Final[frozenset[str]] = frozenset({"push", "release", "workflow_dispatch"})
 _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
     "enterprise": "the-asf",
     "enterprise_id": "212555",
@@ -219,12 +222,7 @@ async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
         issuer=_GITHUB_OIDC_ISSUER,
         options={"require": ["exp", "iat"]},
     )
-    for key, value in _GITHUB_OIDC_EXPECTED.items():
-        if payload[key] != value:
-            raise base.ASFQuartException(
-                f"GitHub OIDC payload mismatch: {key} = {payload[key]} != {value}",
-                errorcode=401,
-            )
+    _github_oidc_claims_check(payload)
     return github.TrustedPublisherPayload.model_validate(payload)
 
 
@@ -254,6 +252,22 @@ def _extract_bearer_token(request: quart.Request) -> str:
             "Authentication required. Please provide a valid Bearer token in the Authorization header", errorcode=401
         )
     return token
+
+
+def _github_oidc_claims_check(payload: dict[str, Any]) -> None:
+    for key, value in _GITHUB_OIDC_EXPECTED.items():
+        if payload.get(key) != value:
+            raise base.ASFQuartException(
+                f"GitHub OIDC payload mismatch: {key} = {payload.get(key)} != {value}",
+                errorcode=401,
+            )
+    event_name = payload.get("event_name")
+    if event_name not in _GITHUB_OIDC_EVENTS:
+        accepted = ", ".join(sorted(_GITHUB_OIDC_EVENTS))
+        raise base.ASFQuartException(
+            f"GitHub OIDC event {event_name} is not accepted, the workflow must be triggered by one of: {accepted}",
+            errorcode=401,
+        )
 
 
 def _jwt_key_path() -> pathlib.Path:

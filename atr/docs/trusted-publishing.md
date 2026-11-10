@@ -255,6 +255,8 @@ There are a few things to be aware of when using these actions:
 * The job must have the `id-token: write` permission, otherwise the action can't request an OIDC
   token.
 * The workflow must run on a GitHub-hosted runner. ATR rejects tokens from self-hosted runners.
+* The workflow must be triggered by a `push`, `release` or `workflow_dispatch` event. ATR rejects
+  tokens from any other event, such as `pull_request` or `schedule`.
 * The workflow must be triggered by a committer whose GitHub account is linked to their ASF account,
   as ATR records the release operations against that committer.
 * `upload-to-atr` uploads the `dist` directory by default, which you can change with the `src`

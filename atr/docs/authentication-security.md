@@ -287,6 +287,11 @@ values: `enterprise` must be `the-asf`, `enterprise_id` must match the ASF GitHu
 these constrain the token to workflows running inside the ASF GitHub enterprise, on official
 GitHub-hosted runners, under the `apache` organisation.
 
+**Trigger event.** The `event_name` claim must be `push`, `release` or `workflow_dispatch`. For these
+events the `ref` and `sha` in the token are the ones a committer chose to run. Tokens from any other
+event are rejected, including `pull_request_target` and `workflow_run`, where the token carries the
+default branch's `ref` while the workflow runs on behalf of somebody else's change.
+
 ### Project Trusted Publishing
 
 Project TP allows an `apache/*` project repository to upload release artifacts and perform actions
