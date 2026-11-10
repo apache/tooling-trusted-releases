@@ -627,6 +627,9 @@ class ReleaseManager(CommitteeParticipant):
         download_path_suffix: safe.RelPath | None,
         dated: datetime.datetime,
     ) -> None:
+        catalogued = self.__data.artifact(project_key=release.project_key, version=release.version)
+        if await catalogued.limit(1).get() is not None:
+            raise storage.AccessError("This version is already in the release catalog", status=409)
         revision_seq = int(str(revision_number))
         signature_revision_number = await self.__signature_revision_number(release.key, revision_number)
         rel_paths = {str(p) async for p in util.paths_recursive(files_path)}

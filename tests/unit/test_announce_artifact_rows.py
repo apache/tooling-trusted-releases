@@ -25,6 +25,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage as storage
 import atr.storage.writers.announce as announce_writer
 
 
@@ -62,6 +63,7 @@ async def test_write_artifact_rows_records_signature_digest(
     data = mock.MagicMock()
     data.add = mock.MagicMock(side_effect=rows.append)
     data.release_file_classifications_at = mock.AsyncMock(return_value={})
+    data.artifact.return_value.limit.return_value.get = mock.AsyncMock(return_value=None)
     parent = sql.Revision(number="00002", phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, asfuid="old-signer")
     revision = sql.Revision(number="00003", phase=phase, asfuid="new-signer", parent=parent if has_parent else None)
     data.revision.return_value.get = mock.AsyncMock(return_value=revision)
@@ -97,3 +99,21 @@ async def test_write_artifact_rows_records_signature_digest(
     assert rows[0].svn_revision == 42
     assert rows[0].key_fingerprint == expected_fingerprint
     assert check_results.await_args.kwargs["include_legacy_revision_results"] is True
+
+
+@pytest.mark.asyncio
+async def test_write_artifact_rows_refuses_catalogued_version(tmp_path: pathlib.Path) -> None:
+    data = mock.MagicMock()
+    data.artifact.return_value.limit.return_value.get = mock.AsyncMock(return_value=sql.Artifact())
+    writer = object.__new__(announce_writer.ReleaseManager)
+    writer._ReleaseManager__data = data
+    write_rows = getattr(writer, "_ReleaseManager__write_artifact_rows")
+    release = types.SimpleNamespace(project_key="foo", version="1.0")
+    dated = datetime.datetime(2026, 8, 10, tzinfo=datetime.UTC)
+
+    with pytest.raises(storage.AccessError, match=r"already in the release catalog$") as info:
+        await write_rows(release, None, safe.StatePath(tmp_path), safe.RevisionNumber("00003"), 42, None, dated)
+
+    assert info.value.status == 409
+    data.artifact.assert_called_once_with(project_key="foo", version="1.0")
+    data.add.assert_not_called()

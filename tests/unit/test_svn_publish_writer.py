@@ -245,6 +245,21 @@ async def test_publish_to_svn_execute_maps_existing_svn_path(
             )
 
 
+async def test_publish_to_svn_execute_rejects_catalogued_version(sqlite_sessionmaker, monkeypatch) -> None:
+    publish = mock.AsyncMock()
+    monkeypatch.setattr(release_writer.svn, "publish_release", publish)
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data)
+        data.add(sql.Artifact(project_key="project", version="1.0.0", artifact_path="other-name.zip"))
+        await data.commit()
+        task_args = args.SvnPublish(
+            asf_uid="alice", project_key="project", version_key="1.0.0", revision_number="00001"
+        )
+        with pytest.raises(datatypes.FailedError, match=r"already in the release catalog$"):
+            await _release_writer(data).publish_to_svn_execute(task_args)
+    publish.assert_not_awaited()
+
+
 async def test_publish_to_svn_execute_rejects_unvoted_revision(sqlite_sessionmaker, monkeypatch) -> None:
     publish = mock.AsyncMock()
     remove = mock.AsyncMock()

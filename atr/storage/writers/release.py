@@ -1418,6 +1418,9 @@ class ReleaseManager(CommitteeParticipant):
         if committee is None:
             raise datatypes.FailedError("Release has no committee - Invalid state")
         self.__validate_publication_revision(release, task_args.revision_number)
+        catalogued = self.__data.artifact(project_key=release.project_key, version=release.version)
+        if await catalogued.limit(1).get() is not None:
+            raise datatypes.FailedError("This version is already in the release catalog")
         try:
             internal_url = util.svn_publish_internal_url(committee, task_args.download_path_suffix)
         except ValueError as exc:
