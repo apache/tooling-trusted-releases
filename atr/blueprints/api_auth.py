@@ -147,6 +147,11 @@ _TP_UNSUPPORTED: Final[_TrustedPublisherFailure] = _TrustedPublisherFailure(
 # The ATR-authored rejections from inside token validation, by status code
 # A 502 isn't here because it means the GitHub OIDC endpoint was unavailable, not that auth failed
 _TP_REJECTION_REASONS: Final[dict[int, str]] = {401: "token_rejected", 403: "account_unlinked"}
+# Usually a misconfigured workflow, which would send a token on every run, so no warning email
+_TP_EVENT_REASON: Final[str] = "event_refused"
+# These run a default branch workflow for somebody else's change, so they do get a warning
+_TP_EVENT_UNTRUSTED: Final[frozenset[str]] = frozenset({"pull_request_target", "workflow_run"})
+_TP_EVENT_UNTRUSTED_REASON: Final[str] = "event_untrusted"
 
 
 async def authenticate_body(scheme: Auth, data: Any) -> None:
@@ -167,6 +172,11 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
 
     try:
         payload, asf_uid = await interaction.validate_trusted_jwt(publisher, jwt)
+    except jwtoken.GitHubEventError as exc:
+        untrusted = exc.event_name in _TP_EVENT_UNTRUSTED
+        reason = _TP_EVENT_UNTRUSTED_REASON if untrusted else _TP_EVENT_REASON
+        await _trusted_publisher_failure_record(_TrustedPublisherFailure(reason, str(exc), untrusted), exc)
+        raise
     except base.ASFQuartException as exc:
         reason = _TP_REJECTION_REASONS.get(errors.response_status_code(exc))
         if reason is not None:
@@ -189,17 +199,14 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
 
 async def authenticate_header(scheme: Auth) -> None:
     # Header-credential auth: verify the Bearer JWT.
-    claims = await jwtoken.authenticate()
+    # Only BEARER_PROJECT routes accept a project JWT
+    claims = await jwtoken.authenticate(allow_project=scheme is Auth.BEARER_PROJECT)
     if (scheme is Auth.SYSTEM_BEARER) and (not claims.get("atr_sys")):
         raise base.ASFQuartException("System privileges required", errorcode=403)
-    # Refused here and not in the handlers, so that a route has to opt in before a project JWT can reach it
-    if (scheme is not Auth.BEARER_PROJECT) and (jwtoken.project_scope(claims) is not None):
-        log.auth_failure("jwt_token", "jwt_project_route_refused")
-        raise base.ASFQuartException("This token cannot be used with this endpoint", errorcode=403)
 
 
 def authorize_project(scheme: Auth, arguments: list[Any]) -> None:
-    """Hold a project JWT to its own project, given the parsed body and query of the request."""
+    """Refuse a project JWT used for any project but its own."""
     if scheme is not Auth.BEARER_PROJECT:
         return
     claims = getattr(quart.g, "jwt_claims", None)
@@ -208,7 +215,7 @@ def authorize_project(scheme: Auth, arguments: list[Any]) -> None:
     project_key = jwtoken.project_scope(claims)
     if project_key is None:
         return
-    # A request that names no project is refused too, as there's nothing to hold the token to
+    # A request naming no project is refused too
     requested = {str(argument.project) for argument in arguments if getattr(argument, "project", None) is not None}
     if requested != {project_key}:
         log.auth_failure("jwt_token", "jwt_project_mismatch")

@@ -290,7 +290,11 @@ GitHub-hosted runners, under the `apache` organisation.
 **Trigger event.** The `event_name` claim must be `push`, `release` or `workflow_dispatch`. For these
 events the `ref` and `sha` in the token are the ones a committer chose to run. Tokens from any other
 event are rejected, including `pull_request_target` and `workflow_run`, where the token carries the
-default branch's `ref` while the workflow runs on behalf of somebody else's change.
+default branch's `ref` while the workflow runs on behalf of somebody else's change. A token from
+either of those two events is logged as an authentication failure and sends the warning email,
+because it is what an attack through a project's workflow would send. A token refused for any other
+event is logged but sends no email, because it comes from a workflow's configuration and would
+otherwise arrive on every such run.
 
 ### Project Trusted Publishing
 
@@ -347,10 +351,44 @@ committer's ASF UID passed through the workflow, trusted because only the servic
 only ATR can trigger — could have put it there.
 
 **Single-use registration.** An OIDC token registers a key once.
-`storage.writers.ssh.add_workflow_key` records the token's `jti` in `workflowjti` before it inserts
-the key, so a token replayed within its validity window fails on the primary key and mints nothing.
+`storage.writers.ssh.add_workflow_key` has `storage.writers.tokens.consume_workflow_jti` record the
+token's `jti` in `workflowjti` before it inserts the key, so a token replayed within its validity
+window fails on the primary key and mints nothing. The `jti` is committed on its own, so a
+registration that fails after that point has still used the token.
 Rows are pruned once the token's own `exp` has passed. Tokens are not single-use across the other
 OIDC endpoints, because a workflow mints one token per job and presents it to several of them.
+
+### Project JWTs
+
+A workflow that uploads through the HTTP API and not rsync calls `/publisher/jwt/create`, which
+exchanges its OIDC token for a project JWT. The checks are the ones `/publisher/ssh/register`
+makes, including that the actor is a member of the project's committee, and the exchange records
+the OIDC token's `jti` in the same `workflowjti` table, so one OIDC token yields a key or a JWT and
+never both.
+
+A project JWT is an ATR JWT, limited in these ways:
+
+* **Routes.** It carries an `atr_prj` claim naming one project. `jwtoken.verify` refuses a token with
+  that claim unless its caller asks for project JWTs, and `api_auth.authenticate_header` asks only
+  for a route whose auth scheme is `bearer_project`, which is `release/create` and `release/store`.
+  A new route has to opt in before a project JWT can reach it.
+* **Project.** On those two routes `api_auth.authorize_project` compares the project in the request
+  with the one in the claim before the handler runs, and before any upload body is read.
+* **Lifetime.** It lasts five minutes from the exchange, with no leeway and no refresh. A workflow
+  that needs longer requests a new OIDC token and exchanges again. Authentication happens when a
+  request starts, so an upload that takes longer than five minutes is not cut off.
+
+Each project JWT has a `workflowjwt` row under its own `jti`, holding the project, the user, the
+OIDC claims and its expiry. `jwtoken.verify` reads the row on every request and refuses the token if
+the row is missing, revoked, expired, or names a different project or user. An administrator who
+revokes a user's API tokens revokes their unexpired project JWTs too, and revoking every user's
+tokens revokes every unexpired project JWT, which is recorded and reported apart from the PATs.
+
+The row also holds the source commit and the `declare_sources` choice that the workflow gave at the
+exchange. `release/store` passes these and the OIDC claims to the revision writer, as the SSH server
+does for an rsync upload, so the revision gets the same `.github-tp.json` record and the same
+protection and compare checks. A `source_commit` in the `release/store` query string is refused for
+a project JWT, because the commit is fixed at the exchange.
 
 ## SSH authentication
 
@@ -453,6 +491,19 @@ and the API are tighter at `10` requests per hour. When an HTTP limit is exceede
 `429 Too Many Requests`. For API responses it also includes `retry_after` when the limiter provides
 one.
 
+Those limits are applied before a request is authenticated, so they can only group requests by
+session, Bearer JWT or client address. The Trusted Publishing exchanges take a GitHub OIDC token
+from runners that share addresses between unrelated projects, so `/publisher/ssh/register`,
+`/publisher/jwt/create` and `/distribute/ssh/register` have a second limit applied from inside the
+handler, once the token is verified. It allows `30` requests per hour on each route for one
+committer in one project, and counts a request whether or not the exchange then succeeds.
+Before the token is verified these routes allow `60` requests per hour from one client address,
+which is loose enough for shared runners and is there because verifying a token calls GitHub.
+
+`ratelimit.check` does the counting for limits of this kind, in the same store as the other limits
+and with the same `429`. Any handler can call it with a key made from values it has verified. A
+refusal is logged with the limit and the key it was counted under.
+
 SSH follows the same general policy. ATR allows at most `100` SSH connections per minute from one
 client address. It also allows at most `10` successful SSH authentications per minute for one ASF
 UID. If either limit is exceeded then ATR closes the connection.
@@ -548,6 +599,7 @@ Tokens must be protected by the user at all times:
 * [`server.py`](/ref/atr/server.py) - Default web rate limits, 429 handling, and request logging
 * [`blueprints/api.py`](/ref/atr/blueprints/api.py) - API wide rate limiting
 * [`api/__init__.py`](/ref/atr/api/__init__.py) - Tighter API limits for JWT creation
+* [`ratelimit.py`](/ref/atr/ratelimit.py) - Limits a handler applies after authentication
 * [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators;
   `verify_github_oidc` implements the OIDC validation chain
 * [`blueprints/api_auth.py`](/ref/atr/blueprints/api_auth.py) - per-endpoint auth level decorators,

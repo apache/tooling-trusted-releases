@@ -53,7 +53,11 @@ class StallingBody:
 
 
 def _mock_storage_write(store_result, recorded):
-    async def store_file(project, version, relpath, source, expected_revision, source_commit=None):
+    async def store_file(
+        project, version, relpath, source, expected_revision, source_commit=None, *, github_payload, declare_sources
+    ):
+        recorded["github_payload"] = github_payload
+        recorded["declare_sources"] = declare_sources
         recorded["project"] = project
         recorded["version"] = version
         recorded["relpath"] = relpath
@@ -130,6 +134,50 @@ async def test_release_store_invalid_metadata(app, state_tmp):
     assert list(state_tmp.iterdir()) == []
 
 
+async def test_release_store_project_jwt_refuses_a_source_commit_in_the_request(app, state_tmp):
+    handler = inspect.unwrap(atr.api.release_store)
+    query = atr.models.api.ReleaseStoreQuery(project="test", version="0.1", relpath="a.tar.gz", source_commit="a" * 40)
+    async with app.test_request_context("/api/release/store", method="POST", data=b"content"):
+        quart.g.jwt_claims = {"sub": "test", "jti": "jti", "atr_prj": "test"}
+        with pytest.raises(exceptions.BadRequest):
+            await handler(_release_store="release/store", query_args=query)
+    assert list(state_tmp.iterdir()) == []
+
+
+async def test_release_store_project_jwt_uploads_with_the_sources_of_its_row(app, state_tmp, github_payload):
+    recorded = {}
+    storage_write = _mock_storage_write(sql.Revision(), recorded)
+    row = sql.WorkflowJwt(
+        jti="jti",
+        project_key="test",
+        asf_uid="test",
+        github_uid="testuser",
+        github_nid=12345,
+        github_payload=github_payload.model_dump(exclude={"exp", "nbf"}),
+        source_commit="c" * 40,
+        declare_sources=False,
+        expires=0,
+    )
+    data = mock.MagicMock()
+    data.workflow_jwt.return_value.demand = mock.AsyncMock(return_value=row)
+    session = mock.MagicMock()
+    session.return_value.__aenter__.return_value = data
+    handler = inspect.unwrap(atr.api.release_store)
+    query = atr.models.api.ReleaseStoreQuery(project="test", version="0.1", relpath="a.tar.gz")
+    with (
+        mock.patch.object(atr.api.storage, "write", storage_write),
+        mock.patch.object(atr.api.db, "session", session),
+    ):
+        async with app.test_request_context("/api/release/store", method="POST", data=b"content"):
+            quart.g.jwt_claims = {"sub": "test", "jti": "jti", "atr_prj": "test"}
+            _body, status = await handler(_release_store="release/store", query_args=query)
+    assert status == 201
+    data.workflow_jwt.assert_called_once_with(jti="jti")
+    assert recorded["github_payload"].sha == github_payload.sha
+    assert str(recorded["source_commit"]) == "c" * 40
+    assert recorded["declare_sources"] is False
+
+
 async def test_release_store_quarantined(app, state_tmp):
     recorded = {}
     storage_write = _mock_storage_write(sql.Quarantined(), recorded)
@@ -167,6 +215,8 @@ async def test_release_store_streams_to_writer(app, state_tmp):
     assert str(recorded["relpath"]) == "a/b.tar.gz"
     assert recorded["expected_revision"] is None
     assert recorded["source_commit"] is None
+    assert recorded["github_payload"] is None
+    assert recorded["declare_sources"] is True
     assert list(state_tmp.iterdir()) == []
 
 

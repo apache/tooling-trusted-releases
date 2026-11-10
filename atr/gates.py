@@ -42,7 +42,7 @@ import atr.models.sql as sql
 import atr.user as user
 import atr.util as util
 
-EVENTS: Final[tuple[str, ...]] = ("push", "release", "workflow_dispatch")
+EVENTS: Final[tuple[str, ...]] = constants.GITHUB_TRUSTED_EVENTS
 REF_TYPES: Final[dict[str, str]] = {"branch": "heads", "tag": "tags"}
 STARTER_REASON: Final[str] = "the starter has no known link to this PMC or its release managers"
 STARTER_REFUSAL: Final[str] = f"Automatically rejected: {STARTER_REASON}"

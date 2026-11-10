@@ -43,6 +43,7 @@ import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
+import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
@@ -53,6 +54,7 @@ import atr.models.validation as validation
 import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
+import atr.ratelimit as ratelimit
 import atr.shared as shared
 import atr.shared.catalog as catalog
 import atr.storage as storage
@@ -73,6 +75,10 @@ type DictResponse = tuple[dict[str, Any], int]
 
 ROUTES_MODULE: Final[Literal[True]] = True
 _EMAIL_VOTE_RESOLVE_PROJECTS: Final[frozenset[str]] = frozenset({"solr-mcp"})
+# Per committer per project. A project JWT lasts 5 minutes, so a long upload needs 12 an hour
+_TRUSTED_PUBLISHER_EXCHANGE_HOURLY: Final[int] = 30
+# Per address, before the token is verified. Loose, as GitHub runners share addresses between projects
+_TRUSTED_PUBLISHER_FLOOD_LIMIT: Final[tuple[int, datetime.timedelta]] = (60, datetime.timedelta(hours=1))
 
 
 @api.typed(
@@ -425,10 +431,7 @@ async def committees_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed(
-    auth_scheme=api_auth.Auth.BODY_OIDC,
-    rate_limit=(10, datetime.timedelta(hours=1)),
-)
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC, rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT)
 async def distribute_ssh_register(
     _distribute_ssh_register: Literal["distribute/ssh/register"],
     data: models.api.DistributeSshRegisterArgs,
@@ -457,6 +460,7 @@ async def distribute_ssh_register(
     async with db.session() as _data:
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
     await interaction.trusted_workflow_run(payload, int(data.task_id), data.project_key)
+    await _trusted_publisher_rate_limit("distribute/ssh/register", release.safe_project_key, asf_uid)
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -1172,6 +1176,47 @@ async def publisher_distribution_record(
     ).model_dump(mode="json"), 200
 
 
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC, rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT)
+async def publisher_jwt_create(
+    _publisher_jwt_create: Literal["publisher/jwt/create"],
+    data: models.api.PublisherJwtCreateArgs,
+) -> DictResponse:
+    """
+    URL: POST /publisher/jwt/create
+
+    Exchange a Trusted Publisher JWT for a short lived ATR JWT.
+
+    The ATR JWT can create a release and store files in it, for the one project that the workflow
+    is registered to. It lasts five minutes and can't be refreshed, and each Trusted Publisher JWT
+    can be exchanged only once.
+    """
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
+        interaction.TrustedProjectPhase.COMPOSE,
+    )
+    payload = ctx.payload
+    await _trusted_publisher_rate_limit("publisher/jwt/create", project.safe_key, asf_uid)
+    async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
+        token = await wacm.tokens.issue_workflow_jwt(
+            payload.actor,
+            payload.actor_id,
+            project.safe_key,
+            payload,
+            source_commit=data.source_commit,
+            declare_sources=data.declare_sources,
+        )
+
+    return models.api.PublisherJwtCreateResults(
+        endpoint="/publisher/jwt/create",
+        asfuid=asf_uid,
+        project=project.safe_key,
+        jwt=token.jwt,
+        expires=token.expires,
+    ).model_dump(mode="json"), 200
+
+
 @api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def publisher_release_announce(
     _publisher_release_announce: Literal["publisher/release/announce"],
@@ -1235,10 +1280,7 @@ async def publisher_release_source(
     ).model_dump(mode="json"), 201
 
 
-@api.typed(
-    auth_scheme=api_auth.Auth.BODY_OIDC,
-    rate_limit=(10, datetime.timedelta(hours=1)),
-)
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC, rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT)
 async def publisher_ssh_register(
     _publisher_ssh_register: Literal["publisher/ssh/register"],
     data: models.api.PublisherSshRegisterArgs,
@@ -1259,6 +1301,7 @@ async def publisher_ssh_register(
         interaction.TrustedProjectPhase.COMPOSE,
     )
     payload = ctx.payload
+    await _trusted_publisher_rate_limit("publisher/ssh/register", project.safe_key, asf_uid)
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -1677,6 +1720,7 @@ async def release_store(
         source_commit = safe.CommitHash(query_args.source_commit.strip().lower()) if query_args.source_commit else None
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
+    github_payload, source_commit, declare_sources = await _release_store_sources(source_commit)
 
     source = ""
     try:
@@ -1692,7 +1736,14 @@ async def release_store(
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(project)
             result = await wacp.release.store_file(
-                project, version, relpath, pathlib.Path(source), expected_revision, source_commit
+                project,
+                version,
+                relpath,
+                pathlib.Path(source),
+                expected_revision,
+                source_commit,
+                github_payload=github_payload,
+                declare_sources=declare_sources,
             )
     except (datatypes.PhaseMismatchError, datatypes.RevisionMismatchError) as e:
         raise exceptions.Conflict(str(e))
@@ -2616,6 +2667,22 @@ async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: 
     return body, fullname
 
 
+async def _release_store_sources(
+    source_commit: safe.CommitHash | None,
+) -> tuple[models.github.TrustedPublisherPayload | None, safe.CommitHash | None, bool]:
+    claims = getattr(quart.g, "jwt_claims", {})
+    if jwtoken.project_scope(claims) is None:
+        return None, source_commit, True
+    # For a project JWT the sources were set at the exchange
+    if source_commit is not None:
+        raise exceptions.BadRequest("The source commit is set when this token is issued, and can't be given here")
+    async with db.session() as data:
+        row = await data.workflow_jwt(jti=claims["jti"]).demand(exceptions.Unauthorized("Token has been revoked"))
+    github_payload = models.github.TrustedPublisherPayload.model_validate(row.github_payload)
+    declared = safe.CommitHash(row.source_commit) if (row.source_commit is not None) else None
+    return github_payload, declared, row.declare_sources
+
+
 async def _resolve_signing_key_from_signature(
     db_data: db.Session,
     issuer_fingerprints: set[str],
@@ -2673,6 +2740,13 @@ def _stored_certificate_issuer_match(
     if parsed is None:
         return None
     return _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
+
+
+async def _trusted_publisher_rate_limit(scope: str, project_key: safe.ProjectKey, asf_uid: str) -> None:
+    # Keyed by project and committer, as GitHub runners share addresses
+    await ratelimit.check(
+        scope, f"{project_key}:{asf_uid}", _TRUSTED_PUBLISHER_EXCHANGE_HOURLY, datetime.timedelta(hours=1)
+    )
 
 
 async def _vote_resolve_release(

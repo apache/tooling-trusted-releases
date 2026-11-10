@@ -78,6 +78,7 @@ async def test_revocation_redirects_to_its_fixed_audience(monkeypatch, has_token
     )
     writer = mock.Mock()
     writer.revoke_all_users_tokens = mock.AsyncMock(return_value=revocation)
+    writer.revoke_all_project_jwts = mock.AsyncMock(return_value=2)
     writer.pat_revocation = mock.AsyncMock(return_value=revocation)
     write = mock.Mock()
     write.as_foundation_admin.return_value.tokens = writer
@@ -91,6 +92,8 @@ async def test_revocation_redirects_to_its_fixed_audience(monkeypatch, has_token
     session = mock.Mock(asf_uid="admin", redirect=mock.AsyncMock())
     await admin._users_revoke_all_tokens(session)
     writer.revoke_all_users_tokens.assert_awaited_once_with()
+    writer.revoke_all_project_jwts.assert_awaited_once_with()
+    assert admin.quart.flash.await_args_list[0].args == ("Revoked 2 workflow project JWTs.", "success")
     writer.notify_revoked_pat_owners.assert_not_called()
     write.as_foundation_admin.return_value.banner.set_current.assert_not_called()
     if revocation is None:

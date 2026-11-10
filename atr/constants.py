@@ -23,6 +23,10 @@ DOWNLOADS_APACHE_URL: Final[str] = "https://downloads.apache.org"
 ARCHIVE_APACHE_URL: Final[str] = "https://archive.apache.org/dist"
 SVN_DIST_ROOT_URL: Final[str] = "https://dist.apache.org/repos/dist"
 
+# Workflow events where the ref and sha are the ones a committer chose to run. Others, such as
+# pull_request_target, carry the default branch's ref while running on behalf of somebody else's change
+GITHUB_TRUSTED_EVENTS: Final[tuple[str, ...]] = ("push", "release", "workflow_dispatch")
+
 CAP_VOTE_DURATION_MINUTES: Final[int] = 7 * 24 * 60
 CAP_EXPLANATION_MAX_LENGTH: Final[int] = 2000
 CAP_ARCHIVE_APPROVAL_TYPE: Final[str] = "majority_approval"

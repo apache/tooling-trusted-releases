@@ -78,31 +78,28 @@ def test_authorize_project_refuses_two_projects_in_one_request() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scheme", [api_auth.Auth.BEARER, api_auth.Auth.SYSTEM_BEARER])
-async def test_authenticate_header_refuses_a_project_token_on_other_schemes(
-    monkeypatch: pytest.MonkeyPatch, scheme: api_auth.Auth
+@pytest.mark.parametrize(
+    ("scheme", "asked"),
+    [
+        (api_auth.Auth.BEARER, False),
+        (api_auth.Auth.BEARER_PROJECT, True),
+        (api_auth.Auth.SYSTEM_BEARER, False),
+    ],
+)
+async def test_authenticate_header_asks_for_project_tokens_on_the_project_scheme_only(
+    monkeypatch: pytest.MonkeyPatch, scheme: api_auth.Auth, asked: bool
 ) -> None:
-    async def fake_authenticate() -> dict[str, object]:
-        # The system claim can't appear on a real project token, and is here so that only the project check can refuse
-        return {"sub": "alice", "atr_prj": "example", "atr_sys": True}
+    seen: list[bool] = []
+
+    async def fake_authenticate(*, allow_project: bool = False) -> dict[str, object]:
+        seen.append(allow_project)
+        return {"sub": "alice", "atr_sys": True}
 
     monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
-        await api_auth.authenticate_header(scheme)
-    assert exc_info.value.errorcode == 403
+    await api_auth.authenticate_header(scheme)
 
-
-@pytest.mark.asyncio
-async def test_authenticate_header_takes_a_project_token_on_the_project_scheme(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_authenticate() -> dict[str, object]:
-        return {"sub": "alice", "atr_prj": "example"}
-
-    monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
-
-    await api_auth.authenticate_header(api_auth.Auth.BEARER_PROJECT)
+    assert seen == [asked]
 
 
 def test_issue_for_project_limits_the_token_to_five_minutes_and_one_project() -> None:
@@ -152,11 +149,21 @@ def test_project_scope_refuses_an_unusable_claim(value: object) -> None:
 
 
 @pytest.mark.asyncio
+async def test_verify_refuses_a_good_project_token_unless_asked_for_one(stored: _Stored) -> None:
+    token = jwtoken.issue_for_project("alice", _PROJECT)
+    await stored(token)
+
+    with pytest.raises(base.ASFQuartException) as exc_info:
+        await jwtoken.verify(token.jwt)
+    assert exc_info.value.errorcode == 403
+
+
+@pytest.mark.asyncio
 async def test_verify_refuses_a_project_token_with_no_row(stored: _Stored) -> None:
     token = jwtoken.issue_for_project("alice", _PROJECT)
 
     with pytest.raises(base.ASFQuartException) as exc_info:
-        await jwtoken.verify(token.jwt)
+        await jwtoken.verify(token.jwt, allow_project=True)
     assert exc_info.value.errorcode == 401
 
 
@@ -167,7 +174,7 @@ async def test_verify_refuses_a_project_token_whose_row_disagrees(stored: _Store
     await stored(token, **change)
 
     with pytest.raises(base.ASFQuartException) as exc_info:
-        await jwtoken.verify(token.jwt)
+        await jwtoken.verify(token.jwt, allow_project=True)
     assert exc_info.value.errorcode == 401
 
 
@@ -177,7 +184,7 @@ async def test_verify_refuses_a_project_token_whose_row_has_expired(stored: _Sto
     await stored(token, expires=int(time.time()) - 1)
 
     with pytest.raises(jwt.ExpiredSignatureError):
-        await jwtoken.verify(token.jwt)
+        await jwtoken.verify(token.jwt, allow_project=True)
 
 
 @pytest.mark.asyncio
@@ -185,7 +192,7 @@ async def test_verify_takes_a_project_token_with_its_row(stored: _Stored) -> Non
     token = jwtoken.issue_for_project("alice", _PROJECT)
     await stored(token)
 
-    claims = await jwtoken.verify(token.jwt)
+    claims = await jwtoken.verify(token.jwt, allow_project=True)
 
     assert jwtoken.project_scope(claims) == "example"
 

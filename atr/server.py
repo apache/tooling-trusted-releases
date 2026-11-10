@@ -68,6 +68,7 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.preload as preload
 import atr.pubsub as pubsub
+import atr.ratelimit as ratelimit
 import atr.sessions as sessions
 import atr.ssh as ssh
 import atr.storage as storage
@@ -518,7 +519,7 @@ def _app_setup_rate_limits(app: base.QuartApp, conf: type[config.AppConfig]):
         return f"ip:{quart.request.remote_addr}"
 
     if not config.is_test_mode():
-        rate_limiter.RateLimiter(
+        limiter = rate_limiter.RateLimiter(
             app,
             default_limits=[
                 rate_limiter.RateLimit(100, datetime.timedelta(minutes=1)),
@@ -526,6 +527,7 @@ def _app_setup_rate_limits(app: base.QuartApp, conf: type[config.AppConfig]):
             ],
             key_function=get_rate_limit_key,
         )
+        ratelimit.setup(app, limiter)
 
 
 def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
@@ -1242,7 +1244,9 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
     @app.errorhandler(429)
     async def handle_rate_limit(e):
         # Set up logging context since before_request doesn't run for rate-limited requests
-        await _reset_request_log_context()
+        # A limit applied inside a handler (atr.ratelimit) already has its context, so keep the request ID
+        if log.get_request_id() is None:
+            await _reset_request_log_context()
 
         if quart.request.path.startswith("/api"):
             payload = {
