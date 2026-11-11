@@ -390,8 +390,9 @@ def _vote_castings(body: str) -> list[tuple[models.tabulate.Vote, str]]:
         if _vote_break(line):
             break
 
-        plus_one = line.startswith("+1") or (" +1" in line)
-        minus_one = line.startswith("-1") or (" -1" in line)
+        # Exclude numeric and word prefixes, including toolchain versions such as +1.86.0.
+        plus_one = re.search(r"(?:^|\s)\+1\b(?!\.\d)", line) is not None
+        minus_one = re.search(r"(?:^|\s)-1\b(?!\.\d)", line) is not None
         # We must be more stringent about zero votes, can't just check for "0" in line
         zero = (line in {"0", "-0", "+0"}) or line.startswith("0 ") or line.startswith("+0 ") or line.startswith("-0 ")
         if (plus_one and minus_one) or (plus_one and zero) or (minus_one and zero):

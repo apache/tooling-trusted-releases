@@ -258,6 +258,50 @@ async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytes
     assert tabulated_votes["mid-only-voter"].asf_eid == "receipt-mid@apache.org"
 
 
+@pytest.mark.parametrize("sign", ["+", "-"])
+@pytest.mark.parametrize("suffix", ["0", ".86.0", ".5", "e3", "st"])
+def test_vote_castings_ignores_numeric_and_word_prefixes(sign: str, suffix: str) -> None:
+    assert tabulate._vote_castings(f"{sign}1{suffix}\nTested with tool {sign}1{suffix}") == []
+
+
+@pytest.mark.parametrize("sign, expected", [("+", models_tabulate.Vote.YES), ("-", models_tabulate.Vote.NO)])
+@pytest.mark.parametrize("line", ["{vote}", "{vote} (binding)", "My vote is {vote}.", "\t{vote}\t(binding)"])
+def test_vote_castings_accepts_standalone_votes(sign: str, expected: models_tabulate.Vote, line: str) -> None:
+    line = line.format(vote=f"{sign}1")
+
+    assert tabulate._vote_castings(line) == [(expected, line)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vote, expected", [("+1", models_tabulate.Vote.YES), ("-1", models_tabulate.Vote.NO)])
+async def test_votes_ignores_toolchain_version_in_test_command(
+    monkeypatch: pytest.MonkeyPatch, vote: str, expected: models_tabulate.Vote
+) -> None:
+    vote_line = f"{vote} (IPMC-binding, PPMC-binding)"
+    message = _vote_message(
+        from_raw="Voter <voter@example.com>",
+        message_id="<vote@example.com>",
+        archive_mid="archive-vote",
+        epoch="1",
+    )
+    message["body"] = f"{vote_line}\n\n- cargo +1.86.0 test --workspace --all-features --locked\n"
+
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        yield "archive-vote", message
+
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+
+    _start_unixtime, tabulated_votes = await tabulate.votes(None, "0123456789abcdef0123456789abcdef")
+
+    assert tabulated_votes["voter@example.com"].vote == expected
+    assert tabulated_votes["voter@example.com"].quotation == vote_line
+
+
 def _make_release(*, committee: SimpleNamespace, podling_thread_id: str | None) -> SimpleNamespace:
     return SimpleNamespace(
         project=SimpleNamespace(committee=committee),
