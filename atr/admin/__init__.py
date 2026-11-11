@@ -148,6 +148,9 @@ _SENSITIVE_COLUMNS: Final[dict[str, frozenset[str]]] = {
 # How much of a redacted value we reveal before the ellipsis.
 _REDACTION_VISIBLE_PREFIX: Final = 12
 
+# Longest search term the data browser accepts.
+_DATA_SEARCH_MAX_LENGTH: Final = 200
+
 
 type BANNER_RESTORE = Literal["BANNER_RESTORE"]
 type BANNER_SET = Literal["BANNER_SET"]
@@ -191,6 +194,11 @@ class CatalogSiteRebuildForm(form.Form):
 
 class CommitteesUpdateForm(form.Form):
     variant: COMMITTEES_UPDATE = form.value(COMMITTEES_UPDATE)
+
+
+@dataclasses.dataclass
+class DataQuery(web.PageQuery):
+    search: str | None = None
 
 
 class DeleteReleaseConfirmForm(form.Form):
@@ -2110,7 +2118,7 @@ async def current_release_delete_post(
 
 
 @admin.typed
-async def data(_session: web.Committer, _data: Literal["data"], query_args: web.PageQuery) -> str:
+async def data(_session: web.Committer, _data: Literal["data"], query_args: DataQuery) -> str:
     """
     URL: GET /data
     """
@@ -2118,6 +2126,8 @@ async def data(_session: web.Committer, _data: Literal["data"], query_args: web.
         validation.pagination_args_validate(query_args)
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
+    if query_args.search and (len(query_args.search) > _DATA_SEARCH_MAX_LENGTH):
+        raise exceptions.BadRequest(f"Search terms are limited to {_DATA_SEARCH_MAX_LENGTH} characters")
     args = quart.request.args
     return await _database_page(args.get("tab", "data"), args.get("model", "Committee"), query_args)
 
@@ -3064,23 +3074,30 @@ async def _database_consistency_tab() -> htm.Element:
     return block.collect()
 
 
-async def _database_data_tab(model: str, query_args: web.PageQuery) -> htm.Element:
+async def _database_data_tab(model: str, query_args: DataQuery) -> htm.Element:
     """Browse all records in the database."""
     models_by_name = {model_class.__name__: model_class for model_class in _BROWSABLE_MODELS}
     if model not in models_by_name:
         raise base.ASFQuartException(f"Model type '{model}' not found", 404)
     model_class = models_by_name[model]
+    sensitive = _SENSITIVE_COLUMNS.get(model, frozenset())
+    search = (query_args.search or "").strip()
 
     async with db.session() as data:
         # A plain select over the class, so every table can be browsed without its own
-        # accessor. Rows aren't filtered here, so soft-deleted ones show up too, which is
-        # what an admin wants when eyeballing the raw database.
-        count_result = await data.execute(sqlalchemy.select(sqlalchemy.func.count()).select_from(model_class))
+        # accessor. Soft-deleted rows show up too, which is what an admin wants when
+        # eyeballing the raw database. The only filter is the search term, if there is one.
+        count_statement = sqlalchemy.select(sqlalchemy.func.count()).select_from(model_class)
+        statement = sqlmodel.select(model_class)
+        if search:
+            clause = _database_search_clause(model_class, sensitive, search)
+            count_statement = count_statement.where(clause)
+            statement = statement.where(clause)
+        count_result = await data.execute(count_statement)
         count = count_result.scalar_one()
-        query = db.Query(data, sqlmodel.select(model_class)).order_by(*sqlalchemy.inspect(model_class).primary_key)
+        query = db.Query(data, statement).order_by(*sqlalchemy.inspect(model_class).primary_key)
         records = await query.limit(query_args.limit).offset(query_args.offset).all()
 
-        sensitive = _SENSITIVE_COLUMNS.get(model, frozenset())
         records_dict = [_record_to_dict(record, sensitive) for record in records]
 
         page = web.page_nav(query_args.offset, query_args.limit, count, len(records))
@@ -3092,6 +3109,7 @@ async def _database_data_tab(model: str, query_args: web.PageQuery) -> htm.Eleme
             count=count,
             limit=query_args.limit,
             page=page,
+            search=search or None,
         )
         return htm.div[markupsafe.Markup(content)]
 
@@ -3109,7 +3127,7 @@ async def _database_keys_check_tab() -> htm.Element:
     return block.collect()
 
 
-async def _database_page(active_tab: str, model: str, query_args: web.PageQuery) -> str:
+async def _database_page(active_tab: str, model: str, query_args: DataQuery) -> str:
     tab_items = [
         htm.Tab("data", "Data browser", lambda: _database_data_tab(model, query_args)),
         htm.Tab("consistency", "Consistency", _database_consistency_tab),
@@ -3121,6 +3139,36 @@ async def _database_page(active_tab: str, model: str, query_args: web.PageQuery)
     page.h1["Database"]
     page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=util.as_url(data)))
     return await template.render("admin-blank.html", title="Database", content=page.collect())
+
+
+def _database_search_clause(
+    model_class: type[sqlmodel.SQLModel], sensitive: frozenset[str], search: str
+) -> sqlalchemy.ColumnElement[bool]:
+    columns = _database_search_columns(model_class, sensitive)
+    # "column:value" is an exact match on that one column, which can use an index. Anything
+    # else, including a term whose colon doesn't follow a column name, is a substring
+    # match against every searchable column.
+    name, separator, value = search.partition(":")
+    scoped = {column.name: column for column in columns}.get(name) if separator else None
+    if scoped is not None:
+        # Bound as a string whatever the column's type, so that enum and datetime columns
+        # compare against their stored text and never see a value they'd refuse to bind
+        return scoped == sqlalchemy.literal(value.strip(), sqlalchemy.String())
+    # SQLite's LIKE can't use an index with a leading wildcard, so this scans the table.
+    # That's a fraction of a second on the largest tables, which is fine for an admin page.
+    return sqlalchemy.or_(
+        *(sqlalchemy.cast(column, sqlalchemy.String).contains(search, autoescape=True) for column in columns)
+    )
+
+
+def _database_search_columns(
+    model_class: type[sqlmodel.SQLModel], sensitive: frozenset[str]
+) -> list[sqlalchemy.Column[Any]]:
+    return [
+        c
+        for c in sqlalchemy.inspect(model_class).columns
+        if isinstance(c, sqlalchemy.Column) and c.name not in sensitive
+    ]
 
 
 async def _database_update_keys_tab() -> htm.Element:

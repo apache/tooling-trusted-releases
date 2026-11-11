@@ -61,8 +61,38 @@
   {% endfor %}
 </div>
 
+<form method="get" action="{{ as_url(admin.data) }}" class="mb-3">
+  <input type="hidden" name="tab" value="data" />
+  <input type="hidden" name="model" value="{{ model }}" />
+  <div class="input-group">
+    <input type="search"
+           name="search"
+           value="{{ search or "" }}"
+           maxlength="200"
+           class="form-control"
+           placeholder="Search {{ model }}"
+           aria-label="Search {{ model }}"
+           aria-describedby="data-search-help" />
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% if search %}
+      <a class="btn btn-outline-secondary"
+         href="{{ as_url(admin.data, tab="data", model=model) }}">Clear</a>
+    {% endif %}
+  </div>
+  <div id="data-search-help" class="form-text">
+    Matches any part of any column. Use <code>column:value</code> for an exact match on one column.
+  </div>
+</form>
+
 {% if records %}
-  <p>Showing {{ page.start }} to {{ page.end }} of {{ count }} records.</p>
+  <p>
+    Showing {{ page.start }} to {{ page.end }} of {{ count }}
+    {% if search %}
+      records matching <code>{{ search }}</code>.
+    {% else %}
+      records.
+    {% endif %}
+  </p>
   <div>
     {% for record in records %}
       <div class="page-record">
@@ -87,6 +117,8 @@
 {% else %}
   {% if count %}
     <p class="page-no-records">No records to show on this page ({{ count }} in {{ model }}).</p>
+  {% elif search %}
+    <p class="page-no-records">No {{ model }} records match <code>{{ search }}</code>.</p>
   {% else %}
     <p class="page-no-records">No records found for {{ model }}.</p>
   {% endif %}
@@ -98,7 +130,7 @@
       {% if page.previous_offset is not none %}
         <li class="page-item">
           <a class="page-link"
-             href="{{ as_url(admin.data, tab="data", model=model, limit=limit, offset=page.previous_offset) }}">Previous</a>
+             href="{{ as_url(admin.data, tab="data", model=model, limit=limit, offset=page.previous_offset, search=search) }}">Previous</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">Previous</span></li>
@@ -106,7 +138,7 @@
       {% if page.next_offset is not none %}
         <li class="page-item">
           <a class="page-link"
-             href="{{ as_url(admin.data, tab="data", model=model, limit=limit, offset=page.next_offset) }}">Next</a>
+             href="{{ as_url(admin.data, tab="data", model=model, limit=limit, offset=page.next_offset, search=search) }}">Next</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">Next</span></li>
