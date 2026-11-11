@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 import pydantic
 
 import atr.config as config
+import atr.constants as constants
 import atr.construct as construct
 import atr.form as form
 import atr.models.calver as calver
@@ -641,10 +642,6 @@ class RemoveLanguageForm(form.Form):
     language_to_remove: str = form.label("Language to remove", widget=form.Widget.HIDDEN)
 
 
-class ArchiveSelectedProject(form.Form):
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-
-
 class CompleteApprovalRequest(form.Form):
     approval_request_id: form.Int = form.label("Approval request ID", widget=form.Widget.HIDDEN)
 
@@ -653,12 +650,16 @@ class ConfirmReleaseArchival(form.Form):
     confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.", required=True)
 
 
-class DeleteSelectedProject(form.Form):
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-
-
-class UnarchiveSelectedProject(form.Form):
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+class RequestApprovalForm(form.Form):
+    vote: str = form.label("Vote", widget=form.Widget.STATIC, default="")
+    explanation: str = form.label(
+        "Explanation",
+        "Optional. Shown to the PMC in the CAP vote description.",
+        default="",
+        widget=form.Widget.TEXTAREA,
+        max_length=constants.CAP_EXPLANATION_MAX_LENGTH,
+        rows=6,
+    )
 
 
 type ProjectViewForm = Annotated[

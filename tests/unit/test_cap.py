@@ -22,6 +22,7 @@ import unittest.mock as mock
 import pytest
 import sqlalchemy.exc
 
+import atr.db.interaction as interaction
 import atr.models.cap
 import atr.models.results as results
 import atr.models.safe as safe
@@ -171,6 +172,36 @@ def cap_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(util.config, "get", lambda: Conf)
 
 
+def test_cap_approval_description_carries_explanation_and_link() -> None:
+    description = util.cap_approval_description(
+        sql.ApprovalAction.ARCHIVE,
+        safe.ProjectKey("commons-foo"),
+        "Apache Commons Foo",
+        "commons",
+        "alice",
+        project_url="https://atr.example/projects/commons-foo",
+        explanation="Superseded by commons-bar.",
+    )
+    assert "Superseded by commons-bar." in description
+    assert "https://atr.example/projects/commons-foo" in description
+    assert "mark the project dormant" in description
+
+
+def test_cap_approval_description_without_explanation_omits_reason() -> None:
+    description = util.cap_approval_description(
+        sql.ApprovalAction.DELETE,
+        safe.ProjectKey("commons-foo"),
+        "Apache Commons Foo",
+        "commons",
+        "alice",
+        project_url="https://atr.example/projects/commons-foo",
+        explanation="",
+    )
+    assert "Reason given" not in description
+    assert "https://atr.example/projects/commons-foo" in description
+    assert "permanently delete" in description
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("action", "consequence"),
@@ -187,7 +218,14 @@ async def test_cap_create_approval_question_states_consequence(
     monkeypatch.setattr(util, "cap_create_question", create)
     closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
     await util.cap_create_approval_question(
-        action, safe.ProjectKey("commons-foo"), "Apache Commons Foo", "commons", "alice", closes_at
+        action,
+        safe.ProjectKey("commons-foo"),
+        "Apache Commons Foo",
+        "commons",
+        "alice",
+        closes_at,
+        project_url="https://atr.example/projects/commons-foo",
+        explanation="",
     )
     kwargs = create.call_args.kwargs
     assert consequence in kwargs["description"]
@@ -297,7 +335,7 @@ async def test_cap_resolve_question_not_approved(monkeypatch: pytest.MonkeyPatch
 def test_completion_eligibility_allows_empty_project() -> None:
     requested_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
     project = _project_with_drafts()
-    error = projects._action_eligibility_error(
+    error = interaction.project_action_eligibility_error(
         project, sql.ApprovalAction.ARCHIVE, 2, completing=True, requested_at=requested_at
     )
     assert error is None
@@ -306,7 +344,7 @@ def test_completion_eligibility_allows_empty_project() -> None:
 def test_completion_eligibility_allows_prior_drafts() -> None:
     requested_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
     project = _project_with_drafts(requested_at - datetime.timedelta(days=1))
-    error = projects._action_eligibility_error(
+    error = interaction.project_action_eligibility_error(
         project, sql.ApprovalAction.ARCHIVE, 2, completing=True, requested_at=requested_at
     )
     assert error is None
@@ -315,7 +353,7 @@ def test_completion_eligibility_allows_prior_drafts() -> None:
 def test_completion_eligibility_blocks_new_drafts() -> None:
     requested_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
     project = _project_with_drafts(requested_at + datetime.timedelta(hours=1))
-    error = projects._action_eligibility_error(
+    error = interaction.project_action_eligibility_error(
         project, sql.ApprovalAction.ARCHIVE, 2, completing=True, requested_at=requested_at
     )
     assert error is not None
@@ -490,13 +528,13 @@ async def test_resolve_unexpected_error_reenqueues(monkeypatch: pytest.MonkeyPat
 def test_unarchive_eligibility_allows_dormant_sole_project() -> None:
     # Unarchival adds an active project, so the committee's other projects don't matter
     project = sql.Project(key="commons-foo", status=sql.ProjectStatus.DORMANT)
-    assert projects._action_eligibility_error(project, sql.ApprovalAction.UNARCHIVE, 0) is None
+    assert interaction.project_action_eligibility_error(project, sql.ApprovalAction.UNARCHIVE, 0) is None
 
 
 @pytest.mark.parametrize("status", [sql.ProjectStatus.ACTIVE, sql.ProjectStatus.RETIRED, sql.ProjectStatus.STANDING])
 def test_unarchive_eligibility_refuses_unless_dormant(status: sql.ProjectStatus) -> None:
     project = sql.Project(key="commons-foo", status=status)
-    error = projects._action_eligibility_error(project, sql.ApprovalAction.UNARCHIVE, 2)
+    error = interaction.project_action_eligibility_error(project, sql.ApprovalAction.UNARCHIVE, 2)
     assert error is not None
     assert "not dormant" in error
 

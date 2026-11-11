@@ -106,6 +106,26 @@ async def add_project(
 
 
 @get.typed
+async def archive(
+    session: web.Committer, _project_archive: Literal["project/archive"], project_key: safe.ProjectKey
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /project/archive/<project_key>
+    """
+    return await _request_approval_page(session, project_key, sql.ApprovalAction.ARCHIVE)
+
+
+@get.typed
+async def delete(
+    session: web.Committer, _project_delete: Literal["project/delete"], project_key: safe.ProjectKey
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /project/delete/<project_key>
+    """
+    return await _request_approval_page(session, project_key, sql.ApprovalAction.DELETE)
+
+
+@get.typed
 async def project_yaml(
     session: web.Committer, _project_yaml: Literal["project/yaml"], project_key: safe.ProjectKey
 ) -> web.WerkzeugResponse | str:
@@ -197,40 +217,15 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
             action_forms[str(project.key)] = await _approval_request_element(approval)
             continue
         if is_dormant:
-            action_forms[str(project.key)] = await _unarchive_form(project)
+            action_forms[str(project.key)] = _approval_link(project, sql.ApprovalAction.UNARCHIVE)
             continue
         if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
             continue
         total_releases, active_releases = release_counts.get(str(project.key), (0, 0))
         if total_releases == 0:
-            action_forms[str(project.key)] = await form.render(
-                model_cls=shared.projects.DeleteSelectedProject,
-                action=util.as_url(post.projects.delete),
-                form_classes=".d-inline-block.m-0",
-                submit_classes="btn-sm btn-outline-danger",
-                submit_label="Request deletion",
-                empty=True,
-                defaults={"project_key": str(project.key)},
-                confirm=(
-                    "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-                    " ready to delete only if the vote passes, and you must then return to complete it."
-                ),
-            )
+            action_forms[str(project.key)] = _approval_link(project, sql.ApprovalAction.DELETE)
         elif active_releases == 0:
-            action_forms[str(project.key)] = await form.render(
-                model_cls=shared.projects.ArchiveSelectedProject,
-                action=util.as_url(post.projects.archive),
-                form_classes=".d-inline-block.m-0",
-                submit_classes="btn-sm btn-outline-secondary",
-                submit_label="Request archival",
-                empty=True,
-                defaults={"project_key": str(project.key)},
-                confirm=(
-                    "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-                    " ready to archive only if the vote passes, and you must then return to complete it, which"
-                    " deletes any draft releases and marks the project dormant."
-                ),
-            )
+            action_forms[str(project.key)] = _approval_link(project, sql.ApprovalAction.ARCHIVE)
 
     return await template.render("projects.html", projects=projects, action_forms=action_forms)
 
@@ -263,6 +258,16 @@ async def select(session: web.Committer, _project_select: Literal["project/selec
             user_projects.sort(key=lambda p: p.display_name)
 
     return await template.render("project-select.html", user_projects=user_projects)
+
+
+@get.typed
+async def unarchive(
+    session: web.Committer, _project_unarchive: Literal["project/unarchive"], project_key: safe.ProjectKey
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /project/unarchive/<project_key>
+    """
+    return await _request_approval_page(session, project_key, sql.ApprovalAction.UNARCHIVE)
 
 
 @get.typed
@@ -386,6 +391,41 @@ async def view(
         content=content,
         javascripts=javascripts,
     )
+
+
+def _approval_link(project: sql.Project, action: sql.ApprovalAction) -> htm.Element:
+    match action:
+        case sql.ApprovalAction.ARCHIVE:
+            route, classes = archive, ".btn.btn-sm.btn-outline-secondary"
+        case sql.ApprovalAction.DELETE:
+            route, classes = delete, ".btn.btn-sm.btn-outline-danger"
+        case sql.ApprovalAction.UNARCHIVE:
+            route, classes = unarchive, ".btn.btn-sm.btn-outline-secondary"
+    return htm.a(classes, href=util.as_url(route, project_key=str(project.key)))[f"Request {_approval_noun(action)}"]
+
+
+def _approval_notice(action: sql.ApprovalAction) -> str:
+    match action:
+        case sql.ApprovalAction.ARCHIVE:
+            effect = ", which deletes any draft releases and marks the project dormant"
+        case sql.ApprovalAction.DELETE:
+            effect = ""
+        case sql.ApprovalAction.UNARCHIVE:
+            effect = ", which makes the project active again. Its archived releases stay archived"
+    return (
+        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project ready to"
+        f" {action.value} only if the vote passes, and you must then return to complete it{effect}."
+    )
+
+
+def _approval_noun(action: sql.ApprovalAction) -> str:
+    match action:
+        case sql.ApprovalAction.ARCHIVE:
+            return "archival"
+        case sql.ApprovalAction.DELETE:
+            return "deletion"
+        case sql.ApprovalAction.UNARCHIVE:
+            return "unarchival"
 
 
 async def _approval_request_element(approval: sql.ApprovalRequest) -> htm.Element:
@@ -563,7 +603,7 @@ def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
     return any(getattr(cycle, attr) is not None for attr in ("start", "begin", "latest", "eod", "eos", "eol"))
 
 
-async def _delete_form(project: sql.Project) -> htm.Element | None:
+async def _project_approval_element(project: sql.Project) -> htm.Element | None:
     async with db.session() as data:
         approval = await data.approval_request(
             project_key=str(project.key),
@@ -572,39 +612,13 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
     if approval is not None:
         return await _approval_request_element(approval)
     if project.status == sql.ProjectStatus.DORMANT:
-        return await _unarchive_form(project)
-    delete_form = None
+        return _approval_link(project, sql.ApprovalAction.UNARCHIVE)
     releases = project.releases_including_embargoed
     if not releases:
-        delete_form = await form.render(
-            shared.projects.DeleteSelectedProject,
-            action=util.as_url(post.projects.delete),
-            form_classes=".d-inline-block.m-0",
-            submit_classes="btn-sm btn-outline-danger",
-            submit_label="Request deletion",
-            defaults={"project_key": str(project.key)},
-            confirm=(
-                "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-                " ready to delete only if the vote passes, and you must then return to complete it."
-            ),
-            empty=True,
-        )
-    elif not any((r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (not r.is_archived) for r in releases):
-        delete_form = await form.render(
-            model_cls=shared.projects.ArchiveSelectedProject,
-            action=util.as_url(post.projects.archive),
-            form_classes=".d-inline-block.m-0",
-            submit_classes="btn-sm btn-outline-secondary",
-            submit_label="Request archival",
-            empty=True,
-            defaults={"project_key": str(project.key)},
-            confirm=(
-                "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-                " ready to archive only if the vote passes, and you must then return to complete it, which"
-                " deletes any draft releases and marks the project dormant."
-            ),
-        )
-    return delete_form
+        return _approval_link(project, sql.ApprovalAction.DELETE)
+    if not any((r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (not r.is_archived) for r in releases):
+        return _approval_link(project, sql.ApprovalAction.ARCHIVE)
+    return None
 
 
 def _embargoed_button_badges(release: sql.Release) -> list[htm.Element]:
@@ -800,9 +814,9 @@ async def _render_actions_card(
     with card.block(htm.div, classes=".card-body.d-flex.flex-column.align-items-start.gap-2") as body:
         # A dormant project is offered unarchival, which the sole-project rule doesn't limit
         if (project.is_active and (not is_sole_active_project)) or (project.status == sql.ProjectStatus.DORMANT):
-            action_form = await _delete_form(project)
-            if action_form:
-                body.append(action_form)
+            approval_element = await _project_approval_element(project)
+            if approval_element:
+                body.append(approval_element)
 
         if project.committee:
             if (project.committee.key in session.member_committees) or is_privileged:
@@ -1589,6 +1603,48 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
     return card.collect()
 
 
+async def _request_approval_page(
+    session: web.Committer, project_key: safe.ProjectKey, action: sql.ApprovalAction
+) -> web.WerkzeugResponse | str:
+    if not config.get().CAP_ROLE_ACCOUNT_TOKEN:
+        return await session.redirect(projects, error=strings.CAP_NOT_CONFIGURED)
+    async with db.session() as data:
+        match await interaction.project_ready_for_approval(project_key, action, data):
+            case str() as error:
+                return await session.redirect(projects, error=error)
+            case (project, committee):
+                pass
+    if not (user.is_committee_member(committee, session.uid) or session.is_admin):
+        return await session.redirect(
+            projects, error=f"Only members of the {committee.key} PMC can request this for '{project_key}'."
+        )
+
+    match action:
+        case sql.ApprovalAction.ARCHIVE:
+            post_route = post.projects.archive
+        case sql.ApprovalAction.DELETE:
+            post_route = post.projects.delete
+        case sql.ApprovalAction.UNARCHIVE:
+            post_route = post.projects.unarchive
+    project_path = util.as_url(view, project_key=str(project_key))
+    title = f"Request {_approval_noun(action)} of {project.display_name}"
+
+    page = htm.Block()
+    page.p[htm.a(".atr-back-link", href=project_path)["← Back to project"]]
+    page.h1[title]
+    page.p[_approval_notice(action)]
+
+    await form.render_block(
+        page,
+        model_cls=shared.projects.RequestApprovalForm,
+        action=util.as_url(post_route, project_key=str(project_key)),
+        submit_label="Start approval vote",
+        cancel_url=project_path,
+        defaults={"vote": util.cap_approval_title(action, project_key)},
+    )
+    return await template.blank(title=title, description=_approval_notice(action), content=page.collect())
+
+
 def _security_contact_radios(project: sql.Project) -> htm.Element:
     committee = project.committee
     options = ["security@apache.org"]
@@ -1684,23 +1740,6 @@ def _textarea_with_variables(
     elements.append(details)
 
     return htm.div[elements]
-
-
-async def _unarchive_form(project: sql.Project) -> htm.Element:
-    return await form.render(
-        model_cls=shared.projects.UnarchiveSelectedProject,
-        action=util.as_url(post.projects.unarchive),
-        form_classes=".d-inline-block.m-0",
-        submit_classes="btn-sm btn-outline-secondary",
-        submit_label="Request unarchival",
-        empty=True,
-        defaults={"project_key": str(project.key)},
-        confirm=(
-            "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-            " ready to unarchive only if the vote passes, and you must then return to complete it, which"
-            " makes the project active again. Its archived releases stay archived."
-        ),
-    )
 
 
 def _view_action(project: sql.Project, tab: str) -> str:

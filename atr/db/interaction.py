@@ -684,6 +684,23 @@ async def prior_release_for_archive(
     return cycles.prior_release_in_cycle(project, version, candidates)
 
 
+def project_action_eligibility_error(
+    project: sql.Project,
+    action: sql.ApprovalAction,
+    active_sibling_count: int,
+    *,
+    completing: bool = False,
+    requested_at: datetime.datetime | None = None,
+) -> str | None:
+    # Unarchival brings back a project the PMC archived, and adds to the committee's active
+    # projects rather than taking one away, so the archive and delete checks don't apply
+    if action == sql.ApprovalAction.UNARCHIVE:
+        return _unarchive_eligibility_error(project)
+    return _archive_or_delete_eligibility_error(
+        project, action, active_sibling_count, completing=completing, requested_at=requested_at
+    )
+
+
 async def project_latest_finished(data: db.Session) -> dict[str, tuple[int, str, datetime.datetime | None]]:
     via = sql.validate_instrumented_attribute
     latest = sqlalchemy.func.coalesce(via(sql.Release.released), via(sql.Release.created))
@@ -733,6 +750,33 @@ def project_order_key(project: sql.Project, latest_release: datetime.datetime | 
     # Negated so that recent releases sort first, with never-released projects last
     recency = -latest_release.timestamp() if latest_release else float("inf")
     return (not is_main, recency, project.display_name.lower())
+
+
+async def project_ready_for_approval(
+    project_key: safe.ProjectKey, action: sql.ApprovalAction, data: db.Session
+) -> tuple[sql.Project, sql.Committee] | str:
+    """Return the project and its committee if an approval vote may be started, or the reason it may not."""
+    project = await data.project(key=str(project_key), _committee=True, _releases=True).get()
+    if (project is None) or (project.committee is None):
+        return f"Project '{project_key}' not found."
+    if project.committee.is_podling:
+        return (
+            "CAP approval voting is not available for podlings. Archival or deletion of a podling is an"
+            " Incubator PMC decision."
+        )
+    active_siblings = len(
+        await data.project(committee_key=project.committee.key, status=sql.ProjectStatus.ACTIVE, _committee=False).all()
+    )
+    eligibility_error = project_action_eligibility_error(project, action, active_siblings)
+    if eligibility_error is not None:
+        return eligibility_error
+    existing = await data.approval_request(
+        project_key=str(project_key),
+        status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+    ).get()
+    if existing is not None:
+        return f"A CAP approval request to {existing.action.value} this project is already in progress."
+    return project, project.committee
 
 
 async def project_release_counts(data: db.Session) -> dict[str, tuple[int, int]]:
@@ -1284,6 +1328,41 @@ async def wait_for_task(
     return False
 
 
+def _archive_or_delete_eligibility_error(
+    project: sql.Project,
+    action: sql.ApprovalAction,
+    active_sibling_count: int,
+    *,
+    completing: bool,
+    requested_at: datetime.datetime | None,
+) -> str | None:
+    if not project.is_active:
+        return f"Project '{project.key}' is not active."
+    if active_sibling_count <= 1:
+        return f"Project '{project.key}' is the only active project in its committee."
+    releases = project.releases_including_embargoed
+    if action == sql.ApprovalAction.DELETE:
+        if releases:
+            return f"Project '{project.key}' has releases and cannot be deleted."
+        return None
+    if (not completing) and (not releases):
+        return f"Project '{project.key}' has no releases to archive."
+    active_releases = [
+        r for r in releases if (r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (not r.is_archived)
+    ]
+    if active_releases:
+        return f"Project '{project.key}' has active releases and cannot be archived."
+    if not completing:
+        return None
+    new_drafts = [r for r in releases if (requested_at is None) or (r.created > requested_at)]
+    if new_drafts:
+        return (
+            f"Project '{project.key}' has {util.plural(len(new_drafts), 'draft release')} created after the"
+            " approval vote was requested. Delete them before completing the archival."
+        )
+    return None
+
+
 async def _check_results_query(
     data: db.Session,
     project_key: safe.ProjectKey,
@@ -1338,6 +1417,12 @@ def _svn_publish_result(task: sql.Task) -> results.SvnPublish | None:
             return None
         if isinstance(parsed, results.SvnPublish):
             return parsed
+    return None
+
+
+def _unarchive_eligibility_error(project: sql.Project) -> str | None:
+    if project.status != sql.ProjectStatus.DORMANT:
+        return f"Project '{project.key}' is not dormant, so it can't be restored."
     return None
 
 

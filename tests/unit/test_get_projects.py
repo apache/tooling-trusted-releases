@@ -125,5 +125,5 @@ async def test_projects_directory_action_forms(
     assert render.await_args.args == ("projects.html",)
     action_forms = render.await_args.kwargs["action_forms"]
     assert set(action_forms) == {"example-none", "example-drafts"}
-    labels = {c.kwargs["defaults"]["project_key"]: c.kwargs["submit_label"] for c in form_render.await_args_list}
-    assert labels == {"example-none": "Request deletion", "example-drafts": "Request archival"}
+    assert "Request deletion" in str(action_forms["example-none"])
+    assert "Request archival" in str(action_forms["example-drafts"])

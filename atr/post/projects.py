@@ -27,12 +27,14 @@ import atr.blueprints.post as post
 import atr.config as config
 import atr.constants as constants
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.notify as notify
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.strings as strings
@@ -80,12 +82,13 @@ async def add_project(
 async def archive(
     session: web.Committer,
     _project_archive: Literal["project/archive"],
-    archive_selected_project_form: shared.projects.ArchiveSelectedProject,
+    project_key: safe.ProjectKey,
+    request_approval_form: shared.projects.RequestApprovalForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /project/archive
+    URL: /project/archive/<project_key>
     """
-    return await _request_approval(session, archive_selected_project_form.project_key, sql.ApprovalAction.ARCHIVE)
+    return await _request_approval(session, project_key, sql.ApprovalAction.ARCHIVE, request_approval_form.explanation)
 
 
 @post.typed
@@ -115,7 +118,7 @@ async def complete_approval(
                 committee_key=project.committee.key, status=sql.ProjectStatus.ACTIVE, _committee=False
             ).all()
         )
-        eligibility_error = _action_eligibility_error(
+        eligibility_error = interaction.project_action_eligibility_error(
             project, approval.action, active_siblings, completing=True, requested_at=approval.requested_at
         )
         if eligibility_error is not None:
@@ -145,24 +148,28 @@ async def complete_approval(
 async def delete(
     session: web.Committer,
     _project_delete: Literal["project/delete"],
-    delete_selected_project_form: shared.projects.DeleteSelectedProject,
+    project_key: safe.ProjectKey,
+    request_approval_form: shared.projects.RequestApprovalForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /project/delete
+    URL: /project/delete/<project_key>
     """
-    return await _request_approval(session, delete_selected_project_form.project_key, sql.ApprovalAction.DELETE)
+    return await _request_approval(session, project_key, sql.ApprovalAction.DELETE, request_approval_form.explanation)
 
 
 @post.typed
 async def unarchive(
     session: web.Committer,
     _project_unarchive: Literal["project/unarchive"],
-    unarchive_selected_project_form: shared.projects.UnarchiveSelectedProject,
+    project_key: safe.ProjectKey,
+    request_approval_form: shared.projects.RequestApprovalForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /project/unarchive
+    URL: /project/unarchive/<project_key>
     """
-    return await _request_approval(session, unarchive_selected_project_form.project_key, sql.ApprovalAction.UNARCHIVE)
+    return await _request_approval(
+        session, project_key, sql.ApprovalAction.UNARCHIVE, request_approval_form.explanation
+    )
 
 
 @post.typed
@@ -188,58 +195,6 @@ async def view(
         )
         await quart.flash(notice, "warning")
     return response
-
-
-def _action_eligibility_error(
-    project: sql.Project,
-    action: sql.ApprovalAction,
-    active_sibling_count: int,
-    *,
-    completing: bool = False,
-    requested_at: datetime.datetime | None = None,
-) -> str | None:
-    # Unarchival brings back a project the PMC archived, and adds to the committee's active
-    # projects rather than taking one away, so the archive and delete checks don't apply
-    if action == sql.ApprovalAction.UNARCHIVE:
-        return _unarchive_eligibility_error(project)
-    return _archive_or_delete_eligibility_error(
-        project, action, active_sibling_count, completing=completing, requested_at=requested_at
-    )
-
-
-def _archive_or_delete_eligibility_error(
-    project: sql.Project,
-    action: sql.ApprovalAction,
-    active_sibling_count: int,
-    *,
-    completing: bool,
-    requested_at: datetime.datetime | None,
-) -> str | None:
-    if not project.is_active:
-        return f"Project '{project.key}' is not active."
-    if active_sibling_count <= 1:
-        return f"Project '{project.key}' is the only active project in its committee."
-    releases = project.releases_including_embargoed
-    if action == sql.ApprovalAction.DELETE:
-        if releases:
-            return f"Project '{project.key}' has releases and cannot be deleted."
-        return None
-    if (not completing) and (not releases):
-        return f"Project '{project.key}' has no releases to archive."
-    active_releases = [
-        r for r in releases if (r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (not r.is_archived)
-    ]
-    if active_releases:
-        return f"Project '{project.key}' has active releases and cannot be archived."
-    if not completing:
-        return None
-    new_drafts = [r for r in releases if (requested_at is None) or (r.created > requested_at)]
-    if new_drafts:
-        return (
-            f"Project '{project.key}' has {util.plural(len(new_drafts), 'draft release')} created after the"
-            " approval vote was requested. Delete them before completing the archival."
-        )
-    return None
 
 
 async def _asf_yaml_update_type(project_key: safe.ProjectKey) -> sql.UpdateType | None:
@@ -632,68 +587,53 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
 
 
 async def _request_approval(
-    session: web.Committer, project_key: safe.ProjectKey, action: sql.ApprovalAction
+    session: web.Committer, project_key: safe.ProjectKey, action: sql.ApprovalAction, explanation: str
 ) -> web.WerkzeugResponse:
     if not config.get().CAP_ROLE_ACCOUNT_TOKEN:
-        return await session.redirect(
-            get.projects.projects, error="CAP approval is not configured. Please contact an administrator."
-        )
+        return await session.redirect(get.projects.projects, error=strings.CAP_NOT_CONFIGURED)
 
     async with db.session() as data:
-        project = await data.project(key=str(project_key), _committee=True, _releases=True).get()
-        if (project is None) or (project.committee is None):
-            return await session.redirect(get.projects.projects, error=f"Project '{project_key}' not found.")
-        if project.committee.is_podling:
-            return await session.redirect(
-                get.projects.projects,
-                error=(
-                    "CAP approval voting is not available for podlings. Archival or deletion of a podling is an"
-                    " Incubator PMC decision."
-                ),
-            )
-        committee_key = project.committee.key
-        display_name = project.display_name
-        active_siblings = len(
-            await data.project(committee_key=committee_key, status=sql.ProjectStatus.ACTIVE, _committee=False).all()
-        )
-        eligibility_error = _action_eligibility_error(project, action, active_siblings)
-        if eligibility_error is not None:
-            return await session.redirect(get.projects.projects, error=eligibility_error)
-        existing = await data.approval_request(
-            project_key=str(project_key),
-            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-        ).get()
-        if existing is not None:
-            return await session.redirect(
-                get.projects.projects,
-                error=f"A CAP approval request to {existing.action.value} this project is already in progress.",
-            )
+        match await interaction.project_ready_for_approval(project_key, action, data):
+            case str() as error:
+                return await session.redirect(get.projects.projects, error=error)
+            case (project, committee):
+                committee_key = committee.key
+                display_name = project.display_name
 
+    project_url = f"https://{config.get().APP_HOST}{util.as_url(get.projects.view, project_key=str(project_key))}"
     async with storage.write(session) as write:
         try:
             wacm = await _write_as_committee_member(write, session, project_key)
         except storage.AccessError as e:
-            return await session.redirect(get.projects.projects, error=f"Error requesting {action.value} approval: {e}")
+            return await _request_approval_retry(explanation, f"Error requesting {action.value} approval: {e}")
 
         closes_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
             minutes=constants.CAP_VOTE_DURATION_MINUTES
         )
         try:
             question = await util.cap_create_approval_question(
-                action, project_key, display_name, committee_key, session.uid, closes_at
+                action,
+                project_key,
+                display_name,
+                committee_key,
+                session.uid,
+                closes_at,
+                project_url=project_url,
+                explanation=explanation,
             )
         except util.FetchError as e:
-            return await session.redirect(get.projects.projects, error=f"Could not create CAP approval vote: {e}")
+            return await _request_approval_retry(explanation, f"Could not create CAP approval vote: {e}")
 
         return await _persist_approval(
             session, wacm, project_key, committee_key, action, question.question_id, closes_at
         )
 
 
-def _unarchive_eligibility_error(project: sql.Project) -> str | None:
-    if project.status != sql.ProjectStatus.DORMANT:
-        return f"Project '{project.key}' is not dormant, so it can't be unarchived."
-    return None
+async def _request_approval_retry(explanation: str, error: str) -> web.WerkzeugResponse:
+    # The request form is served from this same path, and picks the explanation back up from the session
+    await quart.flash(error, "error")
+    await sessions.form_error_put(quart.request.path, {"!explanation": {"original": explanation}})
+    return quart.redirect(quart.request.path)
 
 
 async def _write_as_committee_member(
