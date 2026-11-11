@@ -124,6 +124,10 @@ _ROWS = {
         " declare_sources, expires, revoked)"
         " VALUES ('jti', 'p', 'u', 'g', 1, '{}', 1, 0, 0)",
     ),
+    "0145": (
+        "INSERT INTO voteinterpretation (release_key, asf_eid, choice, asf_uid, created)"
+        " VALUES ('p-1', 'eid', 'YES', 'u', '2026-01-01 00:00:00')",
+    ),
 }
 
 _INSERT_COMMITTEE = (

@@ -59,6 +59,11 @@ class CancelSubmitForm(ResolveFormBase):
     vote_result: Literal["Cancelled"] = form.label("Vote result", default="Cancelled", widget=form.Widget.HIDDEN)
 
 
+class InterpretForm(form.Form):
+    asf_eid: str = form.label("Email", widget=form.Widget.HIDDEN, max_length=256)
+    choice: Literal["+1", "0", "-1", ""] = form.label("Vote", widget=form.Widget.HIDDEN)
+
+
 class SubmitForm(ResolveFormBase):
     variant: SUBMIT = form.value(SUBMIT)
     result_subject: str = form.label("Subject", widget=form.Widget.TEXT, default="", readonly=True)

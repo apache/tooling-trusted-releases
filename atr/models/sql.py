@@ -2611,6 +2611,17 @@ class User(sqlmodel.SQLModel, table=True):
     )
 
 
+class VoteInterpretation(sqlmodel.SQLModel, table=True):
+    release_key: str = sqlmodel.Field(foreign_key="release.key", primary_key=True, ondelete="CASCADE")
+    asf_eid: str = sqlmodel.Field(primary_key=True)
+    choice: VoteChoice = sqlmodel.Field()
+    asf_uid: str = sqlmodel.Field()
+    created: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+
+
 # WorkflowStatus:
 class WorkflowStatus(sqlmodel.SQLModel, table=True):
     workflow_id: str = sqlmodel.Field(primary_key=True, index=True)

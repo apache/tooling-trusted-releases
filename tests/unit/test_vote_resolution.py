@@ -1961,6 +1961,7 @@ async def _render_standard_resolve_page(
     )
     monkeypatch.setattr(resolve.interaction, "vote_resolution_bypass", resolution_bypass_check)
     monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: vote_end)
+    monkeypatch.setattr(resolve.interaction, "vote_interpretations", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: pass_fail_allowed)
     monkeypatch.setattr(resolve.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
     monkeypatch.setattr(resolve.interaction, "ballots_for_resolution", ballots_for_resolution)

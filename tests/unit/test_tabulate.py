@@ -202,6 +202,37 @@ def test_vote_result_subject_formats_result_before_vote() -> None:
 
 
 @pytest.mark.asyncio
+async def test_votes_applies_interpretation_to_its_email_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        for voter in ("one", "two"):
+            message = _vote_message(
+                from_raw=f"Voter <{voter}@apache.org>",
+                message_id=f"<{voter}@apache.org>",
+                archive_mid=f"archive-{voter}",
+                epoch="1",
+            )
+            message["body"] = "+1 (binding)\n\n- cargo +1.86.0 test --workspace\n"
+            yield f"archive-doc-{voter}", message
+
+    monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+
+    _start_unixtime, tabulated_votes = await tabulate.votes(
+        None,
+        "0123456789abcdef0123456789abcdef",
+        interpretations={"archive-one": sql.VoteChoice.YES},
+    )
+
+    assert tabulated_votes["one"].vote == models_tabulate.Vote.YES
+    assert tabulated_votes["two"].vote == models_tabulate.Vote.UNKNOWN
+
+
+@pytest.mark.asyncio
 async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _thread_messages(
         _thread_id: str, *, strict: bool = False, source: bool = False

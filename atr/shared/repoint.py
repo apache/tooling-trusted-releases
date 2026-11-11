@@ -44,6 +44,7 @@ RELEASE_KEY_REFS: Final[list[tuple[type[sqlmodel.SQLModel], str]]] = [
     (sql.Distribution, "release_key"),
     (sql.Quarantined, "release_key"),
     (sql.Revision, "release_key"),
+    (sql.VoteInterpretation, "release_key"),
 ]
 
 # Tables whose column holds a cycle key, "{project_key}-{cycle}"

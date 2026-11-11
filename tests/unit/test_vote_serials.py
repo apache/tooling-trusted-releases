@@ -379,6 +379,35 @@ async def test_expedited_vote_mode_constraint(sqlite_sessionmaker, update, exped
 
 
 @pytest.mark.asyncio
+async def test_interpret_records_replaces_and_resets(sqlite_sessionmaker) -> None:
+    project_key = safe.ProjectKey("project")
+    version_key = safe.VersionKey("1.0.0")
+
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE, vote_mode=sql.VoteMode.EMAIL)
+        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+
+        await writer.interpret(project_key, version_key, "eid", sql.VoteChoice.YES)
+        await writer.interpret(project_key, version_key, "eid", sql.VoteChoice.NO)
+        interpretation = (await data.execute(sqlmodel.select(sql.VoteInterpretation))).scalar_one()
+        assert interpretation.choice == sql.VoteChoice.NO
+        assert interpretation.asf_uid == "chair"
+
+        await writer.interpret(project_key, version_key, "eid", None)
+        assert (await data.execute(sqlmodel.select(sql.VoteInterpretation))).all() == []
+
+
+@pytest.mark.asyncio
+async def test_interpret_rejects_trusted_votes(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE, vote_mode=sql.VoteMode.TRUSTED)
+        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+
+        with pytest.raises(storage.AccessError):
+            await writer.interpret(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "eid", sql.VoteChoice.YES)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.parametrize("voted_revision_number", [None, "00001", "00002"])
 async def test_podling_second_round_preserves_voted_revision(

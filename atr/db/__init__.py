@@ -1334,6 +1334,29 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def vote_interpretation(
+        self,
+        release_key: Opt[str] = NOT_SET,
+        asf_eid: Opt[str] = NOT_SET,
+        choice: Opt[sql.VoteChoice] = NOT_SET,
+        asf_uid: Opt[str] = NOT_SET,
+        created: Opt[datetime.datetime] = NOT_SET,
+    ) -> Query[sql.VoteInterpretation]:
+        query = sqlmodel.select(sql.VoteInterpretation)
+
+        if is_defined(release_key):
+            query = query.where(sql.VoteInterpretation.release_key == release_key)
+        if is_defined(asf_eid):
+            query = query.where(sql.VoteInterpretation.asf_eid == asf_eid)
+        if is_defined(choice):
+            query = query.where(sql.VoteInterpretation.choice == choice)
+        if is_defined(asf_uid):
+            query = query.where(sql.VoteInterpretation.asf_uid == asf_uid)
+        if is_defined(created):
+            query = query.where(sql.VoteInterpretation.created == created)
+
+        return Query(self, query)
+
     def workflow_jwt(
         self,
         jti: Opt[str] = NOT_SET,

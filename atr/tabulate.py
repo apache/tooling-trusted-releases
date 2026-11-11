@@ -22,6 +22,7 @@ from typing import Final, Protocol
 import atr.cache as cache
 import atr.config as config
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.log as log
 import atr.models as models
 import atr.models.sql as sql
@@ -91,7 +92,13 @@ async def vote_details(
     *,
     excluded_message_ids: set[str] | None = None,
 ) -> models.tabulate.VoteDetails:
-    start_unixtime, tabulated_votes = await votes(committee, thread_id, excluded_message_ids=excluded_message_ids)
+    interpretations = await interaction.vote_interpretations(release.key)
+    start_unixtime, tabulated_votes = await votes(
+        committee,
+        thread_id,
+        excluded_message_ids=excluded_message_ids,
+        interpretations={interpretation.asf_eid: interpretation.choice for interpretation in interpretations},
+    )
     summary = vote_summary(tabulated_votes)
     passed, outcome = vote_outcome(release, start_unixtime, tabulated_votes)
     return models.tabulate.VoteDetails(
@@ -187,6 +194,7 @@ async def votes(  # noqa: C901
     thread_id: str,
     *,
     excluded_message_ids: set[str] | None = None,
+    interpretations: dict[str, sql.VoteChoice] | None = None,
 ) -> tuple[int | None, dict[str, models.tabulate.VoteEmail]]:
     """Tabulate votes."""
     excluded_message_ids_normalized = {
@@ -249,6 +257,9 @@ async def votes(  # noqa: C901
             vote_cast = castings[0][0]
         else:
             vote_cast = models.tabulate.Vote.UNKNOWN
+        interpretation = (interpretations or {}).get(msg.get("mid", ""))
+        if interpretation is not None:
+            vote_cast = models.tabulate.Vote[interpretation.name]
         quotation = " // ".join([c[1] for c in castings])
 
         vote_email = models.tabulate.VoteEmail(

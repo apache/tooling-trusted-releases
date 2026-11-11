@@ -332,6 +332,46 @@ class ReleaseManager(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
+    async def interpret(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        asf_eid: str,
+        choice: sql.VoteChoice | None,
+    ) -> None:
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            _project_release_policy=True,
+        ).demand(storage.AccessError("Release not found", status=404))
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
+        if release.effective_vote_mode != sql.VoteMode.EMAIL:
+            raise storage.AccessError("Votes can only be interpreted in Email mode", status=409)
+        via = sql.validate_instrumented_attribute
+        if choice is None:
+            await self.__data.execute(
+                sqlmodel.delete(sql.VoteInterpretation).where(
+                    via(sql.VoteInterpretation.release_key) == release.key,
+                    via(sql.VoteInterpretation.asf_eid) == asf_eid,
+                )
+            )
+        else:
+            await self.__data.merge(
+                sql.VoteInterpretation(release_key=release.key, asf_eid=asf_eid, choice=choice, asf_uid=self.__asf_uid)
+            )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            asf_eid=asf_eid,
+            choice=choice,
+        )
+
     async def start(  # noqa: C901
         self,
         email_to: str,

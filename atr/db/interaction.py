@@ -1288,6 +1288,11 @@ def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:
         return None
 
 
+async def vote_interpretations(release_key: str) -> Sequence[sql.VoteInterpretation]:
+    async with db.session() as data:
+        return await data.vote_interpretation(release_key=release_key).all()
+
+
 def vote_pass_fail_allowed(latest_vote_task: sql.Task | None) -> bool:
     vote_end = vote_end_get(latest_vote_task)
     if vote_end is None:

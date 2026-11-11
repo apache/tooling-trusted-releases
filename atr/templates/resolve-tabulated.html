@@ -186,7 +186,7 @@
       {% else %}
         the vote email thread
       {% endif %}
-      for you. It is not always possible to parse the votes accurately, so you should check the results carefully. <strong>Do not use this page to decide how to resolve the vote without manual review.</strong>
+      for you. It is not always possible to parse the votes accurately, so you should check the results carefully. If ATR has read a vote incorrectly, use the buttons in its row to record the correct vote. <strong>Do not use this page to decide how to resolve the vote without manual review.</strong>
     </p>
     {% if tabulated_votes %}
       <table class="table table-striped">
@@ -198,6 +198,8 @@
             <th class="text-center">Status</th>
             <th class="text-center">Link</th>
             <th>Quotation</th>
+            <th>Interpret as</th>
+            <th class="text-center">Interpreter</th>
           </tr>
         </thead>
         <tbody>
@@ -215,6 +217,34 @@
                 <a href="https://lists.apache.org/thread/{{ vote_detail.asf_eid }}">Email</a>
               </td>
               <td>{{ vote_detail.quotation }}</td>
+              <td class="atr-nowrap">
+                <form method="post"
+                      action="{{ as_url(post.resolve.interpret, project_key=release.project.key, version_key=release.version) }}"
+                      id="interpret-{{ loop.index }}"
+                      class="mb-0">
+                  {{ csrf_input_fn()|safe }}
+
+                  <input type="hidden" name="asf_eid" value="{{ vote_detail.asf_eid }}" />
+                  <div class="btn-group btn-group-sm">
+                    {% for choice in ["+1", "0", "-1"] %}
+                      <button type="submit"
+                              name="choice"
+                              value="{{ choice }}"
+                              class="btn btn-outline-secondary">{{ choice }}</button>
+                    {% endfor %}
+                  </div>
+                </form>
+              </td>
+              <td class="atr-nowrap text-center">
+                {% if vote_detail.asf_eid in interpreted_by %}
+                  {{ interpreted_by[vote_detail.asf_eid] }}
+                  <button type="submit"
+                          form="interpret-{{ loop.index }}"
+                          name="choice"
+                          value=""
+                          class="btn btn-sm btn-outline-secondary d-block mx-auto mt-1">Reset</button>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

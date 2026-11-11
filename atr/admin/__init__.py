@@ -128,6 +128,7 @@ _BROWSABLE_MODELS: Final[tuple[type[sqlmodel.SQLModel], ...]] = (
     sql.User,
     sql.UserSession,
     sql.VoteCounter,
+    sql.VoteInterpretation,
     sql.WorkflowJti,
     sql.WorkflowJwt,
     sql.WorkflowSSHKey,

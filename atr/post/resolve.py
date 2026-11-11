@@ -22,9 +22,38 @@ import quart
 import atr.blueprints.post as post
 import atr.get as get
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
+
+
+@post.typed
+async def interpret(
+    session: web.Committer,
+    _resolve_interpret: Literal["resolve/interpret"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    interpret_form: shared.resolve.InterpretForm,
+) -> web.WerkzeugResponse:
+    choice = sql.VoteChoice(interpret_form.choice) if interpret_form.choice else None
+    try:
+        async with storage.write() as write:
+            warm = await write.as_project_release_manager(project_key)
+            await warm.vote.interpret(project_key, version_key, interpret_form.asf_eid, choice)
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.resolve.selected,
+            error=str(e),
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
+    return await session.redirect(
+        get.resolve.selected,
+        project_key=str(project_key),
+        version_key=str(version_key),
+        success=f"Vote interpreted as {choice.value}" if choice else "Vote interpretation reset",
+    )
 
 
 @post.typed

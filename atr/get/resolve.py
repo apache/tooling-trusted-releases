@@ -181,6 +181,8 @@ async def selected(  # noqa: C901
         )
     email_context_votes = _email_context_rows(details.votes) if (details is not None) else []
     email_context_summary = _email_context_summary_rows(details.votes) if (details is not None) else []
+    interpretations = await interaction.vote_interpretations(release.key)
+    interpreted_by = {interpretation.asf_eid: interpretation.asf_uid for interpretation in interpretations}
 
     defaults: dict[str, object] = {
         "vote_mode": release.effective_vote_mode,
@@ -364,8 +366,10 @@ async def selected(  # noqa: C901
                 f" pass (at least 3 {binding_label_inline} +1 votes are required, with more +1 than -1)."
             )
         elif details is not None:
+            interpreted = any((vote.asf_eid in interpreted_by) for vote in details.votes.values())
+            tabulation = "automated and interpreted" if interpreted else "automated"
             message = (
-                f"The automated tabulation did not find sufficient {binding_label_inline} +1 votes to"
+                f"The {tabulation} tabulation did not find sufficient {binding_label_inline} +1 votes to"
                 f" pass (at least 3 {binding_label_inline} +1 votes are required, with more +1 than -1)."
                 " Note that the tabulation is heuristic and may not have parsed all votes"
                 " correctly."
@@ -421,6 +425,7 @@ async def selected(  # noqa: C901
         early_completion=early_completion,
         email_context_summary=email_context_summary,
         email_context_votes=email_context_votes,
+        interpreted_by=interpreted_by,
         trusted_ballots=trusted_ballot_rows,
         trusted_has_vote_serial=trusted_has_vote_serial,
         trusted_outcome=trusted_outcome,
