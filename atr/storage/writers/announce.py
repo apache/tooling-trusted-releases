@@ -22,7 +22,7 @@ import asyncio
 import datetime
 import pathlib
 import tempfile
-from typing import Final
+from typing import TYPE_CHECKING
 
 import aioshutil
 import sqlmodel
@@ -34,7 +34,6 @@ import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
-import atr.hashes as hashes
 import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
@@ -46,11 +45,10 @@ import atr.paths as paths
 import atr.storage as storage
 import atr.storage.writers.release as release
 import atr.svn as svn
-import atr.tasks.checks as checks
-import atr.tasks.checks.signature as signature
 import atr.util as util
 
-_SIGNATURE_CHECKER_KEY: Final[str] = checks.function_key(signature.check)
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class GeneralPublic:
@@ -226,21 +224,27 @@ class ReleaseManager(CommitteeParticipant):
         published_revision = self.__publish_revision_from_task(completed_publish)
         if published_revision is None:
             raise storage.AccessError("The completed SVN publish has no recorded revision - Invalid state", status=500)
+        # The rows written at publish say where the files are now, which is where the publish put
+        # them unless they were moved by hand since and the rows relocated to match. The publish
+        # itself is still checked at its own revision and path, as that's what ATR committed
+        published_rows = await self.__data.artifact(release_key=release.key, managed=True, _unannounced=True).all()
+        current_download_path_suffix = self.__current_download_path_suffix(
+            committee, published_rows, effective_download_path_suffix
+        )
         try:
             kind = config.svn_publish_kind()
-            public_url = util.publication_check_url(
-                committee, effective_download_path_suffix, util.DownloadFile.METADATA
-            )
-            internal_url = util.svn_publish_internal_url(committee, effective_download_path_suffix)
+            public_url = util.publication_check_url(committee, current_download_path_suffix, util.DownloadFile.METADATA)
+            current_url = util.svn_publish_internal_url(committee, current_download_path_suffix)
+            published_url = util.svn_publish_internal_url(committee, effective_download_path_suffix)
         except ValueError as exc:
             log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
         else:
             if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
                 await self.__check_publication_artifacts(
-                    unfinished_path, util.svn_publish_target(), public_url, internal_url, acknowledge_unreachable
+                    unfinished_path, util.svn_publish_target(), public_url, current_url, acknowledge_unreachable
                 )
             else:
-                await self.__check_local_publication_artifacts(unfinished_path, internal_url, published_revision)
+                await self.__check_local_publication_artifacts(unfinished_path, published_url, published_revision)
 
         if (not config.is_dev_environment()) and (not await mail.relay_reachable()):
             raise storage.AccessError(
@@ -323,17 +327,24 @@ class ReleaseManager(CommitteeParticipant):
             # A released version is a new page on the static site.
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, str(project_key))
 
-            # Record the artifacts before promoting, since promotion deletes the
-            # revisions and cascade-deletes the file state we read classifications from
-            await self.__write_artifact_rows(
-                release,
-                committee,
-                unfinished_path,
-                preview_revision_number,
-                published_revision,
-                effective_download_path_suffix,
-                release_date,
-            )
+            # The publish recorded the artifacts, and announcing is what puts them in the catalogue,
+            # dated from now. A release published before the rows were written at publish has none,
+            # so they're written here, before promotion deletes the revisions and cascade-deletes
+            # the file state the classifications are read from
+            await self.__ensure_uncatalogued(release)
+            if published_rows:
+                for row in published_rows:
+                    row.dated = release_date
+            else:
+                await self.__write_artifact_rows(
+                    release,
+                    committee,
+                    unfinished_path,
+                    preview_revision_number,
+                    published_revision,
+                    effective_download_path_suffix,
+                    release_date,
+                )
             await self.__promote_in_database(release, preview_revision_number, release_date)
             self.__data.add(
                 sql.LifecycleEvent(
@@ -515,6 +526,19 @@ class ReleaseManager(CommitteeParticipant):
             return []
         return [rel_path for rel_path in rel_paths if rel_path not in present]
 
+    def __current_download_path_suffix(
+        self, committee: sql.Committee, rows: Sequence[sql.Artifact], published: safe.RelPath | None
+    ) -> safe.RelPath | None:
+        if not rows:
+            return published
+        try:
+            return release.recorded_download_path_suffix(committee, rows)
+        except ValueError as exc:
+            raise storage.AccessError(
+                f"This release cannot be announced, because {exc}. Relocate them to the one directory they are in.",
+                status=409,
+            ) from None
+
     def __download_path_suffix_from_task(self, task: sql.Task) -> safe.RelPath | None:
         candidate = task.task_args.get("download_path_suffix")
         if isinstance(candidate, str) and candidate:
@@ -564,62 +588,16 @@ class ReleaseManager(CommitteeParticipant):
         )
         await self.__data.execute_query(delete_revisions_stmt)
 
-    async def __signature_fingerprint(
-        self,
-        release: sql.Release,
-        revision_number: safe.RevisionNumber,
-        signature_path: str,
-    ) -> str | None:
-        results = await interaction.check_results_for_revision(
-            release.safe_project_key,
-            release.safe_version_key,
-            revision_number,
-            checker=_SIGNATURE_CHECKER_KEY,
-            rel_path=signature_path,
-            include_legacy_revision_results=True,
-            caller_data=self.__data,
-        )
-        for result in results:
-            if result.status != sql.CheckResultStatus.NOTE:
-                continue
-            payload = result.data if isinstance(result.data, dict) else {}
-            candidate = payload.get("fingerprint")
-            if isinstance(candidate, str) and (stripped := candidate.strip()):
-                fingerprint = stripped.lower()
-                # A signer's SigningKey rows are derived when its key is imported, so this is not
-                # expected to be reached; it only stops a key we somehow cannot model from failing the
-                # whole announce
-                via = sql.validate_instrumented_attribute
-                modelled = await self.__data.execute(
-                    sqlmodel.select(via(sql.SigningKey.fingerprint)).where(
-                        via(sql.SigningKey.fingerprint) == fingerprint
-                    )
-                )
-                if modelled.scalar_one_or_none() is not None:
-                    return fingerprint
-                log.warning(f"{fingerprint} verified but has no SigningKey row; recording the artifact unattributed")
-                return None
-        return None
-
-    async def __signature_revision_number(
-        self, release_key: str, revision_number: safe.RevisionNumber
-    ) -> safe.RevisionNumber:
-        revision = await self.__data.revision(
-            release_key=release_key,
-            number=str(revision_number),
-            _parent=True,
-        ).get()
-        if (
-            (revision is not None)
-            and (revision.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
-            and (revision.parent is not None)
-        ):
-            return revision.parent.safe_number
-        return revision_number
+    async def __ensure_uncatalogued(self, release: sql.Release) -> None:
+        # The rows ATR wrote at publish are not in the catalogue yet, so anything found here was
+        # catalogued from outside ATR
+        catalogued = self.__data.artifact(project_key=release.project_key, version=release.version)
+        if await catalogued.limit(1).get() is not None:
+            raise storage.AccessError("This version is already in the release catalog", status=409)
 
     async def __write_artifact_rows(
         self,
-        release: sql.Release,
+        release_row: sql.Release,
         committee: sql.Committee,
         files_path: safe.StatePath,
         revision_number: safe.RevisionNumber,
@@ -627,57 +605,16 @@ class ReleaseManager(CommitteeParticipant):
         download_path_suffix: safe.RelPath | None,
         dated: datetime.datetime,
     ) -> None:
-        catalogued = self.__data.artifact(project_key=release.project_key, version=release.version)
-        if await catalogued.limit(1).get() is not None:
-            raise storage.AccessError("This version is already in the release catalog", status=409)
-        revision_seq = int(str(revision_number))
-        signature_revision_number = await self.__signature_revision_number(release.key, revision_number)
-        rel_paths = {str(p) async for p in util.paths_recursive(files_path)}
-        classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
-        # The directory the files publish to under the dist root, the same for every artifact here
-        dist_dir = str(paths.committee_dist_relpath(committee, download_path_suffix))
-
-        for rel in sorted(rel_paths):
-            if not analysis.is_artifact(rel):
-                continue
-            signature_path = f"{rel}.asc" if f"{rel}.asc" in rel_paths else None
-            checksum_path: str | None = None
-            for suffix in (".sha512", ".sha256"):
-                candidate = f"{rel}{suffix}"
-                if candidate in rel_paths:
-                    checksum_path = candidate
-                    break
-            sbom_path: str | None = None
-            for candidate in analysis.sbom_candidates(rel, analysis.SBOM_SUFFIXES):
-                if candidate in rel_paths:
-                    sbom_path = candidate
-                    break
-            fingerprint = (
-                await self.__signature_fingerprint(release, signature_revision_number, signature_path)
-                if signature_path is not None
-                else None
-            )
-            signature_sha3 = (
-                await hashes.file_sha3(str(files_path / signature_path)) if (signature_path is not None) else None
-            )
-            self.__data.add(
-                sql.Artifact(
-                    project_key=release.project_key,
-                    version=release.version,
-                    artifact_path=rel,
-                    release_key=release.key,
-                    key_fingerprint=fingerprint,
-                    signature_path=signature_path,
-                    signature_sha3_256=signature_sha3,
-                    checksum_path=checksum_path,
-                    sbom_path=sbom_path,
-                    classification=classifications.get(rel),
-                    svn_revision=svn_revision,
-                    download_path_suffix=dist_dir,
-                    managed=True,
-                    dated=dated,
-                )
-            )
+        await release.record_published_artifacts(
+            self.__data,
+            release_row,
+            committee,
+            files_path,
+            revision_number,
+            svn_revision,
+            download_path_suffix,
+            dated,
+        )
 
 
 class CommitteeMember(ReleaseManager):

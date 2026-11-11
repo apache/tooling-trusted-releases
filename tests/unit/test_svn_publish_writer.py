@@ -17,6 +17,7 @@
 
 import contextlib
 import datetime
+import pathlib
 import unittest.mock as mock
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -243,6 +244,42 @@ async def test_publish_to_svn_execute_maps_existing_svn_path(
                     revision_number="00001",
                 )
             )
+
+
+async def test_publish_to_svn_execute_records_the_published_artifacts(
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    # The rows are the record of what ATR put in SVN, and stay out of the catalogue until the
+    # announce. A second run of the same publish replaces them
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    monkeypatch.setattr(release_writer.svn, "publish_release", mock.AsyncMock(return_value=12345))
+    monkeypatch.setattr(release_writer.paths, "release_directory", lambda _release: safe.StatePath(tmp_path))
+    for name in ("project-1.0.0.tar.gz", "project-1.0.0.tar.gz.asc", "project-1.0.0.tar.gz.sha512"):
+        (tmp_path / name).write_bytes(b"content")
+    task_args = args.SvnPublish(
+        asf_uid="alice",
+        project_key="project",
+        version_key="1.0.0",
+        revision_number="00001",
+        download_path_suffix="project-1.0.0",
+    )
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data, voted_revision_number="00001")
+        writer = _release_writer(data)
+
+        await writer.publish_to_svn_execute(task_args)
+        await writer.publish_to_svn_execute(task_args)
+
+        assert await data.artifact(project_key="project").all() == []
+        rows = await data.artifact(project_key="project", _unannounced=True).all()
+        assert [row.artifact_path for row in rows] == ["project-1.0.0.tar.gz"]
+        row = rows[0]
+        assert row.managed is True
+        assert row.release_key == "project-1.0.0"
+        assert row.svn_revision == 12345
+        assert row.download_path_suffix == "project/project-1.0.0"
+        assert row.signature_path == "project-1.0.0.tar.gz.asc"
+        assert row.checksum_path == "project-1.0.0.tar.gz.sha512"
 
 
 async def test_publish_to_svn_execute_rejects_catalogued_version(sqlite_sessionmaker, monkeypatch) -> None:

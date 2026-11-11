@@ -231,6 +231,92 @@ def queue_svn_unpublish(data: db.Session, asf_uid: str, release: sql.Release) ->
     )
 
 
+def recorded_download_path_suffix(committee: sql.Committee, rows: Sequence[sql.Artifact]) -> safe.RelPath | None:
+    # Where a release's rows say its files are, as a suffix under the committee's dist directory.
+    # A publish puts every file in one directory, so rows that disagree, or that point outside
+    # the committee's own directory, have no suffix to give
+    directories = {row.download_path_suffix for row in rows}
+    if len(directories) != 1:
+        raise ValueError(f"the published files are recorded in {len(directories)} directories")
+    directory = directories.pop()
+    base = str(paths.committee_dist_relpath(committee))
+    if directory == base:
+        return None
+    if (directory is None) or (not directory.startswith(f"{base}/")):
+        raise ValueError(f"the published files are recorded outside {base}")
+    return safe.RelPath(directory.removeprefix(f"{base}/"))
+
+
+async def record_published_artifacts(
+    data: db.Session,
+    release: sql.Release,
+    committee: sql.Committee,
+    files_path: safe.StatePath,
+    revision_number: safe.RevisionNumber,
+    svn_revision: int,
+    download_path_suffix: safe.RelPath | None,
+    dated: datetime.datetime,
+) -> None:
+    # The managed rows for the files ATR put in SVN, one per artifact with its companions. They
+    # are written when the release is published, so from then on there's a record of where its
+    # files are, and they join the catalogue once the release is announced. Rows left by an
+    # earlier run of the same publish are replaced. The caller commits
+    via = sql.validate_instrumented_attribute
+    await data.execute(
+        sqlmodel.delete(sql.Artifact).where(
+            via(sql.Artifact.release_key) == release.key, via(sql.Artifact.managed).is_(True)
+        )
+    )
+    revision_seq = int(str(revision_number))
+    signature_revision_number = await _signature_revision_number(data, release.key, revision_number)
+    rel_paths = {str(p) async for p in util.paths_recursive(files_path)}
+    classifications = await data.release_file_classifications_at(release.key, revision_seq)
+    # The directory the files publish to under the dist root, the same for every artifact here
+    dist_dir = str(paths.committee_dist_relpath(committee, download_path_suffix))
+
+    for rel in sorted(rel_paths):
+        if not analysis.is_artifact(rel):
+            continue
+        signature_path = f"{rel}.asc" if f"{rel}.asc" in rel_paths else None
+        checksum_path: str | None = None
+        for suffix in (".sha512", ".sha256"):
+            candidate = f"{rel}{suffix}"
+            if candidate in rel_paths:
+                checksum_path = candidate
+                break
+        sbom_path: str | None = None
+        for candidate in analysis.sbom_candidates(rel, analysis.SBOM_SUFFIXES):
+            if candidate in rel_paths:
+                sbom_path = candidate
+                break
+        fingerprint = (
+            await _signature_fingerprint(data, release, signature_revision_number, signature_path)
+            if signature_path is not None
+            else None
+        )
+        signature_sha3 = (
+            await hashes.file_sha3(str(files_path / signature_path)) if (signature_path is not None) else None
+        )
+        data.add(
+            sql.Artifact(
+                project_key=release.project_key,
+                version=release.version,
+                artifact_path=rel,
+                release_key=release.key,
+                key_fingerprint=fingerprint,
+                signature_path=signature_path,
+                signature_sha3_256=signature_sha3,
+                checksum_path=checksum_path,
+                sbom_path=sbom_path,
+                classification=classifications.get(rel),
+                svn_revision=svn_revision,
+                download_path_suffix=dist_dir,
+                managed=True,
+                dated=dated,
+            )
+        )
+
+
 def _unpublish_svn_error(exc: svn.CommandExecutionError, context: str) -> Exception:
     # A connection wobble or a stale baseline - a concurrent commit moved a path since we
     # listed it - clears on a retry, so defer it; anything else is terminal.
@@ -283,6 +369,59 @@ async def _signature_provenance_metadata_for(
         if (value := _normalise_signature_field(payload.get(key))) is not None:
             metadata[key] = value
     return metadata
+
+
+async def _signature_fingerprint(
+    data: db.Session,
+    release: sql.Release,
+    revision_number: safe.RevisionNumber,
+    signature_path: str,
+) -> str | None:
+    check_results = await interaction.check_results_for_revision(
+        release.safe_project_key,
+        release.safe_version_key,
+        revision_number,
+        checker=_SIGNATURE_CHECKER_KEY,
+        rel_path=signature_path,
+        include_legacy_revision_results=True,
+        caller_data=data,
+    )
+    for result in check_results:
+        if result.status != sql.CheckResultStatus.NOTE:
+            continue
+        payload = result.data if isinstance(result.data, dict) else {}
+        candidate = payload.get("fingerprint")
+        if isinstance(candidate, str) and (stripped := candidate.strip()):
+            fingerprint = stripped.lower()
+            # A signer's SigningKey rows are derived when its key is imported, so this is not
+            # expected to be reached; it only stops a key we somehow cannot model from failing the
+            # whole publish
+            via = sql.validate_instrumented_attribute
+            modelled = await data.execute(
+                sqlmodel.select(via(sql.SigningKey.fingerprint)).where(via(sql.SigningKey.fingerprint) == fingerprint)
+            )
+            if modelled.scalar_one_or_none() is not None:
+                return fingerprint
+            log.warning(f"{fingerprint} verified but has no SigningKey row; recording the artifact unattributed")
+            return None
+    return None
+
+
+async def _signature_revision_number(
+    data: db.Session, release_key: str, revision_number: safe.RevisionNumber
+) -> safe.RevisionNumber:
+    revision = await data.revision(
+        release_key=release_key,
+        number=str(revision_number),
+        _parent=True,
+    ).get()
+    if (
+        (revision is not None)
+        and (revision.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
+        and (revision.parent is not None)
+    ):
+        return revision.parent.safe_number
+    return revision_number
 
 
 async def _start_release(
@@ -1451,10 +1590,12 @@ class ReleaseManager(CommitteeParticipant):
                 log_message,
             )
             if healed is not None:
+                await self.__record_publication(release, committee, preview_path, task_args, healed.svn_revision)
                 return healed
             raise datatypes.FailedError("Release file already exists in SVN") from None
         if revision is None:
             raise datatypes.FailedError("SVN publish did not return a Committed revision line")
+        await self.__record_publication(release, committee, preview_path, task_args, revision)
         return results.SvnPublish(
             kind="svn_publish",
             svn_revision=revision,
@@ -1480,6 +1621,33 @@ class ReleaseManager(CommitteeParticipant):
             svn_revision=revision,
             message=f"Already published to SVN as r{revision}",
         )
+
+    async def __record_publication(
+        self,
+        release: sql.Release,
+        committee: sql.Committee,
+        preview_path: safe.StatePath,
+        task_args: args.SvnPublish,
+        svn_revision: int,
+    ) -> None:
+        # The files are in SVN by now, so a failure here must not fail the publish. The announce
+        # writes the rows itself when it finds none
+        await self.__data.begin_immediate()
+        try:
+            await record_published_artifacts(
+                self.__data,
+                release,
+                committee,
+                preview_path,
+                task_args.revision_number,
+                svn_revision,
+                task_args.download_path_suffix,
+                datetime.datetime.now(datetime.UTC),
+            )
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            log.exception(f"Could not record the artifacts published for {release.key} in r{svn_revision}")
 
     async def __remove_existing_publication_files(
         self,

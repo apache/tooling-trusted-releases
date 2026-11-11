@@ -25,6 +25,8 @@ import atr.models.safe as safe
 import atr.svn.catalog as catalog
 import atr.svn.dist_rules as dist_rules
 
+_RELEASED = catalog.sql.ReleasePhase.RELEASE
+
 
 def _changed(**paths: str) -> dict[str, dict[str, str]]:
     # A svnpubsub-style changed map: path -> {"flags": ...}. Dir paths carry a trailing slash,
@@ -98,7 +100,9 @@ def test_a_whole_version_directory_deletion_is_a_keyed_removal_not_a_file() -> N
 
 @pytest.mark.asyncio
 async def test_deleting_a_source_of_a_live_release_resolves_to_that_release() -> None:
-    release_record = SimpleNamespace(key="tomcat-1.4.3", project_key="tomcat", version="1.4.3", is_archived=False)
+    release_record = SimpleNamespace(
+        key="tomcat-1.4.3", project_key="tomcat", version="1.4.3", is_archived=False, phase=_RELEASED
+    )
     data = _data_returning(SimpleNamespace(release=release_record))
     resolved = await catalog._resolve_removed_file(data, "tomcat", "apache-tomcat-1.4.3.tar.gz")
     assert resolved is not None
@@ -108,9 +112,29 @@ async def test_deleting_a_source_of_a_live_release_resolves_to_that_release() ->
 
 @pytest.mark.asyncio
 async def test_deleting_a_source_of_an_already_archived_release_is_a_no_op() -> None:
-    release_record = SimpleNamespace(key="tomcat-1.4.3", project_key="tomcat", version="1.4.3", is_archived=True)
+    release_record = SimpleNamespace(
+        key="tomcat-1.4.3", project_key="tomcat", version="1.4.3", is_archived=True, phase=_RELEASED
+    )
     data = _data_returning(SimpleNamespace(release=release_record))
     assert await catalog._resolve_removed_file(data, "tomcat", "apache-tomcat-1.4.3.tar.gz") is None
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_source_of_a_release_awaiting_announcement_is_flagged_and_left(monkeypatch) -> None:
+    # ATR published the file but the release isn't announced, so there's nothing to archive
+    release_record = SimpleNamespace(
+        key="storm-3.2.0",
+        project_key="storm",
+        version="3.2.0",
+        is_archived=False,
+        phase=catalog.sql.ReleasePhase.RELEASE_PREVIEW,
+    )
+    data = _data_returning(SimpleNamespace(release=release_record))
+    warning = mock.MagicMock()
+    monkeypatch.setattr(catalog.log, "warning", warning)
+    assert await catalog._resolve_removed_file(data, "storm", "apache-storm-3.2.0-src.tar.gz") is None
+    assert data.artifact.call_args.kwargs["_unannounced"] is True
+    assert "storm-3.2.0" in warning.call_args.args[0]
 
 
 @pytest.mark.asyncio

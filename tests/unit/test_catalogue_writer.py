@@ -28,6 +28,7 @@ import sqlmodel
 
 import atr.config as config
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
@@ -614,6 +615,81 @@ async def test_relocate_artifact_allows_a_managed_release(sessionmaker) -> None:
         row = await data.get(sql.Artifact, ("alpha-one", "1.0.0", "apache-alpha-one-1.0.0.tar.gz"))
         assert row is not None
         assert row.download_path_suffix == "alpha/plugins"
+
+
+async def _seed_published_release(data: db.Session, project_key: str, version: str, paths: list[str]) -> None:
+    # A release ATR has published to dist but not yet announced, with the rows the publish wrote
+    release_key = f"{project_key}-{version}"
+    data.add(
+        sql.Release(
+            key=release_key,
+            project_key=project_key,
+            cycle_key=f"{project_key}-default",
+            version=version,
+            phase=sql.ReleasePhase.RELEASE_PREVIEW,
+            created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+            download_path_suffix="",
+        )
+    )
+    await data.commit()
+    for path in paths:
+        data.add(
+            sql.Artifact(
+                project_key=project_key,
+                version=version,
+                artifact_path=path,
+                release_key=release_key,
+                download_path_suffix="alpha",
+                managed=True,
+            )
+        )
+    await data.commit()
+
+
+@pytest.mark.asyncio
+async def test_published_artifacts_stay_out_of_the_catalogue_until_announced(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        await _seed_published_release(data, "alpha-one", "2.0.0", ["apache-alpha-one-2.0.0.tar.gz"])
+        # A row with no release at all is still a catalogue row
+        data.add(sql.Artifact(project_key="alpha-one", version="0.9.0", artifact_path="old.tar.gz"))
+        await data.commit()
+
+        catalogued = await data.artifact(project_key="alpha-one").all()
+        assert sorted(row.version for row in catalogued) == ["0.9.0", "1.0.0"]
+        recorded = await data.artifact(project_key="alpha-one", _unannounced=True).all()
+        assert sorted(row.version for row in recorded) == ["0.9.0", "1.0.0", "2.0.0"]
+        versions = await interaction.catalog_version_rows(data, "alpha-one")
+        assert sorted(row[0] for row in versions) == ["0.9.0", "1.0.0"]
+
+        release = await data.get(sql.Release, "alpha-one-2.0.0")
+        assert release is not None
+        release.phase = sql.ReleasePhase.RELEASE
+        await data.commit()
+        announced = await data.artifact(project_key="alpha-one").all()
+        assert sorted(row.version for row in announced) == ["0.9.0", "1.0.0", "2.0.0"]
+
+
+@pytest.mark.asyncio
+async def test_relocating_every_published_artifact_moves_the_unannounced_release(sessionmaker) -> None:
+    # Files ATR published flat and a PMC then moved by hand: the release only follows once all of
+    # its rows agree, since half way through there is no one directory to announce
+    paths = ["apache-alpha-one-2.0.0.tar.gz", "apache-alpha-one-2.0.0.zip"]
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_published_release(data, "alpha-one", "2.0.0", paths)
+        writer = _writer(data)
+        key = safe.ReleaseKey("alpha-one-2.0.0")
+
+        await writer.relocate_artifact(key, paths[0], safe.RelPath("alpha/apache-alpha-one-2.0.0"))
+        release = await data.get(sql.Release, "alpha-one-2.0.0")
+        assert release is not None
+        assert release.download_path_suffix == ""
+
+        await writer.relocate_artifact(key, paths[1], safe.RelPath("alpha/apache-alpha-one-2.0.0"))
+        await data.refresh(release)
+        assert release.download_path_suffix == "apache-alpha-one-2.0.0"
 
 
 @pytest.mark.asyncio

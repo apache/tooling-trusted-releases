@@ -235,9 +235,16 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         download_path_suffix: Opt[str | None] = NOT_SET,
         managed: Opt[bool] = NOT_SET,
         _release: bool = False,
+        _unannounced: bool = False,
     ) -> Query[sql.Artifact]:
         query = sqlmodel.select(sql.Artifact)
         via = sql.validate_instrumented_attribute
+
+        # ATR records its artifacts when it publishes them, ahead of the announce, and those
+        # rows are not part of the catalogue until then. Only a caller that wants the record of
+        # what's in SVN, whatever the release's phase, asks for them
+        if not _unannounced:
+            query = query.where(catalogued_artifact())
 
         if is_defined(project_key):
             query = query.where(sql.Artifact.project_key == project_key)
@@ -1382,6 +1389,24 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(via(sql.WorkflowStatus.status).in_(status_in))
 
         return Query(self, query)
+
+
+def catalogued_artifact() -> sqlalchemy.ColumnElement[bool]:
+    """The condition for an artifact row to be in the catalogue.
+
+    Every row is, apart from a managed one whose release ATR has published but not yet announced.
+    """
+    via = sql.validate_instrumented_attribute
+    # Aliased so that a query which already joins the release doesn't correlate this one away
+    unannounced = orm.aliased(sql.Release)
+    awaiting_announce = (
+        sqlalchemy.select(sqlalchemy.literal(1))
+        .where(via(unannounced.key) == via(sql.Artifact.release_key))
+        .where(via(unannounced.phase) != sql.ReleasePhase.RELEASE)
+        .correlate(sql.Artifact)
+        .exists()
+    )
+    return sqlalchemy.or_(via(sql.Artifact.managed).is_(False), ~awaiting_announce)
 
 
 async def create_async_engine(app_config: type[config.AppConfig]) -> sqlalchemy.ext.asyncio.AsyncEngine:

@@ -2475,6 +2475,7 @@ async def _match_artifact_rows(
         sqlmodel.select(via(sql.Artifact.signature_path))
         .where(via(sql.Artifact.project_key).in_(project_keys))
         .where(sql.Artifact.signature_sha3_256 == data.signature_sha3_256)
+        .where(db.catalogued_artifact())
     )
     if version is not None:
         query = query.where(sql.Artifact.version == str(version))

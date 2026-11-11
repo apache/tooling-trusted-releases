@@ -220,6 +220,20 @@ def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
     return artifacts
 
 
+def _awaiting_announce(release_record: sql.Release, removed: str) -> bool:
+    # A release ATR has published but not yet announced isn't in the catalogue, so there's nothing
+    # to archive. Its files leaving where ATR put them is most likely a move by hand, which needs
+    # the rows relocating before the release can be announced, so it's flagged and left alone
+    if release_record.phase is sql.ReleasePhase.RELEASE:
+        return False
+    if release_record.phase is sql.ReleasePhase.RELEASE_PREVIEW:
+        log.warning(
+            f"dist watcher saw {removed} removed from dist, which ATR published for {release_record.key};"
+            " the release is still waiting to be announced"
+        )
+    return True
+
+
 async def _catalogued_release(data: db.Session, project_key: str, version: str) -> sql.Release | None:
     # The release under any spelling of the version, since a commit may write it differently from
     # the catalogue (3.0.0-M3 against an older 3.0.0-m3). Where a case split left both spellings
@@ -383,6 +397,8 @@ async def _resolve_archive(
     release_record = await _catalogued_release(data, project.key, version)
     if (release_record is None) or release_record.is_archived:
         return None
+    if _awaiting_announce(release_record, f"the {version} directory"):
+        return None
     return _safe_keys(project.key, release_record.version)
 
 
@@ -457,11 +473,14 @@ async def _resolve_removed_file(
         artifact_path=artifact_path,
         classification=classify.FileType.SOURCE.value,
         _release=True,
+        _unannounced=True,
     ).get()
     if artifact is None:
         return None
     release_record = artifact.release
     if (release_record is None) or release_record.is_archived:
+        return None
+    if _awaiting_announce(release_record, f"{download_path_suffix}/{artifact_path}"):
         return None
     keys = _safe_keys(release_record.project_key, release_record.version)
     if keys is None:

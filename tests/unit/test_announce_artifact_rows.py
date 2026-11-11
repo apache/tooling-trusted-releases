@@ -102,18 +102,36 @@ async def test_write_artifact_rows_records_signature_digest(
 
 
 @pytest.mark.asyncio
-async def test_write_artifact_rows_refuses_catalogued_version(tmp_path: pathlib.Path) -> None:
+async def test_announce_refuses_a_version_catalogued_from_outside_atr() -> None:
+    # The query leaves out the rows ATR wrote at publish, so a row found was catalogued elsewhere
     data = mock.MagicMock()
     data.artifact.return_value.limit.return_value.get = mock.AsyncMock(return_value=sql.Artifact())
     writer = object.__new__(announce_writer.ReleaseManager)
     writer._ReleaseManager__data = data
-    write_rows = getattr(writer, "_ReleaseManager__write_artifact_rows")
+    ensure_uncatalogued = getattr(writer, "_ReleaseManager__ensure_uncatalogued")
     release = types.SimpleNamespace(project_key="foo", version="1.0")
-    dated = datetime.datetime(2026, 8, 10, tzinfo=datetime.UTC)
 
     with pytest.raises(storage.AccessError, match=r"already in the release catalog$") as info:
-        await write_rows(release, None, safe.StatePath(tmp_path), safe.RevisionNumber("00003"), 42, None, dated)
+        await ensure_uncatalogued(release)
 
     assert info.value.status == 409
     data.artifact.assert_called_once_with(project_key="foo", version="1.0")
     data.add.assert_not_called()
+
+
+def _rows(*directories: str | None) -> list[sql.Artifact]:
+    return [sql.Artifact(download_path_suffix=directory) for directory in directories]
+
+
+def test_the_recorded_suffix_is_relative_to_the_committee_directory() -> None:
+    committee = types.SimpleNamespace(is_podling=False, key="storm")
+    recorded = announce_writer.release.recorded_download_path_suffix
+    assert recorded(committee, _rows("storm", "storm")) is None
+    assert str(recorded(committee, _rows("storm/apache-storm-3.2.0"))) == "apache-storm-3.2.0"
+
+
+@pytest.mark.parametrize("directories", [("storm", "storm/apache-storm-3.2.0"), ("flink/1.0",), (None,)])
+def test_rows_that_disagree_or_leave_the_committee_directory_have_no_suffix(directories) -> None:
+    committee = types.SimpleNamespace(is_podling=False, key="storm")
+    with pytest.raises(ValueError, match="recorded"):
+        announce_writer.release.recorded_download_path_suffix(committee, _rows(*directories))

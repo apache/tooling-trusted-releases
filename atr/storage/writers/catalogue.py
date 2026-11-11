@@ -134,6 +134,8 @@ class FoundationAdmin:
             if row.download_path_suffix == new_directory:
                 raise storage.AccessError("The artifact is already in that directory.", status=400)
             row.download_path_suffix = new_directory
+            await self.__data.flush()
+            await self._follow_relocated_publication(release)
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, release.project_key)
             await self.__data.commit()
         except Exception:
@@ -957,6 +959,23 @@ class FoundationAdmin:
         if (row is None) or (row.release_key != release_key):
             raise storage.AccessError(f"Artifact '{artifact_path}' not found in {release_key}.", status=404)
         return release, row
+
+    async def _follow_relocated_publication(self, release: sql.Release) -> None:
+        # A release ATR has published but not yet announced builds its announcement from its own
+        # download path suffix. Once every file it published has been relocated to the one
+        # directory, the release follows, so the announcement points to where the files are
+        if release.phase is sql.ReleasePhase.RELEASE:
+            return
+        rows = await self.__data.artifact(release_key=release.key, managed=True, _unannounced=True).all()
+        project = await self.__data.project(key=release.project_key, _committee=True).get()
+        if (not rows) or (project is None) or (project.committee is None):
+            return
+        try:
+            suffix = release_writer.recorded_download_path_suffix(project.committee, rows)
+        except ValueError:
+            # Part way through a move, or somewhere the release's suffix can't describe
+            return
+        release.download_path_suffix = str(suffix) if (suffix is not None) else ""
 
     async def _catalogue_release_like(self, source: sql.Release, project: sql.Project) -> sql.Release:
         # The same shape the dist watcher catalogues a release in, dated and archived as the source was

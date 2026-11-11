@@ -62,6 +62,10 @@ def announcing_writer(
     monkeypatch.setattr(announce.util, "svn_publish_internal_url", lambda *a, **k: "https://example.invalid/")
     data = mock.MagicMock()
     data.release.return_value.demand = mock.AsyncMock(return_value=release_row())
+    # No rows from the publish, as for a release published before they were written then, and
+    # nothing catalogued from outside ATR
+    data.artifact.return_value.all = mock.AsyncMock(return_value=[])
+    data.artifact.return_value.limit.return_value.get = mock.AsyncMock(return_value=None)
     # A released version queues a catalog-site regeneration, which first looks for an existing queued one.
     data.task.return_value.get = mock.AsyncMock(return_value=None)
     data.add = mock.MagicMock(
@@ -218,3 +222,31 @@ async def test_finalise_queues_task_and_keeps_files(
     rows_path = release_manager._ReleaseManager__write_artifact_rows.call_args.args[2]
     assert pathlib.Path(str(rows_path)) == tmp_path / "unfinished" / "example" / "2.0.0" / "00003"
     assert (tmp_path / "unfinished" / "example" / "2.0.0" / "00003").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_announce_follows_published_rows_relocated_after_a_hand_move(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    # The publish went to the committee root and the files were then moved by hand, so the rows
+    # say where to look. They're dated rather than written again, and the finalise still checks
+    # what ATR committed at its own path
+    calls: list[str] = []
+    release_manager = announcing_writer(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(announce.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    internal_url = mock.MagicMock(return_value="https://example.invalid/")
+    monkeypatch.setattr(announce.util, "svn_publish_internal_url", internal_url)
+    row = sql.Artifact(download_path_suffix="alpha/apache-example-2.0.0", managed=True)
+    release_manager._ReleaseManager__data.artifact.return_value.all = mock.AsyncMock(return_value=[row])
+
+    await release_manager.release(**release_arguments())
+
+    check = release_manager._ReleaseManager__check_publication_artifacts
+    assert check.await_args.args[2] == "https://downloads.apache.org/alpha/apache-example-2.0.0"
+    assert [str(call.args[1]) for call in internal_url.call_args_list] == ["apache-example-2.0.0", "None"]
+    release_manager._ReleaseManager__write_artifact_rows.assert_not_awaited()
+    assert row.dated is not None
+    finalise = args.ReleaseFinalise.model_validate(
+        added_tasks(release_manager, sql.TaskType.RELEASE_FINALISE)[0].task_args
+    )
+    assert finalise.download_path_suffix is None

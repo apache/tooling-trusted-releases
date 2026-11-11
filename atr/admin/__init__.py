@@ -1461,7 +1461,7 @@ async def _catalog_artifact_row(
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             exceptions.NotFound("Release not found")
         )
-        row = await data.artifact(release_key=release.key, artifact_path=artifact_path).demand(
+        row = await data.artifact(release_key=release.key, artifact_path=artifact_path, _unannounced=True).demand(
             exceptions.NotFound("Artifact not found")
         )
     return release, row
@@ -1561,7 +1561,9 @@ async def _catalog_release_artifacts_page(
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             exceptions.NotFound("Release not found")
         )
-        rows = await data.artifact(release_key=release.key).order_by(sql.Artifact.artifact_path).all()
+        rows = (
+            await data.artifact(release_key=release.key, _unannounced=True).order_by(sql.Artifact.artifact_path).all()
+        )
     base = _catalog_release_url(str(committee_key), str(project_key), str(version_key))
     urls_by_row = {
         row.artifact_path: _catalog_artifact_urls(row, row.download_path_suffix, release.is_archived) for row in rows

@@ -187,6 +187,7 @@ async def catalog_version_rows(
         .select_from(sql.Artifact)
         .outerjoin(sql.Release, via(sql.Release.key) == via(sql.Artifact.release_key))
         .where(via(sql.Artifact.project_key) == project_key)
+        .where(db.catalogued_artifact())
         .group_by(via(sql.Artifact.version))
     )
     if is_archived is not None:
