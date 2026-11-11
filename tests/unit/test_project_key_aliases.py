@@ -21,7 +21,6 @@ import pytest
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
-import atr.datasources.apache as apache
 import atr.db as db
 import atr.models.sql as sql
 import atr.svn.catalog as catalog
@@ -116,4 +115,3 @@ async def test_dist_remaps_do_not_fold_unrelated_committees(data: db.Session) ->
     changes = catalog._structural_changes(_RULES, {"release/camel/Karaf-1.2.3-source.tar.gz": {"flags": "A "}})
     ((committee, subproject, _version),) = changes.added
     assert await catalog._resolve_project(_RULES, data, committee, subproject) is None
-    assert apache.canonical_project_key("camel-Karaf") == "camel-Karaf"

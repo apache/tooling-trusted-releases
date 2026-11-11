@@ -487,7 +487,7 @@ def _committee_with_project(key: str, name: str, *, is_podling: bool) -> sql.Com
     return committee
 
 
-def test_project_releases_entry_maps_the_projects_json_fields() -> None:
+def test_project_releases_entry_maps_the_project_fields() -> None:
     committee = _committee()
     project = _project(
         committee,
@@ -514,9 +514,8 @@ def test_project_releases_entry_maps_the_projects_json_fields() -> None:
     assert entry["description"] == "An example project"
     assert entry["shortdesc"] == "An example"
     assert entry["repository"] == ["https://github.com/apache/example.git"]
-    # Re-joined with ", " the way projects.json separates them.
-    assert entry["category"] == "data, storage"
-    assert entry["programming-language"] == "Java"
+    assert entry["category"] == ["data", "storage"]
+    assert entry["programming-language"] == ["Java"]
     assert entry["homepage"] == "https://example.apache.org/"
     assert entry["download-page"] == "https://example.apache.org/download"
     assert entry["bug-database"] == "https://issues.apache.org/jira/browse/EXAMPLE"
@@ -550,8 +549,7 @@ def test_project_releases_entry_carries_the_project_status() -> None:
         for status in sql.ProjectStatus
     }
 
-    # The three projects.apache.org spells, plus dormant, which it only carries as a marker
-    # on the key or name.
+    # Every status goes out under its own value
     assert statuses == {
         sql.ProjectStatus.ACTIVE: "active",
         sql.ProjectStatus.DORMANT: "dormant",
@@ -638,41 +636,33 @@ def test_release_entry_omits_the_date_when_a_release_is_undated() -> None:
     assert entry == {"name": "Apache Example", "revision": "1.0.0"}
 
 
-def test_project_releases_categories_join_with_commas_and_drop_placeholders() -> None:
-    # Re-joined with ", " whether ATR stored them spaced or not.
-    assert catalog_site._categories("data,storage") == "data, storage"
-    assert catalog_site._categories("mobile, library") == "mobile, library"
+def test_project_releases_categories_split_into_a_list_and_drop_placeholders() -> None:
+    # Split the same whether ATR stored them spaced or not.
+    assert catalog_site._categories("data,storage") == ["data", "storage"]
+    assert catalog_site._categories("mobile, library") == ["mobile", "library"]
     # Placeholder tokens the DOAP import left behind are dropped, empties too.
-    assert catalog_site._categories("new_category, tooling") == "tooling"
-    assert catalog_site._categories("no-tlp-doap") is None
-    assert catalog_site._categories(None) is None
+    assert catalog_site._categories("new_category, tooling") == ["tooling"]
+    assert catalog_site._categories("no-tlp-doap") == []
+    assert catalog_site._categories(None) == []
 
 
-def test_project_document_lists_the_comma_fields_and_sorts_keys() -> None:
+def test_project_releases_entry_lists_the_comma_fields() -> None:
     committee = _committee()
     project = _project(committee, categories="data,storage", programming_languages="c, python")
+
     entry = catalog_site._project_releases_entry(project, committee, [])
 
-    document = catalog_site._project_document(entry)
-
-    # projects.apache.org's per-project files carry these as lists, not the feed's strings.
-    assert document["category"] == ["data", "storage"]
-    assert document["programming-language"] == ["c", "python"]
-    # Status comes through from the entry unchanged.
-    assert document["status"] == "active"
-    assert list(document) == sorted(document)
-    # The feed entry itself is left as it was.
-    assert entry["category"] == "data, storage"
+    assert entry["category"] == ["data", "storage"]
+    assert entry["programming-language"] == ["c", "python"]
 
 
-def test_project_document_leaves_out_comma_fields_the_project_does_not_hold() -> None:
+def test_project_releases_entry_leaves_out_a_category_that_is_only_a_placeholder() -> None:
     committee = _committee()
-    project = _project(committee)
+    project = _project(committee, categories="no-tlp-doap")
 
-    document = catalog_site._project_document(catalog_site._project_releases_entry(project, committee, []))
+    entry = catalog_site._project_releases_entry(project, committee, [])
 
-    assert "category" not in document
-    assert "programming-language" not in document
+    assert "category" not in entry
 
 
 def test_project_feed_leaves_out_projects_that_never_release() -> None:

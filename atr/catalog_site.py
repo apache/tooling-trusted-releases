@@ -144,7 +144,7 @@ _ENVIRONMENT.globals["indexing_keys"] = _INDEXING_COMMITTEE_KEYS
 
 # Tooling isn't a PMC. The committee is a stand-in we invent for ourselves to test with, so
 # it has no page on projects.apache.org and its projects are kept out of the summary feeds
-# that stand in for that site's data.
+# that site is built from.
 _TOOLING_COMMITTEE_KEY: Final = "tooling"
 
 # These projects have a PMC but never cut releases of their own, so they're left out of the
@@ -172,8 +172,7 @@ _CLASS_QUALIFIER: Final[dict[str, str]] = {
 }
 
 # Every ASF release is under the Apache License 2.0, so the summary feed stamps it rather
-# than carrying over a project's DOAP licence, which can't be relied on to be right. This is
-# the URL projects.json most often carries, give or take http vs https.
+# than carrying over a project's DOAP licence, which can't be relied on to be right.
 _ASF_LICENSE_URL: Final = "https://www.apache.org/licenses/LICENSE-2.0.txt"
 
 # Placeholder category tokens the DOAP import left behind. They mean "nothing was set", so
@@ -184,19 +183,16 @@ _JUNK_CATEGORIES: Final[frozenset[str]] = frozenset({"no-tlp-doap", "new_categor
 # historical release sinks below the dated ones instead of breaking the comparison.
 _EPOCH: Final = datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
-# The public summary of the catalogue, one entry per project, written at the site root. It
-# follows the shape of projects.apache.org's projects.json so it can stand in for it, give
-# or take the fields we don't hold. Incubating podlings are left out, the same as they're
-# left out of projects.json until they graduate; they go in the podling file instead.
+# The public summary of the catalogue, one entry per project, written at the site root.
+# projects.apache.org is built from it. Incubating podlings are left out until they
+# graduate; they go in the podling file instead.
 _PROJECT_RELEASES_FILE: Final = "project_releases.json"
 
-# The same summary for incubating podlings, kept separate the way the ASF splits podlings.json
-# from projects.json. A podling graduates by ceasing to be one, at which point it moves to the
-# project file on the next rebuild.
+# The same summary for incubating podlings. A podling graduates by ceasing to be one, at
+# which point it moves to the project file on the next rebuild.
 _PODLING_RELEASES_FILE: Final = "podling_releases.json"
 
-# Each entry in the two feeds, written again beside the project's page as a file of its own,
-# shaped like the project's file on projects.apache.org.
+# Each entry in the two feeds, written again beside the project's page as a file of its own.
 _PROJECT_DOCUMENT_FILE: Final = "project.json"
 
 # Each committee's recent activity, written beside its page as JSON and YAML: every current
@@ -594,17 +590,15 @@ async def _attic_project(data: db.Session, project: sql.Project) -> _AtticProjec
     )
 
 
-def _categories(commas: str | None) -> str | None:
-    # ATR stores these comma-separated, sometimes with a space and sometimes without;
-    # projects.json wants ", " between them. Placeholder tokens are dropped along the way.
-    if not commas:
-        return None
-    kept = [token.strip() for token in commas.split(",") if token.strip() and (token.strip() not in _JUNK_CATEGORIES)]
-    return ", ".join(kept) or None
+def _categories(commas: str | None) -> list[str]:
+    # Placeholder tokens are dropped along the way
+    return [token for token in _comma_list(commas) if token not in _JUNK_CATEGORIES]
 
 
-def _comma_list(commas: str) -> list[str]:
-    return [token.strip() for token in commas.split(",") if token.strip()]
+def _comma_list(commas: str | None) -> list[str]:
+    # ATR stores these comma-separated, sometimes with a space and sometimes without; the
+    # feed carries them as lists
+    return [token.strip() for token in (commas or "").split(",") if token.strip()]
 
 
 async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
@@ -657,7 +651,7 @@ def _counted(count: int, noun: str) -> str:
 
 
 def _date_only(when: datetime.datetime | None) -> str | None:
-    # projects.json dates the day, not the moment, so the feed does the same.
+    # The feed dates the day, not the moment
     return when.date().isoformat() if (when is not None) else None
 
 
@@ -749,17 +743,6 @@ def _podling_target(podling: sql.Committee) -> str:
     return f"{podling.key}/index.html"
 
 
-def _project_document(entry: dict[str, Any]) -> dict[str, Any]:
-    """The project's feed entry, with categories and languages split into lists. The keys
-    are sorted.
-    """
-    document = dict(entry)
-    for key in ("category", "programming-language"):
-        if key in document:
-            document[key] = _comma_list(document[key])
-    return {key: document[key] for key in sorted(document)}
-
-
 def _project_feed(projects: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """The project feed, without the projects that never release."""
     return {key: entry for key, entry in projects.items() if key not in _NON_RELEASING_PROJECT_KEYS}
@@ -789,7 +772,7 @@ def _project_releases_entry(
     releases: Sequence[_ReleaseSummary],
     vote_address: str | None = None,
 ) -> dict[str, Any]:
-    """One project's entry in the summary feed, shaped like a projects.json project."""
+    """One project's entry in the summary feed."""
     name = project.name or project.display_name
     entry: dict[str, Any] = {
         "name": name,
@@ -801,8 +784,8 @@ def _project_releases_entry(
     }
 
     # The rest are carried over only when the project holds them, so an absent field is
-    # left out rather than sent as null, the same as projects.json does.
-    def put(key: str, value: str | None) -> None:
+    # left out rather than sent as null.
+    def put(key: str, value: str | list[str] | None) -> None:
         if value:
             entry[key] = value
 
@@ -812,11 +795,10 @@ def _project_releases_entry(
     put("download-page", project.download_page)
     put("bug-database", project.bug_database)
     put("mailing-list", project.mailing_lists)
-    put("programming-language", project.programming_languages)
+    put("programming-language", _comma_list(project.programming_languages))
     put("category", _categories(project.categories))
     put("created", _date_only(project.created))
-    if project.repositories:
-        entry["repository"] = project.repositories
+    put("repository", project.repositories)
     return entry
 
 
@@ -854,8 +836,8 @@ def _redirect_rule(url: str) -> str:
 
 
 def _release_entry(project_name: str, release: _ReleaseSummary) -> dict[str, Any]:
-    # projects.json repeats the project name on each release and calls the version the
-    # revision, so the feed matches.
+    # Each release repeats the project name, and carries the version under its DOAP name,
+    # revision
     entry: dict[str, Any] = {"name": project_name, "revision": release.version}
     if (created := _date_only(release.date)) is not None:
         entry["created"] = created
@@ -869,9 +851,9 @@ def _release_feeds(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     """The (project, podling) feeds, each keyed by project key and sorted.
 
-    Podlings are split into their own feed, so the project feed stays a projects.json
-    stand-in, and Tooling is left out of both for the same reason. Both are sorted by key so
-    a rebuild that changes nothing rewrites the same bytes.
+    Podlings are split into their own feed, and Tooling is left out of both, since it
+    isn't a PMC. Both are sorted by key so a rebuild that changes nothing rewrites the
+    same bytes.
     """
     tlp: dict[str, dict[str, Any]] = {}
     podling: dict[str, dict[str, Any]] = {}
@@ -1289,8 +1271,7 @@ async def _write_project_releases(
     await _write(site_dir / _PODLING_RELEASES_FILE, json.dumps(podlings, indent=2, default=str))
     for key, entry in (projects | podlings).items():
         if (only is None) or (key == only):
-            document = _project_document(entry)
-            await _write(site_dir / key / _PROJECT_DOCUMENT_FILE, json.dumps(document, indent=2, default=str))
+            await _write(site_dir / key / _PROJECT_DOCUMENT_FILE, json.dumps(entry, indent=2, default=str))
 
 
 async def _write_purl_landing(site_dir: safe.StatePath) -> None:

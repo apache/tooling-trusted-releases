@@ -475,53 +475,6 @@ async def _update_podlings(
     return added_count, updated_count
 
 
-# Verbose projects.json keys mapped to the short ATR keys: the old xml.apache.org family (Xerces,
-# Xalan), and a former podling whose feed key still carries its product name where the committee-
-# named project is the one ATR keeps (ponymail-pony_mail, hyphenated by the time we look it up)
-_PROJECT_KEY_REMAP: Final[dict[str, str]] = {
-    "aries-javax.persistence": "aries-javax-persistence",
-    "felix-javax.servlet": "felix-javax-servlet",
-    "felix-org.osgi.compendium": "felix-org-osgi-compendium",
-    "felix-org.osgi.core": "felix-org-osgi-core",
-    "felix-org.osgi.foundation": "felix-org-osgi-foundation",
-    "felix-org.osgi.service.obr": "felix-org-osgi-service-obr",
-    "felix-osgi.core": "felix-osgi-core",
-    "felix-shell.tui": "felix-shell-tui",
-    "lucene.net": "lucenenet",
-    "lucenenet-Apache-Lucene.Net": "lucenenet",
-    "lucenenet-lucenedotnet": "lucenenet",
-    "openwhisk-OpenWhisk": "openwhisk",
-    "sling-maven-plugin.parent": "sling-maven-plugin",
-    "tapestry-Tapestry": "tapestry",
-    "tapestry-Tapestry-Web": "tapestry",
-    "vcl-VCL": "vcl",
-    "xerces-for-c++-xml-parser": "xerces-c",
-    "xerces-for-java-xml-parser": "xerces-j",
-    "xerces-for-perl-xml-parser": "xerces-p",
-    "xerces-xml-commons-external": "xerces-xml-commons",
-    "xerces-xml-commons-resolver": "xerces-xml-commons",
-    "xalan-for-c++-xslt-processor": "xalan-c",
-    "xalan-for-java-xslt-processor": "xalan-j",
-    "ponymail-pony-mail": "ponymail",
-}
-
-# projects.json appends this to a dormant project's key (commons-chain__dormant_).
-# We keep dormancy as status, not in the key.
-_DORMANT_RE: Final[re.Pattern[str]] = re.compile(r"_+dormant_*$")
-
-
-def canonical_project_key(key: str) -> str:
-    # Tidy a projects.json key into an ATR project key: the attic- prefix comes off
-    # (the Attic is a steward committee, not part of the key), the webservices PMC ships
-    # under its full name, underscores become hyphens, the dormant marker comes off
-    # (it's status), and a few verbose keys remap to shorter ones.
-    key = key.removeprefix("attic-")
-    key = key.replace("webservices-", "ws-")
-    key = _DORMANT_RE.sub("", key)
-    key = key.replace("_", "-")
-    return _PROJECT_KEY_REMAP.get(key, key)
-
-
 async def _update_retirements(
     data: db.Session,
     current_keys: set[str],

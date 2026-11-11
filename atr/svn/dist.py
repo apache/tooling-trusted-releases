@@ -188,7 +188,7 @@ def airflow_calver_date(filename: str) -> str | None:
 
 
 def candidate_keys(committee: str, subproject: str | None) -> list[str]:
-    # Dist layout and projects.json keys don't always line up (commons/lang -> commons-lang, but
+    # Dist layout and project keys don't always line up (commons/lang -> commons-lang, but
     # accumulo/accumulo-access is already its key), so try the obvious shapes. apache-/apache_ come
     # off and underscores become hyphens, so an underscored dist name lines up with the registry's
     # hyphenated key instead of seeding an underscore duplicate

@@ -60,14 +60,52 @@ Each page in the catalog has a JSON counterpart, so that tools can consume the s
   Lifecycle Enumeration*** (***CLE***) document for that project or release. See
   [Lifecycle events](archiving-and-lifecycle#lifecycle-events).
 * `project_releases.json` and `podling_releases.json`, at the root of the site, summarise every
-  project and podling with its releases. They mirror the split, and many of the fields, of the ASF's
-  existing `projects.json` and `podlings.json` files. Each entry carries the project's `status`:
-  `active`, `dormant`, `retired` or `standing`.
-* `project.json`, on each project and podling, is its entry from `project_releases.json` or
-  `podling_releases.json` on its own, in the same shape as the project's file on projects.apache.org.
+  project and every podling project with its releases. See [Project summaries](#project-summaries).
+* `project.json`, on each project and podling, is that project's summary on its own.
 * `activity.json` and `activity.yaml`, on each committee, are the committee's recent activity for
   a board report: every current release, and every release archived in the last ninety days, as
   two dated lists with the newest first.
+
+### Project summaries
+
+`project_releases.json` and `podling_releases.json`. Each is a single JSON object with one entry per project, keyed by ATR
+project key and sorted by key. Podling projects appear only in `podling_releases.json`, and move to
+`project_releases.json` when the podling graduates. Projects whose committee never makes releases
+of its own, such as Whimsy and Gump, are left out of `project_releases.json`, but each still has a
+`project.json`.
+
+Every entry has these fields:
+
+| Field | Type | Contents |
+| --- | --- | --- |
+| `name` | string | The project's name, such as `Apache Accumulo` |
+| `pmc` | string | The key of the committee that owns the project |
+| `status` | string | `active`, `dormant`, `retired` or `standing` |
+| `license` | string | The URL of the Apache License 2.0 |
+| `created` | string | The date the project was founded |
+| `maintainer` | list | One object, with the `name` of the PMC or PPMC and the `mbox` of its development list. A project whose PMC has been dissolved refers to the Attic PMC instead |
+| `release` | list | Every release of the project, current and archived, with the newest first |
+
+Each object in `release` has the project's `name`, the version as `revision`, and the release date
+as `created`.
+
+The remaining project fields are present only where ATR has a value for them, and are never `null`:
+
+| Field | Type | Contents |
+| --- | --- | --- |
+| `description` | string | A full description of the project |
+| `shortdesc` | string | A one-line description |
+| `homepage` | string | The URL of the project's website |
+| `download-page` | string | The URL of the project's download page |
+| `bug-database` | string | The URL of the project's issue tracker |
+| `mailing-list` | string | The URL of the project's mailing list page |
+| `repository` | list | The URLs of the project's source repositories |
+| `programming-language` | list | The project's programming languages |
+| `category` | list | The project's categories |
+
+All dates are calendar dates in `YYYY-MM-DD` form, without a time.
+
+`project.json` is the project's entry on its own, with the same fields.
 
 ## Package URLs
 
