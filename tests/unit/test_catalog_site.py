@@ -675,6 +675,14 @@ def test_project_document_leaves_out_comma_fields_the_project_does_not_hold() ->
     assert "programming-language" not in document
 
 
+def test_project_feed_leaves_out_projects_that_never_release() -> None:
+    projects = {key: {"name": key} for key in ("ant", "comdev-community-development", "gump", "maven", "whimsy")}
+
+    assert list(catalog_site._project_feed(projects)) == ["ant", "maven"]
+    # The full set is left alone, since project.json is still written for each of them.
+    assert len(projects) == 5
+
+
 def test_release_feeds_split_podlings_out_and_sort_by_key() -> None:
     maven = _committee_with_project("maven", "Maven", is_podling=False)
     ant = _committee_with_project("ant", "Ant", is_podling=False)

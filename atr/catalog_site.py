@@ -147,6 +147,13 @@ _ENVIRONMENT.globals["indexing_keys"] = _INDEXING_COMMITTEE_KEYS
 # that stand in for that site's data.
 _TOOLING_COMMITTEE_KEY: Final = "tooling"
 
+# These projects have a PMC but never cut releases of their own, so they're left out of the
+# project feed. They still get a project.json each. The Attic is matched by project key, since
+# the committee also holds retired projects that did release.
+_NON_RELEASING_PROJECT_KEYS: Final[frozenset[str]] = frozenset(
+    {"attic", "comdev-community-development", "gump", "whimsy"}
+)
+
 # The directory the PURL explainer lives in. ASF PURLs sit straight under apache.org, so
 # there's no bare prefix to land on; the explainer gets a fixed path of its own instead,
 # alongside the committee and project directories. No committee or project is keyed this.
@@ -753,6 +760,11 @@ def _project_document(entry: dict[str, Any]) -> dict[str, Any]:
     return {key: document[key] for key in sorted(document)}
 
 
+def _project_feed(projects: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The project feed, without the projects that never release."""
+    return {key: entry for key, entry in projects.items() if key not in _NON_RELEASING_PROJECT_KEYS}
+
+
 def _project_htaccess(project_key: str, versions: Sequence[api.CatalogVersion]) -> str | None:
     """Render a project's `.htaccess`, resolving `<project>@latest`, or None if there's no release.
 
@@ -1273,7 +1285,7 @@ async def _write_project_releases(
     releases_by_project = await _released_versions_by_project(data)
     vote_addresses = await _vote_addresses_by_project(data)
     projects, podlings = _release_feeds(committees, releases_by_project, vote_addresses)
-    await _write(site_dir / _PROJECT_RELEASES_FILE, json.dumps(projects, indent=2, default=str))
+    await _write(site_dir / _PROJECT_RELEASES_FILE, json.dumps(_project_feed(projects), indent=2, default=str))
     await _write(site_dir / _PODLING_RELEASES_FILE, json.dumps(podlings, indent=2, default=str))
     for key, entry in (projects | podlings).items():
         if (only is None) or (key == only):
