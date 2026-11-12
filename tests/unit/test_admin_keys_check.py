@@ -15,14 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
 import datetime
 
 import atr.admin as admin
+import atr.cache as cache
 import atr.models.sql as sql
 import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
 
 _BROKEN_BLOCK = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nnotbase64\n-----END PGP PUBLIC KEY BLOCK-----\n"
+_CHECKSUM_ON_DATA_LINE = pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC.replace("cJBQ==\n=", "cJBQ===")
 
 
 def _certificate(
@@ -41,6 +44,14 @@ def _certificate(
         ascii_armored_key=armored,
         deleted=deleted,
     )
+
+
+def test_certificate_block_findings_reports_text_that_only_openpgp_can_parse() -> None:
+    certificate = _certificate(pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT, _CHECKSUM_ON_DATA_LINE)
+
+    findings = admin._certificate_block_findings(certificate, set(), 0)
+
+    assert [kind for kind, _ in findings] == ["unparseable"]
 
 
 def test_certificate_block_report_lists_shapes_shared_text_and_metadata() -> None:
@@ -67,33 +78,25 @@ def test_certificate_block_report_lists_shapes_shared_text_and_metadata() -> Non
         pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT: revoked_rows,
     }
 
-    header, *lines = admin._certificate_block_report(certificates, signing_keys).split("\n")
+    findings = admin._certificate_block_report(certificates, signing_keys)
 
-    assert header.startswith("Checked 5 certificate blocks: ")
-    for expected in (
-        "1 multi-own-first",
-        "1 multi-own-not-first",
-        "4 shared-text",
-        "2 unparseable",
-        "2 metadata",
-        "2 signing-keys",
-    ):
-        assert expected in header
-    kinds = [
-        "metadata"
-        if (" declared uid " in line or " latest self-signature " in line)
-        else "signing-keys"
-        if " SigningKey rows missing " in line
-        else "shape"
-        for line in lines
-    ]
-    assert kinds == sorted(kinds, key=["shape", "signing-keys", "metadata"].index)
-    body = "\n".join(lines)
-    assert f"{pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT} (deleted): multi-own-not-first" in body
-    assert f"{'ab' * 20}: stored text is shared with another row" in body
-    assert "declared uid 'Nobody <nobody@example.invalid>' is not in the certificate" in body
-    assert "latest self-signature stored as 2030-01-01" in body
-    assert "SigningKey rows missing for" in body
+    assert collections.Counter(finding.kind for finding in findings) == {
+        "multi-own-first": 1,
+        "multi-own-not-first": 1,
+        "shared-text": 4,
+        "unparseable": 2,
+        "metadata": 2,
+        "signing-keys": 2,
+    }
+    rows = {(finding.kind, finding.fingerprint, finding.deleted): finding.detail for finding in findings}
+    assert rows["multi-own-not-first", pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT, True] == (
+        "2 certificates in the text"
+    )
+    assert rows["shared-text", "ab" * 20, False] == "Same text as 1 other key"
+    details = [finding.detail for finding in findings]
+    assert "User ID 'Nobody <nobody@example.invalid>' is stored but isn't on the key" in details
+    assert any(detail.startswith("Self-signature date stored as 2030-01-01") for detail in details)
+    assert any(detail.startswith("No rows for ") for detail in details)
 
 
 def test_certificate_metadata_problems_ignores_unset_metadata() -> None:
@@ -101,6 +104,19 @@ def test_certificate_metadata_problems_ignores_unset_metadata() -> None:
     certificate = _certificate(
         pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
     )
+    uids = pgp.user_id_texts(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
     rows = {facts.fingerprint.lower() for facts in pgp.signing_key_facts(key)}
 
-    assert admin._certificate_metadata_problems(certificate, key, rows) == []
+    assert admin._certificate_metadata_problems(certificate, key, uids, rows) == []
+
+
+def test_check_keys_finding_kind_says_whether_the_user_ids_name_the_owner() -> None:
+    lookup = cache.EmailUidLookup.from_plain({"alice@example.org": "alice"})
+    two_apache = ["Alice <alexp@apache.org>", "Alice <alice@apache.org>"]
+    mapped = ["Alice <alexp@apache.org>", "Alice <alice@example.org>"]
+
+    assert admin._check_keys_finding_kind(two_apache, "alice", "alexp", lookup) == "named"
+    assert admin._check_keys_finding_kind(mapped, "alice", "alexp", lookup) == "named"
+    assert admin._check_keys_finding_kind(mapped, None, "alexp", lookup) == "unowned"
+    assert admin._check_keys_finding_kind(["Bob <bob@example.org>"], "bob", None, lookup) == "unnamed"
+    assert admin._check_keys_finding_kind(mapped, "carol", "alexp", lookup) == "different"

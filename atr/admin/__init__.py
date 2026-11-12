@@ -84,7 +84,6 @@ import atr.web as web
 
 ROUTES_MODULE: Final[Literal[True]] = True
 
-_CERTIFICATE_FINDING_RANK: Final[dict[str, int]] = {"signing-keys": 1, "metadata": 2}
 _EMBARGO_DENIAL_DAYS: Final = 30
 _EMBARGO_DENIAL_LIMIT: Final = 250
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
@@ -193,6 +192,13 @@ class CatalogSiteRebuildForm(form.Form):
     variant: CATALOG_SITE_REBUILD = form.value(CATALOG_SITE_REBUILD)
 
 
+class CertificateFinding(NamedTuple):
+    kind: str
+    fingerprint: str
+    deleted: bool
+    detail: str
+
+
 class CommitteesUpdateForm(form.Form):
     variant: COMMITTEES_UPDATE = form.value(COMMITTEES_UPDATE)
 
@@ -219,6 +225,14 @@ class EditBannerForm(form.Form):
         widget=form.Widget.TEXTAREA,
         max_length=4096,
     )
+
+
+class KeyOwnerFinding(NamedTuple):
+    kind: str
+    fingerprint: str
+    stored: str | None
+    detected: str | None
+    uids: list[str]
 
 
 class LdapLookupForm(form.Form):
@@ -2940,74 +2954,66 @@ async def _catalog_dist_rules_tab() -> htm.Element:
     return block.collect()
 
 
-def _certificate_block_lines(
-    certificate: sql.SigningCertificate, signing_keys: set[str], shared: bool
+def _certificate_block_findings(
+    certificate: sql.SigningCertificate, signing_keys: set[str], sharers: int
 ) -> list[tuple[str, str]]:
     fingerprint = certificate.fingerprint.lower()
-    label = f"{fingerprint} (deleted)" if (certificate.deleted is not None) else fingerprint
     text = certificate.ascii_armored_key
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="replace")
     findings = []
-    if shared:
-        findings.append(("shared-text", f"{label}: stored text is shared with another row"))
+    if sharers:
+        findings.append(("shared-text", f"Same text as {util.plural(sharers, 'other key')}"))
     try:
         keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(text)
+        uids = pgp.user_id_texts(text)
     except Exception as e:
-        return [("unparseable", f"{label}: unparseable ({e})"), *findings]
+        return [("unparseable", str(e)), *findings]
     shape = pgp.certificate_block_shape(keys, fingerprint)
     if shape != "single":
-        findings.append((shape, f"{label}: {shape} ({util.plural(len(keys), 'certificate')} in the block)"))
+        findings.append((shape, f"{util.plural(len(keys), 'certificate')} in the text"))
     own = [key for key in keys if key.fingerprint.lower() == fingerprint]
     if len(own) == 1:
+        findings.extend(_certificate_metadata_problems(certificate, own[0], uids, signing_keys))
+    return findings
+
+
+def _certificate_block_report(
+    certificates: Sequence[sql.SigningCertificate], signing_keys: dict[str, set[str]]
+) -> list[CertificateFinding]:
+    findings = []
+    texts = collections.Counter(certificate.ascii_armored_key for certificate in certificates)
+    for certificate in certificates:
+        fingerprint = certificate.fingerprint.lower()
+        sharers = texts[certificate.ascii_armored_key] - 1
         findings.extend(
-            (kind, f"{label}: {problem}")
-            for kind, problem in _certificate_metadata_problems(certificate, own[0], signing_keys)
+            CertificateFinding(kind, fingerprint, certificate.deleted is not None, detail)
+            for kind, detail in _certificate_block_findings(certificate, signing_keys.get(fingerprint, set()), sharers)
         )
     return findings
 
 
-def _certificate_block_report(certificates: Sequence[sql.SigningCertificate], signing_keys: dict[str, set[str]]) -> str:
-    counts: collections.Counter[str] = collections.Counter()
-    findings: list[tuple[str, str]] = []
-    texts = collections.Counter(certificate.ascii_armored_key for certificate in certificates)
-    for certificate in certificates:
-        shared = texts[certificate.ascii_armored_key] > 1
-        certificate_findings = _certificate_block_lines(
-            certificate, signing_keys.get(certificate.fingerprint.lower(), set()), shared
-        )
-        counts.update(kind for kind, _ in certificate_findings)
-        findings.extend(certificate_findings)
-    summary = ", ".join(f"{count} {kind}" for kind, count in sorted(counts.items())) or "no problems"
-    ordered = sorted(findings, key=lambda finding: _CERTIFICATE_FINDING_RANK.get(finding[0], 0))
-    return "\n".join(
-        [f"Checked {util.plural(len(certificates), 'certificate block')}: {summary}", *(line for _, line in ordered)]
-    )
-
-
 def _certificate_metadata_problems(
-    certificate: sql.SigningCertificate, key: openpgp.composed.SignedPublicKey, signing_keys: set[str]
+    certificate: sql.SigningCertificate,
+    key: openpgp.composed.SignedPublicKey,
+    uids: list[str],
+    signing_keys: set[str],
 ) -> list[tuple[str, str]]:
     problems = []
-    uids = pgp.user_id_texts(
-        certificate.ascii_armored_key
-        if isinstance(certificate.ascii_armored_key, str)
-        else certificate.ascii_armored_key.decode("utf-8", errors="replace")
-    )
     if (certificate.primary_declared_uid is not None) and (certificate.primary_declared_uid not in uids):
-        problems.append(("metadata", f"declared uid {certificate.primary_declared_uid!r} is not in the certificate"))
+        problems.append(("metadata", f"User ID {certificate.primary_declared_uid!r} is stored but isn't on the key"))
     latest = pgp.latest_self_signature_created_at(key)
     if (certificate.latest_self_signature is not None) and (certificate.latest_self_signature != latest):
         problems.append(
-            ("metadata", f"latest self-signature stored as {certificate.latest_self_signature}, certificate {latest}")
+            ("metadata", f"Self-signature date stored as {certificate.latest_self_signature}, but {latest} on the key")
         )
     expected = {facts.fingerprint.lower() for facts in pgp.signing_key_facts(key)}
     if missing := sorted(expected - signing_keys):
-        problems.append(("signing-keys", f"SigningKey rows missing for {', '.join(missing)}"))
+        problems.append(("signing-keys", f"No rows for {', '.join(missing)}"))
     return problems
 
 
-async def _check_certificate_blocks() -> str:
+async def _check_certificate_blocks() -> tuple[int, list[CertificateFinding]]:
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
         certificates = (await data.execute(sqlmodel.select(sql.SigningCertificate))).scalars().all()
@@ -3017,12 +3023,12 @@ async def _check_certificate_blocks() -> str:
         signing_keys: dict[str, set[str]] = collections.defaultdict(set)
         for certificate_fingerprint, fingerprint in rows.all():
             signing_keys[certificate_fingerprint.lower()].add(fingerprint.lower())
-    return await asyncio.to_thread(_certificate_block_report, certificates, signing_keys)
+    return len(certificates), await asyncio.to_thread(_certificate_block_report, certificates, signing_keys)
 
 
-async def _check_keys(fix: bool = False) -> str:
+async def _check_keys(fix: bool = False) -> tuple[int, list[KeyOwnerFinding]]:
     email_uid_lookup = await cache.email_uid_view_or_live()
-    bad_keys = []
+    findings = []
     async with db.session() as data:
         keys = await data.signing_certificate().all()
         for key in keys:
@@ -3033,14 +3039,25 @@ async def _check_keys(fix: bool = False) -> str:
                 uids.extend(key.secondary_declared_uids)
             asf_uid = await util.asf_uid_from_uids(uids, email_uid_lookup, use_ldap=False)
             if asf_uid != key.apache_uid:
-                bad_keys.append(f"{key.fingerprint} detected: {asf_uid}, key: {key.apache_uid}")
+                kind = _check_keys_finding_kind(uids, key.apache_uid, asf_uid, email_uid_lookup)
+                findings.append(KeyOwnerFinding(kind, key.fingerprint.lower(), key.apache_uid, asf_uid, uids))
             if fix:
                 key.apache_uid = asf_uid
                 await data.commit()
-    message = f"Checked {util.plural(len(keys), 'key')}"
-    if bad_keys:
-        message += f"\nFound {util.plural(len(bad_keys), 'bad key')}:\n{'\n'.join(bad_keys)}"
-    return message
+    return len(keys), findings
+
+
+def _check_keys_finding_kind(
+    uids: list[str], stored: str | None, detected: str | None, email_uid_lookup: cache.EmailUidLookup
+) -> str:
+    if stored is None:
+        return "unowned"
+    emails = [email for email in (util.email_from_uid(uid) for uid in uids) if email]
+    if (f"{stored}@apache.org" in emails) or (stored in [email_uid_lookup.get(email) for email in emails]):
+        return "named"
+    if detected is None:
+        return "unnamed"
+    return "different"
 
 
 async def _database_consistency_tab() -> htm.Element:
@@ -3115,13 +3132,88 @@ async def _database_data_tab(model: str, query_args: DataQuery) -> htm.Element:
         return htm.div[markupsafe.Markup(content)]
 
 
+def _database_keys_check_certificate_row(finding: CertificateFinding) -> htpy.Element:
+    return htpy.tr[
+        _database_keys_check_key(finding.fingerprint, finding.deleted),
+        htpy.td(".text-break")[finding.detail],
+    ]
+
+
+async def _database_keys_check_certificates() -> htm.Element:
+    count, findings = await _check_certificate_blocks()
+    block = htm.Block()
+    block.h3(".mt-4")["Certificate blocks"]
+    block.p[
+        "ATR stores each OpenPGP key as a block of armored text. The block should hold one certificate and agree"
+        " with the user ID, self-signature date, and signing key rows stored beside it. This check lists violations"
+        " of any of those constraints."
+    ]
+    block.p[f"{util.plural(count, 'certificate block')} checked, {util.plural(len(findings), 'problem')} found."]
+    for kind, (title, description) in strings.KEYS_CHECK_CERTIFICATE_FINDINGS.items():
+        rows = [_database_keys_check_certificate_row(finding) for finding in findings if finding.kind == kind]
+        if rows:
+            block.append(_database_keys_check_group(title, description, ["Key", "Details"], rows))
+    return block.collect()
+
+
+def _database_keys_check_group(
+    title: str, description: str, headers: list[str], rows: list[htpy.Element]
+) -> htpy.Element:
+    return htpy.div[
+        htpy.h4(".mt-4.h5")[f"{title} ({len(rows)})"],
+        htpy.p[description],
+        htpy.div(".table-responsive")[
+            htpy.table(".table.table-sm.align-middle")[
+                htpy.thead[htpy.tr[[htpy.th(scope="col")[header] for header in headers]]],
+                htpy.tbody[rows],
+            ]
+        ],
+    ]
+
+
+def _database_keys_check_key(fingerprint: str, deleted: bool) -> htpy.Element:
+    link = htpy.a(href=util.as_url(get.keys.details, fingerprint=fingerprint), title=fingerprint.upper())[
+        fingerprint[-16:].upper()
+    ]
+    badge = htpy.span(".badge.text-bg-secondary.ms-2")["Deleted"] if deleted else None
+    return htpy.td(".font-monospace.text-nowrap")[link, badge]
+
+
+def _database_keys_check_owner_row(finding: KeyOwnerFinding) -> htpy.Element:
+    none = htpy.span(".text-muted")["None"]
+    return htpy.tr[
+        _database_keys_check_key(finding.fingerprint, False),
+        htpy.td[finding.stored or none],
+        htpy.td[finding.detected or none],
+        htpy.td(".text-break")[[htpy.div[uid] for uid in finding.uids] or none],
+    ]
+
+
+async def _database_keys_check_owners() -> htm.Element:
+    count, findings = await _check_keys()
+    block = htm.Block()
+    block.h3(".mt-4")["Key owners"]
+    block.p[
+        "Each key has an ASF account as its owner. This check works out the owner again from the key's user IDs:"
+        " the first @apache.org address, or else an address that LDAP links to an account. It lists the keys where"
+        " that differs from the owner in ATR. Not every listed key needs action, and each group says what to do."
+    ]
+    block.p[f"{util.plural(count, 'key')} checked, {len(findings)} listed."]
+    headers = ["Key", "Owner in ATR", "Owner from user IDs", "User IDs"]
+    for kind, (title, description) in strings.KEYS_CHECK_OWNER_FINDINGS.items():
+        rows = [_database_keys_check_owner_row(finding) for finding in findings if finding.kind == kind]
+        if rows:
+            block.append(_database_keys_check_group(title, description, headers, rows))
+    return block.collect()
+
+
 async def _database_keys_check_tab() -> htm.Element:
     block = htm.Block()
     block.h2["Keys check"]
-    for check in (_check_keys, _check_certificate_blocks):
+    block.p["These checks compare the stored OpenPGP keys with what ATR records about them."]
+    for section in (_database_keys_check_owners, _database_keys_check_certificates):
         try:
-            result = await check()
-            block.div[[htm.p[line] for line in result.split("\n")]]
+            block.append(await section())
         except Exception as e:
             log.exception("Exception during key check:")
             block.p[f"Exception during key check: {e!s}"]

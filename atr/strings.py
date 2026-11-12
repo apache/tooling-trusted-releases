@@ -69,3 +69,87 @@ DIST_RULE_KIND_DESCRIPTIONS: Final[dict[str, str]] = {
         "An Airflow directory whose per-provider packages are rolled up into one dated bundle release."
     ),
 }
+
+KEYS_CHECK_CERTIFICATE_FINDINGS: Final[dict[str, tuple[str, str]]] = {
+    "unparseable": (
+        "Unreadable",
+        "The OpenPGP library can't parse the stored text, or ATR's own reader can't read the user IDs in it. ATR"
+        " can't parse the stored text. Either ask for the key to be exported again, or investigate the exported"
+        " syntax.",
+    ),
+    "empty": (
+        "No certificate",
+        "The text parses, but holds no certificates at all. Try exporting the key again.",
+    ),
+    "wrong-fingerprint": (
+        "Another key's certificate",
+        "The text holds exactly one certificate, but its fingerprint is different to the fingerprint of the key. The"
+        " stored text holds a certificate for a different key. Replace it by hand with a fresh export of this key.",
+    ),
+    "no-own-certificate": (
+        "Only other keys' certificates",
+        "The text holds several certificates, and none of them is this key's. The stored text holds several"
+        " certificates, but none for this key. Replace it by hand with a fresh export of this key.",
+    ),
+    "own-certificate-repeated": (
+        "Certificate repeated",
+        "This key's certificate appears more than once in the text. Edit the key to remove the duplicates, or ask for"
+        " a fresh export. (We could potentially just filter duplicates in ATR, but we want to warn people about bad"
+        " keys.)",
+    ),
+    "multi-own-not-first": (
+        "Other certificates before this key's",
+        "The text holds several certificates, this key's appears once, and it isn't the first. Run"
+        " scripts/split_certificate_blocks.py to list the certificates. The script can be used again with --apply to"
+        " actually fix the database, but take a backup first.",
+    ),
+    "multi-own-first": (
+        "Other certificates after this key's",
+        "The text holds several certificates, and this key's is the first. Run scripts/split_certificate_blocks.py to"
+        " list the certificates. The script can be used again with --apply to actually fix the database, but take a"
+        " backup first.",
+    ),
+    "shared-text": (
+        "Same text as other keys",
+        "Another key's row stores exactly the same text as this one. This usually comes with other keys' certificates"
+        " in the text. Run scripts/split_certificate_blocks.py to list the certificates. The script can be used again"
+        " with --apply to actually fix the database, but take a backup first.",
+    ),
+    "signing-keys": (
+        "Signing key rows missing",
+        "The primary key or one of the subkeys in this key's certificate has no row in the SigningKey table. The"
+        " database has no rows for some of the key's signing keys or subkeys. Run scripts/backfill_signing_keys.py to"
+        " add them.",
+    ),
+    "metadata": (
+        "Stored details out of date",
+        "The stored primary user ID isn't among the user IDs in the text, or the stored latest self-signature date"
+        " differs from the date ATR computes from the key. A stored value that is empty isn't checked. ATR refreshes"
+        " them when a changed copy of the key is imported, or you can update them by hand.",
+    ),
+}
+
+KEYS_CHECK_OWNER_FINDINGS: Final[dict[str, tuple[str, str]]] = {
+    "different": (
+        "Names another account",
+        "The key doesn't name its owner in ATR, and names another account. Check Whimsy for each ASF UID listed in"
+        " this row to see whether it lists this key's fingerprint. If the owner in ATR is wrong, fix it by hand.",
+    ),
+    "unowned": (
+        "No owner in ATR",
+        "The key names an account, but has no owner in ATR. Check Whimsy for each ASF UID listed in this row to see"
+        " whether it lists this key's fingerprint. If one does, set it as the owner by hand. Otherwise, leave the key"
+        " without an owner.",
+    ),
+    "unnamed": (
+        "Names no account",
+        "No user ID on the key names an ASF account, so the check can't confirm the owner. The owner usually came"
+        " from the person who added the key. No action is needed unless the owner looks wrong.",
+    ),
+    "named": (
+        "Owner named, but not first",
+        "The key names its owner in ATR, but another @apache.org address comes first. When ATR imports a key again,"
+        " it keeps the owner it already has as long as one of the key's user IDs still names that owner. It doesn't"
+        " switch to whichever @apache.org address happens to come first on the key.",
+    ),
+}
