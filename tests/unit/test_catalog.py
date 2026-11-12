@@ -29,6 +29,7 @@ class _CatalogVersionStub:
     def __init__(self, version: str, *, cycle: sql.ProjectCycle | None) -> None:
         self.value = api.CatalogVersion(
             version=version,
+            purl=f"pkg:software-id/apache.org/example@{version}",
             status="released" if cycle is not None else "archived",
             released=None,
             svn_revision=None,
@@ -143,6 +144,34 @@ def test_cycles_are_ordered_by_version_not_activity() -> None:
     cycles = catalog._cycles(versions, cycles_by_label, _NOW)
 
     assert [c.cycle for c in cycles] == ["5.0", "4.1"]
+
+
+def test_distributions_list_only_published_packages() -> None:
+    project = _project()
+    released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
+    artifacts = [_artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released)]
+    distributions = [
+        _distribution(released, sql.DistributionPlatform.MAVEN, "org.apache.cassandra", "cassandra-all"),
+        _distribution(released, sql.DistributionPlatform.MAVEN, "org.apache.cassandra", "staged", staging=True),
+        _distribution(released, sql.DistributionPlatform.PYPI, "", "unconfirmed", pending=True),
+        _distribution(released, sql.DistributionPlatform.ARTIFACT_HUB, "apache", "cassandra"),
+    ]
+
+    (version,) = catalog.assemble(sql.VersionMethod.SIMPLE, artifacts, [], _NOW, distributions=distributions).versions
+
+    assert [(d.platform, d.purl) for d in version.distributions] == [
+        ("Artifact Hub", None),
+        ("Maven Central", "pkg:maven/org.apache.cassandra/cassandra-all@5.0.2"),
+    ]
+
+
+def test_package_url_needs_no_backing_release() -> None:
+    project = _project()
+    artifacts = [_artifact(project, "3.0.0", "a-3.0.0.tar.gz", svn_revision=100)]
+
+    (version,) = catalog.assemble(sql.VersionMethod.SIMPLE, artifacts, [], _NOW).versions
+
+    assert version.purl == "pkg:software-id/apache.org/cassandra@3.0.0"
 
 
 def test_lifecycle_badge_prefers_lts_then_eol_then_active() -> None:
@@ -337,6 +366,26 @@ def _cycle(
 ) -> sql.ProjectCycle:
     return sql.ProjectCycle(
         cycle_key=f"cassandra-{cycle}", cycle=cycle, project_key="cassandra", latest=latest, lts=lts, eol=eol
+    )
+
+
+def _distribution(
+    release: sql.Release,
+    platform: sql.DistributionPlatform,
+    owner_namespace: str,
+    package: str,
+    *,
+    staging: bool = False,
+    pending: bool = False,
+) -> sql.Distribution:
+    return sql.Distribution(
+        release_key=release.key,
+        platform=platform,
+        owner_namespace=owner_namespace,
+        package=package,
+        version=release.version,
+        staging=staging,
+        pending=pending,
     )
 
 

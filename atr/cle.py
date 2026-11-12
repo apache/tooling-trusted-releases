@@ -48,14 +48,13 @@ from typing import TYPE_CHECKING, Any, Final
 import atr.cycles as cycles
 import atr.models.cle as cle
 import atr.models.sql as sql
+import atr.purl as purl
 
 if TYPE_CHECKING:
     import datetime
     from collections.abc import Iterable
 
 CLE_SCHEMA_URL: Final[str] = cle.CLE_SCHEMA_URL
-
-_PURL_DOMAIN: Final[str] = "apache.org"
 
 _SUPPORT_DEFAULT_DESCRIPTION: Final[str] = "Apache project community support"
 _SUPPORT_DEFAULT_ID: Final[str] = "default"
@@ -171,10 +170,10 @@ def _document(
 def _identifier(project: sql.Project, release: sql.Release | None = None) -> str:
     """Render the project as a Package-URL, `pkg:software-id/apache.org/<project_key>[@<version>]`.
 
-    Per-distribution PURLs (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact
-    catalog (#911), not on the lifecycle doc.
+    Per-distribution PURLs (`pkg:maven/...`, `pkg:pypi/...`) are on the release's catalog
+    entry, not on the lifecycle doc.
     """
-    return f"pkg:software-id/{_PURL_DOMAIN}/{project.key}" + ("" if release is None else f"@{release.version}")
+    return purl.software_id(project.key, None if release is None else release.version)
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:

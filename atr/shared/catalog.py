@@ -27,6 +27,7 @@ import atr.cycles as cycles
 import atr.models as models
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.purl as purl
 import atr.util as util
 
 _GROUPED_METHODS: Final[frozenset[sql.VersionMethod]] = frozenset({sql.VersionMethod.SEMVER, sql.VersionMethod.CALVER})
@@ -88,11 +89,13 @@ def assemble(
     project_cycles: Sequence[sql.ProjectCycle],
     now: datetime.datetime,
     atr_host: str | None = None,
+    distributions: Sequence[sql.Distribution] = (),
 ) -> CatalogProject:
     # `atr_host` is only supplied by the API, which needs absolute CLE links. The
     # page leaves it None and renders its own relative links via as_url instead.
+    # `distributions` is only supplied by the site and the API, which list them.
     cycles_by_key = {cycle.cycle_key: cycle for cycle in project_cycles}
-    versions = _versions(artifacts, cycles_by_key, version_method, atr_host)
+    versions = _versions(artifacts, cycles_by_key, version_method, atr_host, distributions)
     grouped = _grouped_layout(version_method)
     if grouped:
         # Cycle labels are unique within a project, so they group and look up safely.
@@ -257,6 +260,25 @@ def _lifecycle_badge(cycle: sql.ProjectCycle, now: datetime.datetime) -> str | N
     return "Active"
 
 
+def _published_distributions(
+    distributions: Sequence[sql.Distribution],
+) -> dict[str, list[models.api.CatalogDistribution]]:
+    # By release key, leaving out staging rows and those not yet confirmed on their platform
+    by_release: dict[str, list[models.api.CatalogDistribution]] = collections.defaultdict(list)
+    ordered = sorted(distributions, key=lambda row: (row.platform.name, row.owner_namespace, row.package))
+    for row in ordered:
+        if row.staging or row.pending:
+            continue
+        by_release[row.release_key].append(
+            models.api.CatalogDistribution(
+                platform=row.platform.value.name,
+                purl=purl.distribution(row),
+                web_url=row.web_url,
+            )
+        )
+    return by_release
+
+
 def _status(release: sql.Release | None) -> Literal["released", "archived"]:
     # Treat a missing release as archived, so it is never shown as downloadable.
     if (release is not None) and not release.is_archived:
@@ -299,10 +321,12 @@ def _versions(
     cycles_by_key: dict[str, sql.ProjectCycle],
     version_method: sql.VersionMethod,
     atr_host: str | None = None,
+    distributions: Sequence[sql.Distribution] = (),
 ) -> list[models.api.CatalogVersion]:
     by_version: dict[safe.VersionKey, list[sql.Artifact]] = collections.defaultdict(list)
     for artifact in artifacts:
         by_version[artifact.safe_version_key].append(artifact)
+    distributions_by_release = _published_distributions(distributions)
 
     versions: list[models.api.CatalogVersion] = []
     for version_key, rows in by_version.items():
@@ -319,6 +343,7 @@ def _versions(
         versions.append(
             models.api.CatalogVersion(
                 version=version_key,
+                purl=purl.software_id(rows[0].project_key, str(version_key)),
                 status=status,
                 released=(release.released or release.created) if (release is not None) else None,
                 svn_revision=max(svn_revisions) if svn_revisions else None,
@@ -328,6 +353,7 @@ def _versions(
                 if (atr_host is not None) and cle_eligible and (release is not None)
                 else None,
                 vote_thread_url=release.vote_thread_url if (release is not None) else None,
+                distributions=distributions_by_release.get(release.key, []) if (release is not None) else [],
                 artifacts=[_artifact(row, downloadable, status == "archived") for row in rows],
             )
         )

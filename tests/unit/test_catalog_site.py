@@ -56,6 +56,7 @@ def _artifact(
 def _version(artifacts: list[api.CatalogArtifact], version: str = "1.0.0") -> api.CatalogVersion:
     return api.CatalogVersion(
         version=safe.VersionKey(version),
+        purl=f"pkg:software-id/apache.org/example@{version}",
         status="released",
         released=None,
         svn_revision=None,

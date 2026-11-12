@@ -502,6 +502,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         package: Opt[str] = NOT_SET,
         version: Opt[str] = NOT_SET,
         pending: Opt[bool] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
         _with_release: bool = False,
         _with_release_project: bool = False,
         _limit: Opt[int] = NOT_SET,
@@ -509,6 +510,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         query = sqlmodel.select(sql.Distribution)
         if is_defined(release_key):
             query = query.where(sql.Distribution.release_key == release_key)
+        if is_defined(project_key):
+            via = sql.validate_instrumented_attribute
+            project_releases = sqlmodel.select(sql.Release.key).where(sql.Release.project_key == project_key)
+            query = query.where(via(sql.Distribution.release_key).in_(project_releases))
         if is_defined(platform):
             query = query.where(sql.Distribution.platform == platform)
         if is_defined(owner_namespace):

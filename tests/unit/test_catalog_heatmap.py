@@ -109,6 +109,7 @@ def _version() -> api.CatalogVersion:
     ]
     return api.CatalogVersion(
         version=safe.VersionKey("1.0"),
+        purl="pkg:software-id/apache.org/example@1.0",
         status="released",
         released=None,
         svn_revision=None,

@@ -233,6 +233,7 @@ async def catalog_project(
         )
         artifacts = await data.artifact(project_key=project.key, _release=True).all()
         project_cycles = await data.project_cycle(project_key=project.key).all()
+        distributions = await data.distribution(project_key=project.key).all()
 
     atr_host = config.get().APP_HOST
     assembled = catalog.assemble(
@@ -241,6 +242,7 @@ async def catalog_project(
         project_cycles,
         datetime.datetime.now(datetime.UTC),
         atr_host=atr_host,
+        distributions=distributions,
     )
     return models.api.CatalogProjectResults(
         endpoint="/catalog/project",

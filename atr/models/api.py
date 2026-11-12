@@ -69,8 +69,18 @@ class CatalogArtifact(schema.Strict):
         return datetime.datetime.fromisoformat(v) if isinstance(v, str) else v
 
 
+class CatalogDistribution(schema.Strict):
+    # The platform's display name, such as "Maven Central"
+    platform: str
+    # The package in the platform's own Package URL type, or None where the platform has none
+    purl: str | None
+    web_url: str | None
+
+
 class CatalogVersion(schema.Strict):
     version: safe.VersionKey
+    # The release's own Package URL, pkg:software-id/apache.org/<project_key>@<version>
+    purl: str
     status: Literal["released", "archived"]
     released: datetime.datetime | None
     svn_revision: int | None
@@ -81,6 +91,8 @@ class CatalogVersion(schema.Strict):
     cle_url: str | None = None
     # The lists.apache.org vote thread, present only for releases voted through ATR.
     vote_thread_url: str | None = None
+    # The packages the release was published as elsewhere, as declared to ATR
+    distributions: Sequence[CatalogDistribution] = ()
     artifacts: Sequence[CatalogArtifact]
 
     @pydantic.field_validator("released", mode="before")

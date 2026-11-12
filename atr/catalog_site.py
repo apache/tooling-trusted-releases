@@ -1193,7 +1193,8 @@ async def _write_project(
     now = datetime.datetime.now(datetime.UTC)
     artifacts = await data.artifact(project_key=project.key, _release=True).all()
     project_cycles = await data.project_cycle(project_key=project.key).all()
-    assembled = catalog.assemble(project.version_method, artifacts, project_cycles, now)
+    distributions = await data.distribution(project_key=project.key).all()
+    assembled = catalog.assemble(project.version_method, artifacts, project_cycles, now, distributions=distributions)
     current = [v for v in assembled.versions if v.status == "released"]
     archived = [v for v in assembled.versions if v.status == "archived"]
     current_groups = catalog.cycle_groups(current, project_cycles, now) if assembled.grouped else []

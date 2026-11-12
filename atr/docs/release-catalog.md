@@ -55,7 +55,8 @@ page.
 Each page in the catalog has a JSON counterpart, so that tools can consume the same data:
 
 * `artifacts.json`, on each release, is the release manifest. It lists the release's artifacts, with
-  their download, signature, checksum, and SBOM URLs. The release page links to it as "Metadata".
+  their download, signature, checksum, and SBOM URLs, and gives its [Package URLs](#package-urls).
+  The release page links to it as "Metadata".
 * `cle.json`, on each project and on each release that has lifecycle events, is the ***Common
   Lifecycle Enumeration*** (***CLE***) document for that project or release. See
   [Lifecycle events](archiving-and-lifecycle#lifecycle-events).
@@ -115,6 +116,22 @@ Every release in the catalog has a ***Package URL*** (***PURL***) of the form
 query string, such as `?class=src&ext=tar.gz`, resolves to a single download. Using `latest` as the
 version resolves to the project's newest release. The catalog explains the full set of qualifiers
 on [its PURL page](https://release-catalog.apache.org/purl/).
+
+A release's `artifacts.json` gives this PURL as `purl`. Where the release was also published to a
+package ecosystem, and that distribution was recorded in ATR, `distributions` lists the package's
+PURL there. Each entry has these fields:
+
+| Field | Type | Contents |
+| --- | --- | --- |
+| `platform` | string | The platform's name, such as `Maven Central` |
+| `purl` | string or null | The package in the platform's own PURL type, such as `pkg:maven/org.apache.dubbo/dubbo@3.3.7` |
+| `web_url` | string or null | The package's page on the platform, where ATR has one |
+
+* An entry names one package. A release that publishes several packages to a platform may not have
+  them all listed.
+* The version in a distribution's PURL is the package's own, which is not always the release's.
+* A Docker Hub PURL refers to a tag, not to an image digest.
+* Artifact Hub has no PURL type, so its entries have a `purl` of `null`.
 
 ## How the catalog was built
 
