@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import pathlib
 import unittest.mock as mock
 from types import SimpleNamespace
@@ -27,6 +28,13 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.writers.announce as announce
+
+PUBLISH_COMPLETED = datetime.datetime(2026, 11, 10, 9, 30, 5, tzinfo=datetime.UTC)
+
+
+def added_lifecycle_events(release_manager: announce.ReleaseManager) -> list[sql.LifecycleEvent]:
+    data = getattr(release_manager, "_ReleaseManager__data")
+    return [call.args[0] for call in data.add.call_args_list if isinstance(call.args[0], sql.LifecycleEvent)]
 
 
 def added_tasks(release_manager: announce.ReleaseManager, task_type: sql.TaskType) -> list[sql.Task]:
@@ -45,7 +53,9 @@ def announcing_writer(
     monkeypatch.setattr(
         announce.interaction,
         "release_completed_svn_publish_task_for_revision",
-        mock.AsyncMock(return_value=SimpleNamespace(task_args={}, result={"svn_revision": 85})),
+        mock.AsyncMock(
+            return_value=SimpleNamespace(task_args={}, result={"svn_revision": 85}, completed=PUBLISH_COMPLETED)
+        ),
     )
     monkeypatch.setattr(
         announce.construct, "announce_release_subject_and_body", mock.AsyncMock(return_value=("Subject", ""))
@@ -165,6 +175,23 @@ async def test_announce_rejects_publish_without_revision(
 
     assert info.value.status == 500
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_announce_dates_release_from_the_svn_commit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    calls: list[str] = []
+    release_manager = announcing_writer(monkeypatch, tmp_path, calls)
+
+    await release_manager.release(**release_arguments())
+
+    promote = release_manager._ReleaseManager__promote_in_database
+    assert promote.await_args.args[2] == PUBLISH_COMPLETED
+    [event] = added_lifecycle_events(release_manager)
+    assert event.effective == PUBLISH_COMPLETED
+    # The event is recorded now, after the commit it takes effect from
+    assert event.published > PUBLISH_COMPLETED
 
 
 @pytest.mark.asyncio

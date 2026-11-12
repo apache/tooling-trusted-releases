@@ -206,7 +206,6 @@ class ReleaseManager(CommitteeParticipant):
         # Prepare paths for file operations
         unfinished_revisions_path = paths.release_directory_base(release)
         unfinished_path = unfinished_revisions_path / release.unwrap_revision_number
-        release_date = datetime.datetime.now(datetime.UTC)
         # TODO: This is not reliable because of race conditions
         # But it adds a layer of protection in most cases
         completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
@@ -224,6 +223,9 @@ class ReleaseManager(CommitteeParticipant):
         published_revision = self.__publish_revision_from_task(completed_publish)
         if published_revision is None:
             raise storage.AccessError("The completed SVN publish has no recorded revision - Invalid state", status=500)
+        # A release is dated from its SVN commit, as that's when its files could first be downloaded.
+        # The publish task completes as soon as the commit returns, so its completion time is the commit's
+        release_date = completed_publish.completed or datetime.datetime.now(datetime.UTC)
         # The rows written at publish say where the files are now, which is where the publish put
         # them unless they were moved by hand since and the rows relocated to match. The publish
         # itself is still checked at its own revision and path, as that's what ATR committed
@@ -328,7 +330,7 @@ class ReleaseManager(CommitteeParticipant):
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, str(project_key))
 
             # The publish recorded the artifacts, and announcing is what puts them in the catalogue,
-            # dated from now. A release published before the rows were written at publish has none,
+            # dated from the commit. A release published before the rows were written at publish has none,
             # so they're written here, before promotion deletes the revisions and cascade-deletes
             # the file state the classifications are read from
             await self.__ensure_uncatalogued(release)
@@ -353,7 +355,6 @@ class ReleaseManager(CommitteeParticipant):
                     version_key=release.key,
                     event=sql.LifecycleEventType.RELEASE,
                     effective=release_date,
-                    published=release_date,
                     reference_urls=[f"https://lists.apache.org/list.html?{email_to}"],
                 )
             )
