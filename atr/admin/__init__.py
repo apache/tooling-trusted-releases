@@ -84,6 +84,7 @@ import atr.web as web
 
 ROUTES_MODULE: Final[Literal[True]] = True
 
+_CATALOG_OVERWRITE_CONFIRMATION: Final = "OVERWRITE PMC CATALOG DATA"
 _EMBARGO_DENIAL_DAYS: Final = 30
 _EMBARGO_DENIAL_LIMIT: Final = 250
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
@@ -209,7 +210,9 @@ class DataQuery(web.PageQuery):
 
 
 class DeleteReleaseConfirmForm(form.Form):
-    confirm_delete: Literal["DELETE"] = form.label("Confirmation", "Type DELETE to confirm.")
+    confirm_delete: Literal["DELETE RELEASE PERMANENTLY"] = form.label(
+        "Confirmation", "Type DELETE RELEASE PERMANENTLY to confirm."
+    )
 
 
 class DistRuleActionForm(form.Form):
@@ -291,6 +294,7 @@ class SessionsQuery(web.PageQuery):
     # Query parsing leaves optional fields as raw strings, so the system
     # tokens tab compares this against str(token.id)
     edit: str | None = None
+    revoke: str | None = None
 
 
 class RestoreBannerForm(form.Form):
@@ -308,7 +312,9 @@ class RevokeAllTokensForm(form.Form):
 class RevokeUserTokensForm(form.Form):
     variant: REVOKE_TOKENS = form.value(REVOKE_TOKENS)
     asf_uid: str = form.label("ASF UID", "Enter the ASF UID whose tokens should be revoked.")
-    confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
+    confirm_revoke: Literal["REVOKE USER TOKENS INCLUDING SYSTEM PATS"] = form.label(
+        "Confirmation", "Type REVOKE USER TOKENS INCLUDING SYSTEM PATS to confirm."
+    )
 
 
 class RevokeUserSSHKeysForm(form.Form):
@@ -319,11 +325,17 @@ class RevokeUserSSHKeysForm(form.Form):
 
 class RotateJwtKeyForm(form.Form):
     variant: ROTATE_JWT = form.value(ROTATE_JWT)
-    confirm_rotate: Literal["ROTATE"] = form.label("Confirmation", "Type ROTATE to confirm.")
+    confirm_rotate: Literal["ROTATE EVERY JWT KEY"] = form.label(
+        "Confirmation", "Type ROTATE EVERY JWT KEY to confirm."
+    )
 
 
 class SendTestMessageForm(form.Form):
     variant: TEST_MESSAGE = form.value(TEST_MESSAGE)
+
+
+class UpdateKeysForm(form.Form):
+    confirm_update: Literal["UPDATE ALL KEYS"] = form.label("Confirmation", "Type UPDATE ALL KEYS to confirm.")
 
 
 class ValidateJwtForm(form.Form):
@@ -369,6 +381,9 @@ class EditSystemTokenForm(form.Form):
     variant: SYSTEM_TOKEN_EDIT = form.value(SYSTEM_TOKEN_EDIT)
     token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
     allowed_ip: str = form.label("Allowed IPs", _ALLOWED_IPS_DOCUMENTATION, default="")
+    confirm_edit: Literal["EDIT SYSTEM TOKEN IP ADDRESSES"] = form.label(
+        "Confirmation", "Type EDIT SYSTEM TOKEN IP ADDRESSES to confirm."
+    )
 
     @pydantic.field_validator("allowed_ip", mode="after")
     @classmethod
@@ -379,6 +394,7 @@ class EditSystemTokenForm(form.Form):
 class RevokeSystemTokenForm(form.Form):
     variant: SYSTEM_TOKEN_REVOKE = form.value(SYSTEM_TOKEN_REVOKE)
     token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
+    confirm_revoke: Literal["REVOKE SYSTEM TOKEN"] = form.label("Confirmation", "Type REVOKE SYSTEM TOKEN to confirm.")
 
 
 @dataclasses.dataclass
@@ -879,6 +895,18 @@ class CatalogRemoveForm(form.Form):
     rehome_target: str = form.label(
         "Rehome target (only for rehome)", "The project to merge into.", widget=form.Widget.CUSTOM, default=""
     )
+    confirm_remove: Literal["DELETE PROJECT", "MERGE PROJECT"] = form.label(
+        "Confirmation",
+        "Type DELETE PROJECT to delete, or MERGE PROJECT to rehome.",
+        widget=form.Widget.TEXT,
+    )
+
+    @pydantic.model_validator(mode="after")
+    def validate_confirm_remove(self) -> CatalogRemoveForm:
+        expected = "DELETE PROJECT" if (self.disposition == "delete") else "MERGE PROJECT"
+        if self.confirm_remove != expected:
+            raise ValueError(f"Type {expected} to confirm this {self.disposition}", "confirm_remove")
+        return self
 
 
 @admin.typed
@@ -1157,15 +1185,7 @@ async def _catalog_release_status_action(committee_key: str, project_key: str, r
             confirm=f"Restore {release.version} to current? Files will not be modified.",
             empty=True,
         )
-    return await form.render(
-        model_cls=form.Empty,
-        action=f"{base}/archive",
-        form_classes=".d-inline",
-        submit_classes="btn-sm btn-outline-warning me-1",
-        submit_label="Archive",
-        confirm=f"Archive {release.version}? It will be archived and its files removed from the distribution area.",
-        empty=True,
-    )
+    return htpy.a(".btn.btn-sm.btn-outline-danger.me-1", href=f"{base}/archive")["Archive"]
 
 
 _CATALOG_HEAD_TIMEOUT: Final[int] = 15
@@ -1723,6 +1743,41 @@ async def catalog_release_move_post(
     return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 
+class CatalogReleaseArchiveForm(form.Form):
+    confirm_archive: Literal["ARCHIVE RELEASE"] = form.label("Confirmation", "Type ARCHIVE RELEASE to confirm.")
+
+
+@admin.typed
+async def catalog_release_archive_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _archive: Literal["archive"],
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/archive
+
+    Confirm archiving a single catalogued release and removing its files from the distribution area.
+    """
+    rendered_form = await form.render(
+        model_cls=CatalogReleaseArchiveForm,
+        submit_label="Archive release",
+        submit_classes="btn-danger",
+    )
+    intro = htpy.p[f"Archive {version_key}. It will be archived and its files removed from the distribution area."]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Archive {project_key}-{version_key}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
 @admin.typed
 async def catalog_release_archive_post(
     session: web.Committer,
@@ -1733,7 +1788,7 @@ async def catalog_release_archive_post(
     _release: Literal["release"],
     version_key: safe.VersionKey,
     _archive: Literal["archive"],
-    _archive_form: form.Empty,
+    _archive_form: CatalogReleaseArchiveForm,
 ) -> web.WerkzeugResponse:
     """
     URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/archive
@@ -1874,6 +1929,9 @@ class CatalogImportForm(form.Form):
 
 class CatalogImportApplyForm(form.Form):
     token: str = form.label("Token", widget=form.Widget.HIDDEN)
+    confirm_overwrite: str = form.label(
+        "Confirmation", f"Type {_CATALOG_OVERWRITE_CONFIRMATION} to confirm.", default=""
+    )
 
 
 @dataclasses.dataclass
@@ -1953,6 +2011,7 @@ async def catalog_import_post(
         submit_label="Apply import",
         submit_classes="btn-danger",
         defaults={"token": token},
+        skip=None if (mode is catalogue_diff.Mode.REPLACE) else ["confirm_overwrite"],
     )
     return await template.render(
         "catalog-import-preview.html",
@@ -1984,6 +2043,8 @@ async def catalog_import_apply_post(
     if await asyncio.to_thread(catalogue_import.committee_of, token) != str(committee_key):
         raise exceptions.BadRequest("That upload was previewed against a different committee.")
     mode = await asyncio.to_thread(catalogue_import.mode_of, token)
+    if (mode is catalogue_diff.Mode.REPLACE) and (apply_form.confirm_overwrite != _CATALOG_OVERWRITE_CONFIRMATION):
+        raise exceptions.BadRequest(f"Type {_CATALOG_OVERWRITE_CONFIRMATION} to confirm the overwrite.")
     previewed = await asyncio.to_thread(catalogue_import.fingerprint_of, token)
     try:
         async with storage.write(session) as write:
@@ -2148,7 +2209,7 @@ async def data(_session: web.Committer, _data: Literal["data"], query_args: Data
 
 
 @admin.typed
-async def data_post(session: web.Committer, _data: Literal["data"], _form: form.Empty) -> web.WerkzeugResponse:
+async def data_post(session: web.Committer, _data: Literal["data"], _form: UpdateKeysForm) -> web.WerkzeugResponse:
     if _keys_update_gated():
         await quart.flash("Updating keys is unavailable while ATR publishes to the release area.", "error")
         return await session.redirect(data, tab="update-keys")
@@ -3294,11 +3355,10 @@ async def _database_update_keys_tab() -> htm.Element:
     else:
         block.append(
             await form.render(
-                model_cls=form.Empty,
+                model_cls=UpdateKeysForm,
                 action=util.as_url(data_post, tab="update-keys"),
                 submit_label="Update keys",
-                empty=True,
-                form_classes="",
+                submit_classes="btn-danger",
             )
         )
     if previous_output:
@@ -4095,7 +4155,11 @@ async def _users_page(
             lambda: _users_revoke_all_tokens_tab(session, query_args.revocation_id),
         ),
         htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
-        htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session, query_args.edit)),
+        htm.Tab(
+            "system-tokens",
+            "System tokens",
+            lambda: _users_system_tokens_tab(session, query_args.edit, query_args.revoke),
+        ),
         htm.Tab("rotate-jwt", "Rotate JWT key", _users_rotate_jwt_tab),
         htm.Tab("embargo-denials", "Embargo denials", _users_embargo_denials_tab),
     ]
@@ -4290,6 +4354,7 @@ async def _users_revoke_tokens_tab() -> htm.Element:
         model_cls=RevokeUserTokensForm,
         action=util.as_url(users_post, tab="revoke-tokens"),
         submit_label="Revoke all tokens",
+        submit_classes="btn-danger",
     )
     content = await template.render("revoke-user-tokens.html", form=rendered_form, token_counts=token_counts)
     return htm.div[markupsafe.Markup(content)]
@@ -4308,6 +4373,7 @@ async def _users_rotate_jwt_tab() -> htm.Element:
         model_cls=RotateJwtKeyForm,
         action=util.as_url(users_post, tab="rotate-jwt"),
         submit_label="Rotate JWT key",
+        submit_classes="btn-danger",
     )
     block = htm.Block()
     block.h2["Rotate JWT key"]
@@ -4433,43 +4499,49 @@ async def _users_system_token_revoke(
     return await session.redirect(users_get, tab="system-tokens")
 
 
-async def _users_system_tokens_tab(session: web.Committer, edit: str | None) -> htm.Element:
+async def _users_system_tokens_tab(session: web.Committer, edit: str | None, revoke: str | None) -> htm.Element:
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
         tokens = await wafa.tokens.list_system_tokens()
 
-    action = util.as_url(users_post, tab="system-tokens")
-    create_form = await form.render(model_cls=CreateSystemTokenForm, action=action, submit_label="Create system token")
     edit_form = None
     edit_token = None
+    revoke_form = None
+    revoke_token = None
     rows = []
     for token in tokens:
         if str(token.id) == edit:
             edit_token = token
             edit_form = await form.render(
                 model_cls=EditSystemTokenForm,
-                action=action,
+                action=util.as_url(users_post, tab="system-tokens", edit=token.id),
                 submit_label="Save IP restrictions",
+                submit_classes="btn-danger",
                 cancel_url=util.as_url(users_get, tab="system-tokens"),
                 defaults={"token_id": token.id, "allowed_ip": token.allowed_ip or ""},
             )
-        revoke_form = await form.render(
-            model_cls=RevokeSystemTokenForm,
-            action=action,
-            form_classes=".mb-0",
-            submit_classes="btn-sm btn-danger",
-            submit_label="Revoke",
-            confirm="Revoke this system token? Any JWTs issued from it stop working immediately.",
-            defaults={"token_id": token.id},
-            empty=True,
-        )
+        if str(token.id) == revoke:
+            revoke_token = token
+            revoke_form = await form.render(
+                model_cls=RevokeSystemTokenForm,
+                action=util.as_url(users_post, tab="system-tokens", revoke=token.id),
+                submit_label="Revoke system token",
+                submit_classes="btn-danger",
+                cancel_url=util.as_url(users_get, tab="system-tokens"),
+                defaults={"token_id": token.id},
+            )
         edit_url = util.as_url(users_get, tab="system-tokens", edit=token.id)
-        rows.append((token, edit_url, revoke_form))
+        revoke_url = util.as_url(users_get, tab="system-tokens", revoke=token.id)
+        rows.append((token, edit_url, revoke_url))
+    action = util.as_url(users_post, tab="system-tokens")
+    create_form = await form.render(model_cls=CreateSystemTokenForm, action=action, submit_label="Create system token")
     content = await template.render(
         "system-tokens.html",
         create_form=create_form,
         edit_form=edit_form,
         edit_token=edit_token,
+        revoke_form=revoke_form,
+        revoke_token=revoke_token,
         rows=rows,
         format_datetime=util.format_datetime,
     )

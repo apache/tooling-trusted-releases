@@ -54,7 +54,7 @@ def delete_release_if_exists(page: Page, project_key: str, version_key: str) -> 
     confirm = page.locator('input[name="confirm_delete"]')
     if confirm.count() == 0:
         return
-    confirm.fill("DELETE")
+    confirm.fill("DELETE RELEASE PERMANENTLY")
     page.get_by_role("button", name="Delete this release permanently").click()
     page.wait_for_load_state()
 

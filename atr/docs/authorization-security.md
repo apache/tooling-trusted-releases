@@ -222,7 +222,7 @@ Token operations apply to the authenticated user:
 
 * Allowed for: ATR administrators only
 * Interface: Admin Users dashboard, "Revoke user tokens" tab
-* Constraint: Requires typing "REVOKE" as confirmation
+* Constraint: Requires typing "REVOKE USER TOKENS INCLUDING SYSTEM PATS" as confirmation
 
 **Revoke all SSH keys for a user (admin)**:
 

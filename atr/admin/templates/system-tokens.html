@@ -24,6 +24,18 @@
   </div>
 {% endif %}
 
+{% if revoke_form %}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Revoke <code>{{ revoke_token.label or revoke_token.id }}</code></h5>
+    </div>
+    <div class="card-body">
+      <p>Any JWTs issued from this token stop working immediately.</p>
+      {{ revoke_form }}
+    </div>
+  </div>
+{% endif %}
+
 {% if rows %}
   <div class="card">
     <div class="card-header">
@@ -43,7 +55,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for token, edit_url, revoke_form in rows %}
+          {% for token, edit_url, revoke_url in rows %}
             <tr>
               <td>{{ token.label or "" }}</td>
               <td><code>{{ token.created_by }}</code></td>
@@ -62,7 +74,7 @@
               <td>
                 <div class="d-flex gap-2 align-items-center">
                   <a class="btn btn-sm btn-outline-secondary" href="{{ edit_url }}">Edit IPs</a>
-                  {{ revoke_form }}
+                  <a class="btn btn-sm btn-danger" href="{{ revoke_url }}">Revoke</a>
                 </div>
               </td>
             </tr>

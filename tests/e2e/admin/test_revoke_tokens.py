@@ -31,7 +31,7 @@ def test_revoke_deletes_tokens_and_shows_success(
 
     # Revoke all tokens for the test user
     page.locator('input[name="asf_uid"]').fill("test")
-    page.locator('input[name="confirm_revoke"]').fill("REVOKE")
+    page.locator('input[name="confirm_revoke"]').fill("REVOKE USER TOKENS INCLUDING SYSTEM PATS")
     page.get_by_role("button", name="Revoke all tokens").click()
     page.wait_for_load_state()
 
@@ -47,7 +47,7 @@ def test_revoke_deletes_tokens_and_shows_success(
 def test_revoke_nonexistent_user_shows_info(page_revoke_tokens: Page) -> None:
     page = page_revoke_tokens
     page.locator('input[name="asf_uid"]').fill("nonexistent_user_abc123")
-    page.locator('input[name="confirm_revoke"]').fill("REVOKE")
+    page.locator('input[name="confirm_revoke"]').fill("REVOKE USER TOKENS INCLUDING SYSTEM PATS")
     page.get_by_role("button", name="Revoke all tokens").click()
     page.wait_for_load_state()
 
@@ -127,7 +127,7 @@ def test_revoke_tokens_removes_tokens_from_user_view(
 
     # Revoke
     page.locator('input[name="asf_uid"]').fill("test")
-    page.locator('input[name="confirm_revoke"]').fill("REVOKE")
+    page.locator('input[name="confirm_revoke"]').fill("REVOKE USER TOKENS INCLUDING SYSTEM PATS")
     page.get_by_role("button", name="Revoke all tokens").click()
     page.wait_for_load_state()
 

@@ -555,7 +555,7 @@ def release_remove(page: Page, project_key: str, version_key: str) -> None:
         return
 
     logging.info(f"Found the {release_key} release, proceeding with deletion")
-    confirm_locator.fill("DELETE")
+    confirm_locator.fill("DELETE RELEASE PERMANENTLY")
 
     logging.info(f"Submitting deletion form for {release_key}")
     submit_button_locator = page.get_by_role("button", name="Delete this release permanently")
