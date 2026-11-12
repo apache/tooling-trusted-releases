@@ -18,9 +18,14 @@
       <button type="button"
               class="btn btn-secondary ms-2"
               id="filter-participant-button"
-              aria-pressed="false"
-              data-showing="all">Show my projects</button>
+              aria-pressed="true"
+              data-showing="participant">Show all projects</button>
     {% endif %}
+    <button type="button"
+            class="btn btn-secondary ms-2"
+            id="filter-archived-button"
+            aria-pressed="false"
+            data-showing="current">Show dormant/retired projects</button>
   </div>
 
   <div class="mb-3">
@@ -42,7 +47,8 @@
     <div class="col">
       <div class="card h-100 shadow-sm position-relative page-project-card {{ '' if project.is_active else 'bg-body-secondary' }}"
            data-project-url="{{ as_url(get.projects.view, project_key=project.key) }}"
-           data-is-participant="{{ 'true' if is_part else 'false' }}">
+           data-is-participant="{{ 'true' if is_part else 'false' }}"
+           data-is-archived="{{ 'true' if project.is_archived else 'false' }}">
         <div class="card-body">
           <div class="row g-1">
             <div class="col-sm">

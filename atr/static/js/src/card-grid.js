@@ -18,7 +18,8 @@
  */
 
 // Shared behaviour for the committees, releases and projects grids. A page
-// calls window.initCardGrid() with its own selectors and noun.
+// calls window.initCardGrid() with its own selectors and noun, and optionally
+// an archivedLabel for the archived toggle, which says "retired" otherwise.
 //
 // The text filter and the mine/all toggle override each other: searching drops
 // back to the full set, toggling clears the search.
@@ -136,10 +137,11 @@ function cardEligible(ctx, card) {
 }
 
 function setRetiredButton(ctx, showRetired) {
+	const label = ctx.config.archivedLabel ?? "retired";
 	ctx.archivedButton.dataset.showing = showRetired ? "retired" : "current";
 	ctx.archivedButton.textContent = showRetired
-		? `Hide retired ${ctx.config.noun}`
-		: `Show retired ${ctx.config.noun}`;
+		? `Hide ${label} ${ctx.config.noun}`
+		: `Show ${label} ${ctx.config.noun}`;
 	ctx.archivedButton.setAttribute(
 		"aria-pressed",
 		showRetired ? "true" : "false",

@@ -22,5 +22,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		cardSelector: ".page-project-card",
 		countId: "project-count",
 		noun: "projects",
+		archivedLabel: "dormant/retired",
 	});
 });
