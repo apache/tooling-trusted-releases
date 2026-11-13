@@ -869,7 +869,7 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
 
         test_committee.mail_addresses = ["dev@test.apache.org", "user@test.apache.org"]
 
-        test_project = await data.project(key="test", _release_policy=True).get()
+        test_project = await data.project(key="test").get()
         if not test_project:
             test_project = sql.Project(
                 key="test",
@@ -886,8 +886,6 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
         # A non-GitHub repository, so the project metadata is complete but manual uploads
         # in the test suites are not forced to supply a commit hash (there's no GitHub source to compare against)
         test_project.repositories = ["https://gitbox.apache.org/repos/asf/test.git"]
-        if test_project.release_policy is None:
-            test_project.release_policy = sql.ReleasePolicy(vote_mode=sql.VoteMode.EMAIL)
         await data.commit()
 
         test_client_project = await data.project(key="test-client", _release_policy=True).get()

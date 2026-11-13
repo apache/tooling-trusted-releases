@@ -142,6 +142,14 @@ _INSERT_POLICY = (
 _INSERT_PROJECT = (
     "INSERT INTO project (key, committee_key, status, created) VALUES ('{key}', '{committee}', '{status}', 0)"
 )
+_FULL_SYNC_ROWS = (
+    _INSERT_COMMITTEE.format(key="committee"),
+    *[_INSERT_PROJECT.format(key=key, committee="committee", status="ACTIVE") for key in ("full", "manual", "merge")],
+    *[_INSERT_POLICY.format(id=policy_id, mode="TRUSTED") for policy_id in (1, 2, 3)],
+    "UPDATE project SET release_policy_id = 1, update_type = 'ASFYAML_FULL' WHERE key = 'full'",
+    "UPDATE project SET release_policy_id = 2, update_type = 'MANUAL' WHERE key = 'manual'",
+    "UPDATE project SET release_policy_id = 3, update_type = 'ASFYAML' WHERE key = 'merge'",
+)
 _TRUSTED_DEFAULT_ROWS = (
     *[_INSERT_COMMITTEE.format(key=key) for key in ("edited", "moved", "polaris", "saved", "started", "trusted")],
     *[
@@ -172,6 +180,22 @@ _TRUSTED_DEFAULT_ROWS = (
     "INSERT INTO release (key, project_key, version, phase, created, package_managers, sboms, cycle_key, activity_at)"
     " VALUES ('moved-1.0', 'moved', '1.0', 'RELEASE', 0, '[]', '[]', 'moved-1', 0)",
 )
+
+
+def test_full_sync_projects_return_to_email_votes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0147_2026.11.13_bb0b30bf")
+    with engine.begin() as connection:
+        for statement in _FULL_SYNC_ROWS:
+            connection.exec_driver_sql(statement)
+
+    command.upgrade(alembic_config, "0148_2026.11.13_6136641d")
+
+    with engine.connect() as connection:
+        policies = connection.exec_driver_sql(
+            "SELECT p.key, rp.vote_mode FROM project AS p JOIN releasepolicy AS rp ON rp.id = p.release_policy_id"
+        ).all()
+    assert dict(tuple(row) for row in policies) == {"full": "EMAIL", "manual": "TRUSTED", "merge": "TRUSTED"}
 
 
 def test_trusted_default_keeps_committees_with_activity_on_email(

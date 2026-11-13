@@ -233,7 +233,7 @@ def test_full_sync_fills_omitted_policy_fields_with_defaults() -> None:
     completed = project_writer._complete_policy_args(args)
 
     assert completed.min_hours == 72
-    assert completed.vote_mode == sql.VoteMode.TRUSTED
+    assert completed.vote_mode == sql.VoteMode.EMAIL
     assert completed.source_artifact_paths == []
     # Recipients clear only if the field is marked as set, since None is already the default
     assert "vote_recipients" in completed.model_fields_set
