@@ -305,13 +305,28 @@ async def generate_all(data: db.Session) -> None:
     log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
-async def queue_full_regeneration(data: db.Session, asf_uid: str) -> sql.Task:
-    """Queue a full rebuild of the whole catalog site, reusing one already queued."""
-    existing = await data.task(
+async def queue_committee_regeneration(data: db.Session, asf_uid: str, committee_key: str) -> sql.Task:
+    """Queue a rebuild of one committee's pages and its projects', reusing one already queued.
+
+    Adds the task to the caller's session without committing.
+    """
+    existing = await _queued_regeneration(data, committee_key)
+    if existing is not None:
+        return existing
+    task = sql.Task(
         status=sql.TaskStatus.QUEUED,
         task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+        task_args=args.CatalogSiteGenerate(asf_uid=asf_uid, committee_key=committee_key).model_dump(),
+        asf_uid=asf_uid,
         project_key=None,
-    ).get()
+    )
+    data.add(task)
+    return task
+
+
+async def queue_full_regeneration(data: db.Session, asf_uid: str) -> sql.Task:
+    """Queue a full rebuild of the whole catalog site, reusing one already queued."""
+    existing = await _queued_regeneration(data, None)
     if existing is not None:
         return existing
     task = sql.Task(
@@ -352,6 +367,23 @@ async def queue_regeneration(data: db.Session, asf_uid: str, project_key: str) -
     )
 
 
+async def regenerate_committee(data: db.Session, committee_key: str) -> None:
+    """Rewrite one committee's pages and those of all its projects."""
+    # The indexes and the summary feeds are built from every committee
+    committees = await data.committee(_projects=True).all()
+    committee = next((c for c in committees if c.key == committee_key), None)
+    if committee is None:
+        log.warning(f"Catalog site: committee {committee_key} not found, skipping regeneration")
+        return
+    site_dir = paths.get_catalog_site_dir()
+    await _write_assets(site_dir)
+    # Of the per-project files, only this committee's can have changed
+    only = {project.key for project in committee.projects}
+    await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir, only=only))
+    await _write_committee_pages(data, [committee], site_dir)
+    await _write_index_pages(data, site_dir, committees)
+
+
 async def regenerate_project(data: db.Session, project_key: str) -> None:
     """Rewrite one project's pages and refresh its committee index."""
     project = await data.project(key=project_key, _committee=True).get()
@@ -381,7 +413,9 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     # The summary feed reflects the catalogue as a whole, so a change to any one project
     # refreshes it, the same as it refreshes the front page. Of the per-project files, only
     # this project's can have changed.
-    await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir, only=project.key))
+    await _guarded_write(
+        "release summary feeds", _write_project_releases(data, committees, site_dir, only={project.key})
+    )
     await _guarded_write(
         f"{committee.key} activity log", _write_committee_activity(data, committee, site_dir, collected)
     )
@@ -827,6 +861,18 @@ async def _prune_directories(directory: safe.StatePath, keep: Container[str]) ->
         log.info(f"Catalog site: pruned {len(pruned)} stale directories from {path}: {', '.join(pruned)}")
 
 
+async def _queued_regeneration(data: db.Session, committee_key: str | None) -> sql.Task | None:
+    """The queued committee rebuild for the given key, or the queued whole-site one for None."""
+    # A task row has no committee column, and both kinds leave the project unset, so they're
+    # only told apart by their arguments
+    queued = await data.task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+        project_key=None,
+    ).all()
+    return next((task for task in queued if task.task_args.get("committee_key") == committee_key), None)
+
+
 def _redirect_rule(url: str) -> str:
     """The RewriteRule redirecting the release directory to a download URL."""
     # archive.apache.org is a permanent home (301); the closer.lua mirror is not (302). NE
@@ -1258,12 +1304,12 @@ async def _write_project(
 
 
 async def _write_project_releases(
-    data: db.Session, committees: Sequence[sql.Committee], site_dir: safe.StatePath, only: str | None = None
+    data: db.Session, committees: Sequence[sql.Committee], site_dir: safe.StatePath, only: Container[str] | None = None
 ) -> None:
     """Write the two site-wide summary feeds, and each project's own file.
 
-    The feeds are projects, and podlings on their own. Given a project key in `only`, just that
-    project's own file is rewritten; otherwise they all are.
+    The feeds are projects, and podlings on their own. Given project keys in `only`, just those
+    projects' own files are rewritten; otherwise they all are.
     """
     releases_by_project = await _released_versions_by_project(data)
     vote_addresses = await _vote_addresses_by_project(data)
@@ -1271,7 +1317,7 @@ async def _write_project_releases(
     await _write(site_dir / _PROJECT_RELEASES_FILE, json.dumps(_project_feed(projects), indent=2, default=str))
     await _write(site_dir / _PODLING_RELEASES_FILE, json.dumps(podlings, indent=2, default=str))
     for key, entry in (projects | podlings).items():
-        if (only is None) or (key == only):
+        if (only is None) or (key in only):
             await _write(site_dir / key / _PROJECT_DOCUMENT_FILE, json.dumps(entry, indent=2, default=str))
 
 

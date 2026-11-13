@@ -111,7 +111,7 @@ The System POST handler also handles a presentations vote bypass form.
 | Catalog admin | `admin` | Lists committees, with an A–Z letter bar to jump to a letter. Each committee links to `/admin/catalog/<committee_key>` to review and correct its catalogued projects. |
 | Dist watcher rules | `dist-rules` | List, add, enable or disable, and delete distribution watcher rules. |
 | Reproducible builds | `reproducible-builds` | Automated release signing keys, grouped by committee. |
-| Rebuild catalog | `rebuild` | Queue a full site regeneration and show its status. Catalogue changes refresh affected pages on their own, so a full rebuild is rarely needed. |
+| Rebuild catalog | `rebuild` | Queue a full site regeneration, or one for a single PMC chosen from a list, and show its status. Catalogue changes refresh affected pages on their own, so a rebuild is rarely needed. |
 
 ### Per-committee and per-project pages
 

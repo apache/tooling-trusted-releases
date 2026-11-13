@@ -150,32 +150,6 @@ async def cap_approval_resolve(
         return task
 
 
-async def catalog_site_generate_all(asf_uid: str, caller_data: db.Session | None = None) -> sql.Task:
-    """Queue a full rebuild of the static release catalog site, reusing one already queued."""
-    async with db.ensure_session(caller_data) as data:
-        existing = await data.task(
-            status=sql.TaskStatus.QUEUED,
-            task_type=sql.TaskType.CATALOG_SITE_GENERATE,
-            project_key=None,
-        ).get()
-        if existing is not None:
-            return existing
-        task = sql.Task(
-            status=sql.TaskStatus.QUEUED,
-            task_type=sql.TaskType.CATALOG_SITE_GENERATE,
-            task_args=args.CatalogSiteGenerate(asf_uid=asf_uid, project_key=None).model_dump(),
-            asf_uid=asf_uid,
-            revision_number=None,
-            primary_rel_path=None,
-            project_key=None,
-            version_key=None,
-        )
-        data.add(task)
-        await data.commit()
-        await data.flush()
-        return task
-
-
 async def clear_scheduled(caller_data: db.Session | None = None) -> None:
     """Clear all future scheduled tasks of the given types."""
     async with db.ensure_session(caller_data) as data:

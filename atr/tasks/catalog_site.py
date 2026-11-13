@@ -30,9 +30,10 @@ import atr.tasks.task as task
 async def generate(task_args: args.CatalogSiteGenerate, *, task_id: int | None = None) -> results.Results | None:
     """Regenerate the static release catalog site.
 
-    A null project_key rebuilds the whole site (bootstrap and drift repair); a
+    With neither key set the whole site is rebuilt (bootstrap and drift repair); a
     set project_key rewrites just that project's subtree in response to a
-    catalogue change.
+    catalogue change, and a set committee_key rewrites that committee and all of
+    its projects, which only an admin asks for.
     """
     async with db.session() as data:
         # A full rebuild rewrites the whole tree and a partial rewrites the global index
@@ -41,10 +42,12 @@ async def generate(task_args: args.CatalogSiteGenerate, *, task_id: int | None =
         # don't overlap, so they're free to run at once.
         if (task_id is not None) and await _older_regen_active(data, task_id, task_args.project_key):
             raise task.DeferredError
-        if task_args.project_key is None:
-            await catalog_site.generate_all(data)
-        else:
+        if task_args.project_key is not None:
             await catalog_site.regenerate_project(data, task_args.project_key)
+        elif task_args.committee_key is not None:
+            await catalog_site.regenerate_committee(data, task_args.committee_key)
+        else:
+            await catalog_site.generate_all(data)
     return None
 
 
@@ -52,6 +55,7 @@ async def _older_regen_active(data: db.Session, task_id: int, project_key: str |
     # True when an earlier-queued (lower id) regeneration that overlaps this one is still
     # ACTIVE. A full regen (null project) touches every page, so it conflicts with any
     # other; a project regen conflicts only with a full regen or another of its own project.
+    # A committee regen has no project on its task row either, so it's serialized as a full one.
     via = sql.validate_instrumented_attribute
     conditions = [
         via(sql.Task.task_type) == sql.TaskType.CATALOG_SITE_GENERATE,

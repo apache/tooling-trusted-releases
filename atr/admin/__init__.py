@@ -49,6 +49,7 @@ import yaml
 
 import atr.blueprints.admin as admin
 import atr.cache as cache
+import atr.catalog_site as catalog_site
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
@@ -156,6 +157,7 @@ _DATA_SEARCH_MAX_LENGTH: Final = 200
 type BANNER_RESTORE = Literal["BANNER_RESTORE"]
 type BANNER_SET = Literal["BANNER_SET"]
 type BROWSE_AS = Literal["BROWSE_AS"]
+type CATALOG_COMMITTEE_REBUILD = Literal["CATALOG_COMMITTEE_REBUILD"]
 type CATALOG_SITE_REBUILD = Literal["CATALOG_SITE_REBUILD"]
 type COMMITTEES_UPDATE = Literal["COMMITTEES_UPDATE"]
 type LDAP = Literal["LDAP"]
@@ -187,6 +189,11 @@ class AddDistRuleForm(form.Form):
 class BrowseAsUserForm(form.Form):
     variant: BROWSE_AS = form.value(BROWSE_AS)
     uid: str = form.label("ASF UID", "Enter the ASF UID to browse as.")
+
+
+class CatalogCommitteeRebuildForm(form.Form):
+    variant: CATALOG_COMMITTEE_REBUILD = form.value(CATALOG_COMMITTEE_REBUILD)
+    committee_key: safe.CommitteeKey = form.label("PMC", widget=form.Widget.SELECT)
 
 
 class CatalogSiteRebuildForm(form.Form):
@@ -425,7 +432,9 @@ class TestRosterResetForm(form.Form):
     confirm_reset: Literal["RESET"] = form.label("Confirmation", "Type RESET to confirm.")
 
 
-type CatalogForm = Annotated[CommitteesUpdateForm | CatalogSiteRebuildForm, form.DISCRIMINATOR]
+type CatalogForm = Annotated[
+    CommitteesUpdateForm | CatalogSiteRebuildForm | CatalogCommitteeRebuildForm, form.DISCRIMINATOR
+]
 
 
 type SystemForm = Annotated[
@@ -500,6 +509,8 @@ async def catalog_post(
             return await _catalog_committees_update(session)
         case CatalogSiteRebuildForm():
             return await _catalog_site_rebuild(session)
+        case CatalogCommitteeRebuildForm():
+            return await _catalog_committee_rebuild(session, catalog_form.committee_key)
 
 
 @admin.typed
@@ -2823,9 +2834,27 @@ def _catalog_reproducible_committee_rows(keys: list[interaction.AutomatedRelease
     return htpy.tbody[rows]
 
 
+async def _catalog_committee_rebuild(session: web.Committer, committee_key: safe.CommitteeKey) -> web.WerkzeugResponse:
+    try:
+        async with db.session() as data:
+            committee = await data.committee(key=str(committee_key)).get()
+            if committee is None:
+                await quart.flash(f"Committee {committee_key} not found.", "error")
+                return await session.redirect(catalog_get, tab="rebuild")
+            task = await catalog_site.queue_committee_regeneration(data, session.asf_uid, committee.key)
+            await data.commit()
+        await quart.flash(f"Catalog rebuild task for {committee.key} has been queued with ID {task.id}.", "success")
+    except Exception as e:
+        log.exception("Failed to queue catalog committee rebuild task")
+        await quart.flash(f"Failed to queue catalog rebuild for {committee_key}: {e!s}", "error")
+    return await session.redirect(catalog_get, tab="rebuild")
+
+
 async def _catalog_site_rebuild(session: web.Committer) -> web.WerkzeugResponse:
     try:
-        task = await tasks.catalog_site_generate_all(session.asf_uid)
+        async with db.session() as data:
+            task = await catalog_site.queue_full_regeneration(data, session.asf_uid)
+            await data.commit()
         await quart.flash(f"Catalog site rebuild task has been queued with ID {task.id}.", "success")
     except Exception as e:
         log.exception("Failed to queue catalog site rebuild task")
@@ -2843,13 +2872,23 @@ async def _catalog_rebuild_tab() -> htm.Element:
             .order_by(sql.Task.added)
             .all()
         )
+        committees = await data.committee().all()
 
     rendered_form = await form.render(
         model_cls=CatalogSiteRebuildForm,
         action=util.as_url(catalog_post, tab="rebuild"),
         submit_label="Queue full rebuild",
-        empty=True,
-        form_classes="",
+    )
+    # Sorted by the name shown, as on the catalog admin tab
+    choices = sorted(
+        ((committee.key, committee.name or committee.key) for committee in committees),
+        key=lambda choice: choice[1].casefold(),
+    )
+    committee_form = await form.render(
+        model_cls=CatalogCommitteeRebuildForm,
+        action=util.as_url(catalog_post, tab="rebuild"),
+        submit_label="Queue PMC rebuild",
+        defaults={"committee_key": choices},
     )
     block = htm.Block()
     block.h2["Rebuild catalog"]
@@ -2858,7 +2897,12 @@ async def _catalog_rebuild_tab() -> htm.Element:
         " populate a fresh deployment or to clear up after project renames, moves or deletions."
     ]
     block.append(_catalog_regeneration_status(in_flight))
+    block.h3["Rebuild whole site"]
+    block.p["Rewrites every page of the site."]
     block.append(rendered_form)
+    block.h3["Rebuild one PMC"]
+    block.p["Rewrites the pages of one PMC and all of its projects."]
+    block.append(committee_form)
     return block.collect()
 
 
@@ -2871,9 +2915,15 @@ def _catalog_regeneration_status(in_flight: Sequence[sql.Task]) -> htm.Element:
 
     rows = []
     for task in in_flight:
-        # A regeneration with no project is a whole-site rebuild; one with a project
-        # only rewrites that project's subtree
-        scope = "Whole site" if (task.project_key is None) else f"Project: {task.project_key}"
+        # A regeneration with a project only rewrites that project's subtree. Without one
+        # it's a whole-site rebuild, unless its arguments name a committee
+        committee_key = task.task_args.get("committee_key")
+        if task.project_key is not None:
+            scope = f"Project: {task.project_key}"
+        elif committee_key is not None:
+            scope = f"PMC: {committee_key}"
+        else:
+            scope = "Whole site"
         if task.status == sql.TaskStatus.ACTIVE:
             status_badge: htm.Element = htpy.span(".badge.bg-info")["Running"]
         else:

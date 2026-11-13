@@ -36,7 +36,10 @@ class CatalogSiteGenerate(schema.Strict):
 
     asf_uid: str = schema.description("ASF UID on whose behalf the site is regenerated")
     project_key: str | None = pydantic.Field(
-        default=None, description="Regenerate just this project's subtree; null rebuilds the whole site"
+        default=None, description="Regenerate just this project's subtree; null rebuilds the committee or whole site"
+    )
+    committee_key: str | None = pydantic.Field(
+        default=None, description="Regenerate just this committee and its projects; null rebuilds the whole site"
     )
 
 
