@@ -1256,6 +1256,12 @@ class Project(sqlmodel.SQLModel, table=True):
     calver_format: str | None = sqlmodel.Field(default=None, **example("(YY.MM).N"))
     branch_template: str | None = sqlmodel.Field(default=None, **example("release-{cycle}"))
 
+    # Limits that an admin has set for this project, each null to take the default in atr.quota
+    quota_project_bytes: int | None = sqlmodel.Field(default=None, **example(53687091200))
+    quota_project_releases: int | None = sqlmodel.Field(default=None, **example(20))
+    quota_release_bytes: int | None = sqlmodel.Field(default=None, **example(53687091200))
+    quota_release_files: int | None = sqlmodel.Field(default=None, **example(10000))
+
     # M-1: Project -> Committee
     # 1-M: Committee -> [Project]
     committee_key: str | None = sqlmodel.Field(default=None, foreign_key="committee.key", **example("example"))

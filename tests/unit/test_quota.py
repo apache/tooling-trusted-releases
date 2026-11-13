@@ -21,6 +21,7 @@ from typing import Final
 
 import atr.errors as errors
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.quota as quota
 import atr.storage as storage
 
@@ -47,6 +48,12 @@ def test_free_space_refused_below_the_minimum():
     assert violation is not None
     assert violation.kind is quota.Kind.SERVER_LOW_ON_SPACE
     assert violation.status == 507
+
+
+def test_limits_for_a_project_are_the_defaults_except_where_set():
+    assert quota.limits_for(sql.Project(key="example")) == quota.DEFAULT_LIMITS
+    limits = quota.limits_for(sql.Project(key="example", quota_release_bytes=50, quota_project_releases=3))
+    assert limits == quota.Limits(release_bytes=50, project_releases=3)
 
 
 def test_project_bytes_over_the_limit():

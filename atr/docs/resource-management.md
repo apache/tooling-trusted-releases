@@ -152,7 +152,9 @@ From [`quota`](/ref/atr/quota.py): a file in a release may be up to 2 GB, a rele
 every revision. These are applied when a revision is created or a release is started, and refused
 with a 413 for sizes and a 400 for counts. The rsync upload limit is the same 2 GB. A file over
 1 GiB is reported as a check concern. A new revision is refused with a 507 when the state volume has
-less than `MIN_FREE_SPACE` free (50 GiB in production mode, 1 GiB otherwise).
+less than `MIN_FREE_SPACE` free (50 GiB in production mode, 1 GiB otherwise). An admin can set
+different release and project limits for one project on the Quotas tab of the System page, which also
+lists projects by how close each is to a limit.
 
 As enforced, the defaults (100 a minute, 1000 an hour) apply per endpoint, keyed by web session user
 or client address, in process memory, and reset by restarts. Announce and vote start get five an

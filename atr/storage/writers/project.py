@@ -33,6 +33,7 @@ import atr.models.calver as calver
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
+import atr.quota as quota
 import atr.registry as registry
 import atr.storage as storage
 import atr.tasks as tasks
@@ -526,6 +527,26 @@ class FoundationAdmin(FoundationCommitter):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
+    async def quota_limits_set(self, project_key: safe.ProjectKey, limits: quota.Limits) -> None:
+        project = await self.__data.project(key=str(project_key)).demand(
+            storage.AccessError(f"Project {project_key} not found", status=404)
+        )
+        defaults = quota.DEFAULT_LIMITS
+        # A limit equal to its default is stored as null, so that it follows the default if that changes
+        project.quota_project_bytes = _none_if_default(limits.project_bytes, defaults.project_bytes)
+        project.quota_project_releases = _none_if_default(limits.project_releases, defaults.project_releases)
+        project.quota_release_bytes = _none_if_default(limits.release_bytes, defaults.release_bytes)
+        project.quota_release_files = _none_if_default(limits.release_files, defaults.release_files)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            quota_project_bytes=limits.project_bytes,
+            quota_project_releases=limits.project_releases,
+            quota_release_bytes=limits.release_bytes,
+            quota_release_files=limits.release_files,
+        )
+
     async def record_approval_outcome(
         self,
         approval_request_id: int,
@@ -775,6 +796,10 @@ def _complete_project_args(
     }
     missing.update(_version_scheme_resets(project, args))
     return args.model_copy(update=missing)
+
+
+def _none_if_default(value: int, default: int) -> int | None:
+    return None if (value == default) else value
 
 
 def _version_scheme_resets(project: sql.Project, args: api.ProjectConfigProjectArgs) -> dict[str, object]:

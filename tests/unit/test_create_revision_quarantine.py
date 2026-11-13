@@ -107,6 +107,7 @@ def project_holds_nothing() -> abc.Iterator[None]:
     with (
         mock.patch.object(revision.interaction, "project_bytes_in_progress", new=mock.AsyncMock(return_value=0)),
         mock.patch.object(revision.interaction, "release_content_hashes", new=mock.AsyncMock(return_value=set())),
+        mock.patch.object(revision.quota, "limits_for", return_value=revision.quota.DEFAULT_LIMITS),
     ):
         yield
 

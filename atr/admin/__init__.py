@@ -33,6 +33,7 @@ from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
 import aiohttp
+import aioshutil
 import asfquart
 import asfquart.base as base
 import htpy
@@ -69,6 +70,7 @@ import atr.noisy as noisy
 import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
+import atr.quota as quota
 import atr.render as render
 import atr.shared as shared
 import atr.shared.catalog as catalog
@@ -88,6 +90,7 @@ ROUTES_MODULE: Final[Literal[True]] = True
 _CATALOG_OVERWRITE_CONFIRMATION: Final = "OVERWRITE PMC CATALOG DATA"
 _EMBARGO_DENIAL_DAYS: Final = 30
 _EMBARGO_DENIAL_LIMIT: Final = 250
+_GIB: Final[int] = 1024 * 1024 * 1024
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 
 # Every table the data browser will show. This is the whole set on purpose - the
@@ -284,6 +287,39 @@ class PresentationsVoteBypassForm(form.Form):
         "Resets to off when the web application restarts or reloads.",
         default=False,
     )
+
+
+class QuotaLimitsForm(form.Form):
+    project_key: safe.ProjectKey = form.label("Project", widget=form.Widget.HIDDEN)
+    project_gib: form.Int = form.label(
+        "Project size in progress (GiB)",
+        "The most that the project's releases in progress may hold between them, counting every revision.",
+    )
+    project_releases: form.Int = form.label(
+        "Releases in progress", "The most releases that the project may have in progress at once."
+    )
+    release_gib: form.Int = form.label("Release size (GiB)", "The most that the files of one release may come to.")
+    release_files: form.Int = form.label("Files in a release", "The most files that one release may have.")
+
+    @pydantic.field_validator("project_gib", "project_releases", "release_gib", "release_files")
+    @classmethod
+    def validate_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("Must be at least 1")
+        return value
+
+
+class QuotaUsageRow(NamedTuple):
+    closest: float
+    name: str
+    project_key: str
+    is_overridden: bool
+    cells: list[htpy.Element]
+
+
+@dataclasses.dataclass
+class QuotasQuery:
+    project: str = ""
 
 
 class ReleaseAgeRow(NamedTuple):
@@ -2375,6 +2411,64 @@ async def ongoing_tasks_get(
 
 
 @admin.typed
+async def quotas_get(_session: web.Committer, _quotas: Literal["quotas"], query_args: QuotasQuery) -> str:
+    """
+    URL: GET /quotas?project=<project_key>
+
+    Edit the quotas of one project.
+    """
+    async with db.session() as data:
+        project = await data.project(key=query_args.project).demand(
+            base.ASFQuartException("Project not found", errorcode=404)
+        )
+    limits = quota.limits_for(project)
+    defaults = quota.DEFAULT_LIMITS
+    page = htm.Block()
+    page.h1[f"Quotas for {project.name or project.key}"]
+    page.p[
+        f"The defaults are {defaults.project_bytes // _GIB:,} GiB in progress for a project,"
+        f" {defaults.project_releases:,} releases in progress, {defaults.release_bytes // _GIB:,} GiB for a"
+        f" release, and {defaults.release_files:,} files in a release. A limit set to its default follows the"
+        " default if that changes."
+    ]
+    page.append(
+        await form.render(
+            model_cls=QuotaLimitsForm,
+            action=util.as_url(quotas_post),
+            submit_label="Save quotas",
+            cancel_url=util.as_url(system_get, tab="quotas"),
+            defaults={
+                "project_key": project.key,
+                "project_gib": limits.project_bytes // _GIB,
+                "project_releases": limits.project_releases,
+                "release_gib": limits.release_bytes // _GIB,
+                "release_files": limits.release_files,
+            },
+        )
+    )
+    return await template.render("admin-blank.html", title="Quotas", content=page.collect())
+
+
+@admin.typed
+async def quotas_post(
+    session: web.Committer, _quotas: Literal["quotas"], limits_form: QuotaLimitsForm
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /quotas
+    """
+    limits = quota.Limits(
+        project_bytes=limits_form.project_gib * _GIB,
+        project_releases=limits_form.project_releases,
+        release_bytes=limits_form.release_gib * _GIB,
+        release_files=limits_form.release_files,
+    )
+    async with storage.write(session) as write:
+        await write.as_foundation_admin().project.quota_limits_set(limits_form.project_key, limits)
+    await quart.flash(f"Quotas saved for {limits_form.project_key}.", "success")
+    return await session.redirect(system_get, tab="quotas")
+
+
+@admin.typed
 async def raise_error(_session: web.Committer, _raise_error: Literal["raise-error"]) -> web.QuartResponse:
     """
     URL: GET /raise-error
@@ -3734,6 +3828,7 @@ async def _system_page(session: web.Committer, query_args: SystemQuery) -> str:
         htm.Tab("configuration", "Configuration", _system_configuration_tab),
         htm.Tab("test-message", "Test message", lambda: _system_test_message_tab(session)),
         htm.Tab("performance", "Performance", _system_performance_tab),
+        htm.Tab("quotas", "Quotas", _system_quotas_tab),
         htm.Tab("tasks", "Recent tasks", lambda: _system_tasks_tab(query_args.minutes)),
     ]
     page = htm.Block()
@@ -3830,6 +3925,138 @@ async def _system_presentations_vote_bypass(
     state = "enabled" if bypass_form.enabled else "disabled"
     await quart.flash(f"Presentations vote shortcuts are {state}.", "success")
     return await session.redirect(system_get, tab="configuration")
+
+
+def _system_quota_cell(used: int, limit: int, is_size: bool) -> htpy.Element:
+    if is_size:
+        text = f"{_system_quota_size(used)} of {_system_quota_size(limit)} ({used / limit:.0%})"
+    else:
+        text = f"{used:,} of {limit:,} ({used / limit:.0%})"
+    # The browser colours a meter by where its value falls against low and high, with zero as the best
+    return htpy.td[
+        htpy.meter(
+            ".w-100", value=str(used), max=str(limit), low=str(limit // 2), high=str(limit * 4 // 5), optimum="0"
+        )[text],
+        htpy.div(".small.text-muted")[text],
+    ]
+
+
+async def _system_quota_rows(data: db.Session, projects: Sequence[sql.Project]) -> list[QuotaUsageRow]:
+    """Return a row for each project with a release in progress or a limit of its own, closest to a limit first."""
+    held = await interaction.project_bytes_in_progress_by_project(data)
+    counts = await interaction.releases_in_progress_count_by_project(data)
+    largest: dict[str, int] = {}
+    most_files: dict[str, int] = {}
+    for project_key, size, files in await interaction.release_sizes_in_progress(data):
+        largest[project_key] = max(size, largest.get(project_key, 0))
+        most_files[project_key] = max(files, most_files.get(project_key, 0))
+
+    rows: list[QuotaUsageRow] = []
+    for project in projects:
+        limits = quota.limits_for(project)
+        is_overridden = limits != quota.DEFAULT_LIMITS
+        if (project.key not in counts) and (not is_overridden):
+            continue
+        usage = [
+            (held.get(project.key, 0), limits.project_bytes, True),
+            (counts.get(project.key, 0), limits.project_releases, False),
+            (largest.get(project.key, 0), limits.release_bytes, True),
+            (most_files.get(project.key, 0), limits.release_files, False),
+        ]
+        closest = max(used / limit for used, limit, _ in usage)
+        cells = [_system_quota_cell(used, limit, is_size) for used, limit, is_size in usage]
+        rows.append(QuotaUsageRow(closest, project.name or project.key, project.key, is_overridden, cells))
+    return sorted(rows, key=lambda row: (-row.closest, row.name.casefold()))
+
+
+def _system_quota_size(size: int) -> str:
+    for unit, scale in (("GiB", _GIB), ("MiB", 1024 * 1024), ("KiB", 1024)):
+        if size >= scale:
+            return f"{size / scale:,.1f} {unit}"
+    return f"{size:,} bytes"
+
+
+async def _system_quotas_tab() -> htm.Element:
+    async with db.session() as data:
+        projects = await data.project().all()
+        rows = await _system_quota_rows(data, projects)
+    storage_usage = await aioshutil.disk_usage(paths.get_tmp_dir().path)
+    choices = sorted(
+        (
+            (project.key, project.name or project.key)
+            for project in projects
+            if project.status == sql.ProjectStatus.ACTIVE
+        ),
+        key=lambda choice: choice[1].casefold(),
+    )
+    block = htm.Block()
+    block.h2["Server"]
+    used = storage_usage.total - storage_usage.free
+    # Red once the free space is under the floor, where new files are refused
+    floor = max(storage_usage.total - config.get().MIN_FREE_SPACE, 0)
+    storage_text = (
+        f"{_system_quota_size(used)} used of {_system_quota_size(storage_usage.total)} on the server,"
+        f" leaving {_system_quota_size(storage_usage.free)} free."
+        f" New files are refused below {_system_quota_size(config.get().MIN_FREE_SPACE)} free."
+    )
+    block.append(
+        htpy.meter(
+            ".w-100",
+            value=str(used),
+            max=str(storage_usage.total),
+            low=str(floor * 4 // 5),
+            high=str(floor),
+            optimum="0",
+        )[storage_text]
+    )
+    block.p(".small.text-muted")[storage_text]
+    block.h2["Project"]
+    block.append(
+        htpy.form(".row.g-2.align-items-center.mb-3", method="get", action=util.as_url(quotas_get))[
+            htpy.div(".col-auto")[
+                htpy.select(".form-select", name="project", required=True, aria_label="Project")[
+                    htpy.option(value="", disabled=True, selected=True)["Choose a project"],
+                    [htpy.option(value=key)[name] for key, name in choices],
+                ]
+            ],
+            htpy.div(".col-auto")[htpy.button(".btn.btn-primary", type="submit")["Edit quotas"]],
+        ]
+    )
+    if not rows:
+        block.p["No project has a release in progress."]
+        return block.collect()
+    block.append(
+        htpy.table(".table")[
+            htpy.thead[
+                htpy.tr[
+                    htpy.th["Project"],
+                    htpy.th["Size in progress"],
+                    htpy.th["Releases in progress"],
+                    htpy.th["Largest release"],
+                    htpy.th["Most files in a release"],
+                    htpy.th["Actions"],
+                ]
+            ],
+            htpy.tbody[
+                [
+                    htpy.tr[
+                        htpy.td[
+                            htpy.div[row.name],
+                            htpy.span(".badge.text-bg-secondary")["Overridden"] if row.is_overridden else None,
+                        ],
+                        row.cells,
+                        htpy.td[
+                            htpy.a(
+                                ".btn.btn-sm.btn-outline-primary", href=util.as_url(quotas_get, project=row.project_key)
+                            )["Edit quotas"]
+                        ],
+                    ]
+                    for row in rows
+                ]
+            ],
+        ]
+    )
+    return block.collect()
 
 
 async def _system_tasks_tab(minutes: int) -> htm.Element:

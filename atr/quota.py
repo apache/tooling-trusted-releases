@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from typing import Final
 
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.util as util
 
 # Infra's distribution policy gives 1GB as the most the ASF will host for one artifact
@@ -88,6 +89,16 @@ def free_space_violation(free_bytes: int, minimum_bytes: int) -> Violation | Non
     return Violation(Kind.SERVER_LOW_ON_SPACE, "ATR is low on storage space, and is not accepting new files.")
 
 
+def limits_for(project: sql.Project) -> Limits:
+    """Return the limits of a project, which are the defaults except where an admin has set others."""
+    return Limits(
+        project_bytes=_or_default(project.quota_project_bytes, MAX_PROJECT_BYTES),
+        project_releases=_or_default(project.quota_project_releases, MAX_PROJECT_RELEASES),
+        release_bytes=_or_default(project.quota_release_bytes, MAX_RELEASE_BYTES),
+        release_files=_or_default(project.quota_release_files, MAX_RELEASE_FILES),
+    )
+
+
 def project_bytes_violation(held_bytes: int, adding_bytes: int, limits: Limits) -> Violation | None:
     """Return a violation if new content would take the project's releases in progress past its limit."""
     # A revision that adds no content is allowed even when the project is over its limit
@@ -133,3 +144,7 @@ def release_violation(path_to_size: Mapping[safe.RelPath, int], limits: Limits) 
             f" is {util.format_file_size(limits.release_bytes)}.",
         )
     return None
+
+
+def _or_default(override: int | None, default: int) -> int:
+    return default if (override is None) else override

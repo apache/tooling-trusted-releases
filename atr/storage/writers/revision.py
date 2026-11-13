@@ -403,6 +403,7 @@ async def _lock_and_merge(
 async def _project_bytes_violation(
     data: db.Session,
     release: sql.Release,
+    limits: quota.Limits,
     path_to_hash: dict[safe.RelPath, str],
     path_to_size: dict[safe.RelPath, int],
 ) -> quota.Violation | None:
@@ -410,7 +411,7 @@ async def _project_bytes_violation(
     known = await interaction.release_content_hashes(data, release.key)
     # Content that the release already holds is hard linked, so only new content takes space
     adding = {path_to_hash[path]: size for path, size in path_to_size.items() if path_to_hash[path] not in known}
-    return quota.project_bytes_violation(held, sum(adding.values()), quota.DEFAULT_LIMITS)
+    return quota.project_bytes_violation(held, sum(adding.values()), limits)
 
 
 async def _verify_provenance_sources_unchanged(
@@ -653,8 +654,9 @@ class CommitteeParticipant(FoundationCommitter):
                 raise
 
             # After the merge, as it can bring in files from a revision made in the meantime
-            violation = quota.release_violation(path_to_size, quota.DEFAULT_LIMITS) or (
-                await _project_bytes_violation(data, release, path_to_hash, path_to_size)
+            limits = quota.limits_for(release.project)
+            violation = quota.release_violation(path_to_size, limits) or (
+                await _project_bytes_violation(data, release, limits, path_to_hash, path_to_size)
             )
             if violation is not None:
                 await aioshutil.rmtree(temp_dir)

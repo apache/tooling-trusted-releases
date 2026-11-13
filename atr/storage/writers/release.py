@@ -454,7 +454,7 @@ async def _start_release(
         raise storage.AccessError("Expedited releases are not available for podling projects.", status=400)
     await _assert_no_existing_release(data, project, project_key, version)
     in_progress = await interaction.releases_in_progress_count(data, project.key)
-    if (violation := quota.project_releases_violation(in_progress, quota.DEFAULT_LIMITS)) is not None:
+    if (violation := quota.project_releases_violation(in_progress, quota.limits_for(project))) is not None:
         raise storage.QuotaExceededError(violation)
     _validate_version(project, version)
     try:

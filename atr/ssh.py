@@ -785,7 +785,7 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
                 # This should ideally be caught by path validation, but double check
                 raise RuntimeError(f'Invalid version name "{version_key}": {version_key_error}')
             in_progress = await interaction.releases_in_progress_count(data, project.key)
-            if (violation := quota.project_releases_violation(in_progress, quota.DEFAULT_LIMITS)) is not None:
+            if (violation := quota.project_releases_violation(in_progress, quota.limits_for(project))) is not None:
                 help_url = util.absolute_url(errors.help_url(violation.help_id))
                 raise RsyncArgsError(f"{violation.message} See {help_url}")
             try:

@@ -1046,21 +1046,17 @@ async def releases_in_progress(project: sql.Project) -> list[sql.Release]:
 
 async def project_bytes_in_progress(data: db.Session, project_key: str) -> int:
     """Return the size of the distinct content held by the project's releases in progress."""
-    via = sql.validate_instrumented_attribute
-    # A row is also written when only the metadata of a file changes, so content can repeat
-    content = (
-        sqlmodel.select(sqlalchemy.func.max(via(sql.ReleaseFileState.size)).label("size"))
-        .join(sql.Release, via(sql.Release.key) == via(sql.ReleaseFileState.release_key))
-        .where(
-            via(sql.Release.project_key) == project_key,
-            via(sql.Release.phase) != sql.ReleasePhase.RELEASE,
-            via(sql.ReleaseFileState.present).is_(True),
-        )
-        .group_by(via(sql.ReleaseFileState.release_key), via(sql.ReleaseFileState.content_hash))
-        .subquery()
+    content = _content_in_progress()
+    query = sqlmodel.select(sqlalchemy.func.coalesce(sqlalchemy.func.sum(content.c.size), 0)).where(
+        content.c.project_key == project_key
     )
-    query = sqlmodel.select(sqlalchemy.func.coalesce(sqlalchemy.func.sum(content.c.size), 0))
     return (await data.execute(query)).scalar_one()
+
+
+async def project_bytes_in_progress_by_project(data: db.Session) -> dict[str, int]:
+    content = _content_in_progress()
+    query = sqlmodel.select(content.c.project_key, sqlalchemy.func.coalesce(sqlalchemy.func.sum(content.c.size), 0))
+    return {project_key: held for project_key, held in (await data.execute(query.group_by(content.c.project_key)))}
 
 
 async def release_content_hashes(data: db.Session, release_key: str) -> set[str]:
@@ -1074,6 +1070,39 @@ async def release_content_hashes(data: db.Session, release_key: str) -> set[str]
     return {content_hash for content_hash in (await data.execute(query)).scalars() if content_hash is not None}
 
 
+async def release_sizes_in_progress(data: db.Session) -> list[tuple[str, int, int]]:
+    """Return the project, size and file count of the latest revision of each release in progress."""
+    via = sql.validate_instrumented_attribute
+    latest = (
+        sqlmodel.select(
+            via(sql.ReleaseFileState.release_key).label("release_key"),
+            via(sql.ReleaseFileState.present).label("present"),
+            via(sql.ReleaseFileState.size).label("size"),
+            sqlalchemy.func.row_number()
+            .over(
+                partition_by=(via(sql.ReleaseFileState.release_key), via(sql.ReleaseFileState.path)),
+                order_by=via(sql.ReleaseFileState.since_revision_seq).desc(),
+            )
+            .label("recency"),
+        )
+    ).subquery()
+    query = (
+        sqlmodel.select(
+            via(sql.Release.project_key),
+            sqlalchemy.func.coalesce(sqlalchemy.func.sum(latest.c.size), 0),
+            sqlalchemy.func.count(),
+        )
+        .join(latest, via(sql.Release.key) == latest.c.release_key)
+        .where(
+            via(sql.Release.phase) != sql.ReleasePhase.RELEASE,
+            latest.c.recency == 1,
+            latest.c.present.is_(True),
+        )
+        .group_by(via(sql.Release.key))
+    )
+    return [(project_key, size, files) for project_key, size, files in await data.execute(query)]
+
+
 async def releases_in_progress_count(data: db.Session, project_key: str) -> int:
     via = sql.validate_instrumented_attribute
     query = (
@@ -1082,6 +1111,16 @@ async def releases_in_progress_count(data: db.Session, project_key: str) -> int:
         .where(via(sql.Release.project_key) == project_key, via(sql.Release.phase) != sql.ReleasePhase.RELEASE)
     )
     return (await data.execute(query)).scalar_one()
+
+
+async def releases_in_progress_count_by_project(data: db.Session) -> dict[str, int]:
+    via = sql.validate_instrumented_attribute
+    query = (
+        sqlmodel.select(via(sql.Release.project_key), sqlalchemy.func.count())
+        .where(via(sql.Release.phase) != sql.ReleasePhase.RELEASE)
+        .group_by(via(sql.Release.project_key))
+    )
+    return {project_key: count for project_key, count in await data.execute(query)}
 
 
 def task_mid_get(latest_vote_task: sql.Task) -> str | None:
@@ -1491,6 +1530,25 @@ async def _check_results_query(
         revision_number=str(revision_number),
         checker=checker_arg,
         primary_rel_path=rel_path or db.NOT_SET,
+    )
+
+
+def _content_in_progress() -> sqlalchemy.Subquery:
+    """Select the size of each distinct content of each release in progress, with its project."""
+    via = sql.validate_instrumented_attribute
+    # A row is also written when only the metadata of a file changes, so content can repeat
+    return (
+        sqlmodel.select(
+            via(sql.Release.project_key).label("project_key"),
+            sqlalchemy.func.max(via(sql.ReleaseFileState.size)).label("size"),
+        )
+        .join(sql.ReleaseFileState, via(sql.Release.key) == via(sql.ReleaseFileState.release_key))
+        .where(
+            via(sql.Release.phase) != sql.ReleasePhase.RELEASE,
+            via(sql.ReleaseFileState.present).is_(True),
+        )
+        .group_by(via(sql.Release.key), via(sql.ReleaseFileState.content_hash))
+        .subquery()
     )
 
 
