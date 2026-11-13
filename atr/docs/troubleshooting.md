@@ -10,7 +10,6 @@
 
 * [Overview](#overview)
 * [Files missing at announcement](#files-missing-at-announcement)
-* [Choosing the published layout](#choosing-the-published-layout)
 
 ## Overview
 
@@ -20,39 +19,48 @@ you encounter a problem that is not described here, please
 
 ## Files missing at announcement
 
+You tried to announce a release and ATR refused, saying either that the files it published are no
+longer in SVN where it put them, or that they are not yet available on the download server.
+
 When you announce a release, ATR checks that the artifacts it published can be downloaded from the
-location to which it published them. If any cannot, the announcement is refused, for one of two
-reasons.
+location to which it published them. That location is shown on the finish page for the release. To
+find out which case you are in, list it:
 
-If the files are still in `svn:dist:release`, they have not yet reached the download servers. Files
-usually take a few minutes to propagate, so wait and then announce again.
+```shell
+svn ls https://dist.apache.org/repos/dist/release/<committee>/<publish location>/
+```
 
-If the files are no longer in `svn:dist:release` at the location to which ATR published them, they
-have been moved, renamed, or removed since publication. ATR expects to manage publication and
-archival in `svn:dist:release` itself. It records the location of each file when it publishes a
-release, and continues to watch the distribution area afterwards, as described in
+### The files are listed
+
+The files are where ATR put them, and have not yet reached the download servers. They usually take a
+few minutes to propagate, so wait and then announce again.
+
+### The files are not listed
+
+The files have been moved, renamed, or removed since ATR published them. ATR expects to manage
+publication and archival in `svn:dist:release` itself. It records the location of each file when it
+publishes a release, and does not follow files that are moved afterwards. What to do depends on
+which location is the right one.
+
+**If the files can live where ATR published them**, move them back to that location, and announce
+again.
+
+**If the files are now in the right place**, leave them there, and
+[open an issue](https://github.com/apache/tooling-trusted-releases/issues/new?template=release-files-moved.yml)
+giving the release and the current location of its files. We will update ATR's record, after which
+you can announce.
+
+**Do not copy the files back just to get past the check.** ATR continues to watch the distribution
+area after a release is announced, as described in
 [Archiving outside ATR](archiving-and-lifecycle#archiving-outside-atr). If the source archives of a
-release are removed from that location, ATR archives the release. Copying the files back so that the
-announcement succeeds, and then removing the copies, therefore results in archival of the release that was just
-announced.
+release are removed from the location that ATR recorded, ATR archives the release. Copying the files
+back so that the announcement succeeds, and then removing the copies, therefore archives the release
+that was just announced.
 
-How to resolve this error depends on which location is correct:
+### For your next release
 
-* if the files can live at the location to which ATR published them, move them back there, and
-  attempt to announce again
-* if the files are now at the correct location, do not move them back to satisfy ATR. Instead,
-  [open an issue](https://github.com/apache/tooling-trusted-releases/issues/new?template=release-files-moved.yml)
-  giving the release and the current location of its files, so that ATR's record can be updated.
-
-## Choosing the published layout
-
-ATR publishes a release with the same layout that it has in ATR, so the layout should be decided
-before publication rather than changed afterwards:
-
-* to place files in subdirectories such as `binaries/` and `source/`, create those subdirectories
-  when you upload the files in the compose phase,
-* to publish the whole release to a particular directory, set the download path suffix in the project's
-  release policy, for example `maven-{{MAJOR_VERSION}}/{{VERSION}}`, as described in
-  [Publishing to ASF Distribution Area](promoting-to-release#publishing-to-asf-distribution-area),
-* to distribute binaries as well as source archives, include them in the release, because ATR only
-  publishes and records the files that the release contains.
+This happens when ATR's publish location does not match the layout that the project uses, most often
+because the release manager did not notice that the default for a committee's top level project is
+the committee's own directory, `dist/release/<committee>/`. Set the **Default publish location** in
+the project's settings to the layout you use, and ATR will publish there in the first place. See
+[Choosing the published layout](promoting-to-release#choosing-the-published-layout).

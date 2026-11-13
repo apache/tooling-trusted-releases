@@ -300,7 +300,7 @@ async def _render_page(
         title=f"Finish {release.project.display_name} {release.version} ~ ATR",
         description=f"Finish {release.project.display_name} {release.version} as a release preview.",
         content=content,
-        javascripts=["finish-downloads"],
+        javascripts=["finish-downloads", "publish-location-preview"],
     )
 
 
@@ -428,6 +428,9 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
             " that you have the authority to lift the embargo before publishing. This action is not"
             " reversible."
         ]
+    location, mismatch = await construct.publish_location_for_release(
+        release, construct.effective_download_path_suffix(release)
+    )
     await form.render_block(
         page,
         shared.finish.PublishToSvnForm,
@@ -435,6 +438,11 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
         defaults={
             "download_path_suffix": _svn_download_path_default(release),
             "revision_number": release.latest_revision_number,
+        },
+        notes={
+            "download_path_suffix": render.publish_location_note_for_release(
+                release, location, mismatch, confirm_mismatch=True
+            )
         },
         submit_label=_svn_publish_label(),
     )

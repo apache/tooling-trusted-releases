@@ -138,7 +138,7 @@ async def selected(
         return await template.blank(
             title=f"Start voting on {release.project.short_display_name} {release.version}",
             content=content,
-            javascripts=["vote-body-duration", "cc-bcc-exclusive"],
+            javascripts=["vote-body-duration", "cc-bcc-exclusive", "publish-location-preview"],
         )
 
 
@@ -408,6 +408,9 @@ async def _render_page(  # noqa: C901
         _add_automatic_publish_fields(custom, skip, publish_eligible, vote_mode, podling_vote_round)
 
     download_suffix_default = str(default_download_path_suffix) if (default_download_path_suffix is not None) else ""
+    publish_location, publish_mismatch = await construct.publish_location_for_release(
+        release, default_download_path_suffix
+    )
     vote_form = await form.render(
         model_cls=shared.voting.StartVotingForm,
         submit_label="Send vote email",
@@ -421,6 +424,11 @@ async def _render_page(  # noqa: C901
             "download_path_suffix": download_suffix_default,
         },
         custom=custom,
+        notes={
+            "download_path_suffix": render.publish_location_note_for_release(
+                release, publish_location, publish_mismatch
+            )
+        },
         skip=skip,
         flash_error_data=flash_data,
     )

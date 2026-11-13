@@ -107,7 +107,7 @@ def validate_download_path_suffix(template: str) -> None:
     try:
         safe.RelPath(probe)
     except ValueError as e:
-        raise ValueError(f"Download path suffix is not a valid path: {e}") from e
+        raise ValueError(f"Publish location is not a valid path: {e}") from e
 
 
 def validate_github_repository_name(github_repository_name: str | None) -> None:

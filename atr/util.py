@@ -838,6 +838,12 @@ async def delete_immutable_directory(path: safe.StatePath, reason: str) -> None:
     await aioshutil.rmtree(path)
 
 
+def dist_location(directory: str) -> str:
+    # A directory under the dist root, written the way a release manager knows it from SVN,
+    # eg dist/release/maven/maven-3/3.9.10/
+    return f"dist/{svn_publish_target().value}/{directory}/"
+
+
 def download_page_url_error(url: str) -> str | None:
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != "https":
@@ -1419,6 +1425,11 @@ def publication_check_url(
     if svn_publish_target() is SvnPublishTarget.ATR:
         return f"{config.get().SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
     return download_url_for_path(relpath, kind)
+
+
+def publish_location(committee: sql.Committee, suffix: safe.RelPath | None) -> str:
+    # The directory a release publishes to
+    return dist_location(str(paths.committee_dist_relpath(committee, suffix)))
 
 
 async def read_file_for_viewer(full_path: safe.StatePath, max_size: int) -> tuple[str | None, bool, bool, str | None]:

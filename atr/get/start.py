@@ -23,6 +23,7 @@ import pydantic.dataclasses as dataclasses
 import quart
 
 import atr.blueprints.get as get
+import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
@@ -32,6 +33,7 @@ import atr.get.root as root
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.render as render
 import atr.shared as shared
 import atr.template as template
 import atr.user as user
@@ -42,6 +44,14 @@ import atr.web as web
 @dataclasses.dataclass(config={"str_strip_whitespace": True})
 class CyclePreviewQuery:
     version: str = ""
+
+
+@dataclasses.dataclass(config={"str_strip_whitespace": True})
+class LocationPreviewQuery:
+    version: str = ""
+    suffix: str = ""
+    # "start" for the start form, where a location left as the project's default defers to it
+    mode: str = ""
 
 
 @get.typed
@@ -65,6 +75,30 @@ async def cycle_preview(
     except ValueError:
         cycle = None
     return quart.jsonify(cycle=cycle)
+
+
+@get.typed
+async def location_preview(
+    session: web.Committer,
+    _start: Literal["start"],
+    project_key: safe.ProjectKey,
+    _preview: Literal["location-preview"],
+    query: LocationPreviewQuery,
+) -> web.QuartResponse:
+    await session.prevent_confusing_ui_display(project_key, flash_admin_warning=False)
+    async with db.session() as data:
+        project = await data.project(
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True, _release_policy=True
+        ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+
+    if project.committee is None:
+        return quart.jsonify(location=None, previous_version=None, previous_location=None)
+    location = construct.publish_location_preview(
+        project, project.committee, query.version, query.suffix, at_start=(query.mode == "start")
+    )
+    mismatch = await construct.publish_location_mismatch(project.key, query.version, location)
+    previous_version, previous_location = mismatch or (None, None)
+    return quart.jsonify(location=location, previous_version=previous_version, previous_location=previous_location)
 
 
 @get.typed
@@ -119,8 +153,11 @@ async def selected(
         and user.is_committee_member(project.committee, session.uid)
         and (not project.committee.is_podling)
     )
-    content = await _render_page(project, releases, can_create_expedited)
-    javascripts = ["start-cycle-preview"] if project.cycle_match else None
+    guidance = await interaction.first_release_guidance(project.key, session.uid)
+    content = await _render_page(project, releases, can_create_expedited, guidance)
+    javascripts = ["publish-location-preview"]
+    if project.cycle_match:
+        javascripts.append("start-cycle-preview")
     return await template.blank(
         title=f"Start a new release for {project.display_name}",
         content=content,
@@ -133,7 +170,7 @@ def _cycle_preview(project: sql.Project) -> htm.Element | None:
     if not project.cycle_match:
         return None
     lifecycle_url = util.as_url(projects.view, project_key=str(project.key)) + "?tab=lifecycle"
-    return htm.div("#start-cycle-preview.alert.alert-light.mt-2")[
+    return htm.div("#start-cycle-preview.form-text.mt-1")[
         htm.span(
             "#start-cycle-preview-text", data_preview_url=util.as_url(cycle_preview, project_key=str(project.key))
         )["Enter a version to see which cycle it lands in."],
@@ -207,10 +244,17 @@ async def _render_metadata_page(project: sql.Project, missing: list[str], *, can
     return page.collect()
 
 
-async def _render_page(project: sql.Project, releases: list[sql.Release], can_create_expedited: bool) -> htm.Element:
+async def _render_page(
+    project: sql.Project,
+    releases: list[sql.Release],
+    can_create_expedited: bool,
+    guidance: Literal["project", "user"] | None,
+) -> htm.Element:
     page = htm.Block()
 
     page.h1[f"Start a new release for {project.display_name}"]
+    if banner := render.first_release_banner(guidance, project):
+        page.append(banner)
     page.p[
         "Starting a new release creates a ",
         htm.strong["release candidate draft"],
@@ -229,6 +273,10 @@ async def _render_page(project: sql.Project, releases: list[sql.Release], can_cr
         skip.append("auto_archive_prior")
     if not can_create_expedited:
         skip.append("expedited")
+    # Each note sits under the field it's worked out from
+    notes = {"download_path_suffix": render.publish_location_note(project.safe_key, None, at_start=True)}
+    if cycle_note := _cycle_preview(project):
+        notes["version_key"] = cycle_note
     await form.render_block(
         page,
         model_cls=shared.start.StartReleaseForm,
@@ -237,7 +285,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release], can_cr
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
         defaults=defaults,
-        pre_submit=_cycle_preview(project),
+        notes=notes,
         skip=skip,
     )
     if releases:

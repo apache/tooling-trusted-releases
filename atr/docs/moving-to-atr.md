@@ -12,6 +12,7 @@
 * [What ATR replaces](#what-atr-replaces)
 * [What stays the same](#what-stays-the-same)
 * [Before your first release](#before-your-first-release)
+* [Where your releases are published](#where-your-releases-are-published)
 * [The KEYS file](#the-keys-file)
 
 ## Introduction
@@ -68,6 +69,9 @@ PMC as a release manager. See [Release manager setup](release-manager-setup).
 Work through [Getting started](getting-started) first, which covers MFA, your signing key, and
 upload credentials. In addition, as a PMC coming from the traditional process, check the following.
 
+* **Where your releases are published.** This is the setting most often missed, and it cannot be
+  put right by moving files afterwards. See
+  [Where your releases are published](#where-your-releases-are-published) below.
 * **Your seeded projects.** Each committee's projects were seeded once, from DOAP files and
   observed release activity, so your projects are probably already there. Check that the list
   reflects your true number of projects, and add any that are missing in ATR. See
@@ -86,9 +90,34 @@ upload credentials. In addition, as a PMC coming from the traditional process, c
   page rather than to a copy in `dist/dev`. See
   [What to link in a vote announcement](staging-and-voting#what-to-link-in-a-vote-announcement).
 * **Release scripts that move files to `dist/release`.** These are no longer needed, and should not
-  run alongside ATR's own publication. Check where your project's files should land, set by the
-  download path suffix described in
-  [Promoting to release](promoting-to-release#publishing-to-asf-distribution-area).
+  run alongside ATR's own publication.
+
+## Where your releases are published
+
+ATR publishes each release into your committee's directory in `svn:dist:release`, and records where
+it put the files. **It does not follow files that are moved afterwards.** A release whose files have
+been moved cannot be announced, and its entry in the [Release catalog](release-catalog) will be
+wrong.
+
+Before your first release, check that ATR's default matches the layout you already use:
+
+| Project | Default publish location |
+| --- | --- |
+| The committee's top level project | `dist/release/<committee>/` |
+| Any other project | `dist/release/<committee>/<project>-<version>/` |
+
+Look at where your current releases live:
+
+```shell
+svn ls https://dist.apache.org/repos/dist/release/<committee>/
+```
+
+If they are somewhere else, such as `<committee>/<version>/`, set the **Default publish location**
+on the Finish tab of the project's settings before you start the release. The forms for starting a
+release, starting a vote, and publishing each show the full path that will be used, so you can
+confirm it as you go. See
+[Choosing the published layout](promoting-to-release#choosing-the-published-layout) for the settings
+that match common layouts.
 
 ## The KEYS file
 

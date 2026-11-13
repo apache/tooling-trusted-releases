@@ -175,6 +175,7 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
         "release_latest_failed_svn_publish_task",
         mock.AsyncMock(return_value=types.SimpleNamespace(error="<failed>")),
     )
+    monkeypatch.setattr(finish.interaction, "latest_catalogued_directory", mock.AsyncMock(return_value=None))
     monkeypatch.setattr(finish.form, "_get_flash_error_data", mock.AsyncMock(return_value={}))
     monkeypatch.setattr(finish.form.utils, "generate_csrf", lambda: "test")
     url = mock.Mock(return_value="/finish/example/1.0")
@@ -194,7 +195,8 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
     assert 'action="/finish/example/1.0"' in html
     assert 'name="download_path_suffix"' in html
     assert "finish-svn-publishing" not in html
-    url.assert_called_once_with(finish.post.finish.selected, project_key="example", version_key="1.0")
+    assert "dist/release/example/example/1.0/" in html
+    url.assert_any_call(finish.post.finish.selected, project_key="example", version_key="1.0")
 
 
 def test_render_publish_step_omits_promotion_for_release_target(monkeypatch: pytest.MonkeyPatch) -> None:

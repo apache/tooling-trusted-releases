@@ -61,8 +61,10 @@ class StartVotingForm(form.Form):
         default=False,
     )
     download_path_suffix: safe.OptionalRelPath = form.label(
-        "Download path suffix",
-        "Optional path under the committee distribution area.",
+        "Publish location",
+        "Where the files are published when the vote passes, beneath your committee's directory."
+        " Leave empty to publish into the committee's directory itself. Files cannot be moved"
+        " once published.",
         default=None,
     )
     concerns_noted: form.StrList = form.label("Concerns noted", widget=form.Widget.CUSTOM)

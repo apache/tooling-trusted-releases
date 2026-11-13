@@ -19,7 +19,7 @@ import dataclasses
 import datetime
 import enum
 from collections.abc import Sequence
-from typing import Final, NamedTuple
+from typing import Final, Literal, NamedTuple
 
 import asfquart.base as base
 import packaging.version as version
@@ -543,6 +543,50 @@ async def latest_ballot_for_voter(
             .limit(1)
         )
         return (await data.execute(query)).scalar_one_or_none()
+
+
+async def first_release_guidance(project_key: str, asf_uid: str) -> Literal["project", "user"] | None:
+    """Whose first release through ATR this would be, if anyone's.
+
+    A project that has never published through ATR comes first, since its settings are the ones
+    that can't be put right afterwards.
+    """
+    via = sql.validate_instrumented_attribute
+    published = (
+        sqlmodel.select(via(sql.Artifact.project_key))
+        .where(via(sql.Artifact.project_key) == project_key, via(sql.Artifact.managed).is_(True))
+        .limit(1)
+    )
+    worked = sqlmodel.select(via(sql.Revision.asfuid)).where(via(sql.Revision.asfuid) == asf_uid).limit(1)
+    async with db.session() as data:
+        if (await data.execute(published)).first() is None:
+            return "project"
+        if (await data.execute(worked)).first() is None:
+            return "user"
+    return None
+
+
+async def latest_catalogued_directory(project_key: str, excluding_version: str) -> tuple[str, str] | None:
+    """The version and dist directory of the project's most recently dated catalogued artifact,
+    leaving out the version being released."""
+    via = sql.validate_instrumented_attribute
+    query = (
+        sqlmodel.select(via(sql.Artifact.version), via(sql.Artifact.download_path_suffix))
+        .where(
+            via(sql.Artifact.project_key) == project_key,
+            via(sql.Artifact.version) != excluding_version,
+            via(sql.Artifact.download_path_suffix).is_not(None),
+            via(sql.Artifact.download_path_suffix) != "",
+            db.catalogued_artifact(),
+        )
+        .order_by(via(sql.Artifact.dated).desc().nulls_last())
+        .limit(1)
+    )
+    async with db.session() as data:
+        row = (await data.execute(query)).first()
+    if row is None:
+        return None
+    return row[0], row[1]
 
 
 async def latest_info(

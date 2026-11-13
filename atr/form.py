@@ -295,6 +295,7 @@ async def render(  # noqa: C901
     errors: dict[str, list[str]] | None = None,
     use_error_data: bool = True,
     custom: dict[str, htm.Element | htm.VoidElement] | None = None,
+    notes: dict[str, htm.Element] | None = None,
     empty: bool = False,
     border: bool = False,
     wider_widgets: bool = False,
@@ -345,6 +346,7 @@ async def render(  # noqa: C901
             border,
             wider_widgets,
             enum_filter_include=enum_filter_include,
+            note=(notes.get(field_name) if notes else None),
         )
         if hidden_field:
             hidden_fields.append(hidden_field)
@@ -942,6 +944,7 @@ def _render_row(  # noqa: C901
     border: bool,
     wider_widgets: bool,
     enum_filter_include: dict[str, list[Any]] | None = None,
+    note: htm.Element | None = None,
 ) -> tuple[htm.VoidElement | None, htm.Element | None]:
     widget_type = _get_widget_type(field_info)
     has_flash_error = field_name in flash_error_data
@@ -1020,6 +1023,10 @@ def _render_row(  # noqa: C901
                 if isinstance(documentation, str):
                     doc_div = htm.div(".text-muted.mt-1.form-text")[documentation]
                     widget_div_contents.append(doc_div)
+    # A note is whatever the page wants to say about this field beyond its fixed documentation,
+    # such as a value worked out from what has been typed
+    if note is not None:
+        widget_div_contents.append(note)
 
     return None, row_div[label_elem, widget_div[widget_div_contents]]
 

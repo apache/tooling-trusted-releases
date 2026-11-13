@@ -477,7 +477,8 @@ class ReleaseManager(CommitteeParticipant):
                 raise storage.PublicationMissingError(
                     f"This release cannot be announced, because {len(gone)} of the files ATR published are no"
                     f" longer in SVN where it put them; the first is {gone[0]}. They may have been moved or"
-                    " removed after publishing.",
+                    " removed after publishing. Please don't copy them back only to announce, as removing"
+                    " the copies afterwards archives the release.",
                     status=409,
                 )
             raise storage.PublicationMissingError(

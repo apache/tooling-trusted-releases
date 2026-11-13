@@ -178,10 +178,14 @@ replaces when it uses the text. Each template field on the tab lists the variabl
 
 The Finish tab sets the defaults for publishing and announcing a release:
 
-* **Default download path suffix.** Where the release is published beneath your committee's
-  directory. It can use the tokens `{{PROJECT_KEY}}`, `{{VERSION}}`, and `{{MAJOR_VERSION}}`. See
-  [Publishing to ASF Distribution Area](promoting-to-release#publishing-to-asf-distribution-area)
-  for the default layout.
+* **Default publish location.** Where each release is published beneath your committee's
+  directory. It can use the tokens `{{PROJECT_KEY}}`, `{{VERSION}}`, and `{{MAJOR_VERSION}}`, so
+  that `{{VERSION}}` publishes to `<committee>/<version>/` and `maven-{{MAJOR_VERSION}}/{{VERSION}}`
+  to `<committee>/maven-3/<version>/`. Left empty, a committee's top level project publishes
+  directly into `<committee>/`, and any other project into `<committee>/<project>-<version>/`.
+  Files cannot be moved once ATR has published them, so set this to the layout you already use
+  before your first release. See
+  [Choosing the published layout](promoting-to-release#choosing-the-published-layout).
 * **Allow auto-archive.** Lets a new release archive the previous release in the same cycle when it
   is announced. A project has a single cycle unless it has a **Cycle match**, or a **Cycle format**
   with a part in parentheses, on the [Lifecycle](#lifecycle) tab. If you support more than one line

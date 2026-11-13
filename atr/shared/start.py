@@ -54,10 +54,10 @@ class StartReleaseForm(form.Form):
         required=True,
     )
     download_path_suffix: str = form.label(
-        "Download path suffix",
-        "Pre-fills the SVN publish path for this release. Defaults to the project policy;"
-        " edit it to override the path for this release, or clear it to publish to the"
-        " distribution root. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}.",
+        "Publish location",
+        "Where this release's files are published, beneath your committee's directory. Starts as"
+        " the project's default; edit it to publish this release somewhere else. May use"
+        " {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}. Files cannot be moved once published.",
         default="",
     )
     auto_archive_prior: form.Bool = form.label(

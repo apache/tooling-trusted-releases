@@ -347,6 +347,82 @@ def html_recipients_to_radios(
     return htm.div[container, htm.div(".text-muted.mt-1.form-text")[documentation]]
 
 
+def first_release_banner(kind: Literal["project", "user"] | None, project: sql.Project) -> htm.Element | None:
+    # Offers the setup guidance to someone who is about to need it. It needs no dismissing, as
+    # it stops appearing once the project, or the person, has a release through ATR
+    match kind:
+        case None:
+            return None
+        case "project":
+            message = f"This is the first release of {project.display_name} through ATR."
+            link = htm.a(".alert-link", href=util.as_url(get.docs.page, path="moving-to-atr"))[
+                "Read what to check before your first release"
+            ]
+        case "user":
+            message = "This looks like your first release through ATR."
+            link = htm.a(".alert-link", href=util.as_url(get.docs.page, path="getting-started"))[
+                "Read the guidance for release managers"
+            ]
+    return htm.div(".alert.alert-info.mb-4", role="alert")[message, " ", link, "."]
+
+
+def publish_location_note(
+    project_key: safe.ProjectKey,
+    location: str | None,
+    *,
+    at_start: bool,
+    version: str | None = None,
+    mismatch: tuple[str, str] | None = None,
+    confirm_mismatch: bool = False,
+) -> htm.Element:
+    # Sits under a publish location field and says where the files will actually go, kept
+    # up to date by publish-location-preview.js as the field changes. The start form has no
+    # version until one is typed, so there the script reads it from the version field instead
+    attrs: dict[str, str] = {
+        "data_preview_url": util.as_url(get.start.location_preview, project_key=str(project_key)),
+        "data_mode": "start" if at_start else "publish",
+    }
+    if version is not None:
+        attrs["data_version"] = version
+    # Where submitting the form is what publishes, the script asks first if the layout differs
+    if confirm_mismatch:
+        attrs["data_confirm_mismatch"] = "true"
+    known_classes = "" if location else ".d-none"
+    unknown_classes = ".d-none" if location else ""
+    mismatch_classes = "" if mismatch else ".d-none"
+    previous_version, previous_location = mismatch or ("", "")
+    return htm.div("#publish-location-preview.form-text.mt-1", **attrs)[
+        htm.span(f"#publish-location-known{known_classes}")[
+            "Files will be published to ",
+            htm.code("#publish-location-path")[location or ""],
+            ".",
+        ],
+        htm.span(f"#publish-location-unknown{unknown_classes}")[
+            "Enter a valid version and publish location to see where the files will be published."
+        ],
+        htm.div(f"#publish-location-mismatch.alert.alert-warning.mt-2.mb-0.py-2{mismatch_classes}", role="alert")[
+            "This is a different layout from your last release: ",
+            htm.span("#publish-location-previous-version")[previous_version],
+            " is in ",
+            htm.code("#publish-location-previous-path")[previous_location],
+            ".",
+        ],
+    ]
+
+
+def publish_location_note_for_release(
+    release: sql.Release, location: str | None, mismatch: tuple[str, str] | None, *, confirm_mismatch: bool = False
+) -> htm.Element:
+    return publish_location_note(
+        release.safe_project_key,
+        location,
+        at_start=False,
+        version=release.version,
+        mismatch=mismatch,
+        confirm_mismatch=confirm_mismatch,
+    )
+
+
 def render_checks_summary(
     info: datatypes.PathInfo | None, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> htm.Element | None:

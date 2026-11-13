@@ -504,10 +504,11 @@ class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     download_path_suffix: str = form.label(
-        "Default download path suffix",
-        "Pre-fills the SVN publish path. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}."
-        " Leave empty for the default (project root for a top-level project,"
-        " {{PROJECT_KEY}}-{{VERSION}} for a subproject).",
+        "Default publish location",
+        "Where each release's files are published, beneath your committee's directory. May use"
+        " {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}. Leave empty for the default: the"
+        " committee's directory itself for a top-level project, {{PROJECT_KEY}}-{{VERSION}} for"
+        " any other. Files cannot be moved once published, so match the layout you already use.",
         default="",
     )
     archive_prior_release: form.Bool = form.label(

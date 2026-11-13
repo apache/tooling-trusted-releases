@@ -345,6 +345,10 @@ async def view(
     archived_banner = render.archived_project_banner(project, "Actions are disabled.")
     if archived_banner:
         page.append(archived_banner)
+    # The project's settings are what the guidance is about, so offer it to whoever can change them
+    guidance = (await interaction.first_release_guidance(project.key, session.uid)) if can_edit_policy else None
+    if (guidance == "project") and (guidance_banner := render.first_release_banner(guidance, project)):
+        page.append(guidance_banner)
 
     if project.updated:
         page.append(

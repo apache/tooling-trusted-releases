@@ -29,5 +29,11 @@ type PUBLISH_TO_SVN = Literal["PUBLISH_TO_SVN"]
 
 class PublishToSvnForm(form.Form):
     variant: PUBLISH_TO_SVN = form.value(PUBLISH_TO_SVN)
-    download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", default=None)
+    download_path_suffix: safe.OptionalRelPath = form.label(
+        "Publish location",
+        "Where the files are published, beneath your committee's directory. Leave empty to publish"
+        " into the committee's directory itself. ATR records this location, and files moved"
+        " afterwards cannot be announced, so set it here rather than moving them later.",
+        default=None,
+    )
     revision_number: safe.RevisionNumber = form.label("Revision number", widget=form.Widget.HIDDEN)

@@ -239,17 +239,17 @@ async def _check_download_suffix_duplication(
 
     for component in sorted(clashes):
         await recorder_suggestions.suggestion(
-            f"{clashes[component]} file(s) start with '{component}/', which the download path suffix"
+            f"{clashes[component]} file(s) start with '{component}/', which the publish location"
             " already contains. Consider removing this prefix.",
             {
                 "component": component,
                 "suffix": str(suffix),
                 "count": clashes[component],
                 "details": (
-                    f"The published path would repeat '{component}': the suffix '{suffix}' plus a "
+                    f"The published path would repeat '{component}': the publish location '{suffix}' plus a "
                     f"'{component}/...' file lands at '.../{component}/{component}/...'. Consider dropping the "
-                    f"top-level '{component}/' directory from the release, or remove that component from the download "
-                    "path suffix when publishing."
+                    f"top-level '{component}/' directory from the release, or remove that component from the "
+                    "publish location."
                 ),
             },
             primary_rel_path=None,

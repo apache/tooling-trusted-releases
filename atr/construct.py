@@ -24,12 +24,14 @@ from typing import Final, Literal, TypedDict, overload
 
 import atr.config as config
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.email_templates as email_templates
 import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.util as util
 
@@ -581,6 +583,67 @@ def effective_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
         # A top level project shares its key with its committee
         is_top_level=(release.project.key == release.project.committee_key),
     )
+
+
+def publish_location_preview(
+    project: sql.Project, committee: sql.Committee, version: str, entered: str, *, at_start: bool
+) -> str | None:
+    """Where a release would be published for a publish location as typed into a form,
+    or None when the version or the location isn't usable yet."""
+    if util.version_key_error(version):
+        return None
+    policy = project.policy_download_path_suffix
+    # The start form is pre-filled with the policy, and a value left as it was defers to
+    # the policy. Anywhere else, and for any other value, empty means the committee directory
+    if at_start and (entered == policy):
+        template = policy
+    elif not entered.strip():
+        return util.publish_location(committee, None)
+    else:
+        template = entered
+    try:
+        validation.validate_download_path_suffix(template)
+        suffix = resolve_download_path_suffix(
+            template=template,
+            project_key=project.key,
+            version=version,
+            is_top_level=(project.key == project.committee_key),
+        )
+    except ValueError:
+        return None
+    return util.publish_location(committee, suffix)
+
+
+async def publish_location_for_release(
+    release: sql.Release, suffix: safe.RelPath | None
+) -> tuple[str | None, tuple[str, str] | None]:
+    """Where a release publishes to for a resolved suffix, and its mismatch with the last release if any."""
+    committee = release.committee
+    if committee is None:
+        return None, None
+    location = util.publish_location(committee, suffix)
+    return location, await publish_location_mismatch(release.project.key, release.version, location)
+
+
+async def publish_location_mismatch(project_key: str, version: str, location: str | None) -> tuple[str, str] | None:
+    """The project's last catalogued release and where it is, when the location a new release
+    would publish to doesn't follow the same layout."""
+    if location is None:
+        return None
+    previous = await interaction.latest_catalogued_directory(project_key, version)
+    if previous is None:
+        return None
+    previous_version, directory = previous
+    previous_location = util.dist_location(directory)
+    # Where the last release's layout would put this version
+    expected = previous_location.replace(previous_version, version)
+    if expected == location:
+        return None
+    # A catalogued file can sit in a subdirectory of its release, such as binaries/, which is
+    # the same layout. A versioned directory that the new location lacks is not
+    if expected.startswith(location) and (version not in expected.removeprefix(location)):
+        return None
+    return previous_version, previous_location
 
 
 def resolve_download_path_suffix(
