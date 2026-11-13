@@ -600,7 +600,7 @@ async def _request_approval(
                 committee_key = committee.key
                 display_name = project.display_name
 
-    project_url = f"https://{config.get().APP_HOST}{util.as_url(get.projects.view, project_key=str(project_key))}"
+    project_url = util.absolute_url(util.as_url(get.projects.view, project_key=str(project_key)))
     async with storage.write(session) as write:
         try:
             wacm = await _write_as_committee_member(write, session, project_key)

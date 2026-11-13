@@ -329,12 +329,10 @@ def checklist_body(
 ) -> str:
     import atr.get.vote as vote
 
-    host = config.get().APP_HOST
-
     revision_number = revision.number if revision else ""
     revision_tag = revision.tag if (revision and revision.tag) else ""
     review_path = util.as_url(vote.selected, project_key=project.key, version_key=version_key)
-    review_url = f"https://{host}{review_path}"
+    review_url = util.absolute_url(review_path)
 
     values: _ChecklistValues = {
         "COMMITTEE": committee.display_name,
@@ -478,14 +476,12 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
-    host = config.get().APP_HOST
-
     checklist_path = util.as_url(
         checklist.selected, project_key=str(options.project_key), version_key=str(options.version_key)
     )
-    checklist_url = f"https://{host}{checklist_path}"
+    checklist_url = util.absolute_url(checklist_path)
     review_path = util.as_url(vote.selected, project_key=str(options.project_key), version_key=str(options.version_key))
-    review_url = f"https://{host}{review_path}"
+    review_url = util.absolute_url(review_path)
     manifest_path = util.as_url(
         manifest.selected,
         project_key=str(options.project_key),
@@ -541,7 +537,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "HOMEPAGE": project.homepage or "",
         "KEYS_FILE": paths.committee_keys_url(committee),
         "MAJOR_VERSION": major_version(str(options.version_key)),
-        "MANIFEST_URL": f"https://{host}{manifest_path}",
+        "MANIFEST_URL": util.absolute_url(manifest_path),
         "PROJECT_NAME": project_display_name,
         "PROJECT_KEY": project.key,
         "RELEASE_CHECKLIST": checklist_content,

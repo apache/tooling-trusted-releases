@@ -18,7 +18,6 @@
 import datetime
 from typing import Final, Literal
 
-import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -218,7 +217,7 @@ async def end_notify(task_args: args.VoteEndNotify) -> results.Results | None:
         if release.effective_vote_mode != sql.VoteMode.TRUSTED:
             log.info(f"Vote end notify skipped for {task_args.release_key}: not in trusted mode")
             return _end_notify_skipped("not_trusted_mode")
-        review_url = f"https://{config.get().APP_HOST}/vote/{release.project.key}/{release.version}"
+        review_url = util.absolute_url(f"/vote/{release.project.key}/{release.version}")
 
     subject = f"[ATR] Vote ended for {task_args.release_key}"
     body = (
@@ -501,7 +500,7 @@ async def _send_auto_resolve_outcome_notify(
     recipient_id: str,
     outcome: Literal["passed", "failed", "failure_skipped", "resolve_rejected"],
 ) -> None:
-    review_url = f"https://{config.get().APP_HOST}/vote/{project_key}/{version_key}"
+    review_url = util.absolute_url(f"/vote/{project_key}/{version_key}")
     subject = f"[ATR] Vote ended for {release_key}"
     match outcome:
         case "passed":

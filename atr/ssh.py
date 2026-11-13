@@ -743,9 +743,8 @@ async def _step_07b_process_validated_rsync_write(
                 message = f"\nATR: Upload received for {project_key} {version_key}. Archive validation in progress.\n"
             else:
                 log.info(f"rsync upload successful for revision {result.number}")
-                host = config.get().APP_HOST
                 message = f"\nATR: Created revision {result.number} of {project_key} {version_key}\n"
-                message += f"ATR: https://{host}/compose/{project_key}/{version_key}\n"
+                message += f"ATR: {util.absolute_url(f'/compose/{project_key}/{version_key}')}\n"
             if not process.stderr.is_closing():
                 process.stderr.write(message.encode())
                 await process.stderr.drain()

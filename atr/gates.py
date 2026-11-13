@@ -188,7 +188,7 @@ def _notice(gate_obj: sql.GateConfig, request: sql.GateRequest) -> args.Send:
         body=(
             f"{opening}\n\n  {gate_obj.workflow}\n\nin\n\n  {gate_obj.repository}\n\n{closing}\n\n"
             f"Ref: {request.ref}\nCommit: {request.head_sha}\nStarted by: {request.actor} on GitHub\nRun: {run_url}\n\n"
-            f"Review it at:\n\n  https://{config.get().APP_HOST}/gates\n"
+            f"Review it at:\n\n  {util.absolute_url('/gates')}\n"
         ),
         in_reply_to=None,
         footer_category=mail.MailFooterCategory.AUTO,

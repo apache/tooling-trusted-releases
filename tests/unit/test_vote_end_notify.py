@@ -107,7 +107,7 @@ async def test_end_notify_sends_mail_when_vote_active(sqlite_sessionmaker, monke
         await data.commit()
 
     monkeypatch.setattr(task_vote.db, "session", _session_factory(sqlite_sessionmaker))
-    monkeypatch.setattr(task_vote.config, "get", lambda: SimpleNamespace(APP_HOST="atr.example.org"))
+    monkeypatch.setattr(task_vote.util, "absolute_url", lambda path: f"https://atr.example.org{path}")
     mail_send = mock.AsyncMock(return_value=("end-notify-mid@apache.org", []))
     monkeypatch.setattr(task_vote.storage, "write", _write_factory(mail_send))
 
@@ -265,7 +265,7 @@ async def test_end_notify_uses_recipient_id_for_sender_and_recipient(sqlite_sess
         await data.commit()
 
     monkeypatch.setattr(task_vote.db, "session", _session_factory(sqlite_sessionmaker))
-    monkeypatch.setattr(task_vote.config, "get", lambda: SimpleNamespace(APP_HOST="atr.example.org"))
+    monkeypatch.setattr(task_vote.util, "absolute_url", lambda path: f"https://atr.example.org{path}")
     mail_send = mock.AsyncMock(return_value=("end-notify-mid@apache.org", []))
     captured_storage_uid: list[str | None] = []
 
@@ -463,7 +463,7 @@ async def test_schedule_end_notify_no_op_without_vote_seq(sqlite_sessionmaker, m
 @pytest.mark.asyncio
 async def test_schedule_end_notify_uses_initiator_as_recipient(sqlite_sessionmaker, monkeypatch) -> None:
     monkeypatch.setattr(task_vote.db, "session", _session_factory(sqlite_sessionmaker))
-    monkeypatch.setattr(task_vote.config, "get", lambda: SimpleNamespace(APP_HOST="atr.example.org"))
+    monkeypatch.setattr(task_vote.util, "absolute_url", lambda path: f"https://atr.example.org{path}")
 
     initiate = args.Initiate(
         release_key="project-1.0.0",

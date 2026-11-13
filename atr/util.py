@@ -347,6 +347,11 @@ class TreeDifferences:
         return not (self.only_in_base or self.only_in_other or self.differing)
 
 
+def absolute_url(path: str) -> str:
+    """Return the full URL on this ATR host for a path, such as one from as_url."""
+    return f"https://{config.get().APP_HOST}{path}"
+
+
 def archive_format_stem(name: str) -> str | None:
     for suffix in ARCHIVE_FORMAT_SUFFIXES:
         if name.endswith(suffix):

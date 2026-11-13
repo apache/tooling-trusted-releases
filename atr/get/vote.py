@@ -261,13 +261,12 @@ def _download_browse(release: sql.Release) -> htm.Element:
 
 
 def _download_curl(release: sql.Release) -> htm.Element:
-    app_host = config.get().APP_HOST
     script_url = util.as_url(
         download.sh_selected,
         project_key=release.project.key,
         version_key=release.version,
     )
-    curl_command = f"curl -fsS https://{app_host}{script_url} | sh"
+    curl_command = f"curl -fsS {util.absolute_url(script_url)} | sh"
 
     return htm.div(".mb-3")[
         htm.div(".mb-2")[htm.strong["Use curl:"]],

@@ -125,8 +125,6 @@ async def sh_selected(
     URL: /download/sh/<project_key>/<version_key>
     Shell script to download a release.
     """
-    conf = config.get()
-    app_host = conf.APP_HOST
     script_path = (pathlib.Path(__file__).parent / "../static/sh/download-urls.sh").resolve()
     async with aiofiles.open(script_path) as f:
         content = await f.read()
@@ -134,8 +132,8 @@ async def sh_selected(
     download_path = util.as_url(path, project_key=str(project_key), version_key=str(version_key), file_path="")
     curl_options = "--insecure" if config.is_dev_environment() else "--proto =https --tlsv1.2"
     content = content.replace("[CURL_EXTRA]", curl_options)
-    content = content.replace("[URL_OF_URLS]", f"https://{app_host}{download_urls_selected}")
-    content = content.replace("[URLS_PREFIX]", f"https://{app_host}{download_path}")
+    content = content.replace("[URL_OF_URLS]", util.absolute_url(download_urls_selected))
+    content = content.replace("[URLS_PREFIX]", util.absolute_url(download_path))
     return web.ShellResponse(content)
 
 
