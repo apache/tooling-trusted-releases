@@ -355,14 +355,14 @@ def first_release_banner(kind: Literal["project", "user"] | None, project: sql.P
             return None
         case "project":
             message = f"This is the first release of {project.display_name} through ATR."
-            link = htm.a(".alert-link", href=util.as_url(get.docs.page, path="moving-to-atr"))[
-                "Read what to check before your first release"
-            ]
+            link = htm.a(
+                ".alert-link", href=util.as_url(get.docs.page, path="moving-to-atr"), target="_blank", rel="noopener"
+            )["Read what to check before your first release"]
         case "user":
             message = "This looks like your first release through ATR."
-            link = htm.a(".alert-link", href=util.as_url(get.docs.page, path="getting-started"))[
-                "Read the guidance for release managers"
-            ]
+            link = htm.a(
+                ".alert-link", href=util.as_url(get.docs.page, path="getting-started"), target="_blank", rel="noopener"
+            )["Read the guidance for release managers"]
     return htm.div(".alert.alert-info.mb-4", role="alert")[message, " ", link, "."]
 
 

@@ -2366,6 +2366,8 @@ class ReleaseFileState(sqlmodel.SQLModel, table=True):
     provenance: dict[str, Any] | None = sqlmodel.Field(
         default=None, sa_column=sqlalchemy.Column(SafeJSON, nullable=True)
     )
+    # Null when the file is absent, and on rows written before sizes were recorded
+    size: int | None = sqlmodel.Field(default=None, **example(1048576))
 
     __table_args__ = (
         sqlalchemy.ForeignKeyConstraint(

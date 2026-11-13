@@ -21,6 +21,9 @@ import pathlib
 import re
 import sys
 
+# A heading can end with {#some-id} to set its anchor, in place of one made from its text
+EXPLICIT_ID_RE = re.compile(r"\s*\{#([\w-]+)\}\s*$")
+
 MERMAID_BLOCK_RE = re.compile(
     r'<pre lang="mermaid"><code>(.*?)</code></pre>',
     re.DOTALL,
@@ -36,6 +39,8 @@ def _unescape_mermaid(match: re.Match[str]) -> str:
 
 
 def generate_heading_id(text: str) -> str:
+    if (explicit := EXPLICIT_ID_RE.search(text)) is not None:
+        return explicit.group(1)
     text = re.sub(r"^[\d.]+\s*", "", text)
     text = text.lower()
     text = re.sub(r"[^\w\s-]", "", text)
@@ -70,7 +75,7 @@ class HeadingProcessor(parser.HTMLParser):
         if self.in_heading and (tag == self.heading_tag):
             heading_id = self._generate_id(self.heading_content)
             self.output.append(f'<{self.heading_tag} id="{heading_id}">')
-            self.output.append(self.heading_content)
+            self.output.append(EXPLICIT_ID_RE.sub("", self.heading_content))
             self.output.append(f"</{self.heading_tag}>")
             self.in_heading = False
             self.heading_tag = ""

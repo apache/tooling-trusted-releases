@@ -17,14 +17,17 @@
 from typing import Literal
 
 import asfquart.base as base
+import htpy
 import quart
 
 import atr.blueprints.post as post
 import atr.db as db
+import atr.errors as errors
 import atr.get as get
 import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.web as web
 
 
@@ -100,6 +103,12 @@ async def selected(
             version_key=new_release.version,
             success="Release candidate draft created successfully",
         )
+    except storage.QuotaExceededError as e:
+        help_link = htpy.a(href=errors.help_url(e.violation.help_id), target="_blank", rel="noopener")[
+            strings.HOW_TO_FIX_THIS
+        ]
+        await web.flash_error(htpy.span[str(e), " ", help_link])
+        return await session.redirect(get.start.selected, project_key=str(project_key))
     except (web.FlashError, base.ASFQuartException, storage.AccessError) as e:
         await quart.flash(str(e), "error")
         return await session.redirect(get.start.selected, project_key=str(project_key))

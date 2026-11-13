@@ -100,6 +100,7 @@ def compute_file_state_rows(
     release_key: str,
     since_revision_seq: int,
     path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
     classifications: dict[safe.RelPath, str],
     previous: models.Attestable | None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
@@ -146,6 +147,7 @@ def compute_file_state_rows(
                 content_hash=content_hash,
                 classification=classification,
                 provenance=provenance_payload,
+                size=path_to_size[path_key],
             )
         )
     str_keys = {str(k) for k in path_to_hash}

@@ -52,6 +52,7 @@ def test_compute_file_state_rows_changed_classification():
         "example-0.0.1",
         2,
         {"app.tar.gz": "hash1"},
+        {"app.tar.gz": 10},
         {"app.tar.gz": "source"},
         previous,
     )
@@ -73,6 +74,7 @@ def test_compute_file_state_rows_changed_hash():
         "example-0.0.1",
         2,
         {"README.md": "hash2"},
+        {"README.md": 10},
         {"README.md": "metadata"},
         previous,
     )
@@ -98,6 +100,7 @@ def test_compute_file_state_rows_changed_provenance():
         "example-0.0.1",
         2,
         {"app.tar.gz.sha512": "hash1"},
+        {"app.tar.gz.sha512": 10},
         {"app.tar.gz.sha512": "metadata"},
         previous,
         effective_path_provenance={"app.tar.gz.sha512": provenance},
@@ -117,7 +120,7 @@ def test_compute_file_state_rows_deleted_path():
             "old-file.tar.gz": models.PathEntryV2(content_hash="hash1", classification="source"),
         },
     )
-    rows = attestable.compute_file_state_rows("example-0.0.1", 2, {}, {}, previous)
+    rows = attestable.compute_file_state_rows("example-0.0.1", 2, {}, {}, {}, previous)
 
     assert len(rows) == 1
     assert rows[0].path == "old-file.tar.gz"
@@ -139,7 +142,7 @@ def test_compute_file_state_rows_deleted_path_with_previous_provenance():
             ),
         },
     )
-    rows = attestable.compute_file_state_rows("example-0.0.1", 2, {}, {}, previous)
+    rows = attestable.compute_file_state_rows("example-0.0.1", 2, {}, {}, {}, previous)
 
     assert len(rows) == 1
     assert rows[0].present is False
@@ -151,6 +154,7 @@ def test_compute_file_state_rows_new_path():
         "example-0.0.1",
         1,
         {"README.md": "hash1"},
+        {"README.md": 10},
         {"README.md": "metadata"},
         None,
     )
@@ -162,6 +166,7 @@ def test_compute_file_state_rows_new_path():
     assert rows[0].present is True
     assert rows[0].content_hash == "hash1"
     assert rows[0].classification == "metadata"
+    assert rows[0].size == 10
 
 
 def test_compute_file_state_rows_unchanged_path():
@@ -174,6 +179,7 @@ def test_compute_file_state_rows_unchanged_path():
         "example-0.0.1",
         2,
         {"README.md": "hash1"},
+        {"README.md": 10},
         {"README.md": "metadata"},
         previous,
     )
@@ -187,6 +193,7 @@ def test_compute_file_state_rows_v1_previous():
         "example-0.0.1",
         2,
         {"README.md": "hash1"},
+        {"README.md": 10},
         {"README.md": "metadata"},
         previous,
     )

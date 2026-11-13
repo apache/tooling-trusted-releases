@@ -147,6 +147,13 @@ directory, and such writes are refused with a 503 if they would leave no more th
 space plus the maximum body size free. Multipart part submissions and concurrent writers can
 temporarily push free space below that limit.
 
+From [`quota`](/ref/atr/quota.py): a file in a release may be up to 2 GB, a release up to 10 GiB and
+5,000 files, and a project may have ten releases in progress holding 25 GiB between them, counting
+every revision. These are applied when a revision is created or a release is started, and refused
+with a 413 for sizes and a 400 for counts. The rsync upload limit is the same 2 GB. A file over
+1 GiB is reported as a check concern. A new revision is refused with a 507 when the state volume has
+less than `MIN_FREE_SPACE` free (50 GiB in production mode, 1 GiB otherwise).
+
 As enforced, the defaults (100 a minute, 1000 an hour) apply per endpoint, keyed by web session user
 or client address, in process memory, and reset by restarts. Announce and vote start get five an
 hour, vote cast 60, and key, token, and similar endpoints ten. API wide 500 an hour and website
@@ -161,7 +168,7 @@ patterns at 128 characters without backtracking, and npm descriptors at 512 KB.
 
 Disk grows everywhere, for example through release trees, the extraction cache (freed with its
 release), attestable records, database, logs, audit records, SVN working copy, quarantine and
-staging areas, and temporary space. There is no disk gauge, and no storage quota. Hard links keep
+staging areas, and temporary space. There is no disk gauge. Hard links keep
 extra revisions nearly free. SQLite runs WAL, writers locking up front, one at a time, with a five
 second busy timeout and roughly 64 MB of cache per connection across processes.
 

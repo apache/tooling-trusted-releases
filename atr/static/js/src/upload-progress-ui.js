@@ -114,7 +114,7 @@ window.UploadUI = {
 		if (cancelBtn) cancelBtn.classList.add("d-none");
 	},
 
-	showError(message, onRetry) {
+	showError(message, onRetry, helpUrl) {
 		const statusEl = document.getElementById("upload-batch-status");
 		if (statusEl) statusEl.textContent = "Upload failed";
 		const cancelBtn = document.getElementById("upload-cancel-btn");
@@ -127,6 +127,15 @@ window.UploadUI = {
 			const msgEl = document.createElement("span");
 			msgEl.textContent = message;
 			alert.append(msgEl);
+			if (helpUrl) {
+				const helpLink = document.createElement("a");
+				helpLink.href = helpUrl;
+				helpLink.target = "_blank";
+				helpLink.rel = "noopener";
+				helpLink.className = "ms-2";
+				helpLink.textContent = "How to fix this";
+				alert.append(helpLink);
+			}
 			if (onRetry) {
 				const retryBtn = document.createElement("button");
 				retryBtn.type = "button";

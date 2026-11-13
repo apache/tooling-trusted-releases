@@ -190,6 +190,8 @@ class AppConfig:
     MAX_EXTRACT_SIZE: int = _ENVIRONMENT_CONFIG("MAX_EXTRACT_SIZE", default=2 * _GB, cast=int)
     # Chunk size for reading files during extraction
     EXTRACT_CHUNK_SIZE: int = _ENVIRONMENT_CONFIG("EXTRACT_CHUNK_SIZE", default=4 * _MB, cast=int)
+    # Free space on the state volume below which new revisions are refused
+    MIN_FREE_SPACE: int = _ENVIRONMENT_CONFIG("MIN_FREE_SPACE", default=1 * _GB, cast=int)
 
     # Session cookie security
     SESSION_COOKIE_SECURE = True
@@ -222,7 +224,7 @@ _global_mode: Mode | None = None
 
 
 class ProductionConfig(AppConfig):
-    pass
+    MIN_FREE_SPACE: int = _ENVIRONMENT_CONFIG("MIN_FREE_SPACE", default=50 * _GB, cast=int)
 
 
 class ProfilingConfig(AppConfig):

@@ -34,6 +34,7 @@ import asfquart.base as base
 import sqlmodel
 
 import atr.attestable as attestable
+import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.detection as detection
@@ -42,6 +43,7 @@ import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.quota as quota
 import atr.source as source
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -273,6 +275,7 @@ async def _commit_new_revision(
             release_key,
             new_revision.seq,
             path_to_hash,
+            path_to_size,
             classifications,
             previous_attestable,
             effective_path_provenance=effective_provenance,
@@ -314,6 +317,13 @@ async def _commit_new_revision(
             await tasks.draft_checks(asf_uid, project_key, version_key, new_revision.safe_number, caller_data=data)
 
     return new_revision
+
+
+async def _ensure_free_space() -> None:
+    usage = await aioshutil.disk_usage(paths.get_tmp_dir().path)
+    violation = quota.free_space_violation(usage.free, config.get().MIN_FREE_SPACE)
+    if violation is not None:
+        raise storage.QuotaExceededError(violation)
 
 
 def _generate_quarantine_token() -> str:
@@ -388,6 +398,19 @@ async def _lock_and_merge(
         previous_attestable = await attestable.load(project_key, version_key, prior_number)
 
     return previous_attestable, merge_base_revision_key, prior_revision_key, merged_release
+
+
+async def _project_bytes_violation(
+    data: db.Session,
+    release: sql.Release,
+    path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
+) -> quota.Violation | None:
+    held = await interaction.project_bytes_in_progress(data, release.project_key)
+    known = await interaction.release_content_hashes(data, release.key)
+    # Content that the release already holds is hard linked, so only new content takes space
+    adding = {path_to_hash[path]: size for path, size in path_to_size.items() if path_to_hash[path] not in known}
+    return quota.project_bytes_violation(held, sum(adding.values()), quota.DEFAULT_LIMITS)
 
 
 async def _verify_provenance_sources_unchanged(
@@ -540,6 +563,8 @@ class CommitteeParticipant(FoundationCommitter):
             old_release_dir = paths.release_directory(release)
         merge_enabled = clone_from is None
 
+        await _ensure_free_space()
+
         # Create a temporary directory
         # We ensure, below, that it's removed on any exception
         # Use the tmp subdirectory of state, to ensure that it is on the same filesystem
@@ -626,6 +651,14 @@ class CommitteeParticipant(FoundationCommitter):
             except Exception:
                 await aioshutil.rmtree(temp_dir)
                 raise
+
+            # After the merge, as it can bring in files from a revision made in the meantime
+            violation = quota.release_violation(path_to_size, quota.DEFAULT_LIMITS) or (
+                await _project_bytes_violation(data, release, path_to_hash, path_to_size)
+            )
+            if violation is not None:
+                await aioshutil.rmtree(temp_dir)
+                raise storage.QuotaExceededError(violation)
 
             if merged_release.phase not in allowed_phases:
                 await aioshutil.rmtree(temp_dir)

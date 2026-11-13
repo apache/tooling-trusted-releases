@@ -10,6 +10,7 @@
 
 * [Overview](#overview)
 * [Files missing at announcement](#files-missing-at-announcement)
+* [Upload refused by a quota](#upload-refused-by-a-quota)
 
 ## Overview
 
@@ -64,3 +65,55 @@ because the release manager did not notice that the default for a committee's to
 the committee's own directory, `dist/release/<committee>/`. Set the **Default publish location** in
 the project's settings to the layout you use, and ATR will publish there in the first place. See
 [Choosing the published layout](promoting-to-release#choosing-the-published-layout).
+
+## Upload refused by a quota
+
+ATR limits what a release can hold while it is in progress. A change that would take a release past
+a limit is refused, and the release is left as it was.
+
+| Limit | Value |
+| --- | --- |
+| Size of one file | 2 GB |
+| Total size of a release | 10 GiB |
+| Number of files in a release | 5,000 |
+| Total size of a project's releases in progress | 25 GiB |
+| Releases in progress for a project | 10 |
+
+If a project needs more than one of these allows, please
+[open an issue](https://github.com/apache/tooling-trusted-releases/issues/new?template=BLANK_ISSUE).
+
+### ATR is low on storage space {#server-low-on-space}
+
+ATR itself is short of storage space, and refuses new files for every project until it has more.
+Nothing is wrong with your release, and there is nothing to change in it. Please
+[open an issue](https://github.com/apache/tooling-trusted-releases/issues/new?template=BLANK_ISSUE)
+so that we know, and try again once we have replied.
+
+### A file is too large {#file-too-large}
+
+The file is over 2 GB, which is the most that ATR accepts for one file. The
+[Release Distribution Policy](https://infra.apache.org/release-distribution.html) gives 1GB as the
+most that the ASF will host for one artifact, and ATR reports a file over that as a check concern.
+
+### The release is too large {#release-too-large}
+
+The files in the release would come to more than its limit. Remove files that the release does not
+need, such as artifacts from an earlier attempt, and try again.
+
+### The release has too many files {#release-too-many-files}
+
+The release would have more files than its limit. Signatures and checksums count as files. Remove
+any files that the release does not need, and try again.
+
+### The project holds too much {#project-too-large}
+
+The releases that the project has in progress would hold more than its limit. ATR keeps every
+revision of a release until the release is announced, so a file that was replaced or removed still
+counts, and removing files does not bring the total down. Announce releases that are ready, or
+delete drafts that are no longer needed.
+
+### The project has too many releases in progress {#project-too-many-releases}
+
+A release is in progress from when it is started until it is announced, and the project already has
+as many as its limit allows. Announce releases that are ready, or delete drafts that are no
+longer needed.

@@ -34,6 +34,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.util as util
 import atr.web as web
 
@@ -109,7 +110,8 @@ async def selected(
                 auto_archive_prior=announce_form.auto_archive,
             )
     except storage.PublicationMissingError as e:
-        await web.flash_error(htpy.span[str(e), " ", htpy.a(href=_PUBLICATION_HELP_URL)["How to fix this"]])
+        help_link = htpy.a(href=_PUBLICATION_HELP_URL, target="_blank", rel="noopener")[strings.HOW_TO_FIX_THIS]
+        await web.flash_error(htpy.span[str(e), " ", help_link])
         return await session.redirect(get.announce.selected, project_key=str(project_key), version_key=str(version_key))
     except storage.PropagationUnreachableError as e:
         return await session.redirect(

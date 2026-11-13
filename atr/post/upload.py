@@ -17,6 +17,7 @@
 
 from typing import Literal
 
+import htpy
 import quart
 
 import atr.blueprints.post as post
@@ -27,6 +28,7 @@ import atr.log as log
 import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.util as util
 import atr.web as web
 
@@ -117,7 +119,7 @@ async def _add_files(
         _log_access_error(e, status)
         if wants_json:
             return errors.action_error_response(e, status=status)
-        await quart.flash(str(e), "error")
+        await _flash_access_error(e)
         return await session.redirect(
             get.upload.selected,
             project_key=project_key,
@@ -133,6 +135,14 @@ async def _add_files(
             project_key=project_key,
             version_key=version_key,
         )
+
+
+async def _flash_access_error(error: storage.AccessError) -> None:
+    if error.help_id is None:
+        await quart.flash(str(error), "error")
+        return
+    help_link = htpy.a(href=errors.help_url(error.help_id), target="_blank", rel="noopener")[strings.HOW_TO_FIX_THIS]
+    await web.flash_error(htpy.span[str(error), " ", help_link])
 
 
 def _log_access_error(error: storage.AccessError, status: int) -> None:

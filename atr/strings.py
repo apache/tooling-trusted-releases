@@ -28,6 +28,9 @@ VERIFY_DISTRIBUTION_BUTTON: Final = "Verify a third-party distribution"
 # CAP approval votes
 CAP_NOT_CONFIGURED: Final = "CAP approval is not configured. Please contact an administrator."
 
+# Link labels
+HOW_TO_FIX_THIS: Final = "How to fix this"
+
 # Release information labels
 COMMIT_HASH_LABEL: Final = "Commit hash"
 

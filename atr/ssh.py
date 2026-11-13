@@ -40,12 +40,14 @@ import atr.config as config
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.quota as quota
 import atr.sandbox as sandbox
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -70,7 +72,7 @@ _RATE_LIMIT_IP: Final = 100
 _RATE_LIMIT_USER: Final = 10
 _RATE_WINDOW: Final = 60.0
 _RSYNC_TIMEOUT: Final = 90 * 60
-_RSYNC_MAX_UPLOAD_SIZE: Final = 2_000_000_000
+_RSYNC_MAX_UPLOAD_SIZE: Final = quota.MAX_FILE_BYTES
 _RSYNC_STDERR_LIMIT: Final = 65536
 
 # Keyed by IP address; catches all connections including failed auth
@@ -334,6 +336,14 @@ async def _drain_stderr(stream: asyncio.StreamReader) -> bytes:
     while chunk := await stream.read(8192):
         collected += chunk[: _RSYNC_STDERR_LIMIT - len(collected)]
     return collected
+
+
+async def _output_quota_refusal(process: asyncssh.SSHServerProcess, error: storage.QuotaExceededError) -> None:
+    help_url = util.absolute_url(errors.help_url(error.violation.help_id))
+    message = f"\nATR: Upload refused. {error}\nATR: {help_url}\n"
+    if not process.stderr.is_closing():
+        process.stderr.write(message.encode())
+        await process.stderr.drain()
 
 
 def _output_stderr(process: asyncssh.SSHServerProcess, message: str) -> None:
@@ -750,6 +760,11 @@ async def _step_07b_process_validated_rsync_write(
                 await process.stderr.drain()
         except datatypes.FailedError:
             log.info(f"rsync upload unsuccessful for release {release_key}")
+        except storage.QuotaExceededError as e:
+            log.info(f"rsync upload refused for release {release_key}: {e}")
+            # rsync itself succeeded, so the refusal has to be reported by ATR
+            exit_status = 1
+            await _output_quota_refusal(process, e)
 
         # If we got here, there was no exception
         if not process.is_closing():
@@ -769,6 +784,10 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
             if version_key_error := util.version_key_error(str(version_key)):
                 # This should ideally be caught by path validation, but double check
                 raise RuntimeError(f'Invalid version name "{version_key}": {version_key_error}')
+            in_progress = await interaction.releases_in_progress_count(data, project.key)
+            if (violation := quota.project_releases_violation(in_progress, quota.DEFAULT_LIMITS)) is not None:
+                help_url = util.absolute_url(errors.help_url(violation.help_id))
+                raise RsyncArgsError(f"{violation.message} See {help_url}")
             try:
                 cycle_key = await cycles.ensure_project_cycle(data, project, str(version_key))
             except ValueError as exc:

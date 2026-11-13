@@ -24,6 +24,8 @@ import werkzeug.exceptions as exceptions
 
 import atr.log as log
 
+_HELP_PAGE: Final = "/docs/troubleshooting"
+
 # Strings for re-use throughout the app
 FILE_NOT_FOUND: Final = "File does not exist"
 MANIFEST_NOT_FOUND: Final = "No file manifest is available for this ATR revision"
@@ -42,9 +44,20 @@ def action_error_response(
         status = response_status_code(error)
     text = summary if (summary is not None) else message(error)
     payload: dict[str, Any] = {"ok": False, "message": text}
+    if (error_help_id := help_id(error)) is not None:
+        payload["help_url"] = help_url(error_help_id)
     payload.update(log.request_context_fields())
     payload.update(traceback_fields(error, status))
     return quart.jsonify(payload), status
+
+
+def help_id(error: BaseException) -> str | None:
+    value = getattr(error, "help_id", None)
+    return value if isinstance(value, str) else None
+
+
+def help_url(section_id: str) -> str:
+    return f"{_HELP_PAGE}#{section_id}"
 
 
 def message(error: BaseException) -> str:

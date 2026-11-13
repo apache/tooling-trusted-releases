@@ -57,6 +57,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.paths as paths
+import atr.quota as quota
 import atr.shared.start as start
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -452,6 +453,9 @@ async def _start_release(
     if expedited and (project.committee is not None) and project.committee.is_podling:
         raise storage.AccessError("Expedited releases are not available for podling projects.", status=400)
     await _assert_no_existing_release(data, project, project_key, version)
+    in_progress = await interaction.releases_in_progress_count(data, project.key)
+    if (violation := quota.project_releases_violation(in_progress, quota.DEFAULT_LIMITS)) is not None:
+        raise storage.QuotaExceededError(violation)
     _validate_version(project, version)
     try:
         cycle_key = await cycles.ensure_project_cycle(data, project, str(version))

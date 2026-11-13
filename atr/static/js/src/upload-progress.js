@@ -43,7 +43,7 @@
 				window.location.assign(data.next_url);
 			}
 		} else {
-			UploadUI.showError(data.message || "Upload failed", retry);
+			UploadUI.showError(data.message || "Upload failed", retry, data.help_url);
 		}
 	}
 

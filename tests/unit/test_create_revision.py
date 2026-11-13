@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections.abc as abc
 import datetime
 import os
 import pathlib
@@ -106,6 +107,15 @@ class MockSafeSession:
 
     async def __aexit__(self, _exc_type, _exc, _tb):
         return False
+
+
+@pytest.fixture(autouse=True)
+def project_holds_nothing() -> abc.Iterator[None]:
+    with (
+        mock.patch.object(revision.interaction, "project_bytes_in_progress", new=mock.AsyncMock(return_value=0)),
+        mock.patch.object(revision.interaction, "release_content_hashes", new=mock.AsyncMock(return_value=set())),
+    ):
+        yield
 
 
 @pytest.mark.asyncio

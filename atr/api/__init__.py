@@ -1459,6 +1459,9 @@ async def release_create(
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(data.project)
             release, _project = await wacp.release.start(data.project, data.version)
+    except storage.QuotaExceededError:
+        # The blueprint's handler reports these, as it keeps the help ID
+        raise
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
 

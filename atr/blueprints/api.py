@@ -34,6 +34,7 @@ import atr.blueprints.common as common
 import atr.errors as errors
 import atr.log as log
 import atr.storage as storage
+import atr.util as util
 import atr.web as web
 
 __all__ = ["auth", "register", "typed"]
@@ -241,7 +242,10 @@ async def _handle_storage_access_error(err: storage.AccessError) -> tuple[quart.
     status = errors.response_status_code(err)
     if status >= 500:
         log.error("Storage access server error", exc_info=(type(err), err, err.__traceback__))
-    return _json_error(errors.message(err), status, error=err)
+    extra: dict[str, Any] | None = None
+    if err.help_id is not None:
+        extra = {"help_url": util.absolute_url(errors.help_url(err.help_id))}
+    return _json_error(errors.message(err), status, extra, error=err)
 
 
 def _json_error(

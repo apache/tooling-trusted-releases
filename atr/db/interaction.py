@@ -1044,6 +1044,46 @@ async def releases_in_progress(project: sql.Project) -> list[sql.Release]:
     return drafts + cands + prevs
 
 
+async def project_bytes_in_progress(data: db.Session, project_key: str) -> int:
+    """Return the size of the distinct content held by the project's releases in progress."""
+    via = sql.validate_instrumented_attribute
+    # A row is also written when only the metadata of a file changes, so content can repeat
+    content = (
+        sqlmodel.select(sqlalchemy.func.max(via(sql.ReleaseFileState.size)).label("size"))
+        .join(sql.Release, via(sql.Release.key) == via(sql.ReleaseFileState.release_key))
+        .where(
+            via(sql.Release.project_key) == project_key,
+            via(sql.Release.phase) != sql.ReleasePhase.RELEASE,
+            via(sql.ReleaseFileState.present).is_(True),
+        )
+        .group_by(via(sql.ReleaseFileState.release_key), via(sql.ReleaseFileState.content_hash))
+        .subquery()
+    )
+    query = sqlmodel.select(sqlalchemy.func.coalesce(sqlalchemy.func.sum(content.c.size), 0))
+    return (await data.execute(query)).scalar_one()
+
+
+async def release_content_hashes(data: db.Session, release_key: str) -> set[str]:
+    """Return the hash of every file that any revision of the release has held."""
+    via = sql.validate_instrumented_attribute
+    query = (
+        sqlmodel.select(sql.ReleaseFileState.content_hash)
+        .where(via(sql.ReleaseFileState.release_key) == release_key, via(sql.ReleaseFileState.present).is_(True))
+        .distinct()
+    )
+    return {content_hash for content_hash in (await data.execute(query)).scalars() if content_hash is not None}
+
+
+async def releases_in_progress_count(data: db.Session, project_key: str) -> int:
+    via = sql.validate_instrumented_attribute
+    query = (
+        sqlmodel.select(sqlalchemy.func.count())
+        .select_from(sql.Release)
+        .where(via(sql.Release.project_key) == project_key, via(sql.Release.phase) != sql.ReleasePhase.RELEASE)
+    )
+    return (await data.execute(query)).scalar_one()
+
+
 def task_mid_get(latest_vote_task: sql.Task) -> str | None:
     # if util.is_dev_environment():
     #     import atr.db.interaction as interaction

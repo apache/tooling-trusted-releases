@@ -30,6 +30,7 @@ import atr.db as db
 import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
+import atr.quota as quota
 import atr.tasks.checks as checks
 import atr.user as user
 import atr.util as util
@@ -48,7 +49,7 @@ INPUT_POLICY_KEYS: Final[list[str]] = [
     "require_version_in_filenames",
 ]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files", "release_version"]
-CHECK_VERSION: Final[str] = "12"
+CHECK_VERSION: Final[str] = "13"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -136,6 +137,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     await _check_source_artifact_present(args, recorder_source, relative_paths, base_path)
     await _check_documentation_tree(recorder_problems, relative_paths)
     await _check_download_suffix_duplication(args, recorder_suggestions, relative_paths)
+    await _check_file_sizes(recorder_problems, base_path, relative_paths)
     await _check_checksum_types(recorder_suggestions, relative_paths_set)
 
     return None
@@ -254,6 +256,20 @@ async def _check_download_suffix_duplication(
             },
             primary_rel_path=None,
         )
+
+
+async def _check_file_sizes(
+    recorder_problems: checks.Recorder, base_path: safe.StatePath, relative_paths: list[safe.RelPath]
+) -> None:
+    for relative_path in relative_paths:
+        size = (await aiofiles.os.stat((base_path / relative_path).path)).st_size
+        if size > quota.LARGE_FILE_BYTES:
+            await recorder_problems.concern(
+                f"{relative_path}: Larger than 1GB, which the Release Distribution Policy gives as the most"
+                " the ASF will host",
+                {},
+                primary_rel_path=relative_path,
+            )
 
 
 async def _check_metadata_rules(

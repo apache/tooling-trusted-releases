@@ -34,6 +34,7 @@ import atr.models.basic as basic
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.principal as principal
+import atr.quota as quota
 import atr.storage.outcome as outcome
 import atr.storage.readers as readers
 import atr.storage.writers as writers
@@ -70,8 +71,12 @@ class IdentifiedAuditWriteAs(Protocol):
 
 
 class AccessError(RuntimeError):
-    def __init__(self, message: str = "Storage access error", status: int | None = None) -> None:
+    def __init__(
+        self, message: str = "Storage access error", status: int | None = None, help_id: str | None = None
+    ) -> None:
         self.status = status
+        # The anchor of the section about this error in the troubleshooting page
+        self.help_id = help_id
         super().__init__(message)
 
 
@@ -79,6 +84,12 @@ class PropagationUnreachableError(AccessError): ...
 
 
 class PublicationMissingError(AccessError): ...
+
+
+class QuotaExceededError(AccessError):
+    def __init__(self, violation: quota.Violation) -> None:
+        self.violation = violation
+        super().__init__(violation.message, status=violation.status, help_id=violation.help_id)
 
 
 # Read
