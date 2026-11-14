@@ -76,6 +76,7 @@ _EXTERNAL_TIMEOUT: Final = 20
 _EXTERNAL_WORKERS: Final = 8
 _HEAD_REFUSED: Final = frozenset({"HTTP 403", "HTTP 405", "HTTP 501"})
 _SIGN_IN_REQUIRED: Final = frozenset({"HTTP 401", "HTTP 403"})
+_ROUTES_OUTSIDE_BLUEPRINTS: Final = frozenset({"/api/docs", "/api/openapi.json"})
 
 
 def _check_external_url(url: str) -> str | None:
@@ -244,6 +245,9 @@ def _validate_app_links(project_root: pathlib.Path, all_app_links: list[UrlLink]
 
     for link in all_app_links:
         path = urllib.parse.urlsplit(link.url).path
+        # inside the loop, after computing `path`:
+        if path in _ROUTES_OUTSIDE_BLUEPRINTS:
+            continue
         if path.startswith("/static/"):
             if not (project_root / "atr" / path.lstrip("/")).is_file():
                 errors.append(f"{link.source_file}:{link.line_number}: Link to non-existent static file '{link.url}'")

@@ -2,7 +2,7 @@
 
 **Up**: [Documentation](.)
 
-**Prev**: `7.23.` [Application logs](application-logs)
+**Prev**: `7.24.` [Application logs](application-logs)
 
 **Next**: `9.` [Glossary](glossary)
 

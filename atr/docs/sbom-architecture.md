@@ -1,10 +1,10 @@
-# 7.21. SBOM architecture
+# 7.22. SBOM architecture
 
 **Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `7.20.` [Resource management](resource-management)
+**Prev**: `7.21.` [Resource management](resource-management)
 
-**Next**: `7.22.` [File handling](file-handling)
+**Next**: `7.23.` [File handling](file-handling)
 
 **Sections**:
 

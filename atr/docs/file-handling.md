@@ -1,10 +1,10 @@
-# 7.22. File handling
+# 7.23. File handling
 
 **Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `7.21.` [SBOM architecture](sbom-architecture)
+**Prev**: `7.22.` [SBOM architecture](sbom-architecture)
 
-**Next**: `7.23.` [Application logs](application-logs)
+**Next**: `7.24.` [Application logs](application-logs)
 
 **Sections**:
 
