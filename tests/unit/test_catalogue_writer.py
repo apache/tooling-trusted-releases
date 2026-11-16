@@ -799,3 +799,223 @@ async def test_move_artifact_keeps_a_managed_row_and_refuses_a_clash(sessionmake
             await writer.move_artifact(
                 safe.ReleaseKey("alpha-one-1.0.0"), "signed.tar.gz", safe.ProjectKey("alpha-two")
             )
+
+
+_DIST_ROOT = "https://internal.example.invalid/repos/dist/release"
+_DIST_FILES = ["apache-alpha-one-2.0.0.tar.gz", "apache-alpha-one-2.0.0.tar.gz.asc"]
+
+
+async def _seed_dist_release(data: db.Session, directory: str, phase: sql.ReleasePhase) -> None:
+    # A release ATR published into directory, with one artifact and its signature recorded
+    data.add(
+        sql.Release(
+            key="alpha-one-2.0.0",
+            project_key="alpha-one",
+            version="2.0.0",
+            phase=phase,
+            created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+            download_path_suffix=directory.removeprefix("alpha").removeprefix("/"),
+        )
+    )
+    await data.commit()
+    data.add(
+        sql.Artifact(
+            project_key="alpha-one",
+            version="2.0.0",
+            artifact_path=_DIST_FILES[0],
+            signature_path=_DIST_FILES[1],
+            release_key="alpha-one-2.0.0",
+            download_path_suffix=directory,
+            managed=True,
+        )
+    )
+    await data.commit()
+
+
+def _fake_dist(monkeypatch: pytest.MonkeyPatch, tree: dict[str, list[str]]) -> mock.AsyncMock:
+    # tree maps each directory that exists, relative to the publish root, to the files under it
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _DIST_ROOT, raising=False)
+    monkeypatch.setattr(catalogue.svn.SvnInfo, "from_url", mock.AsyncMock(return_value=mock.Mock(revision_number=100)))
+
+    async def list_files(url: str, revision: int) -> list[str]:
+        rel = url.removeprefix(f"{_DIST_ROOT}/")
+        if rel not in tree:
+            raise catalogue.svn.CommandExecutionError(1, "svn: E200009: missing")
+        return tree[rel]
+
+    async def path_exists(url: str, revision: int) -> bool:
+        return url.removeprefix(f"{_DIST_ROOT}/") in tree
+
+    monkeypatch.setattr(catalogue.svn, "list_files", list_files)
+    monkeypatch.setattr(catalogue.svn, "path_exists", path_exists)
+    move_paths = mock.AsyncMock(return_value="r101 committed by tester at 2026-11-16T10:00:00Z")
+    monkeypatch.setattr(catalogue.svn, "move_paths", move_paths)
+    return move_paths
+
+
+@pytest.mark.asyncio
+async def test_dist_move_whole_directory_creates_missing_parents(sessionmaker, monkeypatch) -> None:
+    # The #1856 shape: a version directory one level too deep, moved up into a sibling
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/alpha/v2.0.0": [*_DIST_FILES, "README.txt"]})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/alpha/v2.0.0", sql.ReleasePhase.RELEASE_PREVIEW)
+        moved = await _writer(data).move_release_on_dist(
+            safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/one/v2.0.0"), whole_directory=True
+        )
+        assert moved == catalogue.DistMove(svn_revision=101, files=3)
+        call = move_paths.await_args
+        assert call is not None
+        assert call.args[1] == [("alpha/alpha/v2.0.0", "alpha/one/v2.0.0")]
+        assert call.args[4] == 100
+        assert call.args[5] == ["alpha/one"]
+        data.expire_all()
+        row = await data.get(sql.Artifact, ("alpha-one", "2.0.0", _DIST_FILES[0]))
+        assert (row is not None) and (row.download_path_suffix == "alpha/one/v2.0.0")
+        release = await data.get(sql.Release, "alpha-one-2.0.0")
+        assert (release is not None) and (release.download_path_suffix == "one/v2.0.0")
+
+
+@pytest.mark.asyncio
+async def test_dist_move_whole_directory_refuses_an_existing_target(sessionmaker, monkeypatch) -> None:
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": _DIST_FILES, "alpha/new": ["other.tar.gz"]})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE_PREVIEW)
+        with pytest.raises(storage.AccessError, match="already exists"):
+            await _writer(data).move_release_on_dist(
+                safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/new"), whole_directory=True
+            )
+        move_paths.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dist_move_whole_directory_refuses_the_committee_directory(sessionmaker, monkeypatch) -> None:
+    # Published flat at the committee root, the directory holds everything else the committee has
+    move_paths = _fake_dist(monkeypatch, {"alpha": [*_DIST_FILES, "other.tar.gz"]})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha", sql.ReleasePhase.RELEASE_PREVIEW)
+        with pytest.raises(storage.AccessError, match="committee's own directory"):
+            await _writer(data).move_release_on_dist(
+                safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/v2.0.0"), whole_directory=True
+            )
+        move_paths.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dist_move_files_into_an_existing_directory(sessionmaker, monkeypatch) -> None:
+    move_paths = _fake_dist(monkeypatch, {"alpha": ["other.tar.gz", *_DIST_FILES], "alpha/v2": ["KEYS"]})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha", sql.ReleasePhase.RELEASE_PREVIEW)
+        moved = await _writer(data).move_release_on_dist(
+            safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/v2"), whole_directory=False
+        )
+        assert moved.files == 2
+        call = move_paths.await_args
+        assert call is not None
+        assert call.args[1] == [(f"alpha/{name}", f"alpha/v2/{name}") for name in _DIST_FILES]
+        assert call.args[5] == []
+
+
+@pytest.mark.asyncio
+async def test_dist_move_files_refuses_a_clash_at_the_target(sessionmaker, monkeypatch) -> None:
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": _DIST_FILES, "alpha/new": [_DIST_FILES[1]]})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE_PREVIEW)
+        with pytest.raises(storage.AccessError, match="Already in alpha/new"):
+            await _writer(data).move_release_on_dist(
+                safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/new"), whole_directory=False
+            )
+        move_paths.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dist_move_refuses_an_announced_release(sessionmaker, monkeypatch) -> None:
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": _DIST_FILES})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE)
+        with pytest.raises(storage.AccessError, match="isn't announced yet"):
+            await _writer(data).move_release_on_dist(
+                safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/new"), whole_directory=True
+            )
+        move_paths.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dist_move_refuses_a_target_outside_the_committee(sessionmaker, monkeypatch) -> None:
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": _DIST_FILES})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE_PREVIEW)
+        with pytest.raises(storage.AccessError, match="has to be under alpha"):
+            await _writer(data).move_release_on_dist(
+                safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("dest/old"), whole_directory=True
+            )
+        move_paths.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dist_move_files_removes_a_source_it_empties(sessionmaker, monkeypatch) -> None:
+    # The rm rides in the same commit pinned to the listing's revision, so a file landing in the
+    # source after the listing fails the whole commit out of date rather than going unseen
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": _DIST_FILES})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE_PREVIEW)
+        await _writer(data).move_release_on_dist(
+            safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/new"), whole_directory=False
+        )
+        call = move_paths.await_args
+        assert call is not None
+        assert call.args[4] == 100
+        assert call.args[5] == ["alpha/new"]
+        assert call.args[6] == ["alpha/old"]
+
+
+@pytest.mark.asyncio
+async def test_dist_move_files_keeps_a_source_with_other_files(sessionmaker, monkeypatch) -> None:
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": [*_DIST_FILES, "README.txt"]})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE_PREVIEW)
+        await _writer(data).move_release_on_dist(
+            safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/new"), whole_directory=False
+        )
+        call = move_paths.await_args
+        assert call is not None
+        assert call.args[6] == []
+
+
+@pytest.mark.asyncio
+async def test_dist_move_files_never_removes_the_committee_directory(sessionmaker, monkeypatch) -> None:
+    # Even holding nothing but this release's files, the committee's own directory stays
+    move_paths = _fake_dist(monkeypatch, {"alpha": _DIST_FILES})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha", sql.ReleasePhase.RELEASE_PREVIEW)
+        await _writer(data).move_release_on_dist(
+            safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/v2.0.0"), whole_directory=False
+        )
+        call = move_paths.await_args
+        assert call is not None
+        assert call.args[6] == []
+
+
+@pytest.mark.asyncio
+async def test_dist_move_files_keeps_a_source_the_target_is_inside(sessionmaker, monkeypatch) -> None:
+    # Removing the source here would take the files just moved into its subdirectory with it
+    move_paths = _fake_dist(monkeypatch, {"alpha": [], "alpha/old": _DIST_FILES})
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_dist_release(data, "alpha/old", sql.ReleasePhase.RELEASE_PREVIEW)
+        await _writer(data).move_release_on_dist(
+            safe.ReleaseKey("alpha-one-2.0.0"), safe.RelPath("alpha/old/v2"), whole_directory=False
+        )
+        call = move_paths.await_args
+        assert call is not None
+        assert call.args[5] == ["alpha/old/v2"]
+        assert call.args[6] == []

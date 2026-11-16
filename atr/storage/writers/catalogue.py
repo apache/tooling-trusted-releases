@@ -25,16 +25,19 @@ import sqlalchemy
 import sqlmodel
 
 import atr.catalog_site as catalog_site
+import atr.config as config
 import atr.cycles as cycles
 import atr.db as db
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.shared.repoint as repoint
 import atr.storage as storage
 import atr.storage.writers.release as release_writer
+import atr.svn as svn
 
 # SQLite allows 999 bound variables by default, and an artifact key is three of them
 _DELETE_CHUNK: Final[int] = 300
@@ -46,6 +49,27 @@ class ArtifactMove(NamedTuple):
     # What a move did beyond the row itself
     created_release: bool
     dropped_source: bool
+
+
+class DistMove(NamedTuple):
+    svn_revision: int | None
+    files: int
+
+
+class _DistMovePlan(NamedTuple):
+    # One svnmucc commit's worth of work, all relative to the publish root
+    make_dirs: list[str]
+    moves: list[tuple[str, str]]
+    remove: list[str]
+    files: int
+
+
+class _DistMoveSubject(NamedTuple):
+    committee_key: str
+    committee_dir: str
+    source: str
+    # Every file the rows record, relative to the source directory
+    recorded: list[str]
 
 
 class FoundationAdmin:
@@ -147,6 +171,57 @@ class FoundationAdmin:
             release_key=key,
             directory=new_directory,
         )
+
+    async def move_release_on_dist(
+        self, release_key: safe.ReleaseKey, directory: safe.RelPath, whole_directory: bool
+    ) -> DistMove:
+        # Moves the files of a release that's published but not yet announced, then points its
+        # rows at the new directory. The dist watcher ignores ATR's own commits, so the rows
+        # can't wait for it to notice. The move commits first, as a row pointing at files that
+        # didn't move is worse than files Relocate can catch the rows up to
+        key = str(release_key)
+        target = str(directory)
+        publish_url = config.get().SVN_PUBLISH_URL
+        if not publish_url:
+            raise storage.AccessError("No SVN publish area is configured.", status=503)
+        root_url = publish_url.rstrip("/")
+        subject = await self._dist_move_subject(key, target)
+        source = subject.source
+        # Let go of the read before going out to SVN, so the write later starts clean
+        await self.__data.rollback()
+        # A release published flat into the committee's own directory shares it with everything
+        # else the committee has, so only its own files can go
+        if whole_directory and (source == subject.committee_dir):
+            raise storage.AccessError(
+                f"The files are in {source}, the committee's own directory, so move the files instead.", status=409
+            )
+        base_revision = (await svn.SvnInfo.from_url(root_url)).revision_number
+        if whole_directory:
+            plan = await _directory_move_plan(root_url, source, target, base_revision)
+        else:
+            plan = await _file_move_plan(
+                root_url, source, target, subject.committee_dir, subject.recorded, base_revision
+            )
+        message = (
+            f"Move {key} from {source} to {target}\n\n"
+            f"Committee: {subject.committee_key}\n"
+            "Tool: ATR\n"
+            f"Moved by {self.__asf_uid} via ATR"
+        )
+        output = await svn.move_paths(
+            root_url, plan.moves, self.__asf_uid, message, base_revision, plan.make_dirs, plan.remove
+        )
+        revision = svn.parse_svnmucc_revision(output)
+        await self._relocate_release_rows(key, source, target)
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            moved_on_dist=key,
+            source=source,
+            directory=target,
+            whole_directory=whole_directory,
+            svn_revision=revision,
+        )
+        return DistMove(svn_revision=revision, files=plan.files)
 
     async def remove_artifact(self, release_key: safe.ReleaseKey, artifact_path: str) -> None:
         # A managed row carries the signing provenance ATR vouched for, and losing it drops the
@@ -953,6 +1028,63 @@ class FoundationAdmin:
             raise storage.AccessError(f"Artifact '{artifact_path}' not found in {release_key}.", status=404)
         return release, row
 
+    async def _dist_move_subject(self, release_key: str, target: str) -> _DistMoveSubject:
+        # Plain values rather than rows, since the read is let go before SVN is touched
+        release = await self.__data.get(sql.Release, release_key)
+        if release is None:
+            raise storage.AccessError(f"Release '{release_key}' not found.", status=404)
+        # Once announced, the email's links point at where the files are now
+        if release.phase is not sql.ReleasePhase.RELEASE_PREVIEW:
+            raise storage.AccessError("Only a published release that isn't announced yet can move on dist.", status=409)
+        project = await self.__data.project(key=release.project_key, _committee=True).get()
+        if (project is None) or (project.committee is None):
+            raise storage.AccessError(f"Release '{release_key}' has no committee.", status=409)
+        rows = await self.__data.artifact(release_key=release_key, _unannounced=True).all()
+        directories = {row.download_path_suffix for row in rows}
+        if len(directories) != 1:
+            raise storage.AccessError(
+                f"The files are recorded in {len(directories)} directories; relocate them into one first.", status=409
+            )
+        source = directories.pop()
+        if not source:
+            raise storage.AccessError("The files are recorded at the dist root, which can't be moved.", status=409)
+        base = str(paths.committee_dist_relpath(project.committee))
+        if (target != base) and (not target.startswith(f"{base}/")):
+            raise storage.AccessError(f"The new directory has to be under {base}.", status=400)
+        if target == source:
+            raise storage.AccessError("The files are already in that directory.", status=400)
+        recorded = sorted(
+            {
+                path
+                for row in rows
+                for path in (row.artifact_path, row.signature_path, row.checksum_path, row.sbom_path)
+                if path
+            }
+        )
+        return _DistMoveSubject(
+            committee_key=str(project.committee.key), committee_dir=base, source=source, recorded=recorded
+        )
+
+    async def _relocate_release_rows(self, release_key: str, source: str, target: str) -> None:
+        # Only rows still recorded at the source follow, in case one changed while SVN committed
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.get(sql.Release, release_key)
+            if release is None:
+                raise storage.AccessError(f"Release '{release_key}' not found.", status=404)
+            rows = await self.__data.artifact(release_key=release_key, _unannounced=True).all()
+            for row in rows:
+                if row.download_path_suffix == source:
+                    row.download_path_suffix = target
+            await self.__data.flush()
+            await self._follow_relocated_publication(release)
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, release.project_key)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+
     async def _follow_relocated_publication(self, release: sql.Release) -> None:
         # A release ATR has published but not yet announced builds its announcement from its own
         # download path suffix. Once every file it published has been relocated to the one
@@ -1046,3 +1178,81 @@ class FoundationAdmin:
             raise storage.AccessError(
                 f"Correction aborted: it would leave dangling references in {tables}.", status=500
             )
+
+
+async def _directory_move_plan(root_url: str, source: str, target: str, base_revision: int) -> _DistMovePlan:
+    # The whole directory goes, files ATR didn't record included, as a hand svn mv would take it
+    listed = await _listed_files(root_url, source, base_revision)
+    if not listed:
+        raise storage.AccessError(f"Nothing is in {source} on dist.", status=409)
+    if await svn.path_exists(f"{root_url}/{target}", base_revision):
+        raise storage.AccessError(f"{target} already exists on dist, so move the files instead.", status=409)
+    make_dirs = await _missing_dirs(root_url, target.rpartition("/")[0], base_revision)
+    return _DistMovePlan(make_dirs=make_dirs, moves=[(source, target)], remove=[], files=len(listed))
+
+
+def _emptied_source(source: str, target: str, committee_dir: str, listed: set[str], recorded: list[str]) -> list[str]:
+    # The source goes once the move leaves it with no files, so dist isn't left with an empty
+    # directory. The listing is from the pinned revision, and svn refuses the rm out of date if
+    # anything lands in the source after it. Never the committee's own directory or anything
+    # outside it, and never a source the files are moving into a subdirectory of
+    if listed - set(recorded):
+        return []
+    if not source.startswith(f"{committee_dir}/"):
+        return []
+    if (target == source) or target.startswith(f"{source}/"):
+        return []
+    return [source]
+
+
+async def _file_move_plan(
+    root_url: str, source: str, target: str, committee_dir: str, recorded: list[str], base_revision: int
+) -> _DistMovePlan:
+    # Only the files the rows record move, into a target that may already hold other files
+    listed = set(await _listed_files(root_url, source, base_revision))
+    absent = [path for path in recorded if path not in listed]
+    if absent:
+        raise storage.AccessError(f"Not in {source} on dist: {', '.join(absent)}.", status=409)
+    taken = set(await _listed_files(root_url, target, base_revision))
+    clashes = [path for path in recorded if path in taken]
+    if clashes:
+        raise storage.AccessError(f"Already in {target} on dist: {', '.join(clashes)}.", status=409)
+    make_dirs = await _missing_dirs(root_url, target, base_revision)
+    make_dirs.extend(_nested_dirs(target, recorded, taken))
+    moves = [(f"{source}/{path}", f"{target}/{path}") for path in recorded]
+    remove = _emptied_source(source, target, committee_dir, listed, recorded)
+    return _DistMovePlan(make_dirs=make_dirs, moves=moves, remove=remove, files=len(moves))
+
+
+async def _listed_files(root_url: str, rel_path: str, base_revision: int) -> list[str]:
+    # A directory that isn't there lists as empty, while any other failure still raises
+    try:
+        return await svn.list_files(f"{root_url}/{rel_path}", base_revision)
+    except svn.CommandExecutionError as exc:
+        if svn.path_missing_error(exc):
+            return []
+        raise
+
+
+async def _missing_dirs(root_url: str, rel_path: str, base_revision: int) -> list[str]:
+    # The directories from rel_path upwards that don't exist yet, parents first, as svnmucc
+    # mkdir won't create a parent for us
+    missing: list[str] = []
+    current = rel_path
+    while current and (not await svn.path_exists(f"{root_url}/{current}", base_revision)):
+        missing.append(current)
+        current = current.rpartition("/")[0]
+    return list(reversed(missing))
+
+
+def _nested_dirs(target: str, recorded: list[str], taken: set[str]) -> list[str]:
+    # A recorded file in a subdirectory needs that directory inside the target first, unless a
+    # file already there shows it exists
+    needed = set().union(*(_parent_dirs(path) for path in recorded))
+    existing = set().union(*(_parent_dirs(path) for path in taken))
+    return [f"{target}/{d}" for d in sorted(needed - existing, key=lambda d: (d.count("/"), d))]
+
+
+def _parent_dirs(path: str) -> set[str]:
+    parts = path.split("/")[:-1]
+    return {"/".join(parts[:depth]) for depth in range(1, len(parts) + 1)}

@@ -79,6 +79,7 @@ import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage as storage
 import atr.strings as strings
+import atr.svn as svn
 import atr.tasks as tasks
 import atr.template as template
 import atr.util as util
@@ -1259,6 +1260,20 @@ class CatalogArtifactRemoveForm(form.Form):
     artifact_path: str = form.label("Artifact", widget=form.Widget.HIDDEN)
 
 
+class CatalogDistMoveForm(form.Form):
+    directory: str = form.label(
+        "New directory", "The directory under the dist root the files move to, like tomcat/tomcat-10/v10.1.62."
+    )
+    scope: Literal["Whole directory", "Recorded files"] = form.label(
+        "What moves",
+        "The whole directory takes everything in it, and needs the new directory not to exist yet. Recorded"
+        " files takes only the files ATR has rows for, into a directory that may already exist, and removes"
+        " the old directory if that leaves it empty.",
+        widget=form.Widget.RADIO,
+        default="Whole directory",
+    )
+
+
 @dataclasses.dataclass
 class CatalogArtifactArgs:
     path: str = ""
@@ -1472,6 +1487,72 @@ async def catalog_release_artifacts_get(
     return await _catalog_release_artifacts_page(committee_key, project_key, version_key, check=False)
 
 
+@admin.typed
+async def catalog_release_artifacts_move_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifacts: Literal["artifacts"],
+    _move: Literal["move"],
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifacts/move
+
+    Confirm moving an unannounced release's files to another directory on dist.
+    """
+    return await _catalog_dist_move_page(committee_key, project_key, version_key)
+
+
+@admin.typed
+async def catalog_release_artifacts_move_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _artifacts: Literal["artifacts"],
+    _move: Literal["move"],
+    move_form: CatalogDistMoveForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/artifacts/move
+
+    Move the files in dist in one commit, then point the release's rows at the new directory.
+    """
+    directory = move_form.directory.strip().strip("/")
+    try:
+        new_directory = safe.RelPath(directory)
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid directory: {error}") from error
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
+    page = {"committee_key": str(committee_key), "project_key": str(project_key), "version_key": str(version_key)}
+    try:
+        async with storage.write(session) as write:
+            wafa = write.as_foundation_admin()
+            moved = await wafa.catalogue.move_release_on_dist(
+                release.safe_key, new_directory, whole_directory=(move_form.scope == "Whole directory")
+            )
+    except storage.AccessError as error:
+        return await session.redirect(catalog_release_artifacts_move_get, error=str(error), **page)
+    except svn.CommandExecutionError as error:
+        return await session.redirect(
+            catalog_release_artifacts_move_get, error=f"SVN refused the move: {svn.error_message(error)}", **page
+        )
+    landed = f" in r{moved.svn_revision}" if (moved.svn_revision is not None) else ""
+    return await session.redirect(
+        catalog_release_artifacts_get, success=f"Moved {moved.files} file(s) to {directory}{landed}", **page
+    )
+
+
 async def _catalog_artifact_move_page(
     committee_key: safe.CommitteeKey, project_key: safe.ProjectKey, version_key: safe.VersionKey, artifact_path: str
 ) -> str:
@@ -1597,6 +1678,44 @@ def _catalog_artifact_urls(row: sql.Artifact, directory: str | None, archived: b
     )
 
 
+async def _catalog_dist_move_page(
+    committee_key: safe.CommitteeKey, project_key: safe.ProjectKey, version_key: safe.VersionKey
+) -> str:
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
+        rows = (
+            await data.artifact(release_key=release.key, _unannounced=True).order_by(sql.Artifact.artifact_path).all()
+        )
+    directories = sorted({row.download_path_suffix or "the dist root" for row in rows})
+    intro = htpy.div[
+        htpy.p[
+            f"{project_key} {release.version} has {len(rows)} recorded file(s) in ",
+            ", ".join(directories),
+            ". ATR moves them on dist in one commit as you, then points the rows at the new directory.",
+        ],
+        htpy.ul[[htpy.li[htpy.code[row.artifact_path]] for row in rows]],
+        htpy.p(".text-muted")[
+            "Only a release that's published but not yet announced can move, as the announcement"
+            " links to wherever the files are when it goes out."
+        ],
+    ]
+    rendered_form = await form.render(
+        model_cls=CatalogDistMoveForm,
+        action=f"{_catalog_release_url(str(committee_key), str(project_key), str(version_key))}/artifacts/move",
+        submit_label="Move on dist",
+        defaults={"directory": directories[0] if (len(directories) == 1) else ""},
+    )
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Move {project_key} {release.version} on dist",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
 async def _catalog_head_statuses(urls: Iterable[str]) -> dict[str, int | None]:
     # One HEAD per distinct URL, following closer.lua's redirect so the answer is about the
     # file on a mirror rather than the redirector. A host that refuses HEAD or doesn't answer
@@ -1684,6 +1803,12 @@ async def _catalog_release_artifacts_page(
         submit_label="Check locations",
         empty=True,
     )
+    # The announcement links to wherever the files are, so only an unannounced release can move
+    dist_move: htpy.Element = htpy.a(".btn.btn-outline-primary.ms-1", href=f"{base}/artifacts/move")["Move on dist"]
+    if release.phase is not sql.ReleasePhase.RELEASE_PREVIEW:
+        dist_move = htpy.span(".btn.btn-outline-primary.ms-1.disabled", title="only before the announcement")[
+            "Move on dist"
+        ]
     return await template.render(
         "catalog-artifacts.html",
         committee_key=str(committee_key),
@@ -1691,6 +1816,7 @@ async def _catalog_release_artifacts_page(
         version=release.version,
         status="archived" if release.is_archived else "current",
         check_form=check_form,
+        dist_move=dist_move,
         artifacts=table,
     )
 

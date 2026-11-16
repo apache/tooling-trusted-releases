@@ -20,6 +20,7 @@ import datetime
 import pathlib
 import re
 import urllib.parse
+from collections.abc import Sequence
 from typing import Final, Self
 
 import defusedxml.ElementTree as ElementTree
@@ -276,6 +277,45 @@ async def list_files(url: str, revision: int | None = None) -> list[str]:
     return [line for line in output.splitlines() if line and (not line.endswith("/"))]
 
 
+async def move_paths(
+    base_url: str,
+    moves: Sequence[tuple[str, str]],
+    username: str,
+    message: str,
+    base_revision: int,
+    make_dirs: Sequence[str] = (),
+    remove: Sequence[str] = (),
+) -> str:
+    """Move paths under base_url in one svnmucc commit, pinned to base_revision.
+
+    Directories in make_dirs are created first, in the order given, so a parent has to
+    come before its children. Paths in remove go last, once the moves have emptied them.
+    """
+    log.debug(f"running svnmucc mv for user '{username}'")
+    stdin_bytes = _authentication(base_url)
+    # The baseline makes a path that changed since the caller looked fail the whole commit
+    arguments: list[str] = ["-r", str(base_revision)]
+    for rel_path in make_dirs:
+        arguments.extend(["mkdir", f"{base_url}/{rel_path}"])
+    for source, target in moves:
+        arguments.extend(["mv", f"{base_url}/{source}", f"{base_url}/{target}"])
+    for rel_path in remove:
+        arguments.extend(["rm", f"{base_url}/{rel_path}"])
+    return await _run_svnmucc_command(
+        *arguments,
+        "--username",
+        username,
+        "--password-from-stdin",
+        "--non-interactive",
+        "--with-revprop",
+        f"asf:tool={ASF_TOOL}",
+        "-m",
+        message,
+        timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
+        stdin_bytes=stdin_bytes,
+    )
+
+
 def parse_committed_revision(output: str) -> int | None:
     if (match := _COMMITTED_REVISION_RE.search(output)) is None:
         return None
@@ -286,6 +326,17 @@ def parse_svnmucc_revision(output: str) -> int | None:
     if (match := _SVNMUCC_REVISION_RE.search(output)) is None:
         return None
     return int(match.group(1))
+
+
+async def path_exists(url: str, revision: int) -> bool:
+    # Only a missing-path code counts as absent, so a connection failure still raises
+    try:
+        await info_authenticated(f"{url}@{revision}")
+    except CommandExecutionError as exc:
+        if path_missing_error(exc):
+            return False
+        raise
+    return True
 
 
 def path_missing_error(exc: CommandExecutionError) -> bool:

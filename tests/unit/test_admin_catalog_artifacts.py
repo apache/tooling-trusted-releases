@@ -112,9 +112,12 @@ async def test_artifacts_page_lists_rows_and_greys_out_a_managed_remove(app) -> 
     assert f"closer.lua/maven/plugins/{_TWIN}?action=download" in body
     assert f"downloads.apache.org/maven/plugins/{_TWIN}.asc" in body
     assert "artifact/relocate?path=maven-jar-plugin-3.5.1-source-release.zip" in body
-    # No check has run, so no badge yet. The managed row's Move and Remove are greyed, the twin's are not
+    # No check has run, so no badge yet. The managed row's Move and Remove are greyed, the twin's are not,
+    # and the release is announced, so its Move on dist is greyed too
     assert "no answer" not in body
-    assert body.count("disabled") == 2
+    assert body.count("disabled") == 3
+    assert 'title="only before the announcement"' in body
+    assert "artifacts/move" not in body
     assert body.count(f"artifact/move?path={_TWIN}") == 1
     assert f"artifact/move?path={_MANAGED}" not in body
 

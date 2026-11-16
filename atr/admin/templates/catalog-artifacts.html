@@ -11,8 +11,9 @@
         The rows for this {{ status }} release, each with where the catalogue publishes it.
         Check locations sends a HEAD request to every address. Relocate changes a row's
         directory after checking the new one, Move re-files it under another project at the
-        same version, and Remove drops an unmanaged row.
+        same version, and Remove drops an unmanaged row. Move on dist moves the files themselves
+        to another directory and relocates the rows to match, before the release is announced.
     </p>
-    <p>{{ check_form }}</p>
+    <p>{{ check_form }}{{ dist_move }}</p>
     {{ artifacts }}
 {% endblock content %}
