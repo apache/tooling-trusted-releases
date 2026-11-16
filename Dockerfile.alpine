@@ -39,9 +39,6 @@ COPY . .
 RUN make generate-version
 RUN make build-docs
 
-WORKDIR /opt/atr/.venv/lib/python3.14/site-packages
-RUN patch -p2 < /opt/atr/patches/generics.py.patch || :
-
 FROM python:3.14.5-alpine3.22 AS depbuilder
 
 ARG TARGETARCH

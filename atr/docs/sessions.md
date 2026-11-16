@@ -157,4 +157,3 @@ which ATR also uses elsewhere for one-off success and error messages.
 * [`sessions.py`](/ref/atr/sessions.py) - session store, lifecycle, and revocation
 * [`models/sql.py`](/ref/atr/models/sql.py) - the `UserSession` and `SessionFormError` tables
 * [`config.py`](/ref/atr/config.py) - `MAX_SESSION_AGE` and the session cookie settings
-* [`generics.py.patch`](/ref/patches/generics.py.patch) - ATR's patch to the ASFQuart login flow
