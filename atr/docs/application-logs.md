@@ -1,8 +1,8 @@
-# 7.23. Application logs
+# 7.24. Application logs
 
 **Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `7.22.` [File handling](file-handling)
+**Prev**: `7.23.` [File handling](file-handling)
 
 **Next**: `8.` [Admin dashboards](admin-dashboards)
 

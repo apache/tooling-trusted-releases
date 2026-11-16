@@ -1,10 +1,10 @@
-# 7.20. Resource management
+# 7.21. Resource management
 
 **Up**: `7.` [Developer guide](developer-guide)
 
-**Prev**: `7.19.` [ASF modules](asf-modules)
+**Prev**: `7.20.` [ASF modules](asf-modules)
 
-**Next**: `7.21.` [SBOM architecture](sbom-architecture)
+**Next**: `7.22.` [SBOM architecture](sbom-architecture)
 
 **Sections**:
 

@@ -4,7 +4,7 @@
 
 **Prev**: `7.16.` [Dependency updates](dependency-updates)
 
-**Next**: `7.18.` [API documentation policy](api-documentation-policy)
+**Next**: `7.18.` [API and CLI reference](reference-api-cli)
 
 **Sections**:
 
