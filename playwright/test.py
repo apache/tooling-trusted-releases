@@ -283,6 +283,7 @@ def lifecycle_05b_publish_to_svn(page: Page, credentials: Credentials, version_k
     logging.info(f"Filling the download path suffix with {suffix}")
     page.locator("#download_path_suffix").fill(suffix)
     publish_button_locator.click()
+    expect(page.locator(".flash-success", has_text="SVN publish task queued.")).to_be_visible()
 
     logging.info("Waiting for the SVN publish task to complete")
     published_locator = page.locator('div.alert-success:has-text("Published to SVN")')
