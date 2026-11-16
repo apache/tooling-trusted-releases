@@ -93,11 +93,11 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION_FILES: Final[str] = "7"
+CHECK_VERSION_FILES: Final[str] = "8"
 CHECK_VERSION_HEADERS: Final[str] = "8"
 
-_BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
-_BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
+_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
+_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
 _MAX_LICENSE_NOTICE_SIZE: Final[int] = 1024 * 1024
 _APACHE_LICENSE_URLS: Final[dict[str, str]] = {
     "https://www.apache.org/licenses/": "http://www.apache.org/licenses/",
@@ -269,10 +269,10 @@ def _files_check_binary(root_path: safe.StatePath) -> Iterator[Result]:
             if filename.startswith("._"):
                 continue
 
-            if filename in _BINARY_LICENSE_FILENAMES:
+            if filename in _LICENSE_FILENAMES:
                 license_paths.append(pathlib.Path(dirpath) / filename)
 
-            if filename in _BINARY_NOTICE_FILENAMES:
+            if filename in _NOTICE_FILENAMES:
                 notice_paths.append(pathlib.Path(dirpath) / filename)
 
     yield _files_check_binary_license(license_paths, root_path.path)
@@ -424,11 +424,11 @@ def _files_check_source(root_path: safe.StatePath, is_podling: bool) -> Iterator
         if not entry_path.is_file():
             continue
 
-        if entry == "LICENSE":
+        if entry in _LICENSE_FILENAMES:
             # TODO: Check length, should be 11,358 bytes
             license_diff = _files_check_core_logic_license(entry_path)
             license_results[entry] = license_diff
-        elif entry == "NOTICE":
+        elif entry in _NOTICE_FILENAMES:
             # TODO: Check length doesn't exceed some preset
             notice_ok, notice_issues, notice_preamble = _files_check_core_logic_notice(entry_path)
             notice_results[entry] = (notice_ok, notice_issues, notice_preamble)
@@ -638,7 +638,7 @@ def _license_results(
     if license_files_size == 0:
         yield ArtifactResult(
             status=sql.CheckResultStatus.BLOCKER,
-            message="No LICENSE file found",
+            message="No LICENSE or LICENSE.txt file found",
             data=None,
         )
         return
@@ -680,7 +680,7 @@ def _notice_results(
     if notice_files_size == 0:
         yield ArtifactResult(
             status=sql.CheckResultStatus.BLOCKER,
-            message="No NOTICE file found",
+            message="No NOTICE or NOTICE.txt file found",
             data=None,
         )
         return

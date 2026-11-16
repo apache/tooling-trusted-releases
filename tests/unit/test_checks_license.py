@@ -227,6 +227,17 @@ def test_files_source_nested_license_notice_ignored(tmp_path):
     assert any("NOTICE" in r.message for r in blockers)
 
 
+def test_files_source_txt_names_accepted(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "LICENSE.txt").path.write_text(constants.APACHE_LICENSE_2_0)
+    (root / "NOTICE.txt").path.write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
+    artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
+    assert [r.message for r in artifact_results] == ["LICENSE.txt is valid", "NOTICE.txt is valid"]
+    assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
+
+
 def test_files_valid_license_and_notice(tmp_path):
     cache_dir = _cache_with_root(tmp_path)
     root = cache_dir / "apache-test-0.2"

@@ -132,14 +132,15 @@ key for zip structure checks is `atr.tasks.checks.zipformat.structure`.
 
 ### License files in archives
 
-ATR checks for `LICENSE` and `NOTICE` files at the top level of the root directory each archive. It
-requires exactly one of each. The `LICENSE` content must match the Apache License text with only
-whitespace differences, though `https` may be used in place of `http` for Apache license URLs. The
-`NOTICE` file must be valid UTF-8 text and must include a product line, an ASF copyright statement,
-and the standard ASF attribution line. For podling projects ATR also requires a `DISCLAIMER` or
-`DISCLAIMER-WIP` file at the same level. These lightweight license checks can run for both source
-and binary archives but if your project selects Apache RAT only for source artifacts, the
-lightweight checks are skipped for source archives. They still run for binary archives.
+ATR checks for `LICENSE` and `NOTICE` files at the top level of the root directory each archive.
+Each may also be named with a `.txt` suffix. The `LICENSE` content must match the Apache License
+text with only whitespace differences, though `https` may be used in place of `http` for Apache
+license URLs. The `NOTICE` file must be valid UTF-8 text and must include a product line, an ASF
+copyright statement, and the standard ASF attribution line. For podling projects ATR also requires
+a `DISCLAIMER` or `DISCLAIMER-WIP` file at the same level. These lightweight license checks can run
+for both source and binary archives but if your project selects Apache RAT only for source
+artifacts, the lightweight checks are skipped for source archives. They still run for binary
+archives.
 
 The checker key is `atr.tasks.checks.license.files`.
 
