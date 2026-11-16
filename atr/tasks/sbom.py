@@ -690,6 +690,6 @@ def _strip_temp_prefix(doc: dict[str, Any], temp_dir: str) -> None:
     # syft names file components after the absolute path it scanned, which --base-path leaves alone
     for component in doc.get("components", []):
         name = component.get("name")
-        if isinstance(name, str) and name.startswith(temp_dir):
+        if (component.get("type") == "file") and isinstance(name, str):
             # Drop the scan directory and the slash that used to join it to the path within
             component["name"] = name.removeprefix(temp_dir).removeprefix("/")

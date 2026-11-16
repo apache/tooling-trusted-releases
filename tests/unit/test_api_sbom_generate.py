@@ -136,6 +136,14 @@ def test_strip_temp_prefix_leaves_component_names_relative_to_the_scan_root() ->
     assert doc["components"][1]["name"] == "plexus-utils"
 
 
+def test_strip_temp_prefix_drops_the_leading_slash_of_base_path_relative_names() -> None:
+    doc = {"components": [{"bom-ref": "aaa", "type": "file", "name": "/apache-widget-1.0/pom.xml"}]}
+
+    sbom._strip_temp_prefix(doc, "/example/cyclonedx_sbom_abc123")
+
+    assert doc["components"][0]["name"] == "apache-widget-1.0/pom.xml"
+
+
 def _syft_shaped_doc() -> dict:
     # syft describes the scanned archive with a synthetic file component and roots the dependency
     # graph on the real package it found inside
