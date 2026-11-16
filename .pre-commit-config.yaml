@@ -100,7 +100,7 @@ repos:
 #        - --profile=jinja
 #        - --reformat
 - repo: https://github.com/thibaudcolas/pre-commit-stylelint
-  rev: a43d64a23287d2dc2e02289bd3b2cb0da5eddfb1  # frozen: v17.16.0
+  rev: e48ba09830adcf6ad3351bde49abdf5b46b13c16  # frozen: v18.0.0
   hooks:
     - id: stylelint
       additional_dependencies: ['stylelint@16.14.1', 'stylelint-config-standard@37.0.0']
@@ -108,7 +108,7 @@ repos:
       types_or: ['css']
       args: ['--fix', '--allow-empty-input']
 - repo: https://github.com/woodruffw/zizmor-pre-commit
-  rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f  # frozen: v1.31.1
+  rev: 06a39750ec31860bb44f2acf67182c40016cd1e7  # frozen: v1.32.0
   hooks:
     - id: zizmor
       args: [--min-severity, low]
@@ -124,7 +124,7 @@ repos:
         - '--ignore-vuln'
         - 'PYSEC-2025-183'
 - repo: https://github.com/oxc-project/mirrors-oxlint
-  rev: 8ebb1eb700c8785f2ee97c25259a3f24b74a4dcf  # frozen: v1.89.0
+  rev: 50c9254f606c6121317d2290079442d162224224  # frozen: v1.92.0
   hooks:
     - id: oxlint
       name: lint JS files with Oxlint
@@ -138,7 +138,7 @@ repos:
         - --deny=pedantic
         - --allow=unicorn/prefer-query-selector
 - repo: https://github.com/biomejs/pre-commit
-  rev: eb45ebf3cb7c3a872b3ff0814883e8ab81fc451f  # frozen: v2.6.4
+  rev: 2a24170fd6adbd6fb1463868533368fe9c01a04d  # frozen: v2.6.6
   hooks:
     - id: biome-format
       name: format JS files with Biome
