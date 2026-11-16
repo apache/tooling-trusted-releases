@@ -94,6 +94,7 @@ def _validate_display_name(val: str) -> str:
         "Lucene.net",
         "for",
         "jclouds",
+        "log4net",
     }
     r_pascal_case = re.compile(r"^([A-Z][0-9a-z]*)+$")
     r_camel_case = re.compile(r"^[a-z]*([A-Z][0-9a-z]*)+$")

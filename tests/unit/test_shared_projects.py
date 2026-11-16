@@ -43,6 +43,7 @@ import atr.shared.projects as shared_projects
         "Apache Lucene.NET",
         "Apache C++",
         "Apache jclouds",
+        "Apache log4net",
         "Apache .NET",
         ".NET",
         "Apache CouchDB for Erlang",
