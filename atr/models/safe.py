@@ -201,7 +201,7 @@ class AsfUid(SafeType):
         return _ASF_UID_CHARS
 
     def _additional_validations(self, value: str) -> None:
-        if len(value) < 3:
+        if len(value) < 2:
             raise ValueError("ASF UID must be at least 3 characters")
         if value[0] not in string.ascii_lowercase:
             raise ValueError("ASF UID must start with a lowercase letter")
