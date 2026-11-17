@@ -110,7 +110,8 @@ async def send_decision(request_id: int) -> None:
         problem = f"it was recorded as {request.ref}"
     if problem is not None:
         raise RuntimeError(f"Run {request.run_id} no longer passes the gate: {problem}")
-    deciders = ", ".join(f"{uid} (ASF)" for uid in sorted(request.decisions))
+    approved = request.status == sql.GateStatus.APPROVED
+    deciders = ", ".join(f"{uid} (ASF)" for uid, approve in sorted(request.decisions.items()) if approve == approved)
     try:
         await _review(
             token, gate_obj, request.run_id, request.status.value, f"{request.status.value} in ATR by {deciders}"
