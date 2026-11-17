@@ -40,7 +40,14 @@ import atr.util as util
         (True, True, None, False, False, ""),
         (False, True, sql.TaskStatus.COMPLETED, True, False, ""),
         *[
-            (False, True, status, available, False, "Cannot announce until download area publication is complete.")
+            (
+                False,
+                True,
+                status,
+                available,
+                False,
+                "Published to SVN dist. Cannot announce until the files appear in the download area.",
+            )
             for status, available in [
                 (None, False),
                 (sql.TaskStatus.QUEUED, False),
@@ -201,10 +208,21 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
 
 def test_render_publish_step_omits_promotion_for_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
-    html = "".join(str(item) for item in finish._render_publish_step())
+    html = "".join(str(item) for item in finish._render_publish_step(False))
     assert "dist/release" in html
     assert "dist/atr" not in html
     assert "<a " not in html
+
+
+@pytest.mark.parametrize("target", [util.SvnPublishTarget.RELEASE, util.SvnPublishTarget.ATR])
+def test_render_publish_step_does_not_ask_again_when_published(
+    monkeypatch: pytest.MonkeyPatch, target: util.SvnPublishTarget
+) -> None:
+    monkeypatch.setattr(util, "svn_publish_target", lambda: target)
+    monkeypatch.setattr(util, "as_url", lambda *_args, **_kwargs: "/docs")
+    html = "".join(str(item) for item in finish._render_publish_step(True))
+    assert "already requested" in html
+    assert "if you did not already" not in html
 
 
 def test_svn_publish_label_names_release_target(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -31,7 +31,7 @@ def test_body_contains_publication_download_url(page_announce: Page) -> None:
 
 @pytest.mark.parametrize("published", [True, False])
 def test_finish_refreshes_svn_and_announcement_status(page: Page, published: bool) -> None:
-    pending = "Cannot announce until download area publication is complete."
+    pending = "Published to SVN dist. Cannot announce until the files appear in the download area."
     final_message = "" if published else "Cannot announce until SVN and download area publications are complete."
     svn_html = (
         "<p>Published to SVN dist as r123</p>"

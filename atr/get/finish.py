@@ -138,7 +138,7 @@ async def _announce_disable_message(release: sql.Release) -> str:
             or (not isinstance(monitor.result, results.DownloadsCheck))
             or (not monitor.result.available)
         ):
-            return "Cannot announce until download area publication is complete."
+            return "Published to SVN dist. Cannot announce until the files appear in the download area."
     return announce._missing_distributions_message(release)
 
 
@@ -246,9 +246,16 @@ async def _render_page(
     # Release info card
     page.append(_render_release_card(release, announce_disable_message))
 
+    proj = release.safe_project_key
+    ver = release.safe_version_key
+    rev = release.safe_latest_revision_number
+    published = (await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)) is not None
+    if not published:
+        published = (await interaction.release_in_flight_svn_publish_task(proj, ver, rev)) is not None
+
     page.p[
         "On this page you should do three things: ",
-        *_render_publish_step(),
+        *_render_publish_step(published),
         "; 2. optionally record third party distributions that you made; and then, when ready, 3. use ",
         htm.strong["Announce"],
         " above to complete the process.",
@@ -304,13 +311,16 @@ async def _render_page(
     )
 
 
-def _render_publish_step() -> list[htm.Element | str]:
+def _render_publish_step(published: bool) -> list[htm.Element | str]:
+    # Resolving a vote can publish automatically, so don't ask for it again
+    done = " (already requested, see below)" if published else " if you did not already"
     if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
-        return ["1. publish to SVN dist ", htm.code["dist/release"], " if you did not already"]
+        return ["1. publish to SVN dist ", htm.code["dist/release"], done]
     return [
         "1. publish to SVN dist ",
         htm.code["dist/atr"],
-        " if you did not already, and then ",
+        done,
+        ", and then ",
         htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
             "manually ",
             htm.code["svn mv"],
