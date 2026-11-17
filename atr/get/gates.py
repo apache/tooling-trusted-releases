@@ -68,15 +68,16 @@ async def config(session: web.Committer, _gates_config: Literal["gates/config"])
         if proposal.previous_id == getattr(current.get(proposal.repository_id), "id", None)
     ]
     page = htm.Block()
-    page.h1["Gate configuration"]
+    page.h1["Configure new and existing gates"]
+    page.p[htm.strong["This is the page to configure your gates, not to approve requests through existing gates."]]
     page.p[
         f"""A change to a gate takes effect once {gates.THRESHOLD} active members of the repository's
         release team approve it. Proposing a change counts as your approval."""
     ]
-    page.h2["Gates"]
-    page.div[[_gate_table(gate) for gate in current.values()] or htm.p["There are no gates."]]
     page.h2["Proposed changes"]
     page.div[proposals or htm.p["There are no proposed changes."]]
+    page.h2["Gates"]
+    page.div[[_gate_table(gate) for gate in current.values()] or htm.p["There are no gates."]]
     page.h2["Propose a gate or a change"]
     page.form(method="post", action=util.as_url(post.gates.propose))[
         form.csrf_input(),
@@ -89,7 +90,7 @@ async def config(session: web.Committer, _gates_config: Literal["gates/config"])
         ),
         htm.button(".btn.btn-primary", type="submit")["Propose"],
     ]
-    return await template.blank("Gate configuration", content=page.collect())
+    return await template.blank("Configure new and existing gates", content=page.collect())
 
 
 @get.typed
