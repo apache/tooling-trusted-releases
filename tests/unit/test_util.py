@@ -36,6 +36,18 @@ async def test_atomic_modify_file_creates_a_missing_file(tmp_path: pathlib.Path)
     assert file_path.read_text(encoding="utf-8") == "modified"
 
 
+async def test_check_propagation_requires_every_server(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(util, "_propagation_addresses", mock.AsyncMock(return_value=["192.0.2.1", "192.0.2.2"]))
+    monkeypatch.setattr(util, "_propagation_probe", _probe_missing_from_second_server)
+
+    summary = await util.check_propagation(
+        util.SvnPublishTarget.RELEASE, "https://downloads.apache.org/example", ["a.tar.gz", "b.tar.gz"]
+    )
+
+    assert summary.reachable == 1
+    assert [outcome.error for outcome in summary.missing] == ["192.0.2.2: HTTP 404"]
+
+
 def test_chmod_files_does_not_change_directory_permissions(tmp_path: pathlib.Path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()
@@ -168,6 +180,18 @@ async def test_number_of_release_files_counts_paths_with_spaces(monkeypatch, tmp
     assert await util.number_of_release_files(object()) == 2
 
 
+async def test_pinned_resolver_pins_only_its_host():
+    resolver = util.PinnedResolver("downloads.apache.org", "192.0.2.1")
+    inner = mock.AsyncMock()
+    inner.resolve.return_value = [{"host": "192.0.2.9", "port": 443}]
+    resolver._PinnedResolver__resolver = inner
+
+    pinned = await resolver.resolve("downloads.apache.org", 443)
+
+    assert [(result["hostname"], result["host"]) for result in pinned] == [("downloads.apache.org", "192.0.2.1")]
+    assert await resolver.resolve("archive.apache.org", 443) == inner.resolve.return_value
+
+
 async def test_public_resolver_allows_global_addresses():
     resolver = util.PublicResolver()
     inner = mock.AsyncMock()
@@ -202,3 +226,16 @@ async def test_read_file_for_viewer_hides_exception_details(tmp_path: pathlib.Pa
 def test_version_key_error_rejects_too_long():
     assert util.version_key_error("1" * safe.MAX_VERSION_LENGTH) is None
     assert util.version_key_error("1" * (safe.MAX_VERSION_LENGTH + 1)) is not None
+
+
+async def _probe_missing_from_second_server(
+    http_session: aiohttp.ClientSession, rel_path: str, public_url: str, server: str
+) -> util.PropagationOutcome:
+    ok = (server, rel_path) != ("192.0.2.2", "b.tar.gz")
+    return util.PropagationOutcome(
+        rel_path=rel_path,
+        public_url=public_url,
+        ok=ok,
+        status=200 if ok else 404,
+        error=None if ok else f"{server}: HTTP 404",
+    )

@@ -319,6 +319,32 @@ class FetchError(RuntimeError):
         self.url = url
 
 
+class PinnedResolver(aiohttp.abc.AbstractResolver):
+    def __init__(self, host: str, address: str) -> None:
+        self.__host = host
+        self.__address = address
+        self.__resolver = aiohttp.DefaultResolver()
+
+    async def close(self) -> None:
+        await self.__resolver.close()
+
+    async def resolve(
+        self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET
+    ) -> list[aiohttp.abc.ResolveResult]:
+        if host != self.__host:
+            return await self.__resolver.resolve(host, port, family)
+        return [
+            aiohttp.abc.ResolveResult(
+                hostname=host,
+                host=self.__address,
+                port=port,
+                family=socket.AF_INET,
+                proto=0,
+                flags=socket.AI_NUMERICHOST | socket.AI_NUMERICSERV,
+            )
+        ]
+
+
 class PublicResolver(aiohttp.abc.AbstractResolver):
     def __init__(self) -> None:
         self.__resolver = aiohttp.DefaultResolver()
@@ -619,13 +645,14 @@ async def check_propagation(
     unprobed = len(rel_paths) - len(capped)
     if not capped:
         return PropagationSummary(target=target, total=0, reachable=0, outcomes=[])
-    async with create_secure_session(timeout=PROPAGATION_TIMEOUT) as http_session:
-        outcomes = await asyncio.gather(
-            *[
-                _propagation_probe(http_session, rel_path, _propagation_public_url(public_base_url, rel_path))
-                for rel_path in capped
-            ]
-        )
+    host = urllib.parse.urlsplit(public_base_url).hostname or ""
+    addresses = await _propagation_addresses(host)
+    per_address = await asyncio.gather(
+        *[_propagation_probe_address(host, address, public_base_url, capped) for address in addresses]
+    )
+    outcomes = [
+        next((outcome for outcome in probes if not outcome.ok), probes[0]) for probes in zip(*per_address, strict=True)
+    ]
     reachable = sum(1 for outcome in outcomes if outcome.ok)
     return PropagationSummary(
         target=target, total=len(outcomes), reachable=reachable, outcomes=outcomes, unprobed=unprobed
@@ -812,9 +839,10 @@ def create_secure_session(
     timeout: aiohttp.ClientTimeout | None = None,
     public: bool = False,
     ipv4_only: bool = False,
+    resolver: aiohttp.abc.AbstractResolver | None = None,
 ) -> aiohttp.ClientSession:
     """Create a secure aiohttp.ClientSession with hardened SSL/TLS configuration."""
-    resolver = PublicResolver() if public else None
+    resolver = PublicResolver() if public else resolver
     family = socket.AF_INET if ipv4_only else socket.AF_UNSPEC
     connector = aiohttp.TCPConnector(ssl=create_secure_ssl_context(), resolver=resolver, family=family)
     # We pass the timeout to the ClientSession constructor
@@ -1990,10 +2018,19 @@ def _npm_pack_parse_package_json(raw: bytes) -> tuple[dict[str, Any] | None, str
     return parsed, None
 
 
+async def _propagation_addresses(host: str) -> Sequence[str | None]:
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, None, family=socket.AF_INET, type=socket.SOCK_STREAM)
+    except OSError:
+        return [None]
+    return sorted({str(info[4][0]) for info in infos})
+
+
 async def _propagation_probe(
     http_session: aiohttp.ClientSession,
     rel_path: str,
     public_url: str,
+    server: str,
 ) -> PropagationOutcome:
     try:
         async with asyncio.timeout(PROPAGATION_PROBE_DEADLINE):
@@ -2005,13 +2042,30 @@ async def _propagation_probe(
                     public_url=public_url,
                     ok=ok,
                     status=status,
-                    error=None if ok else f"HTTP {status}",
+                    error=None if ok else f"{server}: HTTP {status}",
                 )
     except aiohttp.ClientError as exc:
-        return PropagationOutcome(rel_path=rel_path, public_url=public_url, ok=False, status=None, error=str(exc))
+        return PropagationOutcome(
+            rel_path=rel_path, public_url=public_url, ok=False, status=None, error=f"{server}: {exc}"
+        )
     except TimeoutError as exc:
         return PropagationOutcome(
-            rel_path=rel_path, public_url=public_url, ok=False, status=None, error=f"timeout: {exc}"
+            rel_path=rel_path, public_url=public_url, ok=False, status=None, error=f"{server}: timeout: {exc}"
+        )
+
+
+async def _propagation_probe_address(
+    host: str, address: str | None, public_base_url: str, rel_paths: list[str]
+) -> list[PropagationOutcome]:
+    resolver = None if (address is None) else PinnedResolver(host, address)
+    async with create_secure_session(timeout=PROPAGATION_TIMEOUT, resolver=resolver) as http_session:
+        return await asyncio.gather(
+            *[
+                _propagation_probe(
+                    http_session, rel_path, _propagation_public_url(public_base_url, rel_path), address or host
+                )
+                for rel_path in rel_paths
+            ]
         )
 
 

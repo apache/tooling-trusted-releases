@@ -16,6 +16,7 @@
 # under the License.
 
 import asyncio
+import unittest.mock as mock
 
 import pytest
 
@@ -79,7 +80,8 @@ class MixedSession:
 
 async def test_check_propagation_caps_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FakeSession(200)
-    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: session)
+    monkeypatch.setattr(util, "_propagation_addresses", mock.AsyncMock(return_value=[None]))
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None, resolver=None: session)
 
     summary = await util.check_propagation(
         util.SvnPublishTarget.RELEASE,
@@ -93,7 +95,8 @@ async def test_check_propagation_caps_probes(monkeypatch: pytest.MonkeyPatch) ->
 
 
 async def test_check_propagation_preserves_results_past_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: MixedSession())
+    monkeypatch.setattr(util, "_propagation_addresses", mock.AsyncMock(return_value=[None]))
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None, resolver=None: MixedSession())
     monkeypatch.setattr(util, "PROPAGATION_PROBE_DEADLINE", 0.05)
 
     summary = await util.check_propagation(
@@ -108,7 +111,8 @@ async def test_check_propagation_preserves_results_past_deadline(monkeypatch: py
 
 async def test_check_propagation_production_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FakeSession(200)
-    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: session)
+    monkeypatch.setattr(util, "_propagation_addresses", mock.AsyncMock(return_value=[None]))
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None, resolver=None: session)
 
     summary = await util.check_propagation(
         util.SvnPublishTarget.RELEASE,
@@ -122,7 +126,8 @@ async def test_check_propagation_production_public_url(monkeypatch: pytest.Monke
 
 async def test_check_propagation_test_target_url(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FakeSession(200)
-    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: session)
+    monkeypatch.setattr(util, "_propagation_addresses", mock.AsyncMock(return_value=[None]))
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None, resolver=None: session)
 
     summary = await util.check_propagation(
         util.SvnPublishTarget.ATR,

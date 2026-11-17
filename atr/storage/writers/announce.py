@@ -483,8 +483,9 @@ class ReleaseManager(CommitteeParticipant):
                 )
             raise storage.PublicationMissingError(
                 f"This release cannot be announced yet, because only {summary.reachable} of {summary.total}"
-                f" checked artifacts are available on the download server; the first missing artifact is"
-                f" {missing[0].public_url}. Publication may still be propagating, so please try again later.",
+                f" checked artifacts are available on every download server; the first missing artifact is"
+                f" {missing[0].public_url} ({missing[0].error}). Publication may still be propagating, so please"
+                " try again later.",
                 status=409,
             )
         if blocked := summary.blocked:
