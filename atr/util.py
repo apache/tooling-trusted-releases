@@ -412,15 +412,16 @@ async def atomic_modify_file(
     file_path: pathlib.Path,
     modify: Callable[[str], str],
 ) -> None:
-    # This function assumes that file_path already exists and its a regular file
+    # A missing file_path is read as empty, and is created along with its parent directory
+    # An existing file_path must be a regular file
     lock_path = file_path.with_suffix(file_path.suffix + ".lock")
+    await aiofiles.os.makedirs(file_path.parent, exist_ok=True)
     lock_fd = await asyncio.to_thread(os.open, str(lock_path), os.O_CREAT | os.O_RDWR)
     try:
         await asyncio.to_thread(fcntl.flock, lock_fd, fcntl.LOCK_EX)
         try:
-            async with aiofiles.open(file_path, encoding="utf-8") as rf:
-                old_value = await rf.read()
-            new_value = modify(old_value)
+            old_value = await _read_text_or_none(file_path)
+            new_value = modify(old_value or "")
             if new_value != old_value:
                 await atomic_write_file(file_path, new_value)
         finally:
@@ -2018,6 +2019,14 @@ def _propagation_public_url(public_base_url: str, rel_path: str) -> str:
     base = public_base_url.rstrip("/")
     quoted = urllib.parse.quote(rel_path)
     return f"{base}/{quoted}"
+
+
+async def _read_text_or_none(file_path: pathlib.Path) -> str | None:
+    try:
+        async with aiofiles.open(file_path, encoding="utf-8") as rf:
+            return await rf.read()
+    except FileNotFoundError:
+        return None
 
 
 def _thread_message_from_source(mid: str, content: bytes) -> dict[str, Any]:

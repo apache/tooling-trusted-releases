@@ -28,6 +28,14 @@ import atr.models.safe as safe
 import atr.util as util
 
 
+async def test_atomic_modify_file_creates_a_missing_file(tmp_path: pathlib.Path):
+    file_path = tmp_path / "missing" / "example.json"
+
+    await util.atomic_modify_file(file_path, lambda content: content + "modified")
+
+    assert file_path.read_text(encoding="utf-8") == "modified"
+
+
 def test_chmod_files_does_not_change_directory_permissions(tmp_path: pathlib.Path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()
