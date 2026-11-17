@@ -111,18 +111,18 @@ def single_root_dir(directory: safe.StatePath) -> str | None:
 def _build_extraction_config(max_extract_size: int) -> exarch.SecurityConfig:
     cfg = (
         exarch.SecurityConfig()
-        .max_file_size(max_extract_size)
-        .max_total_size(max_extract_size)
-        .max_file_count(MAX_ARCHIVE_MEMBERS)
-        .max_compression_ratio(100.0)
-        .max_path_depth(32)
+        .with_max_file_size(max_extract_size)
+        .with_max_total_size(max_extract_size)
+        .with_max_file_count(MAX_ARCHIVE_MEMBERS)
+        .with_max_compression_ratio(500.0)
+        .with_max_path_depth(32)
         # Escaping the root is still disallowed by exarch even when symlinks are allowed
-        .allow_symlinks(True)
-        .allow_hardlinks(False)
-        .allow_absolute_paths(False)
+        .with_allow_symlinks(True)
+        .with_allow_hardlinks(False)
+        .with_allow_absolute_paths(False)
         # Too many Apache archives ship world-writable files for us to reject them;
         # we chmod after extraction anyway via util.chmod_files.
-        .allow_world_writable(True)
+        .with_allow_world_writable(True)
     )
     banned = cfg.banned_path_components
     cfg.banned_path_components = [component for component in banned if component.lower() != ".env"]

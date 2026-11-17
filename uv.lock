@@ -710,16 +710,16 @@ wheels = [
 
 [[package]]
 name = "exarch"
-version = "0.3.1"
+version = "0.10.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/fc/dabd6853ceb795f740615008176e9e94f0541d5ae81f59874c79ee56efc8/exarch-0.3.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:6acefb6c48f25b1afe01d2e93daee45073f64364b906c2d2fe997225198756fb", size = 1239026, upload-time = "2026-05-19T14:09:53.12Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/6a/7445689f1bfb08bf7cb289ae5955276d122ef1f665675a5cb82a38fa7f9b/exarch-0.3.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:47db55085caa7e0382ad7c0af5c8433cd17f246d54b35c1d440671140ee3ba6c", size = 1088196, upload-time = "2026-05-19T14:09:55.008Z" },
-    { url = "https://files.pythonhosted.org/packages/e6/bc/573b739de7631fec35ed45c7db76fab9a0ae9e8960fa1ef1c3497bac5191/exarch-0.3.1-cp39-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:50787540db515ed22ab7cba5a359a3b348d5d5a4703a35a8203998dffb300881", size = 1310772, upload-time = "2026-05-19T14:09:56.809Z" },
-    { url = "https://files.pythonhosted.org/packages/a0/0a/60f4b27eb2a11f5edbec33225b65118fe8e6eb39b97a42ca1796f9c6c9fc/exarch-0.3.1-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:1041d442e39d9cdb07847e435935f9f8c27199e6d86926660bd56083aa160c54", size = 1395771, upload-time = "2026-05-19T14:09:58.556Z" },
-    { url = "https://files.pythonhosted.org/packages/03/05/03bb9475e54c6d3a040bce8e0fb1fbf85e5a93beb19d2d22c7b0c0c3ceea/exarch-0.3.1-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:02f8ac429a27c4e86ad2bc76f651cb058516f271ddf0d313004df8417d231142", size = 1479984, upload-time = "2026-05-19T14:10:00.456Z" },
-    { url = "https://files.pythonhosted.org/packages/c1/39/bb6c31cb97543a4dd6fe0a193b038f2c8fc03c4741f023275560eacce73b/exarch-0.3.1-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:42e2f54698090c3f1430513158b975a9f50aa8eda61504c146517640fe093c45", size = 1602458, upload-time = "2026-05-19T14:10:02.121Z" },
-    { url = "https://files.pythonhosted.org/packages/1b/b2/9bf71b77fc9753e4a3413053dd82905cd84067424b368f4dd01f9a3148ce/exarch-0.3.1-cp39-abi3-win_amd64.whl", hash = "sha256:07d8e4909c772e537613bcd254596e8f239088008e9e9c5257521de4f0279993", size = 1066639, upload-time = "2026-05-19T14:10:03.552Z" },
+    { url = "https://files.pythonhosted.org/packages/41/1e/b39c4d956dc252074382be7e674c71136595548e5d32ed964a41388b316c/exarch-0.10.0-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ba8aae9e64a865ed7a26c616b31b2a3f55cb70af626458e0b7c4208d67c0812a", size = 3005339, upload-time = "2026-11-10T19:25:08.041Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/f3/c2b95d49eacf2750b064c4d0ab31f86a5477a653078600e7bcfea4174b2a/exarch-0.10.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:279622483fb958d6d04ae425a5d5b76dce28db47aba07a964a5a6022fca0f785", size = 2824182, upload-time = "2026-11-10T19:25:11.39Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/29/b6384b6d2c4fad59e23d7f55aece6818914f04c5cd3e4b12652b8e074a5a/exarch-0.10.0-cp311-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:5b7ee765ecc2d39e08145da2d370059550bbf8076fe4f786905e35218b98953a", size = 3030096, upload-time = "2026-11-10T19:25:13.409Z" },
+    { url = "https://files.pythonhosted.org/packages/66/0c/d82d6c700c889432c0682ec6fb85f8c178f7f1f46f1f56e7a092e8d5f33b/exarch-0.10.0-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:96a71a1667f04758a9e09b93dbc5bd0d52565a5052b614fb183c9f26dcb8acd7", size = 3202366, upload-time = "2026-11-10T19:25:15.267Z" },
+    { url = "https://files.pythonhosted.org/packages/05/d5/09e4a2cf7dcd7bfe62e40c3fc8c985de0b0ed6eba5a2f78b1e822c41cc94/exarch-0.10.0-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:a3bed020f45878454f7faf86d5c44be1577917b1f42ee0fa9066ac079e22f3da", size = 3140041, upload-time = "2026-11-10T19:25:17.241Z" },
+    { url = "https://files.pythonhosted.org/packages/69/49/d8a16559539d979f206a0bc0a4f3596d53eb2093aced026dc518ccc80d7a/exarch-0.10.0-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:1d58e3bedef9302ab473548d9ea4e672ce2c88f741b1524459d23f35c77a3c46", size = 3427874, upload-time = "2026-11-10T19:25:19.348Z" },
+    { url = "https://files.pythonhosted.org/packages/14/a8/897a30890a7282a4ef83b4cb0686f0b615573107eedb7dcf5e9c2bc7b849/exarch-0.10.0-cp311-abi3-win_amd64.whl", hash = "sha256:9923cfbcaf5a42ef76bf8ba6b770d59e7ebcace678d91b5fa084e0499f897472", size = 3070885, upload-time = "2026-11-10T19:25:20.935Z" },
 ]
 
 [[package]]
@@ -2224,7 +2224,7 @@ requires-dist = [
     { name = "dulwich", specifier = ">=1.0.0" },
     { name = "dunamai", specifier = ">=1.23.0" },
     { name = "email-validator", specifier = ">=2.2.0,<3.0.0" },
-    { name = "exarch", specifier = ">=0.2.7,<0.4" },
+    { name = "exarch", specifier = ">=0.10.0,<0.12" },
     { name = "gitignore-parser", specifier = ">=0.1.12,<0.2.0" },
     { name = "google-re2", specifier = ">=1.1.20251105" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },

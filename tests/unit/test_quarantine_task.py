@@ -21,6 +21,7 @@ import pathlib
 import stat
 import tarfile
 import unittest.mock as mock
+import zipfile
 
 import asfquart.base as base
 import exarch
@@ -74,6 +75,25 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
     mock_data.quarantined.assert_called_once_with(id=7, release_key="proj-1.0", status=sql.QuarantineStatus.FAILED)
 
 
+def test_extract_archive_to_dir_accepts_directory_symlink_with_trailing_slash(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "safe.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [
+            _tar_regular_file("dist/target/file.txt", b"hello"),
+            _tar_symlink("dist/link/", "target"),
+        ],
+    )
+    quarantine._extract_archive_to_dir(
+        safe.StatePath(archive_path, tmp_path),
+        safe.StatePath(tmp_path / "out", tmp_path),
+        safe.StatePath(tmp_path, tmp_path),
+        archives.extraction_config(),
+    )
+
+    assert (tmp_path / "out" / "dist" / "link" / "file.txt").read_bytes() == b"hello"
+
+
 def test_extract_archive_to_dir_accepts_dotenv_anywhere(tmp_path: pathlib.Path) -> None:
     archive_path = tmp_path / "safe.tar.gz"
     _write_tar_gz(
@@ -89,6 +109,21 @@ def test_extract_archive_to_dir_accepts_dotenv_anywhere(tmp_path: pathlib.Path) 
         safe.StatePath(tmp_path, tmp_path),
         archives.extraction_config(),
     )
+
+
+def test_extract_archive_to_dir_accepts_highly_compressible_zip_member(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "safe.zip"
+    data = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * 20_000
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("dist/longtext.html", data)
+    quarantine._extract_archive_to_dir(
+        safe.StatePath(archive_path, tmp_path),
+        safe.StatePath(tmp_path / "out", tmp_path),
+        safe.StatePath(tmp_path, tmp_path),
+        archives.extraction_config(),
+    )
+
+    assert (tmp_path / "out" / "dist" / "longtext.html").read_bytes() == data
 
 
 def test_extract_archive_to_dir_accepts_safe_archive(tmp_path: pathlib.Path) -> None:
