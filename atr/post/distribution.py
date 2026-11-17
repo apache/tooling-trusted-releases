@@ -54,6 +54,7 @@ async def automate_form_process_page(
     allowed_platforms = _AUTOMATED_PLATFORMS_STAGE if staging else _AUTOMATED_PLATFORMS
     if form_data.platform not in allowed_platforms:
         platform_str = form_data.platform.value
+        await _keep_submitted_values(session, shared.distribution.DistributionAutomateForm)
         return await session.redirect(
             get.distribution.stage_automate if staging else get.distribution.automate,
             project_key=str(project),
@@ -96,6 +97,7 @@ async def automate_form_process_page(
             )
         except storage.AccessError as e:
             # Instead of calling record_form_page_new, redirect with error message
+            await _keep_submitted_values(session, shared.distribution.DistributionAutomateForm)
             return await session.redirect(
                 get.distribution.stage_automate if staging else get.distribution.automate,
                 project_key=project,
@@ -196,9 +198,7 @@ async def record_form_process_page(
             )
         except (storage.AccessError, shared.distribution.PlatformNotStageableError) as e:
             # Both are user-input problems, so redirect back to the form with the message
-            submitted = await session.form_data()
-            flash_data = form.flash_error_data(shared.distribution.DistributionRecordForm, [], submitted)
-            await sessions.form_error_put(quart.request.path, flash_data)
+            await _keep_submitted_values(session, shared.distribution.DistributionRecordForm)
             return await session.redirect(
                 get.distribution.stage_record if staging else get.distribution.record,
                 project_key=str(project),
@@ -256,3 +256,8 @@ async def stage_record_selected(
     URL: /distribution/stage/record/<project_key>/<version_key>
     """
     return await record_form_process_page(session, distribute_form, project_key, version_key, staging=True)
+
+
+async def _keep_submitted_values(session: web.Committer, form_cls: type[form.Form]) -> None:
+    submitted = await session.form_data()
+    await sessions.form_error_put(quart.request.path, form.flash_error_data(form_cls, [], submitted))
