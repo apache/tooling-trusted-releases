@@ -19,6 +19,7 @@ import datetime
 import hashlib
 from typing import Literal
 
+import noisysecrets
 import pydantic
 import quart
 import quart_rate_limiter as rate_limiter
@@ -27,7 +28,6 @@ import atr.blueprints.post as post
 import atr.config as config
 import atr.get as get
 import atr.htm as htm
-import atr.noisy as noisy
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
@@ -73,7 +73,7 @@ async def tokens(
 
 
 async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenForm) -> web.WerkzeugResponse:
-    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    plaintext = noisysecrets.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
     token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
     created = datetime.datetime.now(datetime.UTC)
     expires = created + datetime.timedelta(days=shared.tokens.PAT_EXPIRY_DAYS)

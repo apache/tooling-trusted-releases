@@ -6,6 +6,9 @@ requires-python = "==3.14.*"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P5D"
 
+[options.exclude-newer-package]
+noisysecrets = "2026-11-18T22:00:00Z"
+
 [manifest]
 overrides = [
     { name = "cryptography", specifier = ">=50.0,<51.0.0" },
@@ -1274,6 +1277,15 @@ wheels = [
 ]
 
 [[package]]
+name = "noisysecrets"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ea/b5/fa736ba7e09ff4bde79f2b32f72af361aa39909400a1fc19062947bf85b9/noisysecrets-0.0.1.tar.gz", hash = "sha256:1a5cdf3b8e7fba8b8f65bd2fb7115b1daf482b5f9b41e344cee6261c1dfa89fc", size = 9101, upload-time = "2026-11-17T16:24:28.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/d3/f72f127c890a479ddd611095262bce16819360f902b83c63df047d973392/noisysecrets-0.0.1-py3-none-any.whl", hash = "sha256:9c5c869b3bb1cc334519f2afc4506df691b44465d11cb36d4472aff26347fe4f", size = 10126, upload-time = "2026-11-17T16:24:27.121Z" },
+]
+
+[[package]]
 name = "orjson"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2149,6 +2161,7 @@ dependencies = [
     { name = "ijson" },
     { name = "jsonpatch" },
     { name = "ldap3" },
+    { name = "noisysecrets" },
     { name = "orjson" },
     { name = "packaging" },
     { name = "psutil" },
@@ -2220,6 +2233,7 @@ requires-dist = [
     { name = "ijson", specifier = ">=3.5.1,<4" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "ldap3", specifier = "==2.10.2rc3" },
+    { name = "noisysecrets", specifier = ">=0.0.1" },
     { name = "orjson", specifier = ">=3.11.9" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "psutil", specifier = ">=7.2.1" },

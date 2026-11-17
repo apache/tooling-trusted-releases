@@ -23,6 +23,7 @@ from typing import Literal
 import aiofiles
 import asfquart
 import asfquart.base as base
+import noisysecrets
 import quart
 import werkzeug.wrappers.response as response
 
@@ -36,7 +37,6 @@ import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
-import atr.noisy as noisy
 import atr.paths as paths
 import atr.sessions as sessions
 import atr.shared as shared
@@ -308,7 +308,7 @@ async def test_pat(_session: web.Public, _test_pat: Literal["test/pat"]) -> web.
     if not config.is_test_mode():
         return quart.abort(404)
 
-    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    plaintext = noisysecrets.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
     token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
     created = datetime.datetime.now(datetime.UTC)
     expires = created + datetime.timedelta(days=1)

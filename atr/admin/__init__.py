@@ -39,6 +39,7 @@ import asfquart.base as base
 import htpy
 import jwt
 import markupsafe
+import noisysecrets
 import openpgp.composed
 import pydantic
 import quart
@@ -66,7 +67,6 @@ import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
-import atr.noisy as noisy
 import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
@@ -4852,7 +4852,7 @@ async def _users_system_token(
 async def _users_system_token_create(
     session: web.Committer, create_form: CreateSystemTokenForm
 ) -> web.WerkzeugResponse:
-    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    plaintext = noisysecrets.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
     token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
     created = datetime.datetime.now(datetime.UTC)
     expires = created + datetime.timedelta(days=shared.tokens.PAT_EXPIRY_DAYS)

@@ -38,6 +38,7 @@ dependencies = [
   "ijson>=3.5.1,<4",
   "jsonpatch>=1.33",
   "ldap3 (==2.10.2rc3)",
+  "noisysecrets>=0.0.1",
   "orjson>=3.11.9",
   "packaging>=25.0",
   "psutil>=7.2.1",
@@ -187,6 +188,7 @@ strict-checking = true
 [tool.uv]
 # Dependency cooldown, requires uv 0.9.17+
 exclude-newer = "5 days"
+exclude-newer-package = { noisysecrets = "2026-11-18" }
 override-dependencies = ["cryptography>=50.0,<51.0.0","h2>=4.4.1,<4.4.2","pyasn1>=0.6.5,<0.6.6"]
 required-version = ">=0.9.17"
 
