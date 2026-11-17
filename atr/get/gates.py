@@ -15,8 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import dataclasses
 from typing import Final, Literal
 
+import asfquart.base as base
 import htpy
 
 import atr.blueprints.get as get
@@ -25,7 +27,9 @@ import atr.form as form
 import atr.gates as gates
 import atr.htm as htm
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.post as post
+import atr.render as render
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -40,6 +44,12 @@ _FIELDS: Final = (
     ("Branch or tag pattern", "ref_pattern"),
     ("Notify email address", "notify"),
 )
+_RESOLVED_HEADINGS: Final = ("Repository", "Ref", "Run", "Started by", "Decisions", "Outcome", "Decided")
+
+
+@dataclasses.dataclass
+class ResolvedQuery(web.PageQuery):
+    limit: int = 10
 
 
 @get.typed
@@ -83,7 +93,34 @@ async def config(session: web.Committer, _gates_config: Literal["gates/config"])
 
 
 @get.typed
-async def index(session: web.Committer, _gates: Literal["gates"]) -> str:
+async def details(session: web.Committer, _gates_details: Literal["gates/details"], request_id: int) -> str:
+    via = sql.validate_instrumented_attribute
+    not_found = base.ASFQuartException("Gate request not found", errorcode=404)
+    async with db.session() as data:
+        request = await data.gate_request(id=request_id).demand(not_found)
+        gate = await gates.active(data, request.repository_id)
+        latest = (
+            await data.gate_request(repository_id=request.repository_id, status=sql.GateStatus.APPROVED)
+            .order_by(via(sql.GateRequest.decided).desc())
+            .limit(1)
+            .get()
+        )
+    if gate is None:
+        raise not_found
+
+    page = htm.Block()
+    page.h1[f"Gate request {request_id}"]
+    page.p[htm.a(href=util.as_url(index))["All gate requests"]]
+    page.div[_table(request, gate, latest.head_sha if latest else None, session.uid)]
+    return await template.blank(f"Gate request {request_id}", content=page.collect())
+
+
+@get.typed
+async def index(session: web.Committer, _gates: Literal["gates"], query_args: ResolvedQuery) -> str:
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise base.ASFQuartException(str(e), errorcode=400)
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
         requests = await data.gate_request().order_by(via(sql.GateRequest.id).desc()).all()
@@ -98,11 +135,10 @@ async def index(session: web.Committer, _gates: Literal["gates"]) -> str:
         gate = current.get(request.repository_id)
         if gate is None:
             continue
-        table = _table(request, gate, latest.get(request.repository_id), session.uid)
         if request.status == sql.GateStatus.PENDING:
-            active.append(table)
+            active.append(_table(request, gate, latest.get(request.repository_id), session.uid))
         else:
-            resolved.append(table)
+            resolved.append((request, gate))
 
     page = htm.Block()
     page.h1["Gates"]
@@ -114,7 +150,7 @@ async def index(session: web.Committer, _gates: Literal["gates"]) -> str:
     page.h2["Active requests"]
     page.div[active or htm.p["There are no active requests."]]
     page.h2["Resolved requests"]
-    page.div[resolved or htm.p["There are no resolved requests."]]
+    _resolved(page, resolved, query_args)
     return await template.blank("Gates", content=page.collect())
 
 
@@ -185,6 +221,12 @@ def _gate_table(gate: sql.GateConfig) -> htm.Element:
     ]
 
 
+def _page_url(limit: int, offset: int | None) -> str | None:
+    if offset is None:
+        return None
+    return util.as_url(index, limit=limit, offset=offset)
+
+
 def _proposal_table(proposal: sql.GateConfig, before: sql.GateConfig | None, uid: str) -> htm.Element:
     action = util.as_url(post.gates.decide_config)
     return htm.table(".table.table-striped.table-bordered.align-middle.mb-5")[
@@ -202,6 +244,47 @@ def _proposal_table(proposal: sql.GateConfig, before: sql.GateConfig | None, uid
             htm.tr[htm.th["Current decisions"], htm.td(colspan="2")[_current_decisions(proposal)]],
             htm.tr[htm.th["Your decision"], htm.td(colspan="2")[_decision(proposal, uid, action)]],
         ],
+    ]
+
+
+def _resolved(
+    page: htm.Block, resolved: list[tuple[sql.GateRequest, sql.GateConfig]], query_args: ResolvedQuery
+) -> None:
+    shown = resolved[query_args.offset : (query_args.offset + query_args.limit)]
+    pagination = web.page_nav(query_args.offset, query_args.limit, len(resolved), len(shown))
+    paged = (pagination.previous_offset is not None) or (pagination.next_offset is not None)
+    if paged and shown:
+        page.p[f"Showing requests {pagination.start} to {pagination.end} of {len(resolved)}."]
+    page.div[_resolved_table(shown) if shown else htm.p["There are no resolved requests."]]
+    if not paged:
+        return
+    render.html_page_nav(
+        page,
+        aria_label="Resolved request pages",
+        previous_url=_page_url(query_args.limit, pagination.previous_offset),
+        next_url=_page_url(query_args.limit, pagination.next_offset),
+    )
+
+
+def _resolved_row(request: sql.GateRequest, gate: sql.GateConfig) -> htm.Element:
+    run_url = f"https://github.com/{gate.repository}/actions/runs/{request.run_id}/attempts/{request.run_attempt}"
+    return htm.tr[
+        htm.td(".text-break")[gate.repository],
+        htm.td(".text-nowrap")[
+            htm.a(href=util.as_url(details, request_id=request.id))[htm.code[request.ref.split("/", 2)[-1]]]
+        ],
+        htm.td(".text-nowrap")[htm.a(href=run_url)[f"attempt {request.run_attempt}"]],
+        htm.td(".text-nowrap")[request.actor_asf_uid or "unknown"],
+        htm.td(".text-break")[_current_decisions(request)],
+        htm.td(".text-break")[request.status if request.decisions else "automatically rejected"],
+        htm.td(".text-break")[util.format_datetime(request.decided) if request.decided else ""],
+    ]
+
+
+def _resolved_table(rows: list[tuple[sql.GateRequest, sql.GateConfig]]) -> htm.Element:
+    return htm.table(".table.table-striped.table-bordered.align-middle")[
+        htm.thead[htm.tr[[htm.th[heading] for heading in _RESOLVED_HEADINGS]]],
+        htm.tbody[[_resolved_row(request, gate) for request, gate in rows]],
     ]
 
 
