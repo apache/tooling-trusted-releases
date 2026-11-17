@@ -19,14 +19,18 @@ from __future__ import annotations
 
 from typing import Final, Literal
 
+import quart
+
 import atr.blueprints.post as post
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
+import atr.form as form
 import atr.get as get
 import atr.models.distribution as distribution
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
@@ -192,6 +196,9 @@ async def record_form_process_page(
             )
         except (storage.AccessError, shared.distribution.PlatformNotStageableError) as e:
             # Both are user-input problems, so redirect back to the form with the message
+            submitted = await session.form_data()
+            flash_data = form.flash_error_data(shared.distribution.DistributionRecordForm, [], submitted)
+            await sessions.form_error_put(quart.request.path, flash_data)
             return await session.redirect(
                 get.distribution.stage_record if staging else get.distribution.record,
                 project_key=str(project),
