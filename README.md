@@ -38,7 +38,7 @@ mkdir -p state
 docker compose up --build
 ```
 
-Then visit https://127.0.0.1:8080/ (accept the self-signed certificate).
+Add `127.0.0.1 localhost.apache.org` to `/etc/hosts`, then visit https://localhost.apache.org:8080/ (accept the self-signed certificate).
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for additional options including running without containers.
 

@@ -121,7 +121,7 @@ class AppConfig:
     ACCOUNT_CHECK_INTERVAL = _ENVIRONMENT_CONFIG("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
     ATR_STATUS = _ENVIRONMENT_CONFIG("ATR_STATUS", default="ALPHA", cast=str)
     DISABLE_CHECK_CACHE = _ENVIRONMENT_CONFIG("DISABLE_CHECK_CACHE", default=False, cast=bool)
-    APP_HOST = _ENVIRONMENT_CONFIG("APP_HOST", default="127.0.0.1")
+    APP_HOST = _ENVIRONMENT_CONFIG("APP_HOST", default="localhost.apache.org:8080")
     SSH_HOST = _ENVIRONMENT_CONFIG("SSH_HOST", default="0.0.0.0")
     SSH_PORT = _ENVIRONMENT_CONFIG("SSH_PORT", default=2222, cast=int)
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
