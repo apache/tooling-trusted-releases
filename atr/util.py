@@ -27,6 +27,7 @@ import email.utils
 import enum
 import fcntl
 import hashlib
+import html.parser
 import ipaddress
 import json
 import os
@@ -210,6 +211,15 @@ EXPECTED_DEFAULT_TLS_CIPHER_NAMES: Final[tuple[str, ...]] = (
     "DHE-RSA-AES128-SHA256",
 )
 _CONCERN_LABELS_MAX_LISTED: Final[int] = 5
+_DOWNLOAD_PAGE_FORBIDDEN_HOSTS: Final[tuple[str, ...]] = ("dist.apache.org", "repository.apache.org")
+_DOWNLOAD_PAGE_MAX_SIZE: Final[int] = 1024 * 1024
+_DOWNLOAD_PAGE_MIRROR_SCRIPT: Final[re.Pattern[str]] = re.compile(
+    r"/dyn/(?:closer\.lua|closer\.cgi|mirrors\.cgi)(/.*)?"
+)
+_DOWNLOAD_PAGE_OVERALL_TIMEOUT: Final[int] = 30
+_DOWNLOAD_PAGE_REDIRECT_LIMIT: Final[int] = 3
+_DOWNLOAD_PAGE_REDIRECT_STATUSES: Final[frozenset[int]] = frozenset({301, 302, 303, 307, 308})
+_DOWNLOAD_PAGE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10, connect=5)
 # We have to do this interpolation because of our private key detection lint
 _PEM_PRIVATE: Final[str] = "PRIVATE"
 _PRIVATE_KEY_MARKERS: Final[tuple[str, ...]] = (
@@ -317,6 +327,17 @@ class FetchError(RuntimeError):
     def __init__(self, message: str, url: str):
         super().__init__(message)
         self.url = url
+
+
+class HrefCollector(html.parser.HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        self.hrefs.extend(value.strip() for name, value in attrs if (name == "href") and value)
 
 
 class PinnedResolver(aiohttp.abc.AbstractResolver):
@@ -876,6 +897,42 @@ def dist_location(directory: str) -> str:
     # A directory under the dist root, written the way a release manager knows it from SVN,
     # eg dist/release/maven/maven-3/3.9.10/
     return f"dist/{svn_publish_target().value}/{directory}/"
+
+
+async def download_page_fetch(url: str, read_page: bool = True) -> tuple[str, str]:
+    try:
+        async with asyncio.timeout(_DOWNLOAD_PAGE_OVERALL_TIMEOUT):
+            async with create_secure_session(timeout=_DOWNLOAD_PAGE_TIMEOUT, public=True) as http_session:
+                return await _download_page_fetch_redirects(http_session, url, read_page)
+    except (aiohttp.ClientError, TimeoutError, ValueError) as e:
+        raise FetchError(f"The download page URL could not be checked: {e}", url) from e
+
+
+def download_page_problems(
+    page_url: str, page: str, committee_dir: str, artifacts: Sequence[sql.Artifact]
+) -> list[str]:
+    urls = _download_page_urls(page_url, page)
+    mirrored = {path for url in urls if (path := _download_page_mirror_path(url)) is not None}
+    direct = {
+        _download_page_path(url.path)
+        for url in urls
+        if (url.scheme == "https") and (url.hostname == "downloads.apache.org")
+    }
+    hosts = {url.hostname for url in urls}
+    forbidden = [
+        f"The page links to {host}, which download pages must not do."
+        for host in _DOWNLOAD_PAGE_FORBIDDEN_HOSTS
+        if host in hosts
+    ]
+    if not (mirrored or direct or forbidden):
+        return [
+            "The page has no links to the ASF download hosts. It may need JavaScript, which this check does not run."
+        ]
+    problems = _download_page_artifact_problems(mirrored, direct, artifacts)
+    problems.extend(forbidden)
+    if not any(path.startswith(f"{committee_dir}/") and path.endswith("/KEYS") for path in direct):
+        problems.append(f"The page has no link to a KEYS file under {paths.downloads_url(committee_dir)}/.")
+    return problems
 
 
 def download_page_url_error(url: str) -> str | None:
@@ -1965,6 +2022,85 @@ async def _create_hard_link_clone_checks(
     # Create destination directory
     if do_not_create_dest_dir is False:
         await aiofiles.os.makedirs(dest_dir, exist_ok=True)
+
+
+def _download_page_artifact_problems(
+    mirrored: set[str], direct: set[str], artifacts: Sequence[sql.Artifact]
+) -> list[str]:
+    problems: list[str] = []
+    source_linked = False
+    for artifact in artifacts:
+        directory = artifact.download_path_suffix
+        path = f"{directory}/{artifact.artifact_path}"
+        if (path not in mirrored) and (path not in direct):
+            continue
+        if path in mirrored:
+            source_linked = source_linked or (artifact.classification == "source")
+        if path in direct:
+            problems.append(f"{artifact.artifact_path} is linked on downloads.apache.org, not through closer.lua.")
+        for companion in (artifact.signature_path, artifact.checksum_path):
+            companion_path = f"{directory}/{companion}"
+            if companion and (companion_path not in direct):
+                problems.append(f"{artifact.artifact_path} has no link to {paths.downloads_url(companion_path)}.")
+    if not source_linked:
+        problems.insert(0, "The page does not link to a source artifact of this release through closer.lua.")
+    return problems
+
+
+async def _download_page_fetch_redirects(
+    http_session: aiohttp.ClientSession, url: str, read_page: bool
+) -> tuple[str, str]:
+    for _ in range(_DOWNLOAD_PAGE_REDIRECT_LIMIT + 1):
+        if error := download_page_url_error(url):
+            raise FetchError(f"The download page URL check led to {url}: {error}", url)
+        async with http_session.get(url, allow_redirects=False) as response:
+            location = response.headers.get("Location")
+            if (response.status in _DOWNLOAD_PAGE_REDIRECT_STATUSES) and location:
+                url = urllib.parse.urljoin(str(response.url), location)
+                continue
+            if response.status != 200:
+                raise FetchError(f"The download page URL returned HTTP {response.status}, not 200", url)
+            if not read_page:
+                return url, ""
+            return url, await _download_page_read(response)
+    raise FetchError("The download page URL used too many redirects", url)
+
+
+def _download_page_mirror_path(url: urllib.parse.SplitResult) -> str | None:
+    if url.hostname == "dlcdn.apache.org":
+        return _download_page_path(url.path)
+    if url.hostname not in ("apache.org", "www.apache.org"):
+        return None
+    if (match := _DOWNLOAD_PAGE_MIRROR_SCRIPT.fullmatch(url.path)) is None:
+        return None
+    return _download_page_path(match.group(1) or urllib.parse.parse_qs(url.query).get("path", [""])[0])
+
+
+def _download_page_path(path: str) -> str:
+    return "/".join(part for part in urllib.parse.unquote(path).split("/") if part)
+
+
+async def _download_page_read(response: aiohttp.ClientResponse) -> str:
+    page = bytearray()
+    async for chunk in response.content.iter_chunked(65536):
+        page.extend(chunk)
+        if len(page) > _DOWNLOAD_PAGE_MAX_SIZE:
+            raise FetchError("The download page is larger than 1 MiB", str(response.url))
+    return page.decode("utf-8", errors="replace")
+
+
+def _download_page_urls(page_url: str, page: str) -> list[urllib.parse.SplitResult]:
+    collector = HrefCollector()
+    with contextlib.suppress(ValueError):
+        collector.feed(page)
+        collector.close()
+    urls: list[urllib.parse.SplitResult] = []
+    for href in collector.hrefs:
+        try:
+            urls.append(urllib.parse.urlsplit(urllib.parse.urljoin(page_url, href)))
+        except ValueError:
+            continue
+    return urls
 
 
 def _generate_hexdump(data: bytes) -> str:

@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 import asfquart.base as base
+import markupsafe
 import quart
 
 import atr.blueprints.get as get
@@ -114,6 +115,7 @@ async def selected(
         release=release,
         distribution_tasks=tasks,
         announce_disable_message=await _announce_disable_message(release),
+        download_page_check=quart.session.pop(f"{shared.finish.DOWNLOAD_PAGE_CHECK_SESSION_KEY}:{release.key}", None),
     )
 
 
@@ -221,6 +223,7 @@ async def _render_page(
     release: sql.Release,
     distribution_tasks: Sequence[sql.Task],
     announce_disable_message: str,
+    download_page_check: str | None,
 ) -> str:
     """Render the finish page using htm.py."""
     page = htm.Block()
@@ -242,6 +245,9 @@ async def _render_page(
 
     if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
+
+    if download_page_check is not None:
+        page.append(htm.div[markupsafe.Markup(download_page_check)])
 
     # Release info card
     page.append(_render_release_card(release, announce_disable_message))
@@ -382,6 +388,23 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 )[
                     htm.icon("check-circle"),
                     " Announce",
+                ],
+                htm.form(
+                    ".d-inline",
+                    method="post",
+                    action=util.as_url(
+                        post.finish.download_page, project_key=release.project.key, version_key=release.version
+                    ),
+                )[
+                    form.csrf_input(),
+                    htm.button(
+                        ".btn.btn-outline-secondary.me-2",
+                        type="submit",
+                        title="Check that the project download page links to this release",
+                    )[
+                        htm.icon("link-45deg"),
+                        " Check download page",
+                    ],
                 ],
             ],
             htm.div(

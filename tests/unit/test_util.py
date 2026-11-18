@@ -25,6 +25,7 @@ import aiohttp
 import pytest
 
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.util as util
 
 
@@ -135,6 +136,37 @@ async def test_create_hard_link_clone_reuses_existing_destination_directory(tmp_
     assert (dest_path / "apache-39.pom").stat().st_ino == (first_source / "apache-39.pom").stat().st_ino
 
 
+def test_download_page_problems_accepts_mirrored_links():
+    page = """
+    <a href="https://www.apache.org/dyn/closer.lua/example/1.0/example-1.0-src.tar.gz?action=download">src</a>
+    <a href="https://downloads.apache.org/example/1.0/example-1.0-src.tar.gz.asc">asc</a>
+    <a href="https://downloads.apache.org/example/1.0/example-1.0-src.tar.gz.sha512">sha512</a>
+    <a href="https://dlcdn.apache.org/example/1.0/example-1.0-bin.zip">bin</a>
+    <a href="https://downloads.apache.org/example/1.0/example-1.0-bin.zip.asc">asc</a>
+    <a href="https://downloads.apache.org/example/1.0/example-1.0-bin.zip.sha512">sha512</a>
+    <a href="//downloads.apache.org/example/sub/KEYS">KEYS</a>
+    """
+    artifacts = [_artifact("example-1.0-src.tar.gz", "source"), _artifact("example-1.0-bin.zip", "binary")]
+    assert util.download_page_problems("https://example.apache.org/download.cgi", page, "example", artifacts) == []
+
+
+def test_download_page_problems_reports_misplaced_links():
+    page = """
+    <a href="https://downloads.apache.org/example/1.0/example-1.0-src.tar.gz">src</a>
+    <a href="https://downloads.apache.org/example/1.0/example-1.0-src.tar.gz.sha512">sha512</a>
+    <a href="https://www.apache.org/dyn/closer.lua/example/0.9/example-0.9-src.tar.gz">old src</a>
+    <a href="https://dist.apache.org/repos/dist/release/example/KEYS">KEYS</a>
+    """
+    artifacts = [_artifact("example-1.0-src.tar.gz", "source")]
+    assert util.download_page_problems("https://example.apache.org/download.html", page, "example", artifacts) == [
+        "The page does not link to a source artifact of this release through closer.lua.",
+        "example-1.0-src.tar.gz is linked on downloads.apache.org, not through closer.lua.",
+        "example-1.0-src.tar.gz has no link to https://downloads.apache.org/example/1.0/example-1.0-src.tar.gz.asc.",
+        "The page links to dist.apache.org, which download pages must not do.",
+        "The page has no link to a KEYS file under https://downloads.apache.org/example/.",
+    ]
+
+
 def test_download_page_url_error_accepts_https():
     assert util.download_page_url_error("https://example.apache.org/download") is None
 
@@ -226,6 +258,18 @@ async def test_read_file_for_viewer_hides_exception_details(tmp_path: pathlib.Pa
 def test_version_key_error_rejects_too_long():
     assert util.version_key_error("1" * safe.MAX_VERSION_LENGTH) is None
     assert util.version_key_error("1" * (safe.MAX_VERSION_LENGTH + 1)) is not None
+
+
+def _artifact(name: str, classification: str) -> sql.Artifact:
+    return sql.Artifact(
+        project_key="example",
+        version="1.0",
+        artifact_path=name,
+        signature_path=f"{name}.asc",
+        checksum_path=f"{name}.sha512",
+        classification=classification,
+        download_path_suffix="example/1.0",
+    )
 
 
 async def _probe_missing_from_second_server(

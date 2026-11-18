@@ -17,11 +17,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import urllib.parse
 from typing import Final, Literal
 
-import aiohttp
 import htpy
 import quart
 
@@ -42,11 +39,7 @@ _DOWNLOAD_PAGE_KEPT: Final = (
     "The project already received a different download page URL, {url}, before this form was submitted."
     " The existing URL has been kept."
 )
-_DOWNLOAD_PAGE_OVERALL_TIMEOUT: Final = 30
-_DOWNLOAD_PAGE_REDIRECT_LIMIT: Final = 3
-_DOWNLOAD_PAGE_TIMEOUT: Final = aiohttp.ClientTimeout(total=10, connect=5)
 _PUBLICATION_HELP_URL: Final = "/docs/troubleshooting#files-missing-at-announcement"
-_REDIRECT_STATUSES: Final = frozenset({301, 302, 303, 307, 308})
 
 
 @post.typed
@@ -138,26 +131,10 @@ async def _download_page_error(url: str) -> str | None:
     if config.is_dev_environment():
         return None
     try:
-        async with asyncio.timeout(_DOWNLOAD_PAGE_OVERALL_TIMEOUT):
-            async with util.create_secure_session(timeout=_DOWNLOAD_PAGE_TIMEOUT, public=True) as http_session:
-                return await _download_page_fetch_error(http_session, url)
-    except (aiohttp.ClientError, TimeoutError) as e:
-        return f"The download page URL could not be checked: {e}"
-
-
-async def _download_page_fetch_error(http_session: aiohttp.ClientSession, url: str) -> str | None:
-    for _ in range(_DOWNLOAD_PAGE_REDIRECT_LIMIT + 1):
-        if error := util.download_page_url_error(url):
-            return f"The download page URL check led to {url}: {error}"
-        async with http_session.get(url, allow_redirects=False) as response:
-            location = response.headers.get("Location")
-            if (response.status in _REDIRECT_STATUSES) and location:
-                url = urllib.parse.urljoin(str(response.url), location)
-                continue
-            if response.status == 200:
-                return None
-            return f"The download page URL returned HTTP {response.status}, not 200"
-    return "The download page URL used too many redirects"
+        await util.download_page_fetch(url, read_page=False)
+    except util.FetchError as e:
+        return str(e)
+    return None
 
 
 async def _record_download_page(

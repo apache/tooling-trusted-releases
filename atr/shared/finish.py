@@ -16,11 +16,13 @@
 # under the License.
 
 from collections.abc import Awaitable, Callable
-from typing import Literal
+from typing import Final, Literal
 
 import atr.form as form
 import atr.models.safe as safe
 import atr.web as web
+
+DOWNLOAD_PAGE_CHECK_SESSION_KEY: Final = "finish_download_page_check"
 
 type Respond = Callable[[int, str], Awaitable[tuple[web.QuartResponse, int] | web.WerkzeugResponse]]
 
