@@ -6,7 +6,7 @@ services:
     user: "${ATR_UID:-0}:${ATR_GID:-0}"
     environment:
       - TESTS=1
-      - APP_HOST=atr:8080
+      - APP_HOST=localhost.apache.org:8080
       - BIND=0.0.0.0:8080
       - SSH_HOST=0.0.0.0
       - LDAP_BIND_DN=$LDAP_BIND_DN

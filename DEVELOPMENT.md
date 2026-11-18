@@ -64,7 +64,7 @@ docker compose up --build
 
 The first build takes several minutes. Subsequent runs are faster due to caching.
 
-Visit [`https://127.0.0.1:8080/`](https://127.0.0.1:8080/) and accept the self-signed certificate.
+Add `127.0.0.1 localhost.apache.org` to `/etc/hosts`, then visit [`https://localhost.apache.org:8080/`](https://localhost.apache.org:8080/) and accept the self-signed certificate.
 
 The container:
 
@@ -172,7 +172,7 @@ We recommend using `localhost.apache.org`, which requires adding to `/etc/hosts`
 
 Then visit: [`https://localhost.apache.org:8080/`](https://localhost.apache.org:8080/)
 
-Alternatively, use [`https://127.0.0.1:8080/`](https://127.0.0.1:8080/) without modifying hosts.
+Alternatively, use [`https://127.0.0.1:8080/`](https://127.0.0.1:8080/) without modifying hosts. Only the mock logins work there, as an ASF OAuth login always returns to `APP_HOST`, which is `localhost.apache.org:8080`.
 
 > **Note:** Pick one host and stick with it - logging in on one host doesn't log you in on another.
 

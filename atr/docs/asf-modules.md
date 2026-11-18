@@ -42,7 +42,12 @@ ATR creates its application instance via `asfquart.construct()` in
 `quart.Quart`) with ASF-standard defaults applied:
 
 ```python
-app = asfquart.construct(__name__, token_file="secrets/generated/apptoken.txt")
+app = asfquart.construct(
+    __name__,
+    app_dir=app_config.STATE_DIR,
+    token_file="secrets/generated/apptoken.txt",
+    basic_auth=False,
+)
 ```
 
 The `construct()` function performs the following setup that ATR inherits:
@@ -54,53 +59,64 @@ The `construct()` function performs the following setup that ATR inherits:
 * Sets up the ASF OAuth endpoint at the default `/auth` URI
 * Registers an error handler that redirects unauthenticated users to the OAuth login flow
 
-ATR then overrides the OAuth URLs to use the non-OIDC ASF OAuth endpoints and applies its own
-configuration via `app.config.from_object()`, taking care to preserve the ASFQuart-generated secret
-key.
+Before the call, ATR sets two of ASFQuart's OAuth settings (see
+[OAuth authentication](#oauth-authentication)). After it, ATR applies its own configuration via
+`app.config.from_object()`, taking care to preserve the ASFQuart-generated secret key.
 
 ### Session management
 
-ATR uses ASFQuart's session module (`asfquart.session`) for all cookie-based user sessions. ASFQuart
-sessions are cookie-based Quart sessions keyed by the application ID, which means multiple ASFQuart
-applications on the same host do not share sessions.
+ASFQuart can keep a session in one of two places: in the session cookie itself, or in a session
+store that the application supplies. ATR supplies a store. In [`server.py`](/ref/atr/server.py) it
+sets `app.sessions` to the `Store` class of [`sessions.py`](/ref/atr/sessions.py), which keeps each
+session as a [`UserSession`](/ref/atr/models/sql.py) row in ATR's database. See
+[Sessions](sessions) for what a session holds and how long it lasts.
+
+ASFQuart generates the session identifier, keeps it in the Quart session cookie under the
+application ID, and calls the store with a hash of it. The store never sees the identifier itself.
+What is stored against the hash, and for how long, is up to ATR.
 
 #### Reading sessions
 
-ATR calls `asfquart.session.read()` throughout the codebase to obtain the current user's session.
-This function:
+ATR reads the session through `sessions.read()`, which calls `asfquart.session.read()`. With a
+store in place that function:
 
-1. Looks up the session cookie by application ID
-2. Checks whether the session has expired (default: 7 days of inactivity)
-3. Checks whether the session exceeds the maximum lifetime if `MAX_SESSION_AGE` is configured
-4. If valid, updates the last-access timestamp and returns a `ClientSession` object
-5. If expired or absent, returns `None`
+1. Looks up the session identifier in the cookie
+2. Calls `Store.validate` with the hash of the identifier
+3. Returns the `UserSession` that the store gives it, or removes the cookie entry and returns
+   `None` if the store has no such session
 
-The returned `ClientSession` object provides: `uid` (ASF user ID), `dn` (distinguished name),
-`fullname`, `email`, `committees` (PMC memberships), `projects` (committer memberships), `isMember`,
-`isChair`, `isRole` (role/service account flag), `mfa`, and a `metadata` dict for
-application-specific data.
+What ASFQuart expects of a session object is listed in `asfquart.session.SessionProtocol`: a `uid`,
+the flags `is_member`, `is_chair`, `is_root`, `is_role` and `mfa`, and `committees`. `UserSession`
+has all of these. Its `committees` is a property that returns `member_committees`. Pyright checks
+`UserSession` against the protocol where ATR hands a session to ASFQuart.
 
-ATR uses the `metadata` dict to track admin impersonation state (the `admin` key stores the original
-admin's UID when browsing as another user).
+Requests with an `Authorization: Bearer` header do not go through this path. ATR verifies its own
+JWTs in [`jwtoken.py`](/ref/atr/jwtoken.py).
 
 #### Writing and clearing sessions
 
-ATR calls `asfquart.session.write()` to create sessions after OAuth login and during admin
-impersonation. The write function stores the session data with creation (`cts`) and last-update
-(`uts`) timestamps. ATR calls `asfquart.session.clear()` to destroy sessions on logout, session
-expiry, and when ending admin impersonation.
+ASFQuart calls the store at three points:
+
+* **Login.** After the OAuth code exchange ASFQuart calls `asfquart.session.awrite()` with the data
+  from the OAuth service, which destroys any session the browser already had and calls
+  `Store.create`. ATR maps that data onto the `UserSession` fields there and discards the rest.
+* **Replacement.** ATR calls `asfquart.session.areplace()`, through `util.write_session`, to put a
+  session that it has built itself in place of the current one. Administrator impersonation and the
+  mock logins of test mode use it. ASFQuart issues a new identifier and calls `Store.replace`.
+  During impersonation the administrator's own UID is kept in the `admin_uid` field.
+* **Logout.** `asfquart.session.aclear()` calls `Store.destroy` and removes the cookie entry. The
+  OAuth endpoint calls it for a logout, and ATR calls it after revoking a user's sessions.
+
+The store has methods that ASFQuart does not call and that ATR uses directly: `revoke_by_uid`,
+`save` and `current`.
 
 #### Session expiry
 
-ASFQuart enforces two expiry checks within `session.read()`:
+With a session store, ASFQuart applies no expiry of its own. ATR enforces two limits in
+`Store.validate`:
 
-* **Inactivity expiry**: sessions unused for longer than `expiry_time` (default 7 days) are deleted
-* **Maximum lifetime**: if `MAX_SESSION_AGE` is set in the application config, sessions older than
-  this value are deleted regardless of activity
-
-ATR additionally enforces its own absolute session maximum via `ABSOLUTE_SESSION_MAX_SECONDS` in a
-`before_request` hook in [`server.py`](/ref/atr/server.py), which is independent of ASFQuart's
-expiry.
+* **Inactivity**: a session not used for three days is deleted
+* **Maximum lifetime**: a session older than `MAX_SESSION_AGE` (72 hours by default) is deleted
 
 ### OAuth authentication
 
@@ -114,12 +130,39 @@ login flow. The endpoint is registered at `/auth` and handles:
 * `/auth?state=...&code=...` — callback from the ASF OAuth service that exchanges the authorization
   code for user data
 
-ATR overrides the default OAuth URLs to use the non-OIDC endpoints:
+ATR uses ASFQuart's default OAuth URLs, which are the OIDC endpoints of `oauth.apache.org`.
+ASFQuart sends the authorization code to the OAuth service in the body of a `POST`, which keeps it
+out of URLs that get logged.
+
+ATR sets two of ASFQuart's OAuth settings in [`server.py`](/ref/atr/server.py), before the
+application is constructed:
 
 ```python
-asfquart.generics.OAUTH_URL_INIT = "https://oauth.apache.org/auth?state=%s&redirect_uri=%s"
-asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.apache.org/token?code=%s"
+asfquart.generics.OAUTH_CALLBACK_HOST = f"https://{app_config.APP_HOST}"
+asfquart.generics.OAUTH_LOGOUT_BY_GET = False
 ```
+
+#### Callback host
+
+`OAUTH_CALLBACK_HOST` sets the host that the OAuth service sends the browser back to. Without it
+ASFQuart takes the host from the `Host` header of the request that started the login, which the
+client chooses. ATR uses `APP_HOST` here, as it does for the links in the mail it sends. The server
+does not start if the value is not `https://` followed by a host name and an optional port.
+
+An OAuth login therefore only completes on `APP_HOST`. One started on another host, such as
+`https://127.0.0.1:8080/` in development, is sent back to `APP_HOST` and refused there, because the
+cookie that ties a login to the browser belongs to the host it was started on. The mock logins of
+test mode do not go through OAuth and work on any host.
+
+#### Logging out
+
+The "Log out" button in the navigation bar is a form, and with `OAUTH_LOGOUT_BY_GET = False` a
+`GET /auth?logout` is answered with a 405.
+
+The `POST` goes through ATR's CSRF check like any other form, so a logout that another site asks
+for is a 400. ASFQuart makes a check of its own after that: a logout with a `Sec-Fetch-Site` header
+other than `same-origin` is a 403. A request without the header, as from a client that is not a
+browser, passes that check.
 
 The OAuth flow has a configurable workflow timeout (default 15 minutes) after which pending state
 tokens expire. State tokens are consumed immediately on use to prevent replay. The callback enforces
@@ -135,8 +178,10 @@ error responses rather than HTML redirects.
 #### Open redirect prevention
 
 The OAuth endpoint validates redirect URIs in both login and logout flows: URIs must start with a
-single `/` and must not start with `//`. This prevents open redirect attacks where an attacker
-crafts a login URL that redirects to an external site after authentication.
+single `/`, must not start with `//`, and may not contain a backslash or control characters. This
+prevents open redirect attacks where an attacker crafts a login URL that redirects to an external
+site after authentication. A login may not redirect to the OAuth endpoint itself either, as
+`/auth?login=/auth?logout` would otherwise be a way round the logout rules.
 
 ### Authentication decorators
 
@@ -200,8 +245,9 @@ key. These are accessed via `asfquart.APP.extensions` throughout the codebase.
 ASFQuart provides several capabilities that ATR does not use:
 
 * **LDAP authentication** (`asfquart.ldap`): ASFQuart supports HTTP Basic authentication against ASF
-  LDAP. ATR performs its own LDAP lookups via its [`ldap`](/ref/atr/ldap.py) module for
-  authorization data, but does not use ASFQuart's LDAP authentication path.
+  LDAP. It is off by default, and ATR also passes `basic_auth=False`. An `Authorization: Basic`
+  header is answered with a 401 and LDAP is not contacted. ATR performs its own LDAP lookups via
+  its [`ldap`](/ref/atr/ldap.py) module for authorization data.
 * **Bearer token handler** (`app.token_handler`): ASFQuart supports registering a callback for
   `Authorization: Bearer` tokens. ATR implements its own JWT verification in
   [`jwtoken.py`](/ref/atr/jwtoken.py) rather than using this mechanism.
@@ -218,13 +264,16 @@ When auditing ATR's authentication and session handling, be aware that several s
 behaviours originate in ASFQuart rather than in ATR's own code:
 
 * **Session cookie attributes** (`SameSite`, `Secure`, `HttpOnly`) are set by
-  `asfquart.construct()`, not by ATR.
-* **Session expiry logic** (inactivity timeout, maximum lifetime) is implemented in
-  `asfquart.session.read()`. ATR adds an additional absolute lifetime check, but the primary expiry
-  logic is in ASFQuart.
+  `asfquart.construct()`. ATR's [`config.py`](/ref/atr/config.py) sets the same values, and the
+  `__Host-session` cookie name.
+* **Session identifiers** are generated and hashed by `asfquart.session`. Session storage, expiry
+  and revocation are ATR's, in [`sessions.py`](/ref/atr/sessions.py).
 * **OAuth state management** (generation, validation, timeout, single-use) is handled by
   `asfquart.generics.setup_oauth()`.
 * **Open redirect prevention** on login/logout URIs is enforced by `asfquart.generics`.
+* **The OAuth callback URL** is built by `asfquart.generics`, on the `APP_HOST` that ATR gives it.
+* **Logout** is handled by `asfquart.generics`, which refuses a `GET` and a request from another
+  origin. ATR's CSRF and Fetch Metadata checks apply to the `POST` as well.
 * **Secret key persistence and file permissions** are managed by
   `asfquart.base.QuartApp.__init__()`.
 * **Authentication gating** on web routes uses `asfquart.auth.require`, which reads the session and

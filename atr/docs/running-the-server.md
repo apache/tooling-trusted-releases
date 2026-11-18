@@ -78,11 +78,16 @@ requires an `/etc/hosts` entry:
 **Why this matters:** Logging into the site on one host does not log you in on another host. Pick
 one and use it consistently.
 
+An ASF OAuth login only works on the host in `APP_HOST`, which is `localhost.apache.org:8080` by
+default, because the OAuth service always sends the browser back to that host. The mock logins of
+test mode work on any host.
+
 ### Environment variables
 
 * `ADMIN_USERS_ADDITIONAL` : Enable additional users as admins (inoperative in production)
 * `TESTS=1`: Enable test mode with mock authentication
-* `APP_HOST`: Hostname for the application
+* `APP_HOST`: Host and port that users reach the application on (default:
+  `localhost.apache.org:8080`). OAuth logins return to it, and links in mail use it
 * `BIND`: Address and port to bind (default: `127.0.0.1:8080`)
 * `LDAP_BIND_DN`: LDAP bind DN for rsync writes
 * `LDAP_BIND_PASSWORD`: LDAP bind password

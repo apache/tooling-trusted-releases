@@ -34,7 +34,7 @@ def generate_self_signed_cert() -> None:
     # Use timezone-aware datetime objects for UTC
     now = datetime.datetime.now(datetime.UTC)
 
-    # Build a certificate with a SAN for 127.0.0.1
+    # Build a certificate with SANs for 127.0.0.1 and localhost.apache.org
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -44,7 +44,12 @@ def generate_self_signed_cert() -> None:
         .not_valid_before(now - datetime.timedelta(minutes=1))
         .not_valid_after(now + datetime.timedelta(days=365))
         .add_extension(
-            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.IPv4Address("127.0.0.1"))]),
+            x509.SubjectAlternativeName(
+                [
+                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+                    x509.DNSName("localhost.apache.org"),
+                ]
+            ),
             critical=False,
         )
         .sign(key, hashes.SHA256())

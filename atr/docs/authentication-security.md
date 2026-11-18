@@ -146,6 +146,11 @@ authentication flow works as follows:
 The session is managed by [ASFQuart](https://github.com/apache/infrastructure-asfquart), which
 handles the OAuth handshake and session cookie management.
 
+The OAuth service sends the browser back to the host in ATR's `APP_HOST` setting, not to the host
+in the `Host` header of the request, which the client chooses. Logging out is a `POST` from ATR's
+own pages and is subject to the CSRF check above. A `GET` is answered with a 405. See
+[ASF modules](asf-modules#oauth-authentication) for how these are configured.
+
 ### Session management
 
 Sessions are stored server-side. The browser receives only a session cookie that references the
