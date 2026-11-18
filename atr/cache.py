@@ -80,8 +80,9 @@ class EmailUidLookup:
 
 
 def admins_get() -> frozenset[str]:
-    if asfquart.APP is not None:
-        return asfquart.APP.extensions.get("admins", frozenset())
+    app = asfquart.app_or_none()
+    if app is not None:
+        return app.extensions.get("admins", frozenset())
     cache_data = _admins_read_from_file()
     if cache_data is None:
         return frozenset()
@@ -89,8 +90,9 @@ def admins_get() -> frozenset[str]:
 
 
 async def admins_get_async() -> frozenset[str]:
-    if asfquart.APP is not None:
-        return asfquart.APP.extensions.get("admins", frozenset())
+    app = asfquart.app_or_none()
+    if app is not None:
+        return app.extensions.get("admins", frozenset())
     cache_data = await _admins_read_from_file_async()
     if cache_data is None:
         return frozenset()
@@ -140,7 +142,7 @@ def banner_html(markdown: str) -> markupsafe.Markup | None:
 
 
 def banner_refresh(markdown: str) -> None:
-    app = asfquart.APP
+    app = asfquart.app_or_none()
     if app is None:
         return
     app.jinja_env.globals["site_banner_html"] = banner_html(markdown)
@@ -156,10 +158,11 @@ async def banner_startup_load() -> None:
 
 
 def email_uid_apply_delta(uid: str, old_emails: Iterable[str], new_emails: Iterable[str]) -> bool:
-    if asfquart.APP is None:
+    app = asfquart.app_or_none()
+    if app is None:
         return False
-    hashes = asfquart.APP.extensions.get("email_uid_hashes")
-    reverse = asfquart.APP.extensions.get("email_uid_reverse")
+    hashes = app.extensions.get("email_uid_hashes")
+    reverse = app.extensions.get("email_uid_reverse")
     if (not isinstance(hashes, dict)) or (not isinstance(reverse, dict)):
         return False
     uid_lower = uid.lower()
@@ -183,7 +186,7 @@ def email_uid_apply_delta(uid: str, old_emails: Iterable[str], new_emails: Itera
         reverse[uid_lower] = sorted(existing)
     elif uid_lower in reverse:
         del reverse[uid_lower]
-    asfquart.APP.extensions["email_uid_refreshed"] = datetime.datetime.now(datetime.UTC)
+    app.extensions["email_uid_refreshed"] = datetime.datetime.now(datetime.UTC)
     return True
 
 
@@ -200,10 +203,11 @@ def email_uid_lookup(email: str) -> str | None:
 
 
 def email_uid_purge_uid(uid: str) -> bool:
-    if asfquart.APP is None:
+    app = asfquart.app_or_none()
+    if app is None:
         return False
-    hashes = asfquart.APP.extensions.get("email_uid_hashes")
-    reverse = asfquart.APP.extensions.get("email_uid_reverse")
+    hashes = app.extensions.get("email_uid_hashes")
+    reverse = app.extensions.get("email_uid_reverse")
     if (not isinstance(hashes, dict)) or (not isinstance(reverse, dict)):
         return False
     uid_lower = uid.lower()
@@ -213,7 +217,7 @@ def email_uid_purge_uid(uid: str) -> bool:
     for h in uid_hashes:
         if hashes.get(h) == uid_lower:
             del hashes[h]
-    asfquart.APP.extensions["email_uid_refreshed"] = datetime.datetime.now(datetime.UTC)
+    app.extensions["email_uid_refreshed"] = datetime.datetime.now(datetime.UTC)
     return True
 
 
@@ -241,10 +245,11 @@ async def email_uid_refresh() -> None:
 
 
 async def email_uid_save_current_to_file() -> None:
-    if asfquart.APP is None:
+    app = asfquart.app_or_none()
+    if app is None:
         return
-    hashes = asfquart.APP.extensions.get("email_uid_hashes")
-    reverse = asfquart.APP.extensions.get("email_uid_reverse")
+    hashes = app.extensions.get("email_uid_hashes")
+    reverse = app.extensions.get("email_uid_reverse")
     if (not isinstance(hashes, dict)) or (not isinstance(reverse, dict)):
         return
     hashes_copy = dict(hashes)
@@ -408,7 +413,7 @@ async def _email_uid_read_from_file_async() -> EmailUidCache | None:
 
 
 def _email_uid_reload_app_extensions_from_file_if_changed() -> None:
-    app = asfquart.APP
+    app = asfquart.app_or_none()
     if app is None:
         return
     file_mtime_ns = _email_uid_file_mtime_ns()
@@ -427,7 +432,7 @@ def _email_uid_reload_app_extensions_from_file_if_changed() -> None:
 def _email_uid_update_app_extensions(
     hashes: dict[str, str], reverse: dict[str, list[str]], file_mtime_ns: int | None = None
 ) -> None:
-    app = asfquart.APP
+    app = asfquart.app_or_none()
     if app is None:
         return
     app.extensions["email_uid_hashes"] = dict(hashes)
@@ -453,9 +458,10 @@ def _email_uid_validate_cache_data(cache_path: pathlib.Path, cache_data: EmailUi
 
 
 def _email_uid_view() -> EmailUidLookup:
-    if asfquart.APP is not None:
+    app = asfquart.app_or_none()
+    if app is not None:
         _email_uid_reload_app_extensions_from_file_if_changed()
-        hashes = asfquart.APP.extensions.get("email_uid_hashes")
+        hashes = app.extensions.get("email_uid_hashes")
         if isinstance(hashes, dict):
             return EmailUidLookup(hashes)
     cache_data = _email_uid_read_from_file()

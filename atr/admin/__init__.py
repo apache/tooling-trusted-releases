@@ -3964,11 +3964,6 @@ async def _system_page(session: web.Committer, query_args: SystemQuery) -> str:
 
 
 async def _system_performance_tab() -> htm.Element:
-    app = asfquart.APP
-
-    if app is ...:
-        raise base.ASFQuartException("APP is not set", errorcode=500)
-
     # Read and parse the performance log file
     log_path = pathlib.Path(config.get().PERFORMANCE_LOG_FILE)
     # # Show current working directory and its files

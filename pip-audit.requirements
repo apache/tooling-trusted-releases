@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.60
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@8802d8f7c7976858d28755ea0a83581a976939c4
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@8bdae02be8a934d94d75ad140baa121ec630ef54
     # via tooling-trusted-releases
 asyncssh==2.24.1
     # via tooling-trusted-releases
