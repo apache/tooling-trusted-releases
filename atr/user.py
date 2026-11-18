@@ -76,8 +76,9 @@ def embargo_denies(release: sql.Release, uid: str | None, *, is_member: bool) ->
     if not embargo_hides_release(release, uid, is_member=is_member):
         return False
     log.auth_event("embargo_denied", uid, release_key=release.key)
-    if asfquart.APP is not None:
-        asfquart.APP.add_background_task(notify.embargo_denial, release.key)
+    app = asfquart.app_or_none()
+    if app is not None:
+        app.add_background_task(notify.embargo_denial, release.key)
     return True
 
 

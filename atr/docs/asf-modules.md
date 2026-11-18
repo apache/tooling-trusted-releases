@@ -230,15 +230,17 @@ would otherwise overwrite it.
 ### JWT signing key storage
 
 ATR stores its JWT signing key in the Quart application's `extensions` dict, which is provided by
-the `QuartApp` instance from ASFQuart. The [`jwtoken`](/ref/atr/jwtoken.py) module calls
-`asfquart.APP.extensions` to read and write the signing key. This is standard Quart functionality
-exposed through ASFQuart's application instance.
+the `QuartApp` instance from ASFQuart. The [`jwtoken`](/ref/atr/jwtoken.py) module gets the
+application from `asfquart.app_or_none()` and reads and writes the signing key in its `extensions`.
+This is standard Quart functionality exposed through ASFQuart's application instance.
 
 ### Application extensions
 
 ATR uses the `QuartApp.extensions` dict (a standard Quart feature inherited from ASFQuart) to store
 application-wide cached data including the admin user set, project version cache, and JWT signing
-key. These are accessed via `asfquart.APP.extensions` throughout the codebase.
+key. Code that only runs in the server reads them from `asfquart.APP.extensions`. `asfquart.APP` is
+`None` in a process that has not constructed an application, such as a worker, so code that also
+runs there calls `asfquart.app_or_none()` and tests the result first.
 
 ### What ATR does not use from ASFQuart
 

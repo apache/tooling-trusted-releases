@@ -167,9 +167,7 @@ class SSLShutdownFilter(logging.Filter):
 
 def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     """Create the base Quart application."""
-    if asfquart.construct is ...:
-        raise ValueError("asfquart.construct is not set")
-    # The OAuth provider sends the browser back to the configured host, never the Host header's
+    # The OAuth service sends the browser back to APP_HOST, not to the host in the Host header
     asfquart.generics.OAUTH_CALLBACK_HOST = f"https://{app_config.APP_HOST}"
     # Logging out is a form in the navigation bar, so only a POST may do it
     asfquart.generics.OAUTH_LOGOUT_BY_GET = False

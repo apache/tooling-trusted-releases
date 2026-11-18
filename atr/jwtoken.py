@@ -83,7 +83,7 @@ class ProjectToken:
 
 
 def activate_signing_key(key: str) -> None:
-    app = asfquart.APP
+    app = asfquart.app_or_none()
     if app is None:
         raise RuntimeError("Application is not initialised")
     app.extensions[_JWT_KEY_APP_EXTENSION] = key
@@ -416,7 +416,7 @@ async def _revalidate_project(claims: dict[str, Any]) -> None:
 
 
 def _signing_key() -> str:
-    app = asfquart.APP
+    app = asfquart.app_or_none()
     if app is not None:
         key = app.extensions.get(_JWT_KEY_APP_EXTENSION)
         if isinstance(key, str) and key:
