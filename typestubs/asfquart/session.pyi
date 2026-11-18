@@ -6,18 +6,39 @@ import typing
 
 """ASFQuart - User session methods and decorators"""
 
+OLD_NAMES: dict[str, str]
+
+@typing.runtime_checkable
+class SessionProtocol(typing.Protocol):
+    """What asfquart expects of a session."""
+
+    @property
+    def uid(self) -> str | None: ...
+    @property
+    def is_member(self) -> bool: ...
+    @property
+    def is_chair(self) -> bool: ...
+    @property
+    def is_root(self) -> bool: ...
+    @property
+    def is_role(self) -> bool: ...
+    @property
+    def mfa(self) -> bool: ...
+    @property
+    def committees(self) -> typing.Collection[str]: ...
+
 class ClientSession(dict):
     uid: str | None
     dn: str | None
     fullname: str | None
     email: str
-    isMember: bool
-    isChair: bool
-    isRoot: bool
+    is_member: bool
+    is_chair: bool
+    is_root: bool
     committees: list[str]
     projects: list[str]
     mfa: bool
-    isRole: bool
+    is_role: bool
     metadata: dict
 
     def __init__(self, raw_data: dict) -> None:
@@ -46,6 +67,6 @@ async def aclear(app=...):  # -> None:
     """Clears a server-side session"""
     ...
 
-async def areplace(session_object: typing.Any, app=...):  # -> None:
+async def areplace(session_object: SessionProtocol, app=...):  # -> None:
     """Replaces the current session with a pre-constructed session object"""
     ...
