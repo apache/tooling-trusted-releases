@@ -20,6 +20,7 @@ import contextlib
 import dataclasses
 import os
 import pathlib
+import posixpath
 import shutil
 import subprocess
 import time
@@ -64,7 +65,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "9"
+CHECK_VERSION: Final[str] = "10"
 
 
 @dataclasses.dataclass
@@ -299,7 +300,7 @@ async def _compare_checkout_and_archive(  # noqa: C901
         if invalid_filtered:
             invalid_list = sorted(invalid_filtered)
             await recorder.concern(
-                "Source archive contains files not in GitHub checkout or with different content",
+                "Source archive contains paths not in GitHub checkout or with different content",
                 {"invalid_count": len(invalid_list), "invalid_paths": invalid_list},
             )
             return None
@@ -345,6 +346,7 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
         raise RuntimeError(f"rsync failed with code {result.returncode}: {result.stderr.strip()}")
     invalid: set[str] = set()
     repo_only: set[str] = set()
+    archive_only_dirs: set[str] = set()
     for line in (result.stdout + "\n" + result.stderr).splitlines():
         line = line.strip()
         if not line:
@@ -378,6 +380,10 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
             repo_only.add(rel_path)
         elif is_content_diff and (not full_archive.path.is_dir(follow_symlinks=False)):
             invalid.add(rel_path)
+        elif is_content_diff and (not full_repo.path.exists(follow_symlinks=False)):
+            archive_only_dirs.add(rel_path)
+    # Git can't hold empty directories, so these came from the build tree rather than the commit
+    invalid.update(f"{d}/" for d in _innermost_dirs(archive_only_dirs, invalid))
     return TreeComparisonResult(invalid, repo_only)
 
 
@@ -437,6 +443,17 @@ async def _in_history(repository: str, sha: str, tip: str | None) -> bool:
     async with util.async_temporary_directory(prefix="history-", dir=tmp_dir) as temp_dir:
         repo_url = f"https://github.com/{repository}.git"
         return await asyncio.to_thread(_fetch_history, repo_url, sha, tip, str(temp_dir))
+
+
+def _innermost_dirs(dirs: set[str], invalid: set[str]) -> set[str]:
+    # A directory with anything reported beneath it is covered by that, so only report the empty ones
+    parents: set[str] = set()
+    for path in dirs | invalid:
+        parent = posixpath.dirname(path)
+        while parent and (parent not in parents):
+            parents.add(parent)
+            parent = posixpath.dirname(parent)
+    return dirs - parents
 
 
 def _uncompared_reason(payload: atr.models.attestable.SourceV2) -> str | None:

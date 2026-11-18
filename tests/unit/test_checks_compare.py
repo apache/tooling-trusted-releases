@@ -405,6 +405,34 @@ def test_clone_repo_raises_when_commit_missing(monkeypatch: pytest.MonkeyPatch, 
     assert git_client.closed is True
 
 
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="rsync is not available")
+@pytest.mark.parametrize(
+    ("extra_dirs", "extra_files", "expected"),
+    [
+        (["empty"], [], {"empty/"}),
+        (["src/empty"], [], {"src/empty/"}),
+        (["outer/inner"], [], {"outer/inner/"}),
+        (["outer/inner"], ["outer/c.txt"], {"outer/inner/", "outer/c.txt"}),
+        ([], ["extra/c.txt"], {"extra/c.txt"}),
+    ],
+)
+def test_compare_trees_rsync_archive_has_extra_dir(
+    tmp_path: pathlib.Path, extra_dirs: list[str], extra_files: list[str], expected: set[str]
+) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt", "src/b.txt"])
+    _make_tree(archive_dir.path, ["a.txt", "src/b.txt", *extra_files])
+    for rel_path in extra_dirs:
+        (archive_dir.path / rel_path).mkdir(parents=True)
+
+    result = atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
+
+    assert result.invalid == expected
+    assert result.repo_only == set()
+
+
 @pytest.mark.parametrize("rel_path", ["b.txt", ".asf.yaml", ".cargo/config.toml"])
 def test_compare_trees_rsync_archive_has_extra_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rel_path: str
@@ -1151,7 +1179,7 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
     assert len(recorder.concern_calls) == 1
     assert len(recorder.note_calls) == 0
     message, data = recorder.concern_calls[0]
-    assert message == "Source archive contains files not in GitHub checkout or with different content"
+    assert message == "Source archive contains paths not in GitHub checkout or with different content"
     assert isinstance(data, dict)
     assert data["invalid_count"] == 2
     assert data["invalid_paths"] == ["bad1.txt", "bad2.txt"]
