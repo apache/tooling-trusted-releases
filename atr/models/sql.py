@@ -1042,6 +1042,11 @@ class UserSession(sqlmodel.SQLModel, table=True):
     cts: float = sqlmodel.Field(default=0.0, nullable=False)
     uts: float = sqlmodel.Field(default=0.0, nullable=False)
 
+    @property
+    def committees(self) -> list[str]:
+        """The committees the user is a member of, under the name asfquart's SessionProtocol reads."""
+        return self.member_committees
+
     def model_post_init(self, _context: Any) -> None:
         if (self.email is None) and self.uid:
             self.email = f"{self.uid}@apache.org"

@@ -10,7 +10,7 @@ from . import base, session
 
 T = TypeVar('T')
 P = TypeVar('P', bound=Callable[..., Coroutine[Any, Any, Any]])
-ReqFunc = Callable[[session.ClientSession], tuple[bool, str]]
+ReqFunc = Callable[[session.SessionProtocol], tuple[bool, str]]
 
 class Requirements:
     """Various pre-defined access requirements"""
@@ -24,37 +24,42 @@ class Requirements:
     E_NOT_ROLEACCOUNT: str
 
     @classmethod
-    def mfa_enabled(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def mfa_protected(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
+        """Tests for whether the user logged in with multi-factor authentication"""
+        ...
+
+    @classmethod
+    def mfa_enabled(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """Tests for MFA enabled in the client session"""
         ...
 
     @classmethod
-    def committer(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def committer(cls, client_session: Any) -> tuple[bool, str]:
         """Tests for whether the user is a committer on any project"""
         ...
 
     @classmethod
-    def member(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def member(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """Tests for whether the user is a foundation member"""
         ...
 
     @classmethod
-    def chair(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def chair(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a chair of any top-level project"""
         ...
 
     @classmethod
-    def root(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def root(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a member of infra-root"""
         ...
 
     @classmethod
-    def pmc_member(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def pmc_member(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a PMC member of any top-level project"""
         ...
 
     @classmethod
-    def roleacct(cls, client_session: session.ClientSession) -> tuple[bool, str]:
+    def roleacct(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a service account"""
         ...
 

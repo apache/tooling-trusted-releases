@@ -20,6 +20,7 @@ import time
 import types
 import unittest.mock as mock
 
+import asfquart.auth as auth
 import asfquart.base as base
 import pytest
 import quart
@@ -398,6 +399,20 @@ async def test_user_session_email_default():
 async def test_user_session_email_explicit():
     user_session = sql.UserSession(uid="testuser", email="custom@example.org")
     assert user_session.email == "custom@example.org"
+
+
+async def test_user_session_meets_asfquart_requirements(recwarn):
+    user_session = sql.UserSession(uid="testuser", is_member=True, mfa=True, member_committees=["tooling"])
+    assert isinstance(user_session, sessions.asfquart.session.SessionProtocol)
+    assert user_session.committees == ["tooling"]
+
+    requirements = auth.Requirements
+    passing = [requirements.member, requirements.mfa_protected, requirements.pmc_member]
+    failing = [requirements.chair, requirements.root, requirements.roleacct]
+    assert [requirement(user_session)[0] for requirement in passing] == [True, True, True]
+    assert [requirement(user_session)[0] for requirement in failing] == [False, False, False]
+    # asfquart warns when it has to fall back to a session's old camelCase attribute
+    assert not [warning for warning in recwarn if issubclass(warning.category, DeprecationWarning)]
 
 
 async def test_validate_nonexistent_hsid(store):
