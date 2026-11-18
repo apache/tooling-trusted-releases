@@ -47,6 +47,7 @@ _JAVA_MEMORY_ARGS: Final[list[str]] = [
     "-XX:MaxMetaspaceSize=32m",
     "-XX:+UseSerialGC",
     "-XX:CompressedClassSpaceSize=16m",
+    "-XX:-UseBASE64Intrinsics",
 ]
 
 # Generated file patterns, always excluded

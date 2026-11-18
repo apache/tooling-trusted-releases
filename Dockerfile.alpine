@@ -1,4 +1,4 @@
-FROM python:3.14.5-alpine3.22 AS builder
+FROM python:3.14.10-alpine3.24 AS builder
 
 ENV PIP_DEFAULT_TIMEOUT=100 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -39,7 +39,7 @@ COPY . .
 RUN make generate-version
 RUN make build-docs
 
-FROM python:3.14.5-alpine3.22 AS depbuilder
+FROM python:3.14.10-alpine3.24 AS depbuilder
 
 ARG TARGETARCH
 
@@ -107,7 +107,7 @@ COPY scripts/ci/check_syft_cli_spec.sh /tmp/check_syft_cli_spec.sh
 RUN sh /tmp/check_syft_cli_spec.sh
 
 # final image
-FROM python:3.14.5-alpine3.22
+FROM python:3.14.10-alpine3.24
 
 ARG TARGETARCH
 
@@ -115,7 +115,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Set JAVA_TOOL_OPTIONS to limit memory usage
-ENV JAVA_TOOL_OPTIONS="-XX:MaxMetaspaceSize=32m -Xmx128m -XX:+UseSerialGC -XX:MaxRAM=256m -XX:CompressedClassSpaceSize=16m"
+ENV JAVA_TOOL_OPTIONS="-XX:MaxMetaspaceSize=32m -Xmx128m -XX:+UseSerialGC -XX:MaxRAM=256m -XX:CompressedClassSpaceSize=16m -XX:-UseBASE64Intrinsics"
 
 # go is required for syft
 # openjdk17 is required for Apache RAT
@@ -131,7 +131,7 @@ RUN apk update && \
       gpg \
       gpg-agent \
       icu-libs \
-      openjdk17 \
+      'openjdk17>=17.0.21.1_p2-r0' \
       openssl \
       re2 \
       rsync \
