@@ -138,7 +138,64 @@
                 </a>
               </th>
               <td class="align-middle text-break">
-                {% if primary_result.data is mapping and primary_result.data.keys()|length > 0 %}
+                {% if (primary_result.checker == "atr.tasks.checks.parity.across_formats") and (primary_result.data is mapping) %}
+                  {% set mismatched = primary_result.data.get("mismatched", []) %}
+                  {% set matched = primary_result.data.get("matched", []) %}
+                  {% set names = (mismatched|map(attribute="rel_path")|list) if mismatched else matched %}
+                  <details class="bg-light rounded">
+                    <summary class="atr-cursor-pointer user-select-none p-2">
+                      {{ "Contents differ from" if mismatched else "Contents match" }}
+                      {% for name in names %}
+                        <code>{{ name.split("/")|last }}</code>{% if not loop.last %},{% endif %}
+                      {% endfor %}
+                    </summary>
+                    <div class="p-2">
+                      <table class="table table-bordered table-sm mb-2">
+                        <thead>
+                          <tr>
+                            <th></th>
+                            <th>Archive</th>
+                            <th>Contained directory SWHID</th>
+                            <th class="text-center">Result</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <th class="bg-light text-nowrap">This archive</th>
+                            <td><code>{{ rel_path }}</code></td>
+                            <td><code>{{ primary_result.data.get("swhid") }}</code></td>
+                            <td></td>
+                          </tr>
+                          {% for sibling in mismatched %}
+                            <tr>
+                              <th class="bg-light text-nowrap">Compared with</th>
+                              <td><code>{{ sibling.rel_path }}</code></td>
+                              <td><code>{{ sibling.swhid }}</code></td>
+                              <td class="text-center text-nowrap">
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Different</span>
+                                {% if phase != "release" %}
+                                  <br/>
+                                  <a href="{{ as_url(get.report.compare, project_key=project_key, version_key=version_key, rel_path=rel_path, sibling=sibling.rel_path) }}">Compare files</a>
+                                {% endif %}
+                              </td>
+                            </tr>
+                          {% endfor %}
+                          {% for path in matched %}
+                            <tr>
+                              <th class="bg-light text-nowrap">Compared with</th>
+                              <td><code>{{ path }}</code></td>
+                              <td><code>{{ primary_result.data.get("swhid") }}</code></td>
+                              <td class="text-center">
+                                <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">Same</span>
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                      <p class="mb-0">Archives of the same source should contain exactly the same files.</p>
+                    </div>
+                  </details>
+                {% elif primary_result.data is mapping and primary_result.data.keys()|length > 0 %}
                   <details class="bg-light rounded">
                     <summary class="atr-cursor-pointer user-select-none p-2">
                       {{- primary_result.message if primary_result.message else "Details" -}}

@@ -15,18 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import collections
 import dataclasses
 import datetime
-from typing import Literal
+import posixpath
+from typing import Final, Literal
 
 import aiofiles.os
 import asfquart.base as base
 
+import atr.archives as archives
 import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
 import atr.errors as errors
+import atr.hashes as hashes
+import atr.htm as htm
 import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -37,10 +42,48 @@ import atr.template as template
 import atr.util as util
 import atr.web as web
 
+_MAX_DIFFERING: Final = 100
+_MAX_MATCHING: Final = 500
+
+
+@dataclasses.dataclass
+class CompareQuery:
+    sibling: str = ""
+
 
 @dataclasses.dataclass
 class ReportQuery(web.PageQuery):
     limit: int = 250
+
+
+@get.typed
+async def compare(
+    _session: web.Committer,
+    _compare: Literal["compare"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    rel_path: safe.RelPath,
+    query_args: CompareQuery,
+) -> str:
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+        )
+    if (release.phase == sql.ReleasePhase.RELEASE) or (release.latest_revision_number is None):
+        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+    recorded = await attestable.load(project_key, version_key, release.safe_latest_revision_number)
+    primary = str(rel_path)
+    if (recorded is None) or (query_args.sibling not in attestable.cross_format_siblings(recorded, primary)):
+        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+    left = await _compare_paths(release, recorded, primary)
+    right = await _compare_paths(release, recorded, query_args.sibling)
+    comparison = await asyncio.to_thread(archives.compare_trees, *left, *right)
+    if comparison is None:
+        raise base.ASFQuartException("Both archives must contain a single root directory", errorcode=404)
+    return await template.blank(
+        title=f"Compare archives for {release.short_display_name}",
+        content=_compare_page(release, primary, query_args.sibling, comparison),
+    )
 
 
 @get.typed
@@ -136,6 +179,71 @@ async def selected_path(
         page=page,
         format_file_size=util.format_file_size,
     )
+
+
+def _compare_label(difference: archives.MemberDifference, primary: str, sibling: str) -> str:
+    match difference:
+        case archives.MemberDifference.CONTENTS:
+            return "Contents differ"
+        case archives.MemberDifference.EXECUTABLE:
+            return "Executable bit differs"
+        case archives.MemberDifference.ONLY_LEFT:
+            return f"Only in {_compare_suffix(primary)}"
+        case archives.MemberDifference.ONLY_RIGHT:
+            return f"Only in {_compare_suffix(sibling)}"
+        case archives.MemberDifference.TYPE:
+            return "File type differs"
+
+
+def _compare_page(release: sql.Release, primary: str, sibling: str, comparison: archives.TreeComparison) -> htm.Element:
+    report_url = util.as_url(
+        selected_path, project_key=release.project_key, version_key=release.version, rel_path=primary
+    )
+    differing = [
+        (path, _compare_label(difference, primary, sibling))
+        for path, difference in comparison.differing[:_MAX_DIFFERING]
+    ]
+    matching = [(path,) for path in comparison.matching[:_MAX_MATCHING]]
+    page = htm.Block()
+    page.p[htm.a(".atr-back-link", href=report_url)[f"← Back to the report for {posixpath.basename(primary)}"]]
+    page.h1["Compare archives for ", htm.strong[release.project.short_display_name], " ", htm.em[release.version]]
+    page.p[htm.code[primary], " with ", htm.code[sibling]]
+    page.h2[f"Files that differ ({len(comparison.differing):,})"]
+    _compare_table(page, ("Path", "Difference"), differing, len(comparison.differing))
+    with page.block(htm.details) as details:
+        details.summary(".btn.btn-outline-success.mb-3")[f"Files that match ({len(comparison.matching):,})"]
+        with details.block(htm.div) as matching_block:
+            _compare_table(matching_block, ("Path",), matching, len(comparison.matching))
+    return page.collect()
+
+
+async def _compare_paths(
+    release: sql.Release, recorded: atr.models.attestable.Attestable, rel_path: str
+) -> tuple[safe.StatePath, safe.StatePath]:
+    content_hash = attestable.path_hash(recorded, rel_path)
+    if content_hash is None:
+        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+    archive_key = hashes.filesystem_archives_key(content_hash)
+    extract_dir = paths.get_archives_dir() / release.project_key / release.version / archive_key
+    if not await aiofiles.os.path.isdir(extract_dir):
+        raise base.ASFQuartException("The extracted archive is no longer available", errorcode=404)
+    return paths.release_directory(release) / rel_path, extract_dir
+
+
+def _compare_suffix(rel_path: str) -> str:
+    name = posixpath.basename(rel_path)
+    return name.removeprefix(util.archive_format_stem(name) or "")
+
+
+def _compare_table(block: htm.Block, headers: tuple[str, ...], rows: list[tuple[str, ...]], total: int) -> None:
+    if rows:
+        with block.block(htm.table, classes=".table.table-sm.table-striped") as table:
+            table.thead[htm.tr[[htm.th(scope="col")[header] for header in headers]]]
+            with table.block(htm.tbody) as body:
+                for path, *cells in rows:
+                    body.tr[htm.td[htm.code(".atr-word-wrap")[path]], [htm.td(".text-danger")[cell] for cell in cells]]
+    if total > len(rows):
+        block.p(".text-muted")[f"{total - len(rows):,} more not shown."]
 
 
 async def _published_file(
