@@ -2795,7 +2795,8 @@ async def _vote_resolve_release_and_body(
 
 
 async def _vote_resolve_tally(warm: storage.WriteAsReleaseManager, release: sql.Release) -> str:
-    binding_label, non_binding_label = user.binding_terminology(interaction.trusted_vote_round(release))
+    vote_round = interaction.trusted_vote_round(release)
+    binding_label, non_binding_label = user.binding_terminology(vote_round)
     thread_id = None
     latest_vote_task = await interaction.release_current_vote_task(release)
     if (latest_vote_task is not None) and (not release.expedited):
@@ -2818,7 +2819,13 @@ async def _vote_resolve_tally(warm: storage.WriteAsReleaseManager, release: sql.
         log.warning(f"Email tabulation unavailable for {release.key}: {e}")
         return ""
     return tabulate.email_tally_block(
-        details.votes, details.summary, thread_id, binding_label, non_binding_label, release.podling_thread_id
+        details.votes,
+        details.summary,
+        thread_id,
+        binding_label,
+        non_binding_label,
+        release.podling_thread_id,
+        binding_member_label=user.binding_member_label(vote_round),
     )
 
 

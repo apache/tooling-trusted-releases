@@ -217,6 +217,7 @@ async def selected(  # noqa: C901
             binding_label,
             non_binding_label,
             podling_thread_id=release.podling_thread_id,
+            binding_member_label=user.binding_member_label(vote_round),
         )
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
@@ -465,6 +466,8 @@ def _email_context_status_label(status: models.tabulate.VoteStatus) -> str:
     match status:
         case models.tabulate.VoteStatus.BINDING:
             return "Email from PMC member"
+        case models.tabulate.VoteStatus.FRACTIONAL:
+            return "Fractional email from PMC member"
         case models.tabulate.VoteStatus.COMMITTER:
             return "Email from committer"
         case models.tabulate.VoteStatus.CONTRIBUTOR:

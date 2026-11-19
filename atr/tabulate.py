@@ -31,6 +31,17 @@ import atr.util as util
 
 MAX_THREAD_MESSAGES = 10000
 
+_NON_BINDING_STATUSES: Final = frozenset(
+    {
+        models.tabulate.VoteStatus.FRACTIONAL,
+        models.tabulate.VoteStatus.COMMITTER,
+        models.tabulate.VoteStatus.CONTRIBUTOR,
+    }
+)
+
+# A signed decimal such as "+0.5" or "-.5", but not a version number such as "+1.86.0"
+_FRACTIONAL_VOTE_RE: Final = re.compile(r"(?:^|\s)([+-]\d*\.\d+)(?!\.?\d)")
+
 SPF_ENVELOPE_FROM_RE: Final = re.compile(
     r"(?:^|[;\s])envelope-from\s*=\s*(\"[^\"]*\"|<[^>]*>|[^;\s]+)",
     re.IGNORECASE,
@@ -143,9 +154,19 @@ def email_tally_block(
     binding_label: str = "Binding",
     non_binding_label: str = "Non-binding",
     podling_thread_id: str | None = None,
+    *,
+    binding_member_label: str,
 ) -> str:
     return "\n".join(
-        _email_tally_block(tabulated_votes, summary, thread_id, binding_label, non_binding_label, podling_thread_id)
+        _email_tally_block(
+            tabulated_votes,
+            summary,
+            thread_id,
+            binding_label,
+            non_binding_label,
+            podling_thread_id,
+            binding_member_label=binding_member_label,
+        )
     )
 
 
@@ -175,7 +196,7 @@ def vote_summary(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> dict[
             result["binding_votes_yes"] += 1 if (vote_email.vote.value == "Yes") else 0
             result["binding_votes_no"] += 1 if (vote_email.vote.value == "No") else 0
             result["binding_votes_abstain"] += 1 if (vote_email.vote.value == "-") else 0
-        elif vote_email.status in {models.tabulate.VoteStatus.COMMITTER, models.tabulate.VoteStatus.CONTRIBUTOR}:
+        elif vote_email.status in _NON_BINDING_STATUSES:
             result["non_binding_votes"] += 1
             result["non_binding_votes_yes"] += 1 if (vote_email.vote.value == "Yes") else 0
             result["non_binding_votes_no"] += 1 if (vote_email.vote.value == "No") else 0
@@ -258,8 +279,13 @@ async def votes(  # noqa: C901
         else:
             vote_cast = models.tabulate.Vote.UNKNOWN
         interpretation = (interpretations or {}).get(msg.get("mid", ""))
+        fraction = None
         if interpretation is not None:
             vote_cast = models.tabulate.Vote[interpretation.name]
+        else:
+            fraction = _vote_fraction(castings)
+        if (fraction is not None) and (status == models.tabulate.VoteStatus.BINDING):
+            status = models.tabulate.VoteStatus.FRACTIONAL
         quotation = " // ".join([c[1] for c in castings])
 
         vote_email = models.tabulate.VoteEmail(
@@ -270,6 +296,7 @@ async def votes(  # noqa: C901
             asf_eid=msg.get("mid", ""),
             iso_datetime=msg.get("date", ""),
             vote=vote_cast,
+            fraction=fraction,
             quotation=quotation,
             updated=asf_uid_or_email in tabulated_votes,
         )
@@ -401,18 +428,25 @@ def _vote_castings(body: str) -> list[tuple[models.tabulate.Vote, str]]:
         if _vote_break(line):
             break
 
-        plus_one = line.startswith("+1") or (" +1" in line)
-        minus_one = line.startswith("-1") or (" -1" in line)
+        fractional = _FRACTIONAL_VOTE_RE.search(line) is not None
+        # Fractions come out first, otherwise "+1.5" also reads as "+1"
+        whole = _FRACTIONAL_VOTE_RE.sub(" ", line)
+        # The "/" forms catch a list of the options, such as "+1/0/-1"
+        plus_one = whole.startswith("+1") or (" +1" in whole) or ("/+1" in whole)
+        minus_one = whole.startswith("-1") or (" -1" in whole) or ("/-1" in whole)
         # We must be more stringent about zero votes, can't just check for "0" in line
-        zero = (line in {"0", "-0", "+0"}) or line.startswith("0 ") or line.startswith("+0 ") or line.startswith("-0 ")
-        if (plus_one and minus_one) or (plus_one and zero) or (minus_one and zero):
+        zero = (
+            (whole in {"0", "-0", "+0"}) or whole.startswith("0 ") or whole.startswith("+0 ") or whole.startswith("-0 ")
+        )
+        if sum((plus_one, minus_one, zero, fractional)) > 1:
             # Confusing result
             continue
         if plus_one:
             castings.append((models.tabulate.Vote.YES, line))
         elif minus_one:
             castings.append((models.tabulate.Vote.NO, line))
-        elif zero:
+        elif zero or fractional:
+            # Release votes must be +1, 0 or -1 to be binding, so a fraction counts as 0
             castings.append((models.tabulate.Vote.ABSTAIN, line))
     return castings
 
@@ -434,6 +468,13 @@ def _vote_continue(line: str) -> bool:
         # Used to quote other emails
         return True
     return False
+
+
+def _vote_fraction(castings: list[tuple[models.tabulate.Vote, str]]) -> str | None:
+    if len(castings) != 1:
+        return None
+    match = _FRACTIONAL_VOTE_RE.search(castings[0][1])
+    return match.group(1) if (match is not None) else None
 
 
 def _vote_identity(
@@ -494,6 +535,8 @@ def _email_tally_block(
     binding_label: str,
     non_binding_label: str,
     podling_thread_id: str | None,
+    *,
+    binding_member_label: str,
 ) -> Generator[str]:
     if podling_thread_id:
         yield "The previous round of voting is archived at the following URL:"
@@ -507,7 +550,9 @@ def _email_tally_block(
     yield f"https://lists.apache.org/thread/{thread_id}"
     yield ""
 
-    yield from _vote_resolution_body_votes(tabulated_votes, summary, binding_label, non_binding_label)
+    yield from _vote_resolution_body_votes(
+        tabulated_votes, summary, binding_label, non_binding_label, binding_member_label=binding_member_label
+    )
 
 
 def _vote_resolution_body_votes(
@@ -515,9 +560,15 @@ def _vote_resolution_body_votes(
     summary: dict[str, int],
     binding_label: str = "Binding",
     non_binding_label: str = "Non-binding",
+    *,
+    binding_member_label: str,
 ) -> Generator[str]:
     yield from _vote_resolution_votes(
-        tabulated_votes, {models.tabulate.VoteStatus.BINDING}, binding_label, non_binding_label
+        tabulated_votes,
+        {models.tabulate.VoteStatus.BINDING},
+        binding_label,
+        non_binding_label,
+        binding_member_label=binding_member_label,
     )
 
     binding_label_inline = user.binding_label_inline(binding_label)
@@ -539,13 +590,22 @@ def _vote_resolution_body_votes(
     yield ""
 
     yield from _vote_resolution_votes(
-        tabulated_votes, {models.tabulate.VoteStatus.COMMITTER}, binding_label, non_binding_label
+        tabulated_votes,
+        {models.tabulate.VoteStatus.COMMITTER},
+        binding_label,
+        non_binding_label,
+        binding_member_label=binding_member_label,
     )
     yield from _vote_resolution_votes(
         tabulated_votes,
-        {models.tabulate.VoteStatus.CONTRIBUTOR, models.tabulate.VoteStatus.UNKNOWN},
+        {
+            models.tabulate.VoteStatus.CONTRIBUTOR,
+            models.tabulate.VoteStatus.FRACTIONAL,
+            models.tabulate.VoteStatus.UNKNOWN,
+        },
         binding_label,
         non_binding_label,
+        binding_member_label=binding_member_label,
     )
 
 
@@ -559,15 +619,17 @@ def _vote_resolution_votes(  # noqa: C901
     statuses: set[models.tabulate.VoteStatus],
     binding_label: str = "Binding",
     non_binding_label: str = "Non-binding",
+    *,
+    binding_member_label: str,
 ) -> Generator[str]:
     status_labels = []
-    for status in statuses:
-        if status == models.tabulate.VoteStatus.BINDING:
-            status_labels.append(user.binding_label_inline(binding_label))
-        elif status in {models.tabulate.VoteStatus.COMMITTER, models.tabulate.VoteStatus.CONTRIBUTOR}:
+    if models.tabulate.VoteStatus.BINDING in statuses:
+        status_labels.append(user.binding_label_inline(binding_label))
+    for status in (models.tabulate.VoteStatus.COMMITTER, models.tabulate.VoteStatus.CONTRIBUTOR):
+        if status in statuses:
             status_labels.append(status.value.lower())
-        else:
-            status_labels.append(non_binding_label.lower())
+    if statuses & {models.tabulate.VoteStatus.FRACTIONAL, models.tabulate.VoteStatus.UNKNOWN}:
+        status_labels.append(non_binding_label.lower())
     header: str | None = f"The {' and '.join(status_labels)} votes were cast as follows:"
     for vote_email in tabulated_votes.values():
         if vote_email.status not in statuses:
@@ -585,10 +647,15 @@ def _vote_resolution_votes(  # noqa: C901
                 symbol = "0"
             case models.tabulate.Vote.UNKNOWN:
                 symbol = "?"
+        if vote_email.fraction is not None:
+            # The fraction is shown as cast, the tally has it as 0
+            symbol = vote_email.fraction
         user_info = vote_email.asf_uid_or_email
         status = vote_email.status.value.lower()
         if vote_email.status == models.tabulate.VoteStatus.BINDING:
             status = user.binding_label_inline(binding_label)
+        elif vote_email.status == models.tabulate.VoteStatus.FRACTIONAL:
+            status = f"{binding_member_label}, {non_binding_label.lower()}"
         if vote_email.updated:
             status += ", updated"
         yield f"{symbol} {user_info} ({status})"

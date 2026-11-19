@@ -31,6 +31,8 @@ class Vote(enum.Enum):
 
 class VoteStatus(enum.Enum):
     BINDING = "Binding"
+    # From a PMC member, but not +1, 0 or -1, so not binding
+    FRACTIONAL = "Fractional"
     COMMITTER = "Committer"
     CONTRIBUTOR = "Contributor"
     UNKNOWN = "Unknown"
@@ -44,6 +46,8 @@ class VoteEmail(schema.Strict):
     asf_eid: str = schema.example("102ed8a-503db792-79bc789-b8ca87ce@apache.org")
     iso_datetime: str = schema.example("2025-05-01T12:00:00Z")
     vote: Vote = schema.example(Vote.YES)
+    # A fractional vote as its email wrote it, which counts as an abstention
+    fraction: str | None = schema.default_example(None, "+0.5")
     quotation: str = schema.example("+1 (Binding)")
     updated: bool = schema.example(True)
 

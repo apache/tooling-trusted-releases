@@ -208,7 +208,7 @@
               <td class="atr-nowrap">{{ vote_detail.asf_uid_or_email }}</td>
               <td class="atr-nowrap">{{ vote_detail.name }}</td>
               <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %} {% if vote_detail.vote.value == 'Yes' %}atr-green{% elif vote_detail.vote.value == 'No' %}atr-red{% endif %}">
-                {{ vote_detail.vote.value }}
+                {{ vote_detail.fraction or vote_detail.vote.value }}
               </td>
               <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %}">
                 {% if vote_detail.status.value == 'Binding' %}{{ binding_label }}{% else %}{{ vote_detail.status.value }}{% endif %}

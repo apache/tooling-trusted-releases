@@ -215,7 +215,7 @@ def _render_votes_table(block: htm.Block, tabulated_votes: dict[str, models.tabu
             htm.tr[
                 htm.td(".atr-nowrap")[vote_email.name],
                 htm.td(".atr-nowrap")[vote_email.asf_uid_or_email],
-                htm.td(f".atr-nowrap.text-center{vote_class}")[vote_email.vote.value],
+                htm.td(f".atr-nowrap.text-center{vote_class}")[vote_email.fraction or vote_email.vote.value],
                 htm.td(".atr-nowrap.text-center")[vote_email.status.value],
                 htm.td[vote_email.quotation],
             ]

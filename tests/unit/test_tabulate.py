@@ -55,6 +55,49 @@ def test_trusted_tally_block_uses_ppmc_binding_label() -> None:
     ]
 
 
+@pytest.mark.parametrize("line", ["+0.5", "-0.5", "+.5", "+0.9 from me", "so here is my +0.5 :)", "+1.5"])
+def test_vote_castings_counts_a_fractional_vote_as_abstain(line: str) -> None:
+    assert tabulate._vote_castings(line) == [(models_tabulate.Vote.ABSTAIN, line)]
+
+
+def test_vote_castings_quotes_the_fractional_line_of_a_real_email() -> None:
+    body = "\n".join(
+        [
+            "I have some concerns regarding this release",
+            "",
+            "so here is my +0.5 :)",
+            "",
+            "hashes/signatures + local build are OK",
+            "",
+            "PS voting via email due to ATR only have +1/0/-1",
+            "",
+            "On Tue, 17 Nov 2026 at 14:17, Somebody via dev",
+            "> +1",
+        ]
+    )
+
+    assert tabulate._vote_castings(body) == [(models_tabulate.Vote.ABSTAIN, "so here is my +0.5 :)")]
+
+
+@pytest.mark.parametrize("line", ["+0.5, would be +1 with the NOTICE fixed", "ATR only has +1/0/-1", "+1/-1"])
+def test_vote_castings_skips_a_line_naming_several_votes(line: str) -> None:
+    assert tabulate._vote_castings(line) == []
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("+1 (binding)", models_tabulate.Vote.YES),
+        ("+1.", models_tabulate.Vote.YES),
+        ("- cargo +1.86.0 test --workspace", models_tabulate.Vote.YES),
+        ("-1, the LICENSE is missing", models_tabulate.Vote.NO),
+        ("+0", models_tabulate.Vote.ABSTAIN),
+    ],
+)
+def test_vote_castings_still_reads_whole_votes(line: str, expected: models_tabulate.Vote) -> None:
+    assert tabulate._vote_castings(line) == [(expected, line)]
+
+
 @pytest.mark.asyncio
 async def test_vote_committee_returns_incubator_for_podling_round_two(
     monkeypatch: pytest.MonkeyPatch,
@@ -144,7 +187,7 @@ def test_vote_resolution_body_votes_formats_plural_binding_summary() -> None:
         "binding_votes_abstain": 1,
     }
 
-    body_lines = list(tabulate._vote_resolution_body_votes({}, summary))
+    body_lines = list(tabulate._vote_resolution_body_votes({}, summary, binding_member_label="PMC member"))
 
     assert body_lines[2] == "Of these binding votes, 8 were +1, 0 were -1, and 1 was 0."
 
@@ -157,7 +200,7 @@ def test_vote_resolution_body_votes_formats_singular_binding_summary() -> None:
         "binding_votes_abstain": 0,
     }
 
-    body_lines = list(tabulate._vote_resolution_body_votes({}, summary))
+    body_lines = list(tabulate._vote_resolution_body_votes({}, summary, binding_member_label="PMC member"))
 
     assert body_lines[2] == "Of these binding votes, 8 were +1, 1 was -1, and 0 were 0."
 
@@ -181,7 +224,14 @@ def test_vote_resolution_body_votes_uses_ppmc_binding_label() -> None:
         updated=False,
     )
 
-    body_lines = list(tabulate._vote_resolution_body_votes({"ppmc": vote_email}, summary, *user.binding_terminology(1)))
+    body_lines = list(
+        tabulate._vote_resolution_body_votes(
+            {"ppmc": vote_email},
+            summary,
+            *user.binding_terminology(1),
+            binding_member_label=user.binding_member_label(1),
+        )
+    )
 
     assert body_lines == [
         "The PPMC-binding votes were cast as follows:",
@@ -230,6 +280,62 @@ async def test_votes_applies_interpretation_to_its_email_only(monkeypatch: pytes
 
     assert tabulated_votes["one"].vote == models_tabulate.Vote.YES
     assert tabulated_votes["two"].vote == models_tabulate.Vote.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_votes_does_not_treat_a_fractional_pmc_vote_as_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        for voter in ("one", "two", "three"):
+            message = _vote_message(
+                from_raw=f"Voter <{voter}@apache.org>",
+                message_id=f"<{voter}@apache.org>",
+                archive_mid=f"archive-{voter}",
+                epoch="1",
+            )
+            message["body"] = "so here is my +0.5 :)\n"
+            yield f"archive-doc-{voter}", message
+
+    monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+    committee = sql.Committee(key="example", committee_members=["one", "two"], committers=["one", "two", "three"])
+
+    _start_unixtime, tabulated_votes = await tabulate.votes(
+        committee,
+        "0123456789abcdef0123456789abcdef",
+        interpretations={"archive-two": sql.VoteChoice.YES},
+    )
+
+    assert tabulated_votes["one"].vote == models_tabulate.Vote.ABSTAIN
+    assert tabulated_votes["one"].fraction == "+0.5"
+    assert tabulated_votes["two"].fraction is None
+    assert tabulated_votes["three"].fraction == "+0.5"
+    assert tabulated_votes["one"].status == models_tabulate.VoteStatus.FRACTIONAL
+    # The release manager's reading of an email stands as a binding vote
+    assert tabulated_votes["two"].vote == models_tabulate.Vote.YES
+    assert tabulated_votes["two"].status == models_tabulate.VoteStatus.BINDING
+    assert tabulated_votes["three"].status == models_tabulate.VoteStatus.COMMITTER
+
+    summary = tabulate.vote_summary(tabulated_votes)
+    assert summary["binding_votes"] == 1
+    assert summary["non_binding_votes_abstain"] == 2
+    body = list(tabulate._vote_resolution_body_votes(tabulated_votes, summary, binding_member_label="PMC member"))
+    assert body[body.index("The contributor and non-binding votes were cast as follows:") + 2 :] == [
+        "+0.5 one (PMC member, non-binding)",
+        "",
+    ]
+    podling_tally = tabulate.email_tally_block(
+        tabulated_votes,
+        summary,
+        "0123456789abcdef0123456789abcdef",
+        *user.binding_terminology(1),
+        binding_member_label=user.binding_member_label(1),
+    )
+    assert "+0.5 one (PPMC member, non-binding)" in podling_tally.splitlines()
 
 
 @pytest.mark.asyncio

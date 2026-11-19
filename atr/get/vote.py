@@ -221,6 +221,10 @@ async def _append_cast_vote_form(
         "vote_mode": release.effective_vote_mode,
     }
     if (skip is None) or ("comment" not in skip):
+        page.p[
+            "Fractional votes such as +0.5 are not binding, and count as 0. "
+            "To cast one, vote 0 and give the fraction in your comment."
+        ]
         comment_template = await construct.resolve_template(release.project, "vote_comment")
         defaults["comment"] = comment_template.body
         if comment_template.warning is not None:

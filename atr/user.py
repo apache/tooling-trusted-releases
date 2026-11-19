@@ -41,6 +41,14 @@ def binding_label_inline(label: str) -> str:
     return label.lower()
 
 
+def binding_member_label(vote_round: int | None) -> str:
+    if vote_round == 1:
+        return "PPMC member"
+    if vote_round == 2:
+        return "IPMC member"
+    return "PMC member"
+
+
 def binding_terminology(vote_round: int | None) -> tuple[str, str]:
     if vote_round == 1:
         return "PPMC-binding", "Non-binding"
