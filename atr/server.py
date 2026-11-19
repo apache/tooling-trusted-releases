@@ -321,7 +321,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
                 async with storage.read(web.Committer(current_user)) as read:
                     rafc = read.as_foundation_committer()
                     user_notifications = await rafc.notifications.pending(
-                        limit=2,
+                        limit=8 if (current_uid == "sbp") else 2,
                         include_admin=(current_uid == "sbp") or (quart.request.blueprint == "admin_blueprint"),
                     )
             except Exception:

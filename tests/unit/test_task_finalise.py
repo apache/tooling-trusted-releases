@@ -16,6 +16,8 @@
 # under the License.
 
 import datetime
+import json
+import unittest.mock as mock
 from collections.abc import AsyncIterator
 
 import pytest
@@ -24,12 +26,20 @@ import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.mail as mail
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.sbom.streaming as streaming
 import atr.tasks.checks as checks
 import atr.tasks.checks.sbom as sbom
 import atr.tasks.task as task
+
+
+@pytest.fixture(autouse=True)
+def admins(monkeypatch: pytest.MonkeyPatch) -> mock.AsyncMock:
+    admins_get = mock.AsyncMock(return_value=frozenset())
+    monkeypatch.setattr(task.cache, "admins_get_async", admins_get)
+    return admins_get
 
 
 @pytest.fixture
@@ -44,6 +54,34 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
     sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
     yield sessionmaker
     await engine.dispose()
+
+
+async def test_finalise_failure_alerts_admins_and_emails_once_a_day(sqlite_sessionmaker, admins) -> None:
+    admins.return_value = frozenset({"root"})
+    error = "Apache RAT process failed with code 127"
+    async with sqlite_sessionmaker() as data:
+        rows = [_active_task(pid=1234, task_type=sql.TaskType.RAT_CHECK) for _ in range(3)]
+        for index, row in enumerate(rows):
+            row.inputs_hash = f"blake3:{index}"
+        data.add_all(rows)
+        await data.commit()
+
+        for row in rows[:2]:
+            assert await task.finalise_failure(row.id, 1234, error, task.BROKEN, caller_data=data)
+
+        notification = (await data.execute(sqlmodel.select(sql.Notification))).scalar_one()
+        assert (notification.asf_uid, notification.is_admin) == ("root", True)
+        assert notification.message == f"RAT check is failing for an infrastructure reason: {error}"
+        assert [email.task_args["email_to"] for email in await _emails(data)] == [mail.INFRASTRUCTURE_ALERT_ADDRESS]
+
+        state = json.loads(await data.ns_text_get(task._ALERT_NAMESPACE, notification.message))
+        assert state["held"] == 1
+        state["sent"] = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=2)).isoformat()
+        await data.ns_text_set(task._ALERT_NAMESPACE, notification.message, json.dumps(state))
+        assert await task.finalise_failure(rows[2].id, 1234, error, task.BROKEN, caller_data=data)
+
+        bodies = [email.task_args["body"] for email in await _emails(data)]
+        assert ["not emailed: 0" in bodies[0], "not emailed: 1" in bodies[1]] == [True, True]
 
 
 async def test_finalise_failure_notifies_for_non_check_tasks(sqlite_sessionmaker) -> None:
@@ -175,3 +213,8 @@ def _active_task(
         primary_rel_path="apache-project-1.0.0.tar.gz",
         inputs_hash="blake3:0123",
     )
+
+
+async def _emails(data: db.Session) -> list[sql.Task]:
+    tasks = (await data.execute(sqlmodel.select(sql.Task).order_by(sql.Task.id))).scalars().all()
+    return [row for row in tasks if (row.task_type == sql.TaskType.MESSAGE_SEND)]

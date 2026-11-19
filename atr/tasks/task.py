@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import json
 from typing import Any, Final
 
 import sqlmodel
 
+import atr.cache as cache
 import atr.constants as constants
+import atr.construct as construct
 import atr.db as db
 import atr.log as log
 import atr.models.results as results
@@ -77,6 +80,9 @@ TASK_TYPE_TIMEOUT_SECONDS: Final[dict[sql.TaskType, int]] = {
     sql.TaskType.SBOM_HEATMAP: 600,
     sql.TaskType.SBOM_REVIEW: 600,
 }
+
+_ALERT_INTERVAL: Final = datetime.timedelta(days=1)
+_ALERT_NAMESPACE: Final = "infrastructure_alert"
 
 
 class CheckRetryableError(Exception):
@@ -140,6 +146,8 @@ async def finalise_failure(
     error = ((error or "").strip()) or "unknown error"
     completed = datetime.datetime.now(datetime.UTC)
     notification_id: int | None = None
+    admins = sorted(await cache.admins_get_async()) if (status == BROKEN) else []
+    alerted: list[tuple[str, int]] = []
     async with db.ensure_session(caller_data) as data:
         async with data.begin():
             update_stmt = (
@@ -185,6 +193,8 @@ async def finalise_failure(
                         inputs_hash=inputs_hash,
                     )
                 )
+            if (checker is not None) and (status == BROKEN):
+                alerted = await _infrastructure_alert(data, admins, task_type.label, error, completed)
             if (checker is None) and asf_uid and (asf_uid != constants.SYSTEM_SERVICE_UID):
                 message = failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
                 insert_stmt = sql.notification_insert(asf_uid, message, sql.NotificationLevel.ERROR).returning(
@@ -193,6 +203,8 @@ async def finalise_failure(
                 notification_id = (await data.execute(insert_stmt)).scalar_one_or_none()
     if notification_id is not None:
         storage.audit(asf_uid=asf_uid, notification_id=notification_id, level=sql.NotificationLevel.ERROR.value)
+    for admin_uid, alert_id in alerted:
+        storage.audit(asf_uid=admin_uid, notification_id=alert_id, level=sql.NotificationLevel.ERROR.value)
     return True
 
 
@@ -205,6 +217,51 @@ def _checker_name(task_type: Any) -> str | None:
     if task_type not in CHECK_TASK_TYPES:
         return None
     return checks.function_key(tasks.resolve(task_type))
+
+
+async def _infrastructure_alert(
+    data: db.Session, admins: list[str], label: str, error: str, failed: datetime.datetime
+) -> list[tuple[str, int]]:
+    via = sql.validate_instrumented_attribute
+    error = _truncate_single_line(error, 500)
+    message = f"{label} is failing for an infrastructure reason: {error}"
+    await _infrastructure_alert_email(data, message, label, error, failed)
+    alerted: list[tuple[str, int]] = []
+    for asf_uid in admins:
+        insert_stmt = sql.notification_insert(
+            asf_uid,
+            message,
+            sql.NotificationLevel.ERROR,
+            link="/admin/system?tab=tasks",
+            link_text="View tasks",
+            is_admin=True,
+        ).returning(via(sql.Notification.id))
+        notification_id = (await data.execute(insert_stmt)).scalar_one_or_none()
+        if notification_id is not None:
+            alerted.append((asf_uid, notification_id))
+    return alerted
+
+
+async def _infrastructure_alert_email(
+    data: db.Session, key: str, label: str, error: str, failed: datetime.datetime
+) -> None:
+    state = json.loads(await data.ns_text_get(_ALERT_NAMESPACE, key) or "{}")
+    sent = state.get("sent")
+    if (sent is not None) and ((failed - datetime.datetime.fromisoformat(sent)) < _ALERT_INTERVAL):
+        state["held"] += 1
+        await data.ns_text_set(_ALERT_NAMESPACE, key, json.dumps(state), commit=False)
+        return
+    email = construct.infrastructure_failure_notification(label, error, failed, state.get("held", 0))
+    data.add(
+        sql.Task(
+            status=QUEUED,
+            task_type=sql.TaskType.MESSAGE_SEND,
+            task_args=email.as_task_args(),
+            asf_uid=constants.SYSTEM_SERVICE_UID,
+        )
+    )
+    state = {"held": 0, "sent": failed.isoformat()}
+    await data.ns_text_set(_ALERT_NAMESPACE, key, json.dumps(state), commit=False)
 
 
 def _truncate_single_line(text: str | None, max_length: int) -> str:

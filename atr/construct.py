@@ -361,6 +361,32 @@ def finish_vote_template_variables() -> list[tuple[str, str]]:
     return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(FINISH_VOTE_VARIABLE_NAMES)]
 
 
+def infrastructure_failure_notification(
+    label: str,
+    error: str,
+    failed: datetime.datetime,
+    suppressed: int,
+) -> args.Send:
+    tasks_url = util.absolute_url("/admin/system?tab=tasks")
+    subject = f"ATR check failing on {config.get().APP_HOST}: {label}"
+    body = (
+        "A check failed for a reason that is not the release's fault.\n\n"
+        f"Check: {label}\n"
+        f"Error: {error}\n"
+        f"Time: {util.format_datetime(failed)}\n"
+        f"Earlier failures with this error not emailed: {suppressed}\n\n"
+        f"{tasks_url}\n"
+    )
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=mail.INFRASTRUCTURE_ALERT_ADDRESS,
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
 def major_version(version: str) -> str:
     return version.partition(".")[0]
 

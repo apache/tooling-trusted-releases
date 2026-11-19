@@ -119,7 +119,10 @@ def _verify_recipients(task_args: args.Send, sender_asf_uid: str) -> None:
         sending_to_committee = recipient_domain.endswith(".apache.org")
         # The foundation announcement list is on the root domain, unlike committee lists
         sending_to_announce = addr == "announce@apache.org"
-        if not (sending_to_self or sending_to_committee or sending_to_announce):
+        noreply_to_alert_address = (task_args.email_sender == mail.NOREPLY_EMAIL_ADDRESS) and (
+            addr == mail.INFRASTRUCTURE_ALERT_ADDRESS
+        )
+        if not (sending_to_self or sending_to_committee or sending_to_announce or noreply_to_alert_address):
             raise SendError(f"You are not permitted to send emails to {addr}")
 
 

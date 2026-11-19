@@ -97,6 +97,26 @@ async def test_send_pat_notice_requires_admin_task_and_fixed_addressing(
 
 
 @pytest.mark.asyncio
+async def test_send_lets_noreply_write_only_to_the_alert_address(monkeypatch: MonkeyPatch) -> None:
+    mock_mail_send = mock.AsyncMock(return_value=("test-mid@apache.org", []))
+
+    @contextlib.asynccontextmanager
+    async def mock_write_as_system(_service: object) -> AsyncIterator[mock.MagicMock]:
+        yield mock.MagicMock(mail_send=mock_mail_send)
+
+    monkeypatch.setattr("atr.tasks.message.storage.write_as_system", mock_write_as_system)
+
+    result = await message.send(
+        _send_args(email_sender=mail.NOREPLY_EMAIL_ADDRESS, email_to=mail.INFRASTRUCTURE_ALERT_ADDRESS)
+    )
+
+    assert result is not None
+    mock_mail_send.assert_awaited_once()
+    with pytest.raises(message.SendError, match="You are not permitted to send emails"):
+        await message.send(_send_args(email_sender=mail.NOREPLY_EMAIL_ADDRESS, email_to="validuser@apache.org"))
+
+
+@pytest.mark.asyncio
 async def test_send_passes_message_id_to_mail_writer(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
