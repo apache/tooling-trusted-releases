@@ -701,6 +701,25 @@ async def resolve_template(project: sql.Project, kind: TemplateKind) -> Resolved
         )
 
 
+def self_test_notification(failures: dict[str, str]) -> args.Send:
+    host = config.get().APP_HOST
+    subject = f"ATR self-test passing again on {host}"
+    body = f"Every self-test probe on {host} now passes.\n"
+    if failures:
+        failed = "".join(f"  {name}: {detail}\n" for name, detail in failures.items())
+        system_url = util.absolute_url("/admin/system?tab=configuration")
+        subject = f"ATR self-test failed on {host}: {', '.join(failures)}"
+        body = f"The ATR self-test is failing on {host}.\n\nFailed:\n{failed}\n{system_url}\n"
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=_SECURITY_LIST_ADDRESS,
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
 def template_hash(template: str) -> str:
     """Compute a hash of a template for verification."""
     return hashlib.sha256(template.encode()).hexdigest()

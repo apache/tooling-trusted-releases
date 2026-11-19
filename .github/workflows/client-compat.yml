@@ -29,6 +29,7 @@ jobs:
           docker rm -f "$SRV" "$CLI" 2>/dev/null || true
           docker build -f Dockerfile.alpine -t "$IMG" .
           docker run -d --name "$SRV" \
+            -e CI \
             -e TESTS=1 \
             -e APP_HOST=localhost.apache.org:8080 \
             -e BIND=0.0.0.0:8080 \

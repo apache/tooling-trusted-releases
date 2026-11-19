@@ -8,6 +8,7 @@ services:
       - APP_HOST=atr:8080
       - BIND=0.0.0.0:8080
       - SSH_HOST=0.0.0.0
+      - CI
     networks:
       - test-network
     init: true

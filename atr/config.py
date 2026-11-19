@@ -120,6 +120,7 @@ def _validate_svn_publish(conf: type[AppConfig]) -> None:
 class AppConfig:
     ACCOUNT_CHECK_INTERVAL = _ENVIRONMENT_CONFIG("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
     ATR_STATUS = _ENVIRONMENT_CONFIG("ATR_STATUS", default="ALPHA", cast=str)
+    CI = _ENVIRONMENT_CONFIG("CI", default=False, cast=bool)
     DISABLE_CHECK_CACHE = _ENVIRONMENT_CONFIG("DISABLE_CHECK_CACHE", default=False, cast=bool)
     APP_HOST = _ENVIRONMENT_CONFIG("APP_HOST", default="localhost.apache.org:8080")
     SSH_HOST = _ENVIRONMENT_CONFIG("SSH_HOST", default="0.0.0.0")

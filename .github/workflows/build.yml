@@ -137,6 +137,7 @@ jobs:
           docker run --rm --user 0:0 -v "$NRVOL:/opt/atr/state" atr:ci chown 1000:1000 /opt/atr/state
           docker run -d --name "$NRSRV" --user 1000:1000 \
             -v "$NRVOL:/opt/atr/state" \
+            -e CI \
             -e TESTS=1 \
             -e APP_HOST=localhost.apache.org:8080 \
             -e BIND=0.0.0.0:8080 \

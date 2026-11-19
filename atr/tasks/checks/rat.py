@@ -132,6 +132,11 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
+def self_test(archive_dir: str) -> str | None:
+    result = _synchronous(archive_dir, [])
+    return result.message if result.errors else None
+
+
 async def _fetch_url_excludes(url: str) -> _UrlExcludes | None:
     # We fetch here as well as in the cache-key resolver - the resolver's fetch decides whether the
     # cached result still applies, and this one gets the rules we actually feed to RAT

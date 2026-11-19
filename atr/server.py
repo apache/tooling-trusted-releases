@@ -69,6 +69,7 @@ import atr.paths as paths
 import atr.preload as preload
 import atr.pubsub as pubsub
 import atr.ratelimit as ratelimit
+import atr.selftest as selftest
 import atr.sessions as sessions
 import atr.ssh as ssh
 import atr.storage as storage
@@ -370,6 +371,7 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         await cache.admins_startup_load()
 
         await _svn_publish_reachability_check()
+        await _self_test_check()
         admins_task = asyncio.create_task(cache.admins_refresh_loop())
         app.extensions["admins_task"] = admins_task
 
@@ -1275,6 +1277,23 @@ async def _reset_request_log_context():
         claims = getattr(quart.g, "jwt_claims", {})
         asf_uid = claims.get("sub")
         log.add_context(user_id=asf_uid)
+
+
+async def _self_test_check() -> None:
+    production = config.is_production_mode()
+    if not (production or config.get().CI):
+        return
+    failures = await selftest.run()
+    if failures and (not production):
+        raise RuntimeError(f"The startup self-test failed: {selftest.summary(failures)}")
+    if not production:
+        return
+    if failures:
+        log.error(f"The startup self-test failed: {selftest.summary(failures)}")
+    try:
+        await selftest.report(failures)
+    except Exception:
+        log.exception("Failed to report the startup self-test")
 
 
 def _set_file_permissions_to_read_only() -> None:
