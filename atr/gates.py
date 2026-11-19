@@ -54,6 +54,9 @@ _CALLBACK: Final = re.compile(
 )
 _HTTP_TIMEOUT: Final = aiohttp.ClientTimeout(total=30, connect=10)
 _PATTERN: Final = re.compile(r"(?:[^\[\]\\]|\[(?:0-9|a-z|A-Z|[A-Za-z0-9._])+\])+")
+_SHARED_REPOSITORY_PREFIXES: Final[dict[str, dict[str, str]]] = {
+    "tooling": {"apache/infrastructure-": ldap.LDAP_INFRASTRUCTURE_SERVICE_BASE}
+}
 
 
 async def active(data: db.Session, repository_id: int) -> sql.GateConfig | None:
@@ -62,8 +65,9 @@ async def active(data: db.Session, repository_id: int) -> sql.GateConfig | None:
     return await query.order_by(via(sql.GateConfig.decided).desc()).limit(1).get()
 
 
-async def eligible(committee_key: str) -> set[str]:
-    return {uid for uid in await ldap.group_members(TEAMS[committee_key]) if await ldap.is_active(uid)}
+async def eligible(committee_key: str, repository: str) -> set[str]:
+    members = {uid for base in team(committee_key, repository) for uid in await ldap.group_members(base)}
+    return {uid for uid in members if await ldap.is_active(uid)}
 
 
 async def lookup(repository: str) -> tuple[int, str]:
@@ -79,6 +83,12 @@ def notify_addresses(committee: sql.Committee) -> list[str]:
 def pattern_supported(pattern: str) -> bool:
     normal = str(pathlib.PurePosixPath(pattern)) == pattern
     return (_PATTERN.fullmatch(pattern) is not None) and (not pattern.endswith("**")) and normal
+
+
+def repository_supported(committee_key: str, repository: str) -> bool:
+    owner = f"apache/{committee_key}"
+    prefixes = (f"{owner}-", *_SHARED_REPOSITORY_PREFIXES.get(committee_key, {}))
+    return (repository == owner) or repository.startswith(prefixes)
 
 
 def run_problem(gate_obj: sql.GateConfig, repository_id: int, run: dict[str, Any]) -> str | None:
@@ -99,7 +109,7 @@ async def send_decision(request_id: int) -> None:
         gate_obj = await active(data, request.repository_id)
     if gate_obj is None:
         raise RuntimeError(f"No gate covers repository {request.repository_id}")
-    if tally(request.decisions, await eligible(gate_obj.committee_key)) != request.status:
+    if tally(request.decisions, await eligible(gate_obj.committee_key, gate_obj.repository)) != request.status:
         raise RuntimeError(f"The decision on gate request {request_id} no longer holds")
     token = await _installation_token(gate_obj.repository)
     run = await _github("GET", f"/repos/{gate_obj.repository}/actions/runs/{request.run_id}", token)
@@ -131,6 +141,11 @@ def tally(decisions: dict[str, bool], eligible_uids: set[str]) -> sql.GateStatus
     if len(eligible_uids.intersection(decisions)) >= THRESHOLD:
         return sql.GateStatus.APPROVED
     return sql.GateStatus.PENDING
+
+
+def team(committee_key: str, repository: str) -> list[str]:
+    shared = _SHARED_REPOSITORY_PREFIXES.get(committee_key, {})
+    return [TEAMS[committee_key], *(base for prefix, base in shared.items() if repository.startswith(prefix))]
 
 
 async def webhook() -> quart.Response:

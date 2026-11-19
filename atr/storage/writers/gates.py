@@ -41,7 +41,7 @@ class FoundationCommitter:
         gate = await gates.active(self.__data, request.repository_id)
         if gate is None:
             raise not_found
-        eligible = await self.__team_member(gate.committee_key)
+        eligible = await self.__team_member(gate.committee_key, gate.repository)
 
         await self.__data.begin_immediate()
         self.__data.expire_all()
@@ -65,7 +65,7 @@ class FoundationCommitter:
         await self.__own_session()
         not_found = storage.AccessError("Gate proposal not found", status=404)
         proposal = await self.__data.gate_config(id=config_id).demand(not_found)
-        eligible = await self.__team_member(proposal.committee_key)
+        eligible = await self.__team_member(proposal.committee_key, proposal.repository)
 
         await self.__data.begin_immediate()
         self.__data.expire_all()
@@ -100,11 +100,10 @@ class FoundationCommitter:
         current = await gates.active(self.__data, repository_id)
         if current is not None:
             committee_key = current.committee_key
-        owner = f"apache/{committee_key}"
-        named = (repository == owner) or repository.startswith(f"{owner}-")
-        if (committee_key not in gates.TEAMS) or (config.is_production_mode() and (not named)):
+        supported = gates.repository_supported(committee_key, repository)
+        if (committee_key not in gates.TEAMS) or (config.is_production_mode() and (not supported)):
             raise storage.AccessError(f"{repository} cannot have a gate for {committee_key}", status=400)
-        await self.__team_member(committee_key)
+        await self.__team_member(committee_key, repository)
         committee = await self.__data.committee(key=committee_key).demand(
             storage.AccessError(f"Committee {committee_key} not found", status=400)
         )
@@ -138,8 +137,8 @@ class FoundationCommitter:
         ):
             raise storage.AccessError("Gate decisions need your own signed in session", status=403)
 
-    async def __team_member(self, committee_key: str) -> set[str]:
-        eligible = await gates.eligible(committee_key)
+    async def __team_member(self, committee_key: str, repository: str) -> set[str]:
+        eligible = await gates.eligible(committee_key, repository)
         if self.__asf_uid not in eligible:
             raise storage.AccessError("You are not an active member of this repository's release team", status=403)
         return eligible

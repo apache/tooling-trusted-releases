@@ -29,6 +29,7 @@ import ldap3.utils.dn as dn
 
 import atr.models.schema as schema
 
+LDAP_INFRASTRUCTURE_SERVICE_BASE: Final[str] = "cn=infrastructure,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
 LDAP_SERVER_HOST: Final[str] = "ldap-eu.apache.org"

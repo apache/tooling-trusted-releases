@@ -15,7 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import unittest.mock as mock
+
+import pytest
+
 import atr.gates as gates
+import atr.ldap as ldap
 import atr.models.sql as sql
 
 _GATE = sql.GateConfig(
@@ -30,6 +35,14 @@ _GATE = sql.GateConfig(
     notify="dev@tooling.apache.org",
 )
 _RUN = {"repository": {"id": 1}, "path": ".github/workflows/publish.yml", "event": "push", "head_branch": "v0.0.1"}
+
+
+async def test_eligible(monkeypatch: pytest.MonkeyPatch) -> None:
+    groups = {ldap.LDAP_TOOLING_SERVICE_BASE: {"a", "b"}, ldap.LDAP_INFRASTRUCTURE_SERVICE_BASE: {"b", "c", "d"}}
+    monkeypatch.setattr(ldap, "group_members", mock.AsyncMock(side_effect=groups.get))
+    monkeypatch.setattr(ldap, "is_active", mock.AsyncMock(side_effect={"a", "b", "c"}.__contains__))
+    assert await gates.eligible("tooling", "apache/tooling-noisy-secrets") == {"a", "b"}
+    assert await gates.eligible("tooling", "apache/infrastructure-asfquart") == {"a", "b", "c"}
 
 
 def test_may_start() -> None:
@@ -67,6 +80,16 @@ def test_pattern_supported() -> None:
     assert not gates.pattern_supported("./v*")
 
 
+def test_repository_supported() -> None:
+    assert gates.repository_supported("tooling", "apache/tooling")
+    assert gates.repository_supported("tooling", "apache/tooling-noisy-secrets")
+    assert gates.repository_supported("tooling", "apache/infrastructure-asfquart")
+    assert not gates.repository_supported("tooling", "apache/toolingx")
+    assert not gates.repository_supported("tooling", "apache/infrastructure")
+    assert not gates.repository_supported("tooling", "other/tooling-x")
+    assert not gates.repository_supported("other", "apache/infrastructure-asfquart")
+
+
 def test_run_problem() -> None:
     assert gates.run_problem(_GATE, 1, _RUN) is None
     assert gates.run_problem(_GATE, 2, _RUN) is not None
@@ -82,6 +105,12 @@ def test_signature_valid() -> None:
     assert gates.signature_valid("secret", b"body", header)
     assert not gates.signature_valid("secret", b"other", header)
     assert not gates.signature_valid("secret", b"body", "")
+
+
+def test_team() -> None:
+    tooling = ldap.LDAP_TOOLING_SERVICE_BASE
+    assert gates.team("tooling", "apache/tooling-noisy-secrets") == [tooling]
+    assert gates.team("tooling", "apache/infrastructure-asfquart") == [tooling, ldap.LDAP_INFRASTRUCTURE_SERVICE_BASE]
 
 
 def test_tally() -> None:

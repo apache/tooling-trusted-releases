@@ -216,7 +216,10 @@ def _gate_table(gate: sql.GateConfig) -> htm.Element:
         htpy.colgroup[htpy.col(".w-25"), htpy.col],
         htm.tbody[
             [htm.tr[htm.th[label], htm.td[htm.code[getattr(gate, name)]]] for label, name in _FIELDS],
-            htm.tr[htm.th["Team"], htm.td[htm.code[gates.TEAMS[gate.committee_key]]]],
+            htm.tr[
+                htm.th["Team"],
+                htm.td[[htm.div[htm.code[base]] for base in gates.team(gate.committee_key, gate.repository)]],
+            ],
             htm.tr[htm.th["Approvals needed"], htm.td[str(gates.THRESHOLD)]],
         ],
     ]
