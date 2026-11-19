@@ -23,7 +23,6 @@ import types
 import unittest.mock as mock
 import urllib.parse as parse
 
-import asfquart.base as base
 import jinja2
 import pytest
 import quart
@@ -34,6 +33,7 @@ import sqlmodel
 import atr.api as api
 import atr.blueprints.common as common
 import atr.db as db
+import atr.errors as errors
 import atr.get.catalog as catalog
 import atr.get.release as release
 import atr.models.sql as sql
@@ -163,7 +163,7 @@ async def test_catalog_paging_preserves_status(app, status):
 @pytest.mark.parametrize("status", ["unknown", "Released", ""])
 async def test_catalog_rejects_invalid_status(app, status):
     async with app.test_request_context(f"/catalog/example?status={status}"):
-        with pytest.raises(base.ASFQuartException) as error:
+        with pytest.raises(errors.ASFQuartException) as error:
             await catalog.project(project_key="example")
     assert error.value.errorcode == 400
 

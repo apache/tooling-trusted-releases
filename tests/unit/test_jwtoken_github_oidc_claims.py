@@ -15,9 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import asfquart.base as base
 import pytest
 
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 
 
@@ -28,7 +28,7 @@ def test_claims_check_accepts_committer_chosen_events(event_name: str) -> None:
 
 @pytest.mark.parametrize("event_name", ["pull_request", "pull_request_target", "schedule", "workflow_run", ""])
 def test_claims_check_refuses_other_events(event_name: str) -> None:
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         jwtoken._github_oidc_claims_check(_claims(event_name=event_name))
 
     assert exc_info.value.errorcode == 401
@@ -39,14 +39,14 @@ def test_claims_check_refuses_a_missing_event() -> None:
     claims = _claims()
     del claims["event_name"]
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         jwtoken._github_oidc_claims_check(claims)
 
     assert exc_info.value.errorcode == 401
 
 
 def test_claims_check_refuses_a_self_hosted_runner() -> None:
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         jwtoken._github_oidc_claims_check(_claims(runner_environment="self-hosted"))
 
     assert exc_info.value.errorcode == 401

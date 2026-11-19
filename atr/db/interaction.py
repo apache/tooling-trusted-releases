@@ -21,7 +21,6 @@ import enum
 from collections.abc import Sequence
 from typing import Final, Literal, NamedTuple
 
-import asfquart.base as base
 import packaging.version as version
 import pydantic
 import sqlalchemy
@@ -1389,10 +1388,10 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
                 f"GitHub account {payload.actor} (ID {payload.actor_id}) is not yet linked to an ASF user "
                 "in gitbox.apache.org/boxer"
             )
-            raise base.ASFQuartException(message, errorcode=403) from e
+            raise errors.ASFQuartException(message, errorcode=403) from e
     elif payload.repository != GITHUB_TRUSTED_ROLE_REPOSITORY:
         message = f"Trusted role tokens are only accepted from {GITHUB_TRUSTED_ROLE_REPOSITORY}"
-        raise base.ASFQuartException(message, errorcode=403)
+        raise errors.ASFQuartException(message, errorcode=403)
     else:
         asf_uid = None
     return payload, asf_uid

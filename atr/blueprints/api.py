@@ -201,8 +201,8 @@ def _exempt_blueprint(app: base.QuartApp) -> None:
         csrf.exempt(_BLUEPRINT)
 
 
-@_BLUEPRINT.errorhandler(base.ASFQuartException)
-async def _handle_asfquart_exception(err: base.ASFQuartException) -> tuple[quart.Response, int]:
+@_BLUEPRINT.errorhandler(errors.ASFQuartException)
+async def _handle_asfquart_exception(err: errors.ASFQuartException) -> tuple[quart.Response, int]:
     status = errors.response_status_code(err)
     if status >= 500:
         log.error("Unhandled exception", exc_info=(type(err), err, err.__traceback__))

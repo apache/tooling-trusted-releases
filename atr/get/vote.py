@@ -22,7 +22,6 @@ import enum
 import urllib.parse
 from typing import TYPE_CHECKING, Literal
 
-import asfquart.base as base
 import htpy
 
 import atr.blueprints.get as get
@@ -75,7 +74,7 @@ async def category_and_release(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
         if release.committee is None:
             raise ValueError(errors.RELEASE_NO_COMMITTEE)

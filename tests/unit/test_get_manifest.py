@@ -23,7 +23,6 @@ import re
 import types
 import unittest.mock as mock
 
-import asfquart.base as base
 import jinja2
 import pytest
 import quart
@@ -34,6 +33,7 @@ import atr.api as api
 import atr.attestable as attestable
 import atr.blueprints.common as common
 import atr.db as db
+import atr.errors as errors
 import atr.get.docs as docs
 import atr.get.manifest as manifest
 import atr.get.revisions as revisions
@@ -96,7 +96,7 @@ async def app(monkeypatch, tmp_path):
         endpoint=manifest.selected.endpoint,
         view_func=manifest.selected,
     )
-    app.register_error_handler(base.ASFQuartException, _error_response)
+    app.register_error_handler(errors.ASFQuartException, _error_response)
     yield app
     await engine.dispose()
 

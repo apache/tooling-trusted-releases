@@ -34,6 +34,7 @@ import quart
 import atr.config as config
 import atr.constants as constants
 import atr.db as db
+import atr.errors as errors
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
@@ -63,7 +64,7 @@ _JWT_KEY_APP_EXTENSION: Final[str] = "jwt_secret_key"
 _JWT_KEY_HEX_LENGTH: Final[int] = (256 // 8) * 2
 
 
-class GitHubEventError(base.ASFQuartException):
+class GitHubEventError(errors.ASFQuartException):
     """A GitHub OIDC token from a workflow event that ATR doesn't accept."""
 
     def __init__(self, event_name: object) -> None:
@@ -97,20 +98,20 @@ async def authenticate(*, allow_project: bool = False) -> dict[str, Any]:
         claims = await verify(token, allow_project=allow_project)
     except jwt.ExpiredSignatureError as exc:
         log.auth_failure("jwt_token", "jwt_token_expired")
-        raise base.ASFQuartException("Token has expired", errorcode=401) from exc
+        raise errors.ASFQuartException("Token has expired", errorcode=401) from exc
     except jwt.InvalidSignatureError as exc:
         log.auth_failure("jwt_token", "jwt_signature_invalid")
-        raise base.ASFQuartException("Token signature verification failed", errorcode=401) from exc
+        raise errors.ASFQuartException("Token signature verification failed", errorcode=401) from exc
     except jwt.InvalidTokenError as exc:
         log.auth_failure("jwt_token", "jwt_token_invalid")
-        raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
+        raise errors.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
     except jwt.PyJWTError as exc:
         log.auth_failure("jwt_token", "jwt_token_invalid_2")
-        raise base.ASFQuartException("Invalid Bearer JWT", errorcode=401) from exc
+        raise errors.ASFQuartException("Invalid Bearer JWT", errorcode=401) from exc
 
     if config.get().ADMIN_ONLY and (not claims.get("atr_sys")) and (not user.is_admin(claims.get("sub"))):
         log.auth_failure("jwt_token", "jwt_admin_only")
-        raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
+        raise errors.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     quart.g.jwt_claims = claims
     log.auth_success("jwt_token")
@@ -122,7 +123,7 @@ def bearer_subject(request: quart.Request) -> str | None:
     # the LDAP and PAT checks are left to authenticate, which still runs afterwards
     try:
         claims = _decode(_extract_bearer_token(request))
-    except base.ASFQuartException, jwt.PyJWTError:
+    except errors.ASFQuartException, jwt.PyJWTError:
         return None
     subject = claims.get("sub")
     return subject if isinstance(subject, str) else None
@@ -186,7 +187,7 @@ async def verify(token: str, *, allow_project: bool = False) -> dict[str, Any]:
     # Refused by default, so only callers that ask for project JWTs get one
     if (not allow_project) and (project_scope(claims) is not None):
         log.auth_failure("jwt_token", "jwt_project_refused")
-        raise base.ASFQuartException("This token cannot be used with this endpoint", errorcode=403)
+        raise errors.ASFQuartException("This token cannot be used with this endpoint", errorcode=403)
     if not isinstance(asf_uid, str):
         log.auth_failure("jwt_token", "jwt_subject_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT subject")
@@ -195,7 +196,7 @@ async def verify(token: str, *, allow_project: bool = False) -> dict[str, Any]:
     is_system = bool(claims.get("atr_sys"))
     if (not is_system) and (not await ldap.is_active(asf_uid)):
         log.auth_failure("jwt_token", "account_deleted_or_banned")
-        raise base.ASFQuartException("Account is disabled", errorcode=401)
+        raise errors.ASFQuartException("Account is disabled", errorcode=401)
 
     # audit_guidance Revalidating PAT on each request ensures PAT deletion immediately revokes all JWTs issued therefrom
     await _revalidate_pat(claims, is_system)
@@ -214,7 +215,7 @@ async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
     header = jwt.get_unverified_header(token)
     dangerous_headers = {"jku", "x5u", "jwk"}
     if dangerous_headers.intersection(header.keys()):
-        raise base.ASFQuartException("JWT contains disallowed headers", errorcode=401)
+        raise errors.ASFQuartException("JWT contains disallowed headers", errorcode=401)
     try:
         async with util.create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
             r = await session.get(
@@ -225,19 +226,19 @@ async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
             jwks_uri = (await r.json())["jwks_uri"]
     except aiohttp.ClientSSLError as exc:
         log.error(f"TLS failure fetching OIDC config: {exc}")
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             f"TLS verification failed for GitHub OIDC endpoint: {exc}",
             errorcode=502,
         ) from exc
     except aiohttp.ClientConnectionError as exc:
         log.error(f"Failed to connect to GitHub OIDC endpoint: {exc}")
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             f"Failed to connect to GitHub OIDC endpoint: {exc}",
             errorcode=502,
         ) from exc
     except aiohttp.ClientResponseError as exc:
         log.error(f"GitHub OIDC endpoint returned HTTP {exc.status}: {exc.message}")
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             f"GitHub OIDC endpoint returned HTTP {exc.status}: {exc.message}",
             errorcode=502,
         ) from exc
@@ -249,11 +250,11 @@ async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
 
     if url.hostname not in _GITHUB_TRUSTED_DOMAINS:
         log.error(f"Untrusted domain in GitHub OIDC endpoint: {jwks_uri}")
-        raise base.ASFQuartException("Untrusted domain in GitHub OIDC endpoint", 502)
+        raise errors.ASFQuartException("Untrusted domain in GitHub OIDC endpoint", 502)
 
     if url.scheme != "https":
         log.error(f"Github OIDC returned insecure URI: {jwks_uri}")
-        raise base.ASFQuartException("Github OIDC returned insecure URI", 502)
+        raise errors.ASFQuartException("Github OIDC returned insecure URI", 502)
 
     jwks_client = jwt.PyJWKClient(jwks_uri)
     signing_key = jwks_client.get_signing_key_from_jwt(token)
@@ -304,7 +305,7 @@ def _extract_bearer_token(request: quart.Request) -> str:
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if (scheme.lower() != "bearer") or (not token):
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             "Authentication required. Please provide a valid Bearer token in the Authorization header", errorcode=401
         )
     return token
@@ -313,7 +314,7 @@ def _extract_bearer_token(request: quart.Request) -> str:
 def _github_oidc_claims_check(payload: dict[str, Any]) -> None:
     for key, value in _GITHUB_OIDC_EXPECTED.items():
         if payload.get(key) != value:
-            raise base.ASFQuartException(
+            raise errors.ASFQuartException(
                 f"GitHub OIDC payload mismatch: {key} = {payload.get(key)} != {value}",
                 errorcode=401,
             )
@@ -364,7 +365,7 @@ async def _revalidate_pat(claims: dict[str, Any], is_system: bool) -> None:
     # to validate it, so reject it.
     if is_system and (not pat_hash):
         log.auth_failure("jwt_token", "system_without_pat")
-        raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+        raise errors.ASFQuartException("Personal Access Token invalid", errorcode=401)
     # Not all JWTs come from PATs, so don't fail on missing atr_th
     if not pat_hash:
         return
@@ -373,11 +374,11 @@ async def _revalidate_pat(claims: dict[str, Any], is_system: bool) -> None:
         pat = await data.personal_access_token(pat_hash, is_system=db.NOT_SET).get()
     if not pat:
         log.auth_failure("jwt_token", "pat_hash_invalid")
-        raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+        raise errors.ASFQuartException("Personal Access Token invalid", errorcode=401)
     # A system JWT must come from a system PAT, and vice versa.
     if pat.is_system != is_system:
         log.auth_failure("jwt_token", "pat_system_mismatch")
-        raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+        raise errors.ASFQuartException("Personal Access Token invalid", errorcode=401)
     # Only divert to the system path when claim and row agree. Otherwise fall
     # through to the asfuid path, which rejects a null asfuid, so a stray
     # system PAT can't slip past silently.
@@ -385,17 +386,17 @@ async def _revalidate_pat(claims: dict[str, Any], is_system: bool) -> None:
         subject_invalid = claims.get("sub") != constants.SYSTEM_SERVICE_UID
         if subject_invalid or ((pat.allowed_ip is not None) and (not pat.allows_ip(quart.request.remote_addr))):
             log.auth_failure("jwt_token", "system_subject_invalid" if subject_invalid else "system_pat_ip_mismatch")
-            raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+            raise errors.ASFQuartException("Personal Access Token invalid", errorcode=401)
     else:
         if pat.asfuid is None:
             log.auth_failure("jwt_token", "pat_user_missing")
-            raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+            raise errors.ASFQuartException("Personal Access Token invalid", errorcode=401)
         if pat.asfuid != claims.get("sub"):
             log.auth_failure("jwt_token", "pat_user_mismatch")
-            raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+            raise errors.ASFQuartException("Personal Access Token invalid", errorcode=401)
     if pat.is_expired:
         log.auth_failure("jwt_token", "pat_expired")
-        raise base.ASFQuartException("Personal Access Token expired", errorcode=401)
+        raise errors.ASFQuartException("Personal Access Token expired", errorcode=401)
 
 
 async def _revalidate_project(claims: dict[str, Any]) -> None:
@@ -407,10 +408,10 @@ async def _revalidate_project(claims: dict[str, Any]) -> None:
     # No row is treated the same as a revoked one
     if (row is None) or row.revoked:
         log.auth_failure("jwt_token", "jwt_project_revoked")
-        raise base.ASFQuartException("Token has been revoked", errorcode=401)
+        raise errors.ASFQuartException("Token has been revoked", errorcode=401)
     if (row.project_key != project_key) or (row.asf_uid != claims.get("sub")):
         log.auth_failure("jwt_token", "jwt_project_mismatch")
-        raise base.ASFQuartException("Token has been revoked", errorcode=401)
+        raise errors.ASFQuartException("Token has been revoked", errorcode=401)
     if row.expires <= datetime.datetime.now(tz=datetime.UTC).timestamp():
         raise jwt.ExpiredSignatureError("Signature has expired")
 

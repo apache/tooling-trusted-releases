@@ -24,11 +24,11 @@ auth-before-body-parse ordering at the HTTP level is exercised against a
 migrated route in the e2e/Phase 2 suite, where the full app initialises.
 """
 
-import asfquart.base as base
 import pytest
 import quart_schema
 
 import atr.blueprints.api_auth as api_auth
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 
 
@@ -75,11 +75,11 @@ async def test_authenticate_header_propagates_token_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_authenticate(*, allow_project: bool = False) -> dict[str, object]:
-        raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401)
+        raise errors.ASFQuartException("Invalid Bearer JWT format", errorcode=401)
 
     monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
 
-    with pytest.raises(base.ASFQuartException) as excinfo:
+    with pytest.raises(errors.ASFQuartException) as excinfo:
         await api_auth.authenticate_header(api_auth.Auth.BEARER)
     assert excinfo.value.errorcode == 401
 
@@ -93,7 +93,7 @@ async def test_authenticate_header_requires_system_claim_for_system_bearer(
 
     monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
 
-    with pytest.raises(base.ASFQuartException) as excinfo:
+    with pytest.raises(errors.ASFQuartException) as excinfo:
         await api_auth.authenticate_header(api_auth.Auth.SYSTEM_BEARER)
     assert excinfo.value.errorcode == 403
 

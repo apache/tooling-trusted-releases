@@ -18,13 +18,13 @@
 import datetime
 from typing import Literal
 
-import asfquart.base as base
 import htpy
 import sqlmodel
 
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.htm as htm
 import atr.models.safe as safe
@@ -73,7 +73,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
             _projects=True,
             _signing_certificates=True,
             _signing_keys=True,
-        ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
+        ).demand(errors.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
 
         roster = sorted(set(committee.committee_members + committee.committers))
         user_rows = await data.execute(

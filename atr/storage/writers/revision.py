@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles.os
 import aioshutil
-import asfquart.base as base
 import sqlmodel
 
 import atr.attestable as attestable
@@ -38,6 +37,7 @@ import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.detection as detection
+import atr.errors as errors
 import atr.merge as merge
 import atr.models.attestable
 import atr.models.safe as safe
@@ -789,7 +789,7 @@ class CommitteeParticipant(FoundationCommitter):
             await self.__data.rollback()
             revision = await self.__data.revision(release_key=release_key, number=revision_number).get()
             if revision is None:
-                raise base.ASFQuartException(f"Revision {revision_number} not found", errorcode=404)
+                raise errors.ASFQuartException(f"Revision {revision_number} not found", errorcode=404)
             raise storage.AccessError(f"Revision {revision_number} already has a tag and cannot be changed", status=409)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(

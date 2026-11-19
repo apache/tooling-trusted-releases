@@ -20,10 +20,10 @@ import pathlib
 import types
 import unittest.mock as mock
 
-import asfquart.base as base
 import pytest
 import quart
 
+import atr.errors as errors
 import atr.get.report as report
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -65,7 +65,7 @@ async def test_report_anonymous_access(
             response = await report.selected_path(project_key="test", version_key="0.1", rel_path="source.tar.gz")
             assert response == "report"
             return
-        with pytest.raises(base.ASFQuartException) as error:
+        with pytest.raises(errors.ASFQuartException) as error:
             await report.selected_path(project_key="test", version_key="0.1", rel_path="source.tar.gz")
         assert error.value.errorcode == 404
         render.assert_not_awaited()

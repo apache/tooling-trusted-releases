@@ -17,9 +17,9 @@
 
 import unittest.mock as mock
 
-import asfquart.base as base
 import pytest
 
+import atr.errors as errors
 import atr.get.distribution as distribution
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -62,7 +62,7 @@ async def test_embargoed_download_is_refused_to_workflows_before_finish(
 async def test_embargoed_staging_form_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     release_validated = mock.AsyncMock(return_value=_release(True, DRAFT))
     monkeypatch.setattr("atr.shared.distribution.release_validated", release_validated)
-    with pytest.raises(base.ASFQuartException) as exception:
+    with pytest.raises(errors.ASFQuartException) as exception:
         await distribution._automate_form_page(PROJECT, VERSION, staging=True)
     assert exception.value.errorcode == 403
 

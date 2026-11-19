@@ -47,7 +47,6 @@ import aiofiles.os
 import aiohttp
 import aiohttp.abc
 import aioshutil
-import asfquart.base as base
 import asfquart.session as session
 import gitignore_parser
 import jinja2
@@ -61,6 +60,7 @@ import quart
 # Therefore, this module must not import atr.db
 import atr.config as config
 import atr.constants as constants
+import atr.errors as errors
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.cap as cap
@@ -1100,7 +1100,7 @@ async def get_asf_id_or_die() -> str:
     if not isinstance(web_session, sql.UserSession):
         web_session = await session.read()
         if not isinstance(web_session, sql.UserSession):
-            raise base.ASFQuartException("Not authenticated", errorcode=401)
+            raise errors.ASFQuartException("Not authenticated", errorcode=401)
         quart.g._user_session = web_session
     return web_session.uid
 

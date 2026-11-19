@@ -16,10 +16,9 @@
 # under the License.
 from typing import Literal
 
-import asfquart.base as base
-
 import atr.blueprints.post as post
 import atr.db as db
+import atr.errors as errors
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -58,10 +57,10 @@ async def _set_revision(
     async with db.session() as data:
         release = await session.release(project_key, version_key, phase=None, data=data)
         if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            raise base.ASFQuartException("Cannot set revision for non-draft release", errorcode=400)
+            raise errors.ASFQuartException("Cannot set revision for non-draft release", errorcode=400)
 
         await data.revision(release_key=release.key, number=str(selected_revision_number)).demand(
-            base.ASFQuartException(f"Revision {selected_revision_number} not found", errorcode=404)
+            errors.ASFQuartException(f"Revision {selected_revision_number} not found", errorcode=404)
         )
 
     description = f"Copy of revision {selected_revision_number} through web interface"

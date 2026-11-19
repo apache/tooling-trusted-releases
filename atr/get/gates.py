@@ -18,11 +18,11 @@
 import dataclasses
 from typing import Final, Literal
 
-import asfquart.base as base
 import htpy
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.errors as errors
 import atr.form as form
 import atr.gates as gates
 import atr.htm as htm
@@ -96,7 +96,7 @@ async def config(session: web.Committer, _gates_config: Literal["gates/config"])
 @get.typed
 async def details(session: web.Committer, _gates_details: Literal["gates/details"], request_id: int) -> str:
     via = sql.validate_instrumented_attribute
-    not_found = base.ASFQuartException("Gate request not found", errorcode=404)
+    not_found = errors.ASFQuartException("Gate request not found", errorcode=404)
     async with db.session() as data:
         request = await data.gate_request(id=request_id).demand(not_found)
         gate = await gates.active(data, request.repository_id)
@@ -121,7 +121,7 @@ async def index(session: web.Committer, _gates: Literal["gates"], query_args: Re
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
         requests = await data.gate_request().order_by(via(sql.GateRequest.id).desc()).all()

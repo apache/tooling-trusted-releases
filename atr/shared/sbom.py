@@ -18,9 +18,9 @@
 from typing import Literal
 
 import aiofiles.os
-import asfquart.base as base
 
 import atr.analysis as analysis
+import atr.errors as errors
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -36,7 +36,7 @@ async def release_in_phase(
     # If the draft is not found, we try to get the release candidate
     try:
         return await session.release(project_key, version_key, with_committee=with_committee)
-    except base.ASFQuartException:
+    except errors.ASFQuartException:
         return await session.release(
             project_key, version_key, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=with_committee
         )

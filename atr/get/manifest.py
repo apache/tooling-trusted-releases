@@ -18,8 +18,6 @@
 import dataclasses
 from typing import Literal
 
-import asfquart.base as base
-
 import atr.api as api
 import atr.attestable as attestable
 import atr.blueprints.get as get
@@ -54,14 +52,14 @@ async def selected(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-            base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+            errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
         )
     recorded = await attestable.load(project_key, version_key, revision_number)
     if recorded is None:
-        raise base.ASFQuartException(errors.MANIFEST_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.MANIFEST_NOT_FOUND, errorcode=404)
     return await template.blank(
         title=f"File manifest for {release.short_display_name}, ATR revision {revision_number}",
         content=_render_page(release, revision_number, recorded, query_args),

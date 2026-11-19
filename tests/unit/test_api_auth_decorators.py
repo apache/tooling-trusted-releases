@@ -26,13 +26,13 @@ changing.
 
 import unittest.mock as mock
 
-import asfquart.base as base
 import jwt
 import pytest
 import quart
 
 import atr.blueprints.api as api_blueprint
 import atr.blueprints.api_auth as api_auth
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 
 
@@ -117,7 +117,7 @@ async def test_bearer_jwt_error_detail_is_not_returned(monkeypatch: pytest.Monke
     monkeypatch.setattr(jwtoken, "verify", mock.AsyncMock(side_effect=jwt.PyJWTError("sensitive verifier detail")))
     app = quart.Quart(__name__)
     app.add_url_rule("/", view_func=jwtoken.authenticate)
-    app.register_error_handler(base.ASFQuartException, api_blueprint._handle_asfquart_exception)
+    app.register_error_handler(errors.ASFQuartException, api_blueprint._handle_asfquart_exception)
 
     response = await app.test_client().get("/", headers={"Authorization": "Bearer token"})
 
@@ -263,13 +263,12 @@ async def test_body_oidc_missing_body_raises_unauthorized(
 ) -> None:
     """A body_oidc route with no request body must raise 401."""
     import asfquart
-    import asfquart.base as base
 
     monkeypatch.setattr("asfquart.APP", None)
 
     app = asfquart.construct("test")
     async with app.test_request_context("/"):
-        with pytest.raises(base.ASFQuartException) as excinfo:
+        with pytest.raises(errors.ASFQuartException) as excinfo:
             await api_auth.authenticate_body(api_auth.Auth.BODY_OIDC, None)
         assert excinfo.value.errorcode == 401
 
@@ -280,7 +279,6 @@ async def test_body_oidc_rejects_body_without_jwt_fields(
 ) -> None:
     """A body without publisher+jwt string fields must be rejected with 401."""
     import asfquart
-    import asfquart.base as base
     import pydantic
 
     monkeypatch.setattr("asfquart.APP", None)
@@ -290,7 +288,7 @@ async def test_body_oidc_rejects_body_without_jwt_fields(
 
     app = asfquart.construct("test")
     async with app.test_request_context("/"):
-        with pytest.raises(base.ASFQuartException) as excinfo:
+        with pytest.raises(errors.ASFQuartException) as excinfo:
             await api_auth.authenticate_body(api_auth.Auth.BODY_OIDC, BodyWithoutJwt(name="hi"))
         assert excinfo.value.errorcode == 401
 

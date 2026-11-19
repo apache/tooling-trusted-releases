@@ -25,6 +25,7 @@ import quart
 import quart_schema
 
 import atr.blueprints.common as common
+import atr.errors as errors
 import atr.log as log
 import atr.models.sql as sql
 import atr.sessions as sessions
@@ -157,7 +158,7 @@ def _copy_quart_attributes(src: Callable[..., Any], dst: Callable[..., Any]) -> 
 async def _check_admin_access() -> None:
     web_session = await sessions.read()
     if not isinstance(web_session, sql.UserSession):
-        raise base.ASFQuartException("Not authenticated", errorcode=401)
+        raise errors.ASFQuartException("Not authenticated", errorcode=401)
 
     if not user.is_admin(web_session.uid):
-        raise base.ASFQuartException("You are not authorized to access the admin interface", errorcode=403)
+        raise errors.ASFQuartException("You are not authorized to access the admin interface", errorcode=403)

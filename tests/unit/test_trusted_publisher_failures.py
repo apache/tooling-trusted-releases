@@ -20,13 +20,13 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import asfquart
-import asfquart.base as base
 import jwt as pyjwt
 import pydantic
 import pytest
 
 import atr.blueprints.api_auth as api_auth
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 
 _SECRET_DETAIL = "internal-detail-that-must-not-leak"
@@ -76,10 +76,10 @@ def _validate_raising(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
     monkeypatch.setattr(interaction, "validate_trusted_jwt", fake_validate)
 
 
-async def _authenticate() -> base.ASFQuartException:
+async def _authenticate() -> errors.ASFQuartException:
     app = asfquart.construct("test")
     async with app.test_request_context("/"):
-        with pytest.raises(base.ASFQuartException) as excinfo:
+        with pytest.raises(errors.ASFQuartException) as excinfo:
             await api_auth.authenticate_body(api_auth.Auth.BODY_OIDC, _Body(publisher="github", jwt="a.b.c"))
     return excinfo.value
 
@@ -221,7 +221,7 @@ async def test_routine_failure_is_logged_without_alerting(monkeypatch: pytest.Mo
 async def test_unavailable_upstream_is_not_an_auth_failure(
     monkeypatch: pytest.MonkeyPatch, recorder: _Recorder
 ) -> None:
-    upstream = base.ASFQuartException("Failed to connect to GitHub OIDC endpoint", errorcode=502)
+    upstream = errors.ASFQuartException("Failed to connect to GitHub OIDC endpoint", errorcode=502)
     _validate_raising(monkeypatch, upstream)
 
     rejected = await _authenticate()
@@ -232,7 +232,7 @@ async def test_unavailable_upstream_is_not_an_auth_failure(
 
 @pytest.mark.asyncio
 async def test_unlinked_account_keeps_message_and_alerts(monkeypatch: pytest.MonkeyPatch, recorder: _Recorder) -> None:
-    unlinked = base.ASFQuartException("GitHub account abc (ID 123) is not yet linked", errorcode=403)
+    unlinked = errors.ASFQuartException("GitHub account abc (ID 123) is not yet linked", errorcode=403)
     _validate_raising(monkeypatch, unlinked)
     _throttle_returns(monkeypatch, 0)
 

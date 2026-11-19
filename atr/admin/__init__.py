@@ -35,7 +35,6 @@ import aiofiles.os
 import aiohttp
 import aioshutil
 import asfquart
-import asfquart.base as base
 import htpy
 import jwt
 import markupsafe
@@ -55,6 +54,7 @@ import atr.catalog_site as catalog_site
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get as get
 import atr.htm as htm
@@ -2518,7 +2518,7 @@ async def logs(_session: web.Committer, _logs: Literal["logs"]) -> web.QuartResp
     _require_non_production_mode()
     recent_logs = log.get_recent_logs()
     if recent_logs is None:
-        raise base.ASFQuartException("Debug logging not initialised", errorcode=404)
+        raise errors.ASFQuartException("Debug logging not initialised", errorcode=404)
     return web.TextResponse("\n".join(recent_logs))
 
 
@@ -2545,7 +2545,7 @@ async def quotas_get(_session: web.Committer, _quotas: Literal["quotas"], query_
     """
     async with db.session() as data:
         project = await data.project(key=query_args.project).demand(
-            base.ASFQuartException("Project not found", errorcode=404)
+            errors.ASFQuartException("Project not found", errorcode=404)
         )
     limits = quota.limits_for(project)
     defaults = quota.DEFAULT_LIMITS
@@ -2697,7 +2697,7 @@ async def test_roster_get(_session: web.Committer, _test_roster: Literal["test-r
 
     async with db.session() as data:
         committee = await data.committee(key="test").demand(
-            base.ASFQuartException("Committee test not found", errorcode=404)
+            errors.ASFQuartException("Committee test not found", errorcode=404)
         )
         names = {user.asfuid: user.name for user in await data.user().all()}
     roster = sorted({*committee.committee_members, *committee.committers, *committee.release_managers})
@@ -3427,7 +3427,7 @@ async def _database_data_tab(model: str, query_args: DataQuery) -> htm.Element:
     """Browse all records in the database."""
     models_by_name = {model_class.__name__: model_class for model_class in _BROWSABLE_MODELS}
     if model not in models_by_name:
-        raise base.ASFQuartException(f"Model type '{model}' not found", 404)
+        raise errors.ASFQuartException(f"Model type '{model}' not found", 404)
     model_class = models_by_name[model]
     sensitive = _SENSITIVE_COLUMNS.get(model, frozenset())
     search = (query_args.search or "").strip()
@@ -3663,7 +3663,7 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
                 if error is not None:
                     raise RuntimeError(error)
             success_count += 1
-        except base.ASFQuartException as e:
+        except errors.ASFQuartException as e:
             log.error(f"Error deleting release {release_key}: {e}")
             fail_count += 1
             error_messages.append(f"{release_key}: {e}")
@@ -4324,9 +4324,9 @@ async def _system_test_message(session: web.Committer) -> web.WerkzeugResponse:
     )
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
-        mid, errors = await wafc.mail.send(message, mail.MailFooterCategory.NONE)
-    if errors:
-        await quart.flash(f"Sending failed: {'; '.join(errors)}", "error")
+        mid, send_errors = await wafc.mail.send(message, mail.MailFooterCategory.NONE)
+    if send_errors:
+        await quart.flash(f"Sending failed: {'; '.join(send_errors)}", "error")
     elif config.is_dev_environment():
         await quart.flash("Dev environment, so the message was logged to sent-email-dev.log and not sent.", "success")
     else:

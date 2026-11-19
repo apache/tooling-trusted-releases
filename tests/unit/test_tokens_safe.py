@@ -18,13 +18,13 @@
 import datetime
 import unittest.mock as mock
 
-import asfquart.base as base
 import jwt
 import pytest
 import quart
 
 import atr.constants as constants
 import atr.db as db
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 import atr.models.sql as sql
 import atr.storage.datatypes as datatypes
@@ -252,7 +252,7 @@ async def test_verify_pat_ip_restrictions(
             assert claims["sub"] == subject
             auth_failure.assert_not_called()
         else:
-            with pytest.raises(base.ASFQuartException, match="Personal Access Token invalid") as exc:
+            with pytest.raises(errors.ASFQuartException, match="Personal Access Token invalid") as exc:
                 await jwtoken.verify(token)
             assert exc.value.errorcode == 401
             auth_failure.assert_called_once_with("jwt_token", "system_pat_ip_mismatch")
@@ -286,7 +286,7 @@ async def test_verify_system_claim_without_pat_hash_rejected(monkeypatch: pytest
     secret = "a" * 64
     monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
     monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
-    with pytest.raises(base.ASFQuartException):
+    with pytest.raises(errors.ASFQuartException):
         await jwtoken.verify(_signed_jwt(secret, atr_th=None))
 
 
@@ -297,7 +297,7 @@ async def test_verify_system_token_rejects_non_system_pat(monkeypatch: pytest.Mo
     monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
     monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=False)))
 
-    with pytest.raises(base.ASFQuartException):
+    with pytest.raises(errors.ASFQuartException):
         await jwtoken.verify(_signed_jwt(secret))
 
 
@@ -308,7 +308,7 @@ async def test_verify_system_token_rejects_wrong_subject(monkeypatch: pytest.Mon
     monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
     monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=True)))
 
-    with pytest.raises(base.ASFQuartException):
+    with pytest.raises(errors.ASFQuartException):
         await jwtoken.verify(_signed_jwt(secret, sub="someuser"))
 
 
@@ -332,7 +332,7 @@ async def test_verify_user_token_requires_ldap_active(monkeypatch: pytest.Monkey
     is_active = mock.AsyncMock(return_value=False)
     monkeypatch.setattr("atr.ldap.is_active", is_active)
 
-    with pytest.raises(base.ASFQuartException):
+    with pytest.raises(errors.ASFQuartException):
         await jwtoken.verify(_signed_jwt(secret, sub="someuser", atr_sys=False, atr_th=None))
     is_active.assert_awaited_once()
 

@@ -29,7 +29,6 @@ import enum
 import time
 from typing import TYPE_CHECKING, Final
 
-import asfquart.base as base
 import jwt as pyjwt
 import pydantic
 import quart
@@ -159,11 +158,11 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
     if scheme is not Auth.BODY_OIDC:
         return
     if data is None:
-        raise base.ASFQuartException("Trusted Publisher auth requires a validated request body", errorcode=401)
+        raise errors.ASFQuartException("Trusted Publisher auth requires a validated request body", errorcode=401)
     publisher = getattr(data, "publisher", None)
     jwt = getattr(data, "jwt", None)
     if (not isinstance(publisher, str)) or (not isinstance(jwt, str)):
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             "Trusted Publisher auth requires 'publisher' and 'jwt' string fields", errorcode=401
         )
     # Lazy import: atr.db.interaction pulls in much of the project, so blueprint
@@ -177,22 +176,22 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
         reason = _TP_EVENT_UNTRUSTED_REASON if untrusted else _TP_EVENT_REASON
         await _trusted_publisher_failure_record(_TrustedPublisherFailure(reason, str(exc), untrusted), exc)
         raise
-    except base.ASFQuartException as exc:
+    except errors.ASFQuartException as exc:
         reason = _TP_REJECTION_REASONS.get(errors.response_status_code(exc))
         if reason is not None:
             await _trusted_publisher_failure_record(_TrustedPublisherFailure(reason, str(exc), True), exc)
         raise
     except interaction.InteractionError as exc:
         await _trusted_publisher_failure_record(_TP_UNSUPPORTED, exc)
-        raise base.ASFQuartException(_TP_UNSUPPORTED.message, errorcode=401) from exc
+        raise errors.ASFQuartException(_TP_UNSUPPORTED.message, errorcode=401) from exc
     except (pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
         failure = _trusted_publisher_failure(exc)
         await _trusted_publisher_failure_record(failure, exc)
-        raise base.ASFQuartException(failure.message, errorcode=401) from exc
+        raise errors.ASFQuartException(failure.message, errorcode=401) from exc
 
     if config.get().ADMIN_ONLY and (not user.is_admin(asf_uid)):
         log.auth_failure(_TP_AUTH_TYPE, "admin_only", asf_uid)
-        raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
+        raise errors.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     quart.g.tp_context = TrustedPublisherContext(payload=payload, asf_uid=asf_uid, publisher=publisher)
 
@@ -202,7 +201,7 @@ async def authenticate_header(scheme: Auth) -> None:
     # Only BEARER_PROJECT routes accept a project JWT
     claims = await jwtoken.authenticate(allow_project=scheme is Auth.BEARER_PROJECT)
     if (scheme is Auth.SYSTEM_BEARER) and (not claims.get("atr_sys")):
-        raise base.ASFQuartException("System privileges required", errorcode=403)
+        raise errors.ASFQuartException("System privileges required", errorcode=403)
 
 
 def authorize_project(scheme: Auth, arguments: list[Any]) -> None:
@@ -211,7 +210,7 @@ def authorize_project(scheme: Auth, arguments: list[Any]) -> None:
         return
     claims = getattr(quart.g, "jwt_claims", None)
     if claims is None:
-        raise base.ASFQuartException("Authentication required", errorcode=401)
+        raise errors.ASFQuartException("Authentication required", errorcode=401)
     project_key = jwtoken.project_scope(claims)
     if project_key is None:
         return
@@ -219,7 +218,7 @@ def authorize_project(scheme: Auth, arguments: list[Any]) -> None:
     requested = {str(argument.project) for argument in arguments if getattr(argument, "project", None) is not None}
     if requested != {project_key}:
         log.auth_failure("jwt_token", "jwt_project_mismatch")
-        raise base.ASFQuartException(f"This token can only be used for project '{project_key}'", errorcode=403)
+        raise errors.ASFQuartException(f"This token can only be used for project '{project_key}'", errorcode=403)
 
 
 def security_scheme_for(scheme: Auth) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

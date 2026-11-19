@@ -19,7 +19,6 @@
 from collections.abc import Sequence
 from typing import Literal
 
-import asfquart.base as base
 import markupsafe
 import quart
 
@@ -157,7 +156,7 @@ async def _get_page_data(
             _release_policy=True,
             _project_release_policy=True,
             _distributions=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         tasks = [
             t
             for t in (

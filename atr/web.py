@@ -21,7 +21,6 @@ import dataclasses
 import urllib.parse
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar
 
-import asfquart.base as base
 import markupsafe
 import pydantic_core
 import quart
@@ -99,7 +98,7 @@ class Committer:
                 if flash_admin_warning:
                     await quart.flash("This is not your project, but you have access as an admin", "warning")
                 return
-            raise base.ASFQuartException("You do not have access to this project", errorcode=403)
+            raise errors.ASFQuartException("You do not have access to this project", errorcode=403)
 
     async def prevent_confusing_ui_display_committee(self, committee_key: safe.CommitteeKey, die: bool = True) -> bool:
         if str(committee_key) not in self.member_committees:
@@ -110,7 +109,7 @@ class Committer:
                 await quart.flash("This is not your committee, but you have access as an admin", "warning")
                 return True
             if die:
-                raise base.ASFQuartException("You do not have access to this committee", errorcode=403)
+                raise errors.ASFQuartException("You do not have access to this committee", errorcode=403)
             return False
         return True
 
@@ -210,7 +209,7 @@ class Committer:
                     _project_release_policy=with_project_release_policy,
                     _revisions=with_revisions,
                     _distributions=with_distributions,
-                ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+                ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         else:
             release = await data.release(
                 project_key=str(project_key),
@@ -223,7 +222,7 @@ class Committer:
                 _project_release_policy=with_project_release_policy,
                 _revisions=with_revisions,
                 _distributions=with_distributions,
-            ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+            ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         return release
 
     @property

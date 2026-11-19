@@ -20,12 +20,12 @@ from __future__ import annotations
 from typing import Literal
 
 import aiofiles.os
-import asfquart.base as base
 import quart
 
 import atr.analysis as analysis
 import atr.blueprints.post as post
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get as get
 import atr.log as log
@@ -91,7 +91,7 @@ async def cache_reset(
     Start a new draft revision and switch this release to global caching.
     """
     if not session.is_admin:
-        raise base.ASFQuartException("Admin access required", errorcode=403)
+        raise errors.ASFQuartException("Admin access required", errorcode=403)
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     try:
@@ -255,7 +255,7 @@ async def recheck(
     Start a new draft revision and switch this release to release-local caching.
     """
     if not session.is_admin:
-        raise base.ASFQuartException("Admin access required", errorcode=403)
+        raise errors.ASFQuartException("Admin access required", errorcode=403)
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     try:
@@ -305,7 +305,7 @@ async def sbomconvert(
 
     # Check that the file is an XML SBOM before continuing
     if not analysis.is_cyclonedx_xml(rel_path.name):
-        raise base.ASFQuartException(f"SBOM converter requires an XML SBOM. Received: {rel_path.name}", errorcode=400)
+        raise errors.ASFQuartException(f"SBOM converter requires an XML SBOM. Received: {rel_path.name}", errorcode=400)
 
     try:
         description = "SBOM conversion through web interface"
@@ -325,7 +325,7 @@ async def sbomconvert(
 
                 # Check that the SBOM file does not already exist in the new revision
                 if await aiofiles.os.path.exists(sbom_path_in_new_revision):
-                    raise base.ASFQuartException("SBOM file already exists", errorcode=400)
+                    raise errors.ASFQuartException("SBOM file already exists", errorcode=400)
 
                 # This shouldn't happen as we need a revision to kick the task off from
                 if old_rev is None:
@@ -390,7 +390,7 @@ async def sbomgen(
         or rel_path.name.endswith(".zip")
         or rel_path.name.endswith(".jar")
     ):
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             f"SBOM generation requires .tar.gz, .tgz, .zip or .jar files. Received: {rel_path.name}", errorcode=400
         )
 
@@ -411,7 +411,7 @@ async def sbomgen(
 
                 # Check that the SBOM file does not already exist in the new revision
                 if await aiofiles.os.path.exists(sbom_path_in_new_revision):
-                    raise base.ASFQuartException("SBOM file already exists", errorcode=400)
+                    raise errors.ASFQuartException("SBOM file already exists", errorcode=400)
 
                 # This shouldn't happen as we need a revision to kick the task off from
                 if old_rev is None:

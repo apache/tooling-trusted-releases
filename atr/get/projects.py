@@ -20,7 +20,6 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, Literal
 
-import asfquart.base as base
 import htpy
 import quart
 import strictyaml
@@ -31,6 +30,7 @@ import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.committees as committees
 import atr.get.compose as compose
@@ -66,7 +66,7 @@ async def add_project(
 
     async with db.session() as data:
         committee = await data.committee(key=str(committee_key)).demand(
-            base.ASFQuartException(f"Committee {committee_key!s} not found", errorcode=404)
+            errors.ASFQuartException(f"Committee {committee_key!s} not found", errorcode=404)
         )
 
     page = htm.Block()
@@ -137,11 +137,11 @@ async def project_yaml(
             key=str(project_key),
             _committee=True,
             _release_policy=True,
-        ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
 
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     if not (is_committee_member or session.is_admin):
-        raise base.ASFQuartException("You are not a member of this project's committee", errorcode=403)
+        raise errors.ASFQuartException("You are not a member of this project's committee", errorcode=403)
 
     full = project.update_type == sql.UpdateType.ASFYAML_FULL
     yaml_merge = _asf_yaml_export(project, full=False)
@@ -284,7 +284,7 @@ async def view(
             _committee_signing_certificates=True,
             _release_policy=True,
             _releases=True,
-        ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
         project_cycles = list(await data.project_cycle(project_key=str(project_key)).all())
         active_committee_projects = 0
         if project.committee is not None:

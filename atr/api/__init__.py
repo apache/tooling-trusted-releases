@@ -25,7 +25,6 @@ import tempfile
 from typing import Any, Final, Literal
 
 import aiofiles.os
-import asfquart.base as base
 import openpgp
 import pydantic
 import quart
@@ -2491,7 +2490,7 @@ def _jwt_asf_uid() -> str:
     claims = getattr(quart.g, "jwt_claims", {})
     asf_uid = claims.get("sub")
     if not isinstance(asf_uid, str):
-        raise base.ASFQuartException(f"Invalid token subject: {asf_uid!r}, type: {type(asf_uid)}", errorcode=401)
+        raise errors.ASFQuartException(f"Invalid token subject: {asf_uid!r}, type: {type(asf_uid)}", errorcode=401)
     return asf_uid
 
 

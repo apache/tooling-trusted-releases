@@ -19,13 +19,13 @@ import datetime
 import unittest.mock as mock
 from collections.abc import AsyncIterator
 
-import asfquart.base as base
 import pytest
 import sqlalchemy.ext.asyncio
 import sqlalchemy.pool
 import sqlmodel
 
 import atr.db as db
+import atr.errors as errors
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.writers.revision as revision
@@ -74,7 +74,7 @@ async def _seed_collision(
 async def test_release_alias_read_is_not_found(sessionmaker) -> None:
     await _seed_collision(sessionmaker)
     async with sessionmaker() as data:
-        with pytest.raises(base.ASFQuartException, match="Release does not exist"):
+        with pytest.raises(errors.ASFQuartException, match="Release does not exist"):
             await web.Committer.release(
                 mock.MagicMock(),
                 safe.ProjectKey("abc-pqr"),

@@ -18,7 +18,6 @@
 import datetime
 import unittest.mock as mock
 
-import asfquart.base as base
 import pytest
 import quart
 import quart_schema
@@ -73,7 +72,7 @@ def app(database, monkeypatch):
     application = quart.Quart(__name__)
     application.config["TESTING"] = True
     quart_schema.QuartSchema(application)
-    application.register_error_handler(base.ASFQuartException, errors.action_error_response)
+    application.register_error_handler(errors.ASFQuartException, errors.action_error_response)
     application.register_blueprint(atr.blueprints.admin._BLUEPRINT)
     application.register_blueprint(atr.blueprints.get._BLUEPRINT)
     monkeypatch.setattr(sessions, "read", mock.AsyncMock(return_value=sql.UserSession(uid="admin")))

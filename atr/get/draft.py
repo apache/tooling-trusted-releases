@@ -21,7 +21,6 @@ import datetime
 from typing import Literal
 
 import aiofiles.os
-import asfquart.base as base
 
 import atr.attestable as attestable
 import atr.blueprints.get as get
@@ -59,7 +58,7 @@ async def tools(
 
     # Check that the file exists
     if not await aiofiles.os.path.exists(full_path):
-        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
 
     modified = int(await aiofiles.os.path.getmtime(full_path))
     file_size = await aiofiles.os.path.getsize(full_path)

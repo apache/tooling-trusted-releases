@@ -18,10 +18,10 @@
 import contextlib
 import unittest.mock as mock
 
-import asfquart.base as base
 import pytest
 import quart
 
+import atr.errors as errors
 import atr.get.start as start
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -31,7 +31,7 @@ import atr.models.sql as sql
 def preview(monkeypatch):
     app = quart.Quart(__name__)
     app.config["TESTING"] = True
-    app.register_error_handler(base.ASFQuartException, lambda error: ("", error.errorcode))
+    app.register_error_handler(errors.ASFQuartException, lambda error: ("", error.errorcode))
     app.register_blueprint(start.get._BLUEPRINT)
     data = mock.Mock()
     data.project.return_value.demand = mock.AsyncMock()
@@ -57,7 +57,7 @@ async def test_cycle_preview_invalid_version(preview, monkeypatch, version):
 
 async def test_cycle_preview_missing_project(preview):
     client, data, _session = preview
-    data.project.return_value.demand.side_effect = base.ASFQuartException("Missing project", errorcode=404)
+    data.project.return_value.demand.side_effect = errors.ASFQuartException("Missing project", errorcode=404)
     response = await client.get("/start/example/cycle-preview?version=2.5.3")
     assert response.status_code == 404
 
@@ -107,7 +107,7 @@ async def test_cycle_preview_unauthenticated(preview, monkeypatch):
 
 async def test_cycle_preview_unauthorized(preview):
     client, data, session = preview
-    session.prevent_confusing_ui_display.side_effect = base.ASFQuartException("Forbidden", errorcode=403)
+    session.prevent_confusing_ui_display.side_effect = errors.ASFQuartException("Forbidden", errorcode=403)
     response = await client.get("/start/example/cycle-preview?version=2.5.3")
     assert response.status_code == 403
     data.project.assert_not_called()

@@ -22,7 +22,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from types import SimpleNamespace
 from typing import Any, Final
 
-import asfquart.base as base
 import jwt
 import pytest
 import quart
@@ -33,6 +32,7 @@ import sqlmodel
 import atr.blueprints.api as api_blueprint
 import atr.blueprints.api_auth as api_auth
 import atr.db as db
+import atr.errors as errors
 import atr.jwtoken as jwtoken
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -58,21 +58,21 @@ def test_authorize_project_leaves_an_unlimited_token_alone() -> None:
 
 
 def test_authorize_project_refuses_a_request_naming_no_project() -> None:
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         _authorize({"sub": "alice", "atr_prj": "example"}, [SimpleNamespace(version="1.0"), None])
     assert exc_info.value.errorcode == 403
 
 
 @pytest.mark.parametrize("requested", ["other", "Example", "example-sub"])
 def test_authorize_project_refuses_another_project(requested: str) -> None:
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         _authorize({"sub": "alice", "atr_prj": "example"}, [SimpleNamespace(project=requested)])
     assert exc_info.value.errorcode == 403
 
 
 def test_authorize_project_refuses_two_projects_in_one_request() -> None:
     arguments = [SimpleNamespace(project="example"), SimpleNamespace(project="other")]
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         _authorize({"sub": "alice", "atr_prj": "example"}, arguments)
     assert exc_info.value.errorcode == 403
 
@@ -153,7 +153,7 @@ async def test_verify_refuses_a_good_project_token_unless_asked_for_one(stored: 
     token = jwtoken.issue_for_project("alice", _PROJECT)
     await stored(token)
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         await jwtoken.verify(token.jwt)
     assert exc_info.value.errorcode == 403
 
@@ -162,7 +162,7 @@ async def test_verify_refuses_a_good_project_token_unless_asked_for_one(stored: 
 async def test_verify_refuses_a_project_token_with_no_row(stored: _Stored) -> None:
     token = jwtoken.issue_for_project("alice", _PROJECT)
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         await jwtoken.verify(token.jwt, allow_project=True)
     assert exc_info.value.errorcode == 401
 
@@ -173,7 +173,7 @@ async def test_verify_refuses_a_project_token_whose_row_disagrees(stored: _Store
     token = jwtoken.issue_for_project("alice", _PROJECT)
     await stored(token, **change)
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         await jwtoken.verify(token.jwt, allow_project=True)
     assert exc_info.value.errorcode == 401
 

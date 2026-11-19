@@ -20,7 +20,6 @@ from typing import Literal
 
 import aiofiles
 import aiofiles.os
-import asfquart.base as base
 
 import atr.attestable as attestable
 import atr.blueprints.get as get
@@ -50,15 +49,15 @@ async def data(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
         if release.committee is None:
-            raise base.ASFQuartException(errors.RELEASE_NO_COMMITTEE, errorcode=500)
+            raise errors.ASFQuartException(errors.RELEASE_NO_COMMITTEE, errorcode=500)
 
         check_result = await data.check_result(
             id=check_id,
             release_key=release.key,
-        ).demand(base.ASFQuartException("Check result not found", errorcode=404))
+        ).demand(errors.ASFQuartException("Check result not found", errorcode=404))
 
     payload = check_result.model_dump(mode="json", exclude={"release"})
     body = json.dumps(payload, indent=2, sort_keys=True)
@@ -76,10 +75,10 @@ async def excludes(
 ) -> web.TextResponse:
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-            base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+            errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
         )
         check_result = await data.check_result(id=check_id, release_key=release.key).demand(
-            base.ASFQuartException("Check result not found", errorcode=404)
+            errors.ASFQuartException("Check result not found", errorcode=404)
         )
     return web.TextResponse(await _excludes_text(project_key, version_key, check_result))
 

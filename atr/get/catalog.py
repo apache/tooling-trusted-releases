@@ -20,12 +20,11 @@ import datetime
 from collections.abc import Sequence
 from typing import Literal
 
-import asfquart.base as base
-
 import atr.api as api
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
@@ -52,13 +51,13 @@ async def project(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     if query_args.status not in ("all", "released", "archived"):
-        raise base.ASFQuartException("Status must be all, released, or archived", errorcode=400)
+        raise errors.ASFQuartException("Status must be all, released, or archived", errorcode=400)
     is_archived = None if (query_args.status == "all") else (query_args.status == "archived")
     async with db.session() as data:
         project_obj = await data.project(key=str(project_key)).demand(
-            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         project_cycles = await data.project_cycle(project_key=project_obj.key).all()
         rows = await interaction.catalog_version_rows(data, project_obj.key, is_archived=is_archived)

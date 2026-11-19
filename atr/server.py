@@ -632,13 +632,13 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
             # Apart from PAT hashes and PII, all data in ATR is public
             # Therefore we are only concerned here with non-GET API requests
             if (sec_fetch_mode == "navigate") and quart.request.path.startswith("/api/"):
-                raise base.ASFQuartException(
+                raise errors.ASFQuartException(
                     "Forbidden: non-GET/HEAD/OPTIONS browser navigation to API endpoint", errorcode=403
                 )
 
             # This is in addition to our existing CSRF protection
             if sec_fetch_site == "cross-site":
-                raise base.ASFQuartException("Forbidden: cross-site non-GET/HEAD/OPTIONS request", errorcode=403)
+                raise errors.ASFQuartException("Forbidden: cross-site non-GET/HEAD/OPTIONS request", errorcode=403)
 
     # X-Content-Type-Options: nosniff is required by ASVS v5 3.4.4 (L2)
     # A strict Referrer-Policy is required by ASVS v5 3.4.5 (L2)
@@ -1167,8 +1167,8 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             status_code=500,
         ), 500
 
-    @app.errorhandler(base.ASFQuartException)
-    async def handle_asfquart_exception(error: base.ASFQuartException) -> Any:
+    @app.errorhandler(errors.ASFQuartException)
+    async def handle_asfquart_exception(error: errors.ASFQuartException) -> Any:
         status_code = errors.response_status_code(error)
         message = errors.message(error)
         if status_code >= 500:

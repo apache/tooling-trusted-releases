@@ -18,12 +18,12 @@
 import contextlib
 import unittest.mock as mock
 
-import asfquart.base as base
 import pytest
 import quart
 
 import atr.config as config
 import atr.construct as construct
+import atr.errors as errors
 import atr.get.start as start
 import atr.models.sql as sql
 
@@ -37,7 +37,7 @@ def release_target(monkeypatch):
 def preview(monkeypatch):
     app = quart.Quart(__name__)
     app.config["TESTING"] = True
-    app.register_error_handler(base.ASFQuartException, lambda error: ("", error.errorcode))
+    app.register_error_handler(errors.ASFQuartException, lambda error: ("", error.errorcode))
     app.register_blueprint(start.get._BLUEPRINT)
     data = mock.Mock()
     data.project.return_value.demand = mock.AsyncMock()
@@ -135,7 +135,7 @@ async def test_mismatch(monkeypatch, location, previous, expected) -> None:
 
 async def test_route_missing_project(preview) -> None:
     client, data, _session = preview
-    data.project.return_value.demand.side_effect = base.ASFQuartException("Missing project", errorcode=404)
+    data.project.return_value.demand.side_effect = errors.ASFQuartException("Missing project", errorcode=404)
 
     response = await client.get("/start/example/location-preview?version=1.0")
 
@@ -173,7 +173,7 @@ async def test_route_start_mode_defers_to_default(preview) -> None:
 
 async def test_route_unauthorized(preview) -> None:
     client, data, session = preview
-    session.prevent_confusing_ui_display.side_effect = base.ASFQuartException("Forbidden", errorcode=403)
+    session.prevent_confusing_ui_display.side_effect = errors.ASFQuartException("Forbidden", errorcode=403)
 
     response = await client.get("/start/example/location-preview?version=1.0")
 

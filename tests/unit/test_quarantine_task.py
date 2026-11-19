@@ -23,11 +23,11 @@ import tarfile
 import unittest.mock as mock
 import zipfile
 
-import asfquart.base as base
 import exarch
 import pytest
 
 import atr.archives as archives
+import atr.errors as errors
 import atr.models.args as args
 import atr.models.github as github
 import atr.models.safe as safe
@@ -541,7 +541,7 @@ async def test_set_tag_raises_404_when_revision_missing():
     _attach_active_release(mock_data)
 
     writer = _make_revision_writer(mock_data)
-    with pytest.raises(base.ASFQuartException, match="Revision 00001 not found") as exc_info:
+    with pytest.raises(errors.ASFQuartException, match="Revision 00001 not found") as exc_info:
         await writer.set_tag(safe.ProjectKey("proj"), safe.VersionKey("1.0"), "00001", "rc1")
 
     assert getattr(exc_info.value, "errorcode", None) == 404

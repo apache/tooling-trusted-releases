@@ -17,7 +17,6 @@
 
 from typing import Literal
 
-import asfquart.base as base
 import htpy
 import pydantic.dataclasses as dataclasses
 import quart
@@ -27,6 +26,7 @@ import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.form as form
 import atr.get.projects as projects
 import atr.get.root as root
@@ -65,7 +65,7 @@ async def cycle_preview(
     await session.prevent_confusing_ui_display(project_key, flash_admin_warning=False)
     async with db.session() as data:
         project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=False).demand(
-            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
 
     if util.version_key_error(query.version):
@@ -89,7 +89,7 @@ async def location_preview(
     async with db.session() as data:
         project = await data.project(
             key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True, _release_policy=True
-        ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
 
     if project.committee is None:
         return quart.jsonify(location=None, previous_version=None, previous_location=None)
@@ -114,7 +114,7 @@ async def metadata(
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).demand(
-            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
 
     missing = shared.start.missing_release_metadata(project)
@@ -140,7 +140,7 @@ async def selected(
     async with db.session() as data:
         project = await data.project(
             key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True, _release_policy=True
-        ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
 
     if shared.start.missing_release_metadata(project):
         return await session.redirect(metadata, project_key=str(project_key))

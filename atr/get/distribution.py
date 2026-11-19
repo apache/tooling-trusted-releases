@@ -17,7 +17,6 @@
 from collections.abc import Sequence
 from typing import Literal
 
-import asfquart.base as base
 import htpy
 
 import atr.blueprints.get as get
@@ -197,7 +196,7 @@ async def _automate_form_page(project: safe.ProjectKey, version: safe.VersionKey
     """Helper to render the distribution automation form page."""
     release = await shared.distribution.release_validated(project, version, staging=staging)
     if staging and release.is_embargoed:
-        raise base.ASFQuartException("Embargoed releases cannot be distributed to staging", errorcode=403)
+        raise errors.ASFQuartException("Embargoed releases cannot be distributed to staging", errorcode=403)
 
     block = htm.Block()
     render.html_nav_phase(block, str(project), str(version), staging=staging)
@@ -250,7 +249,7 @@ async def _get_page_data(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
         distributions = await data.distribution(release_key=release.key).all()
         phase = "compose" if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT else "finish"
         tasks = [

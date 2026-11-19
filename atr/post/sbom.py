@@ -19,11 +19,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-import asfquart.base as base
 import quart
 
 import atr.analysis as analysis
 import atr.blueprints.post as post
+import atr.errors as errors
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
@@ -51,7 +51,7 @@ async def components(
     release = await shared.sbom.release_in_phase(session, project_key, version_key)
     sbom_path = await shared.sbom.sbom_for_artifact(paths.release_directory(release), file_path)
     if sbom_path is None:
-        raise base.ASFQuartException("This file has no CycloneDX JSON SBOM", errorcode=404)
+        raise errors.ASFQuartException("This file has no CycloneDX JSON SBOM", errorcode=404)
     return await _scan(session, release, project_key, version_key, sbom_path)
 
 
@@ -77,7 +77,7 @@ async def _augment(
     # Check that the file is a .cdx.json archive before creating a revision
     file_name = rel_path.as_path().name
     if not analysis.is_cyclonedx_json(file_name):
-        raise base.ASFQuartException("SBOM augmentation is only supported for CycloneDX JSON files", errorcode=400)
+        raise errors.ASFQuartException("SBOM augmentation is only supported for CycloneDX JSON files", errorcode=400)
 
     try:
         release = await session.release(project_key, version_key, with_committee=False, with_project=False)
@@ -119,7 +119,7 @@ async def _scan(
 ) -> web.WerkzeugResponse:
     """Scan a CycloneDX SBOM file for vulnerabilities using OSV, returning to the SBOM report."""
     if not analysis.is_cyclonedx_json(rel_path.as_path().name):
-        raise base.ASFQuartException("OSV scanning is only supported for CycloneDX JSON files", errorcode=400)
+        raise errors.ASFQuartException("OSV scanning is only supported for CycloneDX JSON files", errorcode=400)
 
     try:
         revision_number = release.safe_latest_revision_number

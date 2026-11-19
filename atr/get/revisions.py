@@ -19,13 +19,13 @@ import asyncio
 from typing import Literal
 
 import aiofiles.os
-import asfquart.base as base
 import htpy
 import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.errors as errors
 import atr.form as form
 import atr.get.manifest as manifest
 import atr.htm as htm
@@ -62,7 +62,7 @@ async def selected(
     try:
         release = await session.release(project_key, version_key)
         phase_key = "draft"
-    except base.ASFQuartException:
+    except errors.ASFQuartException:
         release = await session.release(project_key, version_key, phase=sql.ReleasePhase.RELEASE_PREVIEW)
         phase_key = "preview"
     release_dir = paths.release_directory_base(release)

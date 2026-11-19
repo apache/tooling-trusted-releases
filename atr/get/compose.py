@@ -21,7 +21,6 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 import aiofiles.os
-import asfquart.base as base
 import htpy
 import quart
 from quart_wtf import utils
@@ -70,7 +69,7 @@ async def selected(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         release = await data.release(
@@ -79,7 +78,7 @@ async def selected(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         return await mapping.release_as_redirect(session, release)
 
@@ -269,7 +268,7 @@ async def status_selected(
     """URL: /compose/status/<project_key>/<version_key>. Compose polling state JSON."""
     try:
         return await _status_selected_impl(session, project_key, version_key, query_args)
-    except base.ASFQuartException as exc:
+    except errors.ASFQuartException as exc:
         return _status_error_response(exc, expose_message=True)
     except Exception:
         log.exception(f"status_selected failed for {project_key}/{version_key}")
@@ -604,7 +603,7 @@ async def _status_selected_impl(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     # Polled every few seconds, so do not flash the admin warning
     await session.prevent_confusing_ui_display(project_key, flash_admin_warning=False)
     async with db.session() as data:
@@ -614,7 +613,7 @@ async def _status_selected_impl(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         return quart.jsonify(

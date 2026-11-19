@@ -20,7 +20,6 @@ import dataclasses
 from collections.abc import Callable
 from typing import Literal, NamedTuple
 
-import asfquart.base as base
 import htpy
 import quart
 
@@ -99,16 +98,16 @@ async def selected(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     async with db.session() as data:
         release = await data.release(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
     if release.phase not in (sql.ReleasePhase.RELEASE_CANDIDATE, sql.ReleasePhase.RELEASE):
-        raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
@@ -168,7 +167,7 @@ async def selected_revision(
             _committee=True,
             # _project=True is included in _project_release_policy=True
             _project_release_policy=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
 
     base_path = paths.release_directory(release)
     all_paths = [path async for path in util.paths_recursive(base_path)]

@@ -24,7 +24,6 @@ import typing
 from collections.abc import Callable
 from typing import Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin, get_type_hints
 
-import asfquart.base as base
 import pydantic
 import quart
 import quart_schema
@@ -64,7 +63,7 @@ def anonymous_embargo_probe(inner: Callable[..., Any], validated_params: list[tu
     async def probe(*args: Any, **kwargs: Any) -> Any:
         if await sessions.read() is None:
             url_params = dict(kwargs)
-            with contextlib.suppress(base.ASFQuartException):
+            with contextlib.suppress(errors.ASFQuartException):
                 await validate_params(url_params, validated_params)
                 await confidential_release_block(url_params, validated_params, None, allow_asf_member=False)
         return await inner(*args, **kwargs)
@@ -75,10 +74,10 @@ def anonymous_embargo_probe(inner: Callable[..., Any], validated_params: list[tu
 async def authenticate() -> web.Committer:
     web_session = await sessions.read()
     if not isinstance(web_session, sql.UserSession):
-        raise base.ASFQuartException("Not authenticated", errorcode=401)
+        raise errors.ASFQuartException("Not authenticated", errorcode=401)
 
     if config.get().ADMIN_ONLY and (not user.is_admin(web_session.uid)):
-        raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
+        raise errors.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     # LDAP account checks run periodically in sessions.account_check, called by validate_session in server.py
     # LDAP PubSub ban and delete events also revoke sessions, PATs, and SSH keys, in ldap.handle_update
@@ -88,7 +87,7 @@ async def authenticate() -> web.Committer:
 async def authenticate_public() -> web.Public:
     try:
         return await authenticate()
-    except base.ASFQuartException:
+    except errors.ASFQuartException:
         return None
 
 
@@ -219,7 +218,7 @@ async def confidential_release_block(
     uid = session.uid if (session is not None) else None
     is_member = bool(allow_asf_member and (session is not None) and session.is_member)
     if user.embargo_denies(release, uid, is_member=is_member):
-        raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
 
 def setup_wrapper(wrapper: Callable[..., Any], func: Callable[..., Any], blueprint_name: str) -> str:
@@ -257,7 +256,7 @@ async def validate_params(kwargs: dict[str, Any], known_params: list[tuple[str, 
             try:
                 kwargs[param_name] = param_type(raw)
             except ValueError:
-                raise base.ASFQuartException(f"Parameter {param_name!r} is invalid. ", errorcode=400)
+                raise errors.ASFQuartException(f"Parameter {param_name!r} is invalid. ", errorcode=400)
 
 
 async def validate_safe_fields(

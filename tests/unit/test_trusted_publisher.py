@@ -18,10 +18,10 @@
 import unittest.mock as mock
 from types import SimpleNamespace
 
-import asfquart.base as base
 import pytest
 
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.ldap as ldap
 
 
@@ -33,7 +33,7 @@ async def test_validate_trusted_jwt_reports_unlinked_github_actor(monkeypatch: p
     monkeypatch.setattr(interaction.jwtoken, "verify_github_oidc", mock.AsyncMock(return_value=payload))
     monkeypatch.setattr(interaction.ldap, "github_to_apache", mock.AsyncMock(side_effect=ldap_error))
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         await interaction.validate_trusted_jwt("github", "jwt")
 
     assert exc_info.value.errorcode == 403
@@ -58,7 +58,7 @@ async def test_validate_trusted_jwt_refuses_the_trusted_role_from_elsewhere(monk
     payload = SimpleNamespace(actor_id=interaction.GITHUB_TRUSTED_ROLE_NID, repository="apache/other")
     monkeypatch.setattr(interaction.jwtoken, "verify_github_oidc", mock.AsyncMock(return_value=payload))
 
-    with pytest.raises(base.ASFQuartException) as exc_info:
+    with pytest.raises(errors.ASFQuartException) as exc_info:
         await interaction.validate_trusted_jwt("github", "jwt")
 
     assert exc_info.value.errorcode == 403

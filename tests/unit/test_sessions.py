@@ -21,13 +21,13 @@ import types
 import unittest.mock as mock
 
 import asfquart.auth as auth
-import asfquart.base as base
 import pytest
 import quart
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.errors as errors
 import atr.get as get
 import atr.ldap as ldap
 import atr.models.sql as sql
@@ -92,7 +92,7 @@ async def test_account_check_revokes_user_when_admin_check_unavailable(monkeypat
     deleted = mock.AsyncMock()
     monkeypatch.setattr("atr.sessions.deleted_or_banned", deleted)
 
-    with pytest.raises(base.ASFQuartException):
+    with pytest.raises(errors.ASFQuartException):
         await sessions.account_check(user_session, 123.0)
 
     deleted.assert_awaited_once_with("alice")

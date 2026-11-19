@@ -23,7 +23,6 @@ import posixpath
 from typing import Final, Literal
 
 import aiofiles.os
-import asfquart.base as base
 
 import atr.archives as archives
 import atr.attestable as attestable
@@ -67,19 +66,19 @@ async def compare(
 ) -> str:
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-            base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+            errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
         )
     if (release.phase == sql.ReleasePhase.RELEASE) or (release.latest_revision_number is None):
-        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
     recorded = await attestable.load(project_key, version_key, release.safe_latest_revision_number)
     primary = str(rel_path)
     if (recorded is None) or (query_args.sibling not in attestable.cross_format_siblings(recorded, primary)):
-        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
     left = await _compare_paths(release, recorded, primary)
     right = await _compare_paths(release, recorded, query_args.sibling)
     comparison = await asyncio.to_thread(archives.compare_trees, *left, *right)
     if comparison is None:
-        raise base.ASFQuartException("Both archives must contain a single root directory", errorcode=404)
+        raise errors.ASFQuartException("Both archives must contain a single root directory", errorcode=404)
     return await template.blank(
         title=f"Compare archives for {release.short_display_name}",
         content=_compare_page(release, primary, query_args.sibling, comparison),
@@ -102,7 +101,7 @@ async def selected_path(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     validated_path = rel_path.as_path()
 
     # If the draft is not found, we try to get the release candidate
@@ -113,16 +112,16 @@ async def selected_path(
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
+        ).demand(errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404))
     if release.phase not in (
         sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
         sql.ReleasePhase.RELEASE_CANDIDATE,
         sql.ReleasePhase.RELEASE,
     ):
-        raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
     if release.committee is None:
-        raise base.ASFQuartException(errors.RELEASE_NO_COMMITTEE, errorcode=500)
+        raise errors.ASFQuartException(errors.RELEASE_NO_COMMITTEE, errorcode=500)
 
     if release.phase == sql.ReleasePhase.RELEASE:
         revision, attestable_data, file_size = await _published_file(project_key, version_key, str(rel_path))
@@ -131,11 +130,11 @@ async def selected_path(
         # TODO: When we do more than one thing in a dir, we should use the revision directory directly
         abs_path = paths.release_directory(release) / validated_path
         if release.latest_revision_number is None:
-            raise base.ASFQuartException("Release has no revision", errorcode=500)
+            raise errors.ASFQuartException("Release has no revision", errorcode=500)
 
         # Check that the file exists
         if not await aiofiles.os.path.exists(abs_path):
-            raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+            raise errors.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
 
         modified = int(await aiofiles.os.path.getmtime(abs_path))
         uploaded = datetime.datetime.fromtimestamp(modified, tz=datetime.UTC)
@@ -222,11 +221,11 @@ async def _compare_paths(
 ) -> tuple[safe.StatePath, safe.StatePath]:
     content_hash = attestable.path_hash(recorded, rel_path)
     if content_hash is None:
-        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
     archive_key = hashes.filesystem_archives_key(content_hash)
     extract_dir = paths.get_archives_dir() / release.project_key / release.version / archive_key
     if not await aiofiles.os.path.isdir(extract_dir):
-        raise base.ASFQuartException("The extracted archive is no longer available", errorcode=404)
+        raise errors.ASFQuartException("The extracted archive is no longer available", errorcode=404)
     return paths.release_directory(release) / rel_path, extract_dir
 
 
@@ -253,7 +252,7 @@ async def _published_file(
     attested = await attestable.load(project_key, version_key, revision) if (revision is not None) else None
     content_hash = attestable.path_hash(attested, rel_path) if (attested is not None) else None
     if (revision is None) or (attested is None) or (content_hash is None):
-        raise base.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
+        raise errors.ASFQuartException(errors.FILE_NOT_FOUND, errorcode=404)
     return revision, attested, attested.hashes[content_hash].size
 
 

@@ -21,11 +21,10 @@ import datetime
 from collections.abc import Mapping, Sequence
 from typing import Final, Literal
 
-import asfquart.base as base
-
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
@@ -49,10 +48,10 @@ async def finished(
     try:
         validation.pagination_args_validate(query_args)
     except ValueError as e:
-        raise base.ASFQuartException(str(e), errorcode=400)
+        raise errors.ASFQuartException(str(e), errorcode=400)
     async with db.session() as data:
         project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
-            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
 
         releases = await data.release(
@@ -104,7 +103,7 @@ async def select(
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
-            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         releases = await interaction.releases_in_progress(project)
     if not user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):

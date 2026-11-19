@@ -16,7 +16,6 @@
 # under the License.
 from typing import Literal
 
-import asfquart.base as base
 import htpy
 import quart
 
@@ -52,7 +51,7 @@ async def metadata(
         async with storage.write(session) as write:
             warm = await write.as_project_release_manager(project_key)
             await warm.project.edit_metadata(edit_metadata_form)
-    except (web.FlashError, base.ASFQuartException, storage.AccessError) as e:
+    except (web.FlashError, errors.ASFQuartException, storage.AccessError) as e:
         await quart.flash(str(e), "error")
         return await session.redirect(get.start.selected, project_key=str(project_key))
 
@@ -72,7 +71,7 @@ async def selected(
 
     async with db.session() as data:
         project = await data.project(key=str(project_key), _committee=True).demand(
-            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
     if shared.start.missing_release_metadata(project):
         return await session.redirect(get.start.selected, project_key=str(project_key))
@@ -109,6 +108,6 @@ async def selected(
         ]
         await web.flash_error(htpy.span[str(e), " ", help_link])
         return await session.redirect(get.start.selected, project_key=str(project_key))
-    except (web.FlashError, base.ASFQuartException, storage.AccessError) as e:
+    except (web.FlashError, errors.ASFQuartException, storage.AccessError) as e:
         await quart.flash(str(e), "error")
         return await session.redirect(get.start.selected, project_key=str(project_key))

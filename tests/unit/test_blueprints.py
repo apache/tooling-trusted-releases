@@ -25,6 +25,7 @@ import pytest
 import atr.blueprints as blueprints
 import atr.blueprints.api as api_blueprint
 import atr.blueprints.common as common
+import atr.errors as errors
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.schema as schema
@@ -437,10 +438,9 @@ def test_setup_wrapper_sets_metadata():
 
 @pytest.mark.asyncio
 async def test_validate_params_raises_on_invalid_optional():
-    import asfquart.base as base
 
     kwargs: dict = {"project_key": "INVALID KEY WITH SPACES"}
-    with pytest.raises(base.ASFQuartException):
+    with pytest.raises(errors.ASFQuartException):
         await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
 
 

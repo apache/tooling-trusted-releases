@@ -22,7 +22,6 @@ from typing import Literal
 
 import aiofiles
 import asfquart
-import asfquart.base as base
 import noisysecrets
 import quart
 import werkzeug.wrappers.response as response
@@ -30,6 +29,7 @@ import werkzeug.wrappers.response as response
 import atr.blueprints.get as get
 import atr.config as config
 import atr.db as db
+import atr.errors as errors
 import atr.form as form
 import atr.get.root as root
 import atr.get.vote as vote
@@ -334,7 +334,7 @@ async def test_recheck_session(
 
     existing = await sessions.read()
     if not isinstance(existing, sql.UserSession):
-        raise base.ASFQuartException("No session to recheck", errorcode=400)
+        raise errors.ASFQuartException("No session to recheck", errorcode=400)
 
     await asfquart.APP.sessions.save(existing, {"last_account_check": 0})
     return await web.redirect(root.index)
@@ -398,17 +398,17 @@ async def test_vote(
 
     user_category = category_map.get(str(category).lower())
     if user_category is None:
-        raise base.ASFQuartException(
+        raise errors.ASFQuartException(
             f"Invalid category: {category!s}. Valid options: {', '.join(category_map.keys())}",
             errorcode=400,
         )
 
     if (user_category != vote.UserCategory.UNAUTHENTICATED) and (session is None):
-        raise base.ASFQuartException("You must be logged in to preview authenticated views", errorcode=401)
+        raise errors.ASFQuartException("You must be logged in to preview authenticated views", errorcode=401)
 
     _, release, latest_vote_task = await vote.category_and_release(session, project_key, version_key)
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
-        raise base.ASFQuartException("Release is not a candidate", errorcode=404)
+        raise errors.ASFQuartException("Release is not a candidate", errorcode=404)
 
     return await vote.render_options_page(session, release, user_category, latest_vote_task)

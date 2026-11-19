@@ -33,6 +33,9 @@ RELEASE_ACTIONS_DISABLED: Final = "Release actions are disabled."
 RELEASE_NO_COMMITTEE: Final = "Release has no committee"
 RELEASE_NOT_FOUND: Final = "Release does not exist"
 
+# The rest of ATR takes this type from here, not from asfquart
+ASFQuartException = base.ASFQuartException
+
 
 def action_error_response(
     error: BaseException,
@@ -70,7 +73,7 @@ def message(error: BaseException) -> str:
 def response_status_code(error: BaseException, default: int = 500) -> int:
     if isinstance(error, exceptions.HTTPException):
         return error.code or default
-    if isinstance(error, base.ASFQuartException):
+    if isinstance(error, ASFQuartException):
         errorcode = getattr(error, "errorcode", None)
         if isinstance(errorcode, int):
             return errorcode or default
