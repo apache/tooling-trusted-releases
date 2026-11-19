@@ -72,7 +72,6 @@ The inner-directory SWHID does not:
 * Identify the archive file. Two archives with different compression, timestamps, or ownership can
   share a SWHID. Use the SHA3-256 value to identify the file you downloaded.
 * Record timestamps, file ownership, or permissions other than the executable bit.
-* Include empty directories, which Git cannot represent.
 * Include anything outside the top-level directory.
 
 ## Not recorded

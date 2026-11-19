@@ -106,10 +106,7 @@ async def directory_id(root: Path) -> Identifier:
 
 
 def directory_id_sync(root: Path) -> Identifier:
-    digest = _tree_digest(root)
-    if digest is None:
-        digest = _git_object_digest(_TREE, b"")
-    return Identifier(ObjectType.DIRECTORY, digest.hex())
+    return Identifier(ObjectType.DIRECTORY, _tree_digest(root).hex())
 
 
 def parse(text: str) -> Identifier:
@@ -208,7 +205,7 @@ def _revision_id(repo_path: Path, committish: Commit) -> Identifier:
     return Identifier(ObjectType.REVISION, commit)
 
 
-def _tree_digest(path: Path) -> bytes | None:
+def _tree_digest(path: Path) -> bytes:
     entries: list[tuple[bytes, bytes, bytes]] = []
     with os.scandir(path) as scan:
         for entry in scan:
@@ -221,14 +218,11 @@ def _tree_digest(path: Path) -> bytes | None:
             elif stat.S_ISDIR(mode):
                 child = _tree_digest(entry.path)
                 # Git cannot represent an empty directory, so it is dropped
-                if child is not None:
-                    entries.append((name, _MODE_DIR, child))
+                entries.append((name, _MODE_DIR, child))
             elif stat.S_ISREG(mode):
                 file_mode = _MODE_EXEC if (mode & 0o111) else _MODE_FILE
                 blob = _blob_digest_of_file(entry.path, info.st_size)
                 entries.append((name, file_mode, blob))
-    if not entries:
-        return None
     entries.sort(key=_entry_sort_key)
     manifest = b"".join(mode + b" " + name + b"\x00" + digest for name, mode, digest in entries)
     return _git_object_digest(_TREE, manifest)
