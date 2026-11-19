@@ -45,7 +45,7 @@ def test_command_passthrough_without_setpriv(monkeypatch: pytest.MonkeyPatch) ->
 def test_command_wraps_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sandbox, "landlock_setpriv", lambda: "/bin/setpriv")
     wrapped = sandbox.command(["rsync", "--server"], ro_paths=["/a"], rw_paths=["/b"])
-    assert wrapped[:3] == ["/bin/setpriv", "--landlock-access", "fs"]
+    assert wrapped[:3] == ["/bin/setpriv", "--landlock-access", f"fs:execute,{sandbox.RW_ACCESSES}"]
     assert f"path-beneath:{sandbox.RO_ACCESSES}:/a" in wrapped
     assert f"path-beneath:{sandbox.RW_ACCESSES}:/b" in wrapped
     assert wrapped[-3:] == ["--", "rsync", "--server"]

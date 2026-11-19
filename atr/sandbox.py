@@ -44,7 +44,7 @@ def command(
     setpriv = landlock_setpriv()
     if setpriv is None:
         return argv
-    wrapped = [setpriv, "--landlock-access", "fs"]
+    wrapped = [setpriv, "--landlock-access", f"fs:execute,{RW_ACCESSES}"]
     for path in SYSTEM_PATHS:
         if os.path.exists(path):
             wrapped += ["--landlock-rule", f"path-beneath:{SYSTEM_ACCESSES}:{path}"]
