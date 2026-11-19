@@ -39,12 +39,11 @@ import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
 import atr.models.sql as sql
-import atr.user as user
 import atr.util as util
 
 EVENTS: Final[tuple[str, ...]] = constants.GITHUB_TRUSTED_EVENTS
 REF_TYPES: Final[dict[str, str]] = {"branch": "heads", "tag": "tags"}
-STARTER_REASON: Final[str] = "the starter has no known link to this PMC or its release managers"
+STARTER_REASON: Final[str] = "the starter is not a member of the repository's release team"
 STARTER_REFUSAL: Final[str] = f"Automatically rejected: {STARTER_REASON}"
 TEAMS: Final[dict[str, str]] = {"tooling": ldap.LDAP_TOOLING_SERVICE_BASE}
 THRESHOLD: Final[int] = 2
@@ -182,10 +181,13 @@ async def _installation_token(repository: str) -> str:
     return token["token"]
 
 
-def _may_start(committee: sql.Committee | None, asf_uid: str | None) -> bool:
+async def _may_start(gate_obj: sql.GateConfig, asf_uid: str | None) -> bool:
     if asf_uid is None:
         return False
-    return user.is_committee_member(committee, asf_uid) or user.is_release_manager(committee, asf_uid)
+    try:
+        return asf_uid in await eligible(gate_obj.committee_key, gate_obj.repository)
+    except ldap.UnavailableError:
+        return False
 
 
 def _notice(gate_obj: sql.GateConfig, request: sql.GateRequest) -> args.Send:
@@ -232,8 +234,8 @@ async def _record(payload: dict[str, Any]) -> None:
         actor_asf_uid = await ldap.github_to_apache(run["triggering_actor"]["id"])
     except ldap.LookupError, ldap.UnavailableError:
         actor_asf_uid = None
+    allowed = await _may_start(gate_obj, actor_asf_uid)
     async with db.session() as data:
-        allowed = _may_start(await data.committee(key=gate_obj.committee_key).get(), actor_asf_uid)
         inserted = await data.execute(
             sqlite.insert(sql.GateRequest)
             .values(

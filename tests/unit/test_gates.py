@@ -45,12 +45,14 @@ async def test_eligible(monkeypatch: pytest.MonkeyPatch) -> None:
     assert await gates.eligible("tooling", "apache/infrastructure-asfquart") == {"a", "b", "c"}
 
 
-def test_may_start() -> None:
-    committee = sql.Committee(committee_members=["pmc"], committers=["rm"], release_managers=["rm"])
-    assert gates._may_start(committee, "pmc")
-    assert gates._may_start(committee, "rm")
-    assert not gates._may_start(committee, "other")
-    assert not gates._may_start(committee, None)
+async def test_may_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    eligible = mock.AsyncMock(return_value={"member"})
+    monkeypatch.setattr(gates, "eligible", eligible)
+    assert await gates._may_start(_GATE, "member")
+    assert not await gates._may_start(_GATE, "other")
+    assert not await gates._may_start(_GATE, None)
+    eligible.side_effect = ldap.UnavailableError("down")
+    assert not await gates._may_start(_GATE, "member")
 
 
 def test_notice_omits_asf_uid() -> None:
