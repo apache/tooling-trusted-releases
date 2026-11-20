@@ -39,6 +39,23 @@ import atr.util as util
 import atr.web as web
 
 
+def render_queued(release: sql.Release, queued: sql.Task) -> htm.Element:
+    """The notice that an announcement is waiting to be sent, with a way to cancel it."""
+    cancel_action = util.as_url(
+        post.announce.queue_cancel, project_key=release.project.key, version_key=release.version
+    )
+    return htm.div(".alert.alert-info.mb-4", role="status")[
+        htm.p[
+            f"An announcement of this release was queued by {queued.asf_uid}. ATR will send it once the release"
+            " can be announced."
+        ],
+        htm.form(".m-0", method="post", action=cancel_action)[
+            form.csrf_input(),
+            htpy.button(".btn.btn-outline-secondary.btn-sm", type="submit")["Cancel queued announcement"],
+        ],
+    ]
+
+
 @get.typed
 async def selected(
     session: web.Committer,
@@ -95,6 +112,8 @@ async def selected(
         default_body=default_body,
         template_warning=body_template.warning,
         embargo_message=embargo_message,
+        queued=await interaction.release_queued_announcement(project_key, version_key),
+        queue_message="" if release.expedited else (await shared.announce.blocked_message(release)),
     )
 
     return await template.blank(
@@ -181,6 +200,7 @@ async def _render_announce_form(
     subject_template_hash: str,
     default_subject: str,
     default_body: str,
+    queue: bool,
 ) -> None:
     custom_subject_widget = _render_subject_field(default_subject, release.project.key)
     custom_body_widget = _render_body_field(default_body, release.project.key)
@@ -231,8 +251,12 @@ async def _render_announce_form(
     await form.render_block(
         page,
         model_cls=shared.announce.AnnounceForm,
-        action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
-        submit_label="Announce",
+        action=util.as_url(
+            post.announce.queue if queue else post.announce.selected,
+            project_key=release.project.key,
+            version_key=release.version,
+        ),
+        submit_label="Announce when ready" if queue else "Announce",
         defaults=defaults_dict,
         custom={
             "email_to": recipient_radios,
@@ -272,6 +296,8 @@ async def _render_page(
     default_body: str,
     template_warning: str | None,
     embargo_message: str | None,
+    queued: sql.Task | None,
+    queue_message: str,
 ) -> htm.Element:
     """Render the announce page."""
     page = htm.Block()
@@ -302,14 +328,24 @@ async def _render_page(
     if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
 
+    if queued is not None:
+        page.append(render_queued(release, queued))
+        return page.collect()
     announce_msg = _missing_distributions_message(release)
     if not announce_msg:
         announce_msg = await _publication_pending_message(release)
-    if announce_msg:
+    if announce_msg and (not queue_message):
         page.p[htm.strong[announce_msg]]
         return page.collect()
 
-    page.p["This form will send an announcement to the selected recipients."]
+    if queue_message:
+        page.p[htm.strong[queue_message]]
+        page.p[
+            "You can write the announcement now. ATR will send it to the selected recipients once the release"
+            " can be announced."
+        ]
+    else:
+        page.p["This form will send an announcement to the selected recipients."]
     if embargo_message is not None:
         page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[embargo_message]
     if template_warning is not None:
@@ -321,6 +357,7 @@ async def _render_page(
         subject_template_hash=subject_template_hash,
         default_subject=default_subject,
         default_body=default_body,
+        queue=bool(queue_message),
     )
     return page.collect()
 

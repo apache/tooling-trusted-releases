@@ -22,6 +22,22 @@ import pydantic
 from . import github, mail, safe, schema
 
 
+class AnnounceWhenReady(schema.Strict):
+    """Arguments for the task to announce a release once it can be announced."""
+
+    asf_uid: str = schema.description("ASF UID of the user who queued the announcement")
+    fullname: str = schema.description("Full name of the user who queued the announcement")
+    project_key: safe.ProjectKey = schema.description("Project key in ATR")
+    version_key: safe.VersionKey = schema.description("Version key in ATR")
+    revision_number: safe.RevisionNumber = schema.description("Revision the announcement was written for")
+    email_to: str = schema.description("To address for the announcement")
+    email_cc: list[str] = schema.factory(list)
+    email_bcc: list[str] = schema.factory(list)
+    body: str = schema.description("Body of the announcement")
+    subject_template_hash: str = schema.description("Hash of the subject template when the announcement was queued")
+    auto_archive_prior: bool = False
+
+
 class AuditSealArgs(schema.Strict):
     asf_uid: str
 

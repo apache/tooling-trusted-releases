@@ -17,10 +17,32 @@
  *  under the License.
  */
 
+function applyPublicationStatus(data, button, message, whenReady) {
+	const publishing = document.getElementById("finish-svn-publishing");
+	if (publishing && data.svn_html) {
+		document.getElementById("finish-svn-publish").innerHTML = data.svn_html;
+	}
+	message.textContent = data.message;
+	message.hidden = !data.message;
+	// A button offering to queue the announcement stays usable while waiting
+	const disabled = !data.ready && !whenReady;
+	button.classList.toggle("disabled", disabled);
+	button.setAttribute("aria-disabled", String(disabled));
+	if (!data.ready) return;
+	button.href = button.dataset.announceUrl;
+	button.removeAttribute("tabindex");
+	// Nothing is left to wait for, so it becomes the ordinary button
+	button.classList.replace("btn-outline-success", "btn-success");
+	document.getElementById("finish-announce-label").textContent = " Announce";
+}
+
 function initFinishDownloads() {
 	const status = document.getElementById("finish-publication-status");
 	const button = document.getElementById("finish-announce");
-	if (!status || !button?.classList.contains("disabled")) return;
+	// The button either waits disabled, or offers to queue the announcement
+	const whenReady = button?.dataset.whenReady === "true";
+	if (!status || !button) return;
+	if (!button.classList.contains("disabled") && !whenReady) return;
 	const message = document.getElementById("finish-publication-message");
 	const refresh = document.getElementById("finish-publication-refresh");
 
@@ -33,19 +55,7 @@ function initFinishDownloads() {
 			});
 			if (response.ok) {
 				const data = await response.json();
-				const publishing = document.getElementById("finish-svn-publishing");
-				if (publishing && data.svn_html) {
-					document.getElementById("finish-svn-publish").innerHTML =
-						data.svn_html;
-				}
-				message.textContent = data.message;
-				message.hidden = !data.message;
-				button.classList.toggle("disabled", !data.ready);
-				button.setAttribute("aria-disabled", String(!data.ready));
-				if (data.ready) {
-					button.href = button.dataset.announceUrl;
-					button.removeAttribute("tabindex");
-				}
+				applyPublicationStatus(data, button, message, whenReady);
 				retry = !data.ready;
 			} else {
 				failed = true;

@@ -160,24 +160,11 @@ class ReleaseManager(CommitteeParticipant):
         # be folded into the permitted set before we validate the addresses.
         if (committee := release.project.committee) is None:
             raise storage.AccessError("Release has no committee - Invalid state", status=500)
-        permitted = util.permitted_announce_recipients(self.__asf_uid, committee=committee, project=release.project)
-        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
-        for addr in all_addrs:
-            if addr not in permitted:
-                raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
-        try:
-            util.validate_no_duplicate_recipients(all_addrs)
-        except ValueError as e:
-            raise storage.AccessError(str(e), status=400) from e
         if outstanding := distribution.outstanding_message(release.distributions):
             raise storage.AccessError(outstanding, status=409)
-
-        # Fetch the current subject template and verify the hash
-        subject_template = await construct.announce_release_subject_default(project_key)
-        if subject_template_hash is not None:
-            current_hash = construct.template_hash(subject_template)
-            if current_hash != subject_template_hash:
-                raise storage.AccessError("Subject template has been modified since the form was loaded", status=409)
+        subject_template = await self.__ensure_message_permitted(
+            release, project_key, committee, email_to, email_cc, email_bcc, subject_template_hash
+        )
 
         # Substitute the subject template
         options = construct.AnnounceReleaseOptions(
@@ -350,6 +337,91 @@ class ReleaseManager(CommitteeParticipant):
         except Exception as e:
             raise storage.AccessError(f"Error queuing announcement: {e!s}", status=500)
         await self.__archive_prior_release(release, auto_archive_prior)
+
+    async def queue(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        revision_number: safe.RevisionNumber,
+        email_to: str,
+        body: str,
+        fullname: str,
+        subject_template_hash: str,
+        email_cc: list[str] | None = None,
+        email_bcc: list[str] | None = None,
+        *,
+        auto_archive_prior: bool = False,
+    ) -> None:
+        """Queue an announcement to be sent once the release can be announced."""
+        release = await self.__release_preview(project_key, version_key)
+        if release.expedited:
+            raise storage.AccessError("The announcement of an expedited release cannot be queued", status=403)
+        if revision_number != release.safe_latest_revision_number:
+            raise storage.AccessError(
+                f"Revision {revision_number!s} is not the latest revision, {release.safe_latest_revision_number!s}",
+                status=409,
+            )
+        if (committee := release.project.committee) is None:
+            raise storage.AccessError("Release has no committee - Invalid state", status=500)
+        await self.__ensure_message_permitted(
+            release, project_key, committee, email_to, email_cc, email_bcc, subject_template_hash
+        )
+        if await interaction.release_queued_announcement(project_key, version_key, self.__data) is not None:
+            raise storage.AccessError("An announcement is already queued for this release", status=409)
+        self.__data.add(
+            sql.Task(
+                task_type=sql.TaskType.ANNOUNCE_WHEN_READY,
+                task_args=args.AnnounceWhenReady(
+                    asf_uid=self.__asf_uid,
+                    fullname=fullname,
+                    project_key=project_key,
+                    version_key=version_key,
+                    revision_number=revision_number,
+                    email_to=email_to,
+                    email_cc=email_cc or [],
+                    email_bcc=email_bcc or [],
+                    body=body,
+                    subject_template_hash=subject_template_hash,
+                    auto_archive_prior=auto_archive_prior,
+                ).model_dump(),
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                version_key=str(version_key),
+                revision_number=str(revision_number),
+            )
+        )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            operation="announce_queue",
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(revision_number),
+        )
+
+    async def queue_cancel(self, project_key: safe.ProjectKey, version_key: safe.VersionKey) -> None:
+        """Cancel the announcement queued for the release."""
+        via = sql.validate_instrumented_attribute
+        await self.__release_preview(project_key, version_key)
+        # Only one that hasn't been picked up, as a worker may be sending it
+        cancelled = await self.__data.execute_query(
+            sqlmodel.delete(sql.Task).where(
+                via(sql.Task.task_type) == sql.TaskType.ANNOUNCE_WHEN_READY,
+                via(sql.Task.status) == sql.TaskStatus.QUEUED,
+                via(sql.Task.project_key) == str(project_key),
+                via(sql.Task.version_key) == str(version_key),
+            )
+        )
+        await self.__data.commit()
+        rowcount: int = getattr(cancelled, "rowcount", 0)
+        if rowcount == 0:
+            raise storage.AccessError("No queued announcement could be cancelled for this release", status=409)
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            operation="announce_queue_cancel",
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
 
     async def __archive_prior_release(self, release_row: sql.Release, auto_archive_prior: bool) -> None:
         if not auto_archive_prior:
@@ -544,6 +616,33 @@ class ReleaseManager(CommitteeParticipant):
                 return candidate
         return None
 
+    async def __ensure_message_permitted(
+        self,
+        release: sql.Release,
+        project_key: safe.ProjectKey,
+        committee: sql.Committee,
+        email_to: str,
+        email_cc: list[str] | None,
+        email_bcc: list[str] | None,
+        subject_template_hash: str | None,
+    ) -> str:
+        """Check the recipients and the subject template hash, and return the subject template."""
+        permitted = util.permitted_announce_recipients(self.__asf_uid, committee=committee, project=release.project)
+        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
+        for addr in all_addrs:
+            if addr not in permitted:
+                raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
+        try:
+            util.validate_no_duplicate_recipients(all_addrs)
+        except ValueError as e:
+            raise storage.AccessError(str(e), status=400) from e
+        subject_template = await construct.announce_release_subject_default(project_key)
+        if subject_template_hash is not None:
+            current_hash = construct.template_hash(subject_template)
+            if current_hash != subject_template_hash:
+                raise storage.AccessError("Subject template has been modified since the form was loaded", status=409)
+        return subject_template
+
     async def __promote_in_database(
         self,
         release: sql.Release,
@@ -597,6 +696,20 @@ class ReleaseManager(CommitteeParticipant):
         catalogued = self.__data.artifact(project_key=release.project_key, version=release.version)
         if await catalogued.limit(1).get() is not None:
             raise storage.AccessError("This version is already in the release catalog", status=409)
+
+    async def __release_preview(self, project_key: safe.ProjectKey, version_key: safe.VersionKey) -> sql.Release:
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            phase=sql.ReleasePhase.RELEASE_PREVIEW,
+            _committee=True,
+            _project_release_policy=True,
+        ).demand(storage.AccessError(f"Release {project_key!s} {version_key!s} does not exist", status=404))
+        if release.project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
+        return release
 
     async def __write_artifact_rows(
         self,

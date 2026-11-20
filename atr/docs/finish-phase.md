@@ -42,7 +42,11 @@ The finish phase is again mostly the work of the Release Manager:
 * Publish the approved candidate, which commits the artifacts to `svn:dist:release`. This can be
   done automatically, if requested when the vote is started.
 * Announce the release through ATR. ATR checks that the artifacts have reached the download servers
-  first, and if they have not finished propagating it asks you to try again later.
+  first. While the release cannot be announced yet, ***Announce when ready*** on the finish page lets
+  you write the announcement in advance, and ATR sends it once the artifacts have been published and
+  have propagated and every expected distribution has been found or ignored. A queued announcement
+  can be cancelled from the same page. If the release changes before it is sent, ATR drops it and
+  notifies you. The announcement of an expedited security release cannot be queued.
 
 ## Publishing and announcing
 

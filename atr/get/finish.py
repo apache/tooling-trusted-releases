@@ -37,7 +37,6 @@ import atr.get.file as file
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
-import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -119,28 +118,7 @@ async def selected(
 
 
 async def _announce_disable_message(release: sql.Release) -> str:
-    local = config.svn_publish_kind() is config.SvnPublishKind.LOCAL_REPOSITORY
-    publication = await interaction.release_completed_svn_publish_task_for_revision(
-        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
-    )
-    if publication is None:
-        if local:
-            return "Cannot announce until SVN publication is complete."
-        return "Cannot announce until SVN and download area publications are complete."
-    if not local:
-        async with db.session() as data:
-            monitor = await data.task(
-                task_type=sql.TaskType.DOWNLOADS_CHECK,
-                task_args=args.DownloadsCheck(publish_task_id=publication.id).model_dump(),
-            ).get()
-        if (
-            (monitor is None)
-            or (monitor.status is not sql.TaskStatus.COMPLETED)
-            or (not isinstance(monitor.result, results.DownloadsCheck))
-            or (not monitor.result.available)
-        ):
-            return "Published to SVN dist. Cannot announce until the files appear in the download area."
-    return announce._missing_distributions_message(release)
+    return await shared.announce.blocked_message(release)
 
 
 def _checks_held_summary(release: sql.Release) -> str:
@@ -222,7 +200,11 @@ async def _render_page(
         page.append(htm.div[markupsafe.Markup(download_page_check)])
 
     # Release info card
-    page.append(_render_release_card(release, announce_disable_message))
+    queued = await interaction.release_queued_announcement(release.safe_project_key, release.safe_version_key)
+    # The announcement can be written ahead of time, unless one is waiting already
+    can_queue = bool(announce_disable_message) and (queued is None) and (not release.expedited)
+    page.append(_render_release_card(release, announce_disable_message, can_queue=can_queue))
+    _render_queued_announcement(page, release, queued)
 
     proj = release.safe_project_key
     ver = release.safe_version_key
@@ -319,10 +301,19 @@ def _render_publish_step(published: bool) -> list[htm.Element | str]:
     ]
 
 
-def _render_release_card(release: sql.Release, announce_disable_message: str) -> htm.Element:
+def _render_queued_announcement(page: htm.Block, release: sql.Release, queued: sql.Task | None) -> None:
+    if queued is not None:
+        page.append(announce.render_queued(release, queued))
+
+
+def _render_release_card(
+    release: sql.Release, announce_disable_message: str, *, can_queue: bool = False
+) -> htm.Element:
     """Render the release information card."""
-    announce_classes = ".btn-success"
-    if announce_disable_message:
+    # One button, which queues the announcement while the release can't be announced yet
+    announce_disabled = bool(announce_disable_message) and (not can_queue)
+    announce_classes = ".btn-outline-success" if can_queue else ".btn-success"
+    if announce_disabled:
         announce_classes += ".disabled"
     announce_url = util.as_url(announce.selected, project_key=release.project.key, version_key=release.version)
     card = htm.div(".card.mb-4.shadow-sm", id=release.key)[
@@ -363,13 +354,14 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 htm.a(
                     f"#finish-announce.btn{announce_classes}.me-2",
                     title=f"Announce {release.key}",
-                    href=announce_url if (not announce_disable_message) else None,
+                    href=announce_url if (not announce_disabled) else None,
                     data_announce_url=announce_url,
-                    aria_disabled="true" if announce_disable_message else "false",
-                    tabindex=-1 if announce_disable_message else None,
+                    data_when_ready="true" if can_queue else None,
+                    aria_disabled="true" if announce_disabled else "false",
+                    tabindex=-1 if announce_disabled else None,
                 )[
                     htm.icon("check-circle"),
-                    " Announce",
+                    htm.span("#finish-announce-label")[" Announce when ready" if can_queue else " Announce"],
                 ],
                 htm.form(
                     ".d-inline",

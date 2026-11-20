@@ -977,6 +977,21 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
         return task
 
 
+async def release_queued_announcement(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    caller_data: db.Session | None = None,
+) -> sql.Task | None:
+    """The announcement waiting to be sent for the release, if one has been queued."""
+    async with db.ensure_session(caller_data) as data:
+        return await data.task(
+            task_type=sql.TaskType.ANNOUNCE_WHEN_READY,
+            status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+            project_key=str(project_key),
+            version_key=str(version_key),
+        ).get()
+
+
 async def release_ready_to_start_vote(
     session: web.Committer,
     project_key: safe.ProjectKey,

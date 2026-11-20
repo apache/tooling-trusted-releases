@@ -290,6 +290,7 @@ class TaskStatus(enum.StrEnum):
 
 
 class TaskType(enum.StrEnum):
+    ANNOUNCE_WHEN_READY = "announce_when_ready"
     ARCHIVE_COMPARISON = "archive_comparison"
     AUDIT_SEAL = "audit_seal"
     CAP_APPROVAL_RESOLVE = "cap_approval_resolve"
@@ -339,6 +340,8 @@ class TaskType(enum.StrEnum):
     @property
     def label(self) -> str:  # noqa: C901
         match self:
+            case TaskType.ANNOUNCE_WHEN_READY:
+                return "Queued announcement"
             case TaskType.ARCHIVE_COMPARISON:
                 return "Archive comparison"
             case TaskType.AUDIT_SEAL:

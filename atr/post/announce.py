@@ -26,6 +26,7 @@ import atr.blueprints.post as post
 import atr.config as config
 import atr.construct as construct
 import atr.errors as errors
+import atr.form as form
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -40,6 +41,88 @@ _DOWNLOAD_PAGE_KEPT: Final = (
     " The existing URL has been kept."
 )
 _PUBLICATION_HELP_URL: Final = "/docs/troubleshooting#files-missing-at-announcement"
+
+
+@post.typed
+async def queue(
+    session: web.Committer,
+    _announce: Literal["announce/queue"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    announce_form: shared.announce.AnnounceForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /announce/queue/<project_key>/<version_key>
+    Queue the announcement to be sent once the release can be announced.
+    """
+    release = await session.release(
+        project_key,
+        version_key,
+        with_committee=True,
+        phase=sql.ReleasePhase.RELEASE_PREVIEW,
+        with_release_policy=True,
+        with_project_release_policy=True,
+    )
+    if release.project.committee is None:
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
+    if response := await _validate_recipients(session, announce_form, release.project):
+        return response
+    if response := await _validate_subject_template_hash(session, project_key, announce_form):
+        return response
+    if response := await _validate_download_page(session, release, announce_form):
+        return response
+    try:
+        async with storage.write_as_project_release_manager(project_key, session) as warm:
+            await _record_download_page(warm, project_key, release.project.download_page, announce_form)
+            await warm.announce.queue(
+                project_key=project_key,
+                version_key=version_key,
+                revision_number=announce_form.revision_number,
+                email_to=announce_form.email_to,
+                body=announce_form.body,
+                fullname=session.fullname,
+                subject_template_hash=announce_form.subject_template_hash,
+                email_cc=announce_form.email_cc,
+                email_bcc=announce_form.email_bcc,
+                auto_archive_prior=announce_form.auto_archive,
+            )
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.announce.selected, error=str(e), project_key=str(project_key), version_key=str(version_key)
+        )
+    return await session.redirect(
+        get.finish.selected,
+        success="Announcement queued. ATR will send it once the release can be announced.",
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )
+
+
+@post.typed
+async def queue_cancel(
+    session: web.Committer,
+    _announce: Literal["announce/queue/cancel"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    _form: form.Empty,
+) -> web.WerkzeugResponse:
+    """
+    URL: /announce/queue/cancel/<project_key>/<version_key>
+    Cancel the announcement queued for the release.
+    """
+    try:
+        async with storage.write_as_project_release_manager(project_key, session) as warm:
+            await warm.announce.queue_cancel(project_key, version_key)
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.finish.selected, error=str(e), project_key=str(project_key), version_key=str(version_key)
+        )
+    return await session.redirect(
+        get.finish.selected,
+        success="Queued announcement cancelled",
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )
 
 
 @post.typed
