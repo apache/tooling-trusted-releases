@@ -37,6 +37,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
 import atr.source as source
+import atr.tasks.announce as announce
 import atr.tasks.audit as audit
 import atr.tasks.cap as cap
 import atr.tasks.catalog_site as catalog_site
@@ -421,6 +422,8 @@ async def queued(
 
 def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results | None]]:  # noqa: C901
     match task_type:
+        case sql.TaskType.ANNOUNCE_WHEN_READY:
+            return announce.when_ready
         case sql.TaskType.ARCHIVE_COMPARISON:
             return parity.across_formats
         case sql.TaskType.AUDIT_SEAL:

@@ -77,6 +77,7 @@ async def test_announce_gate_reads_publication_status(
     monkeypatch.setattr(config, "svn_publish_kind", lambda: kind)
     project, version, revision = safe.ProjectKey("example"), safe.VersionKey("1.0"), safe.RevisionNumber("00001")
     release = types.SimpleNamespace(
+        key="example-1.0",
         safe_project_key=project,
         safe_version_key=version,
         safe_latest_revision_number=revision,
@@ -92,6 +93,7 @@ async def test_announce_gate_reads_publication_status(
     data = mock.MagicMock()
     data.__aenter__.return_value = data
     data.task.return_value.get = mock.AsyncMock(return_value=monitor if status else None)
+    data.artifact.return_value.all = mock.AsyncMock(return_value=[object()] if published else [])
     monkeypatch.setattr(db, "session", lambda: data)
     probe = mock.AsyncMock()
     monkeypatch.setattr(util, "check_propagation", probe)
@@ -99,7 +101,12 @@ async def test_announce_gate_reads_publication_status(
         response = await inspect.getclosurevars(inspect.unwrap(finish.downloads)).nonlocals["func"](
             session, "finish", "downloads", project, version, revision
         )
-        assert await response.get_json() == {"message": message, "ready": not message, "svn_html": None}
+        assert await response.get_json() == {
+            "message": message,
+            "ready": not message,
+            "svn_html": None,
+            "download_page_ready": published,
+        }
     session.release.assert_awaited_once_with(
         project,
         version,
@@ -172,7 +179,8 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
     session = mock.Mock(
         uid=uid, prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release)
     )
-    monkeypatch.setattr(finish, "_announce_disable_message", mock.AsyncMock(return_value="Waiting"))
+    monkeypatch.setattr(finish.shared.announce, "blocked_message", mock.AsyncMock(return_value="Waiting"))
+    monkeypatch.setattr(finish, "_download_page_checkable", mock.AsyncMock(return_value=False))
     monkeypatch.setattr(
         finish.interaction, "release_completed_svn_publish_task_for_revision", mock.AsyncMock(return_value=None)
     )

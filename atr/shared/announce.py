@@ -19,8 +19,15 @@ from typing import Literal
 
 import pydantic
 
+import atr.config as config
+import atr.db as db
+import atr.db.interaction as interaction
 import atr.form as form
+import atr.models.args as args
+import atr.models.results as results
 import atr.models.safe as safe
+import atr.models.sql as sql
+import atr.shared.distribution as distribution
 import atr.util as util
 
 
@@ -71,3 +78,29 @@ class AnnounceForm(form.Form):
     def _validate_recipients(self) -> AnnounceForm:
         util.validate_email_recipients(self)
         return self
+
+
+async def blocked_message(release: sql.Release) -> str:
+    """Why the release cannot be announced yet, or an empty string."""
+    local = config.svn_publish_kind() is config.SvnPublishKind.LOCAL_REPOSITORY
+    publication = await interaction.release_completed_svn_publish_task_for_revision(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if publication is None:
+        if local:
+            return "Cannot announce until SVN publication is complete."
+        return "Cannot announce until SVN and download area publications are complete."
+    if not local:
+        async with db.session() as data:
+            monitor = await data.task(
+                task_type=sql.TaskType.DOWNLOADS_CHECK,
+                task_args=args.DownloadsCheck(publish_task_id=publication.id).model_dump(),
+            ).get()
+        if (
+            (monitor is None)
+            or (monitor.status is not sql.TaskStatus.COMPLETED)
+            or (not isinstance(monitor.result, results.DownloadsCheck))
+            or (not monitor.result.available)
+        ):
+            return "Published to SVN dist. Cannot announce until the files appear in the download area."
+    return distribution.outstanding_message(release.distributions)

@@ -17,7 +17,7 @@
 
 
 from collections.abc import Sequence
-from typing import Literal
+from typing import Final, Literal
 
 import markupsafe
 import quart
@@ -37,7 +37,6 @@ import atr.get.file as file
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
-import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -50,6 +49,9 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+_DOWNLOAD_PAGE_TITLE: Final = "Check that the project download page links to this release"
+_DOWNLOAD_PAGE_WAITING_TITLE: Final = "You can check the download page once this release is published to SVN dist"
 
 
 @get.typed
@@ -71,7 +73,7 @@ async def downloads(
         with_release_policy=True,
         with_project_release_policy=True,
     )
-    message = await _announce_disable_message(release)
+    message = await shared.announce.blocked_message(release)
     svn_html = None
     if user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
         release.committee, session.uid
@@ -79,7 +81,12 @@ async def downloads(
         svn = htm.Block()
         await _render_svn_publish(svn, release)
         svn_html = str(svn.collect())
-    return quart.jsonify(message=message, ready=not message, svn_html=svn_html)
+    return quart.jsonify(
+        message=message,
+        ready=not message,
+        svn_html=svn_html,
+        download_page_ready=await _download_page_checkable(release),
+    )
 
 
 @get.typed
@@ -113,34 +120,10 @@ async def selected(
         session=session,
         release=release,
         distribution_tasks=tasks,
-        announce_disable_message=await _announce_disable_message(release),
+        announce_disable_message=await shared.announce.blocked_message(release),
+        download_page_checkable=await _download_page_checkable(release),
         download_page_check=quart.session.pop(f"{shared.finish.DOWNLOAD_PAGE_CHECK_SESSION_KEY}:{release.key}", None),
     )
-
-
-async def _announce_disable_message(release: sql.Release) -> str:
-    local = config.svn_publish_kind() is config.SvnPublishKind.LOCAL_REPOSITORY
-    publication = await interaction.release_completed_svn_publish_task_for_revision(
-        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
-    )
-    if publication is None:
-        if local:
-            return "Cannot announce until SVN publication is complete."
-        return "Cannot announce until SVN and download area publications are complete."
-    if not local:
-        async with db.session() as data:
-            monitor = await data.task(
-                task_type=sql.TaskType.DOWNLOADS_CHECK,
-                task_args=args.DownloadsCheck(publish_task_id=publication.id).model_dump(),
-            ).get()
-        if (
-            (monitor is None)
-            or (monitor.status is not sql.TaskStatus.COMPLETED)
-            or (not isinstance(monitor.result, results.DownloadsCheck))
-            or (not monitor.result.available)
-        ):
-            return "Published to SVN dist. Cannot announce until the files appear in the download area."
-    return announce._missing_distributions_message(release)
 
 
 def _checks_held_summary(release: sql.Release) -> str:
@@ -152,6 +135,13 @@ def _checks_held_summary(release: sql.Release) -> str:
         f"ATR will look for {noun} once this release is published to SVN dist. Looking sooner would reveal"
         " the version to those platforms, so you cannot review them until then."
     )
+
+
+async def _download_page_checkable(release: sql.Release) -> bool:
+    """Whether ATR knows which files were published, which the download page check compares against."""
+    async with db.session() as data:
+        artifacts = await data.artifact(release_key=release.key, managed=True, _unannounced=True).all()
+    return len(artifacts) > 0
 
 
 async def _get_page_data(
@@ -195,6 +185,7 @@ async def _render_page(
     release: sql.Release,
     distribution_tasks: Sequence[sql.Task],
     announce_disable_message: str,
+    download_page_checkable: bool,
     download_page_check: str | None,
 ) -> str:
     """Render the finish page using htm.py."""
@@ -222,7 +213,15 @@ async def _render_page(
         page.append(htm.div[markupsafe.Markup(download_page_check)])
 
     # Release info card
-    page.append(_render_release_card(release, announce_disable_message))
+    queued = await interaction.release_queued_announcement(release.safe_project_key, release.safe_version_key)
+    # The announcement can be written ahead of time, unless one is waiting already
+    can_queue = bool(announce_disable_message) and (queued is None) and (not release.expedited)
+    page.append(
+        _render_release_card(
+            release, announce_disable_message, can_queue=can_queue, download_page_checkable=download_page_checkable
+        )
+    )
+    _render_queued_announcement(page, release, queued)
 
     proj = release.safe_project_key
     ver = release.safe_version_key
@@ -319,10 +318,23 @@ def _render_publish_step(published: bool) -> list[htm.Element | str]:
     ]
 
 
-def _render_release_card(release: sql.Release, announce_disable_message: str) -> htm.Element:
+def _render_queued_announcement(page: htm.Block, release: sql.Release, queued: sql.Task | None) -> None:
+    if queued is not None:
+        page.append(announce.render_queued(release, queued))
+
+
+def _render_release_card(
+    release: sql.Release,
+    announce_disable_message: str,
+    *,
+    can_queue: bool = False,
+    download_page_checkable: bool = True,
+) -> htm.Element:
     """Render the release information card."""
-    announce_classes = ".btn-success"
-    if announce_disable_message:
+    # One button, which queues the announcement while the release can't be announced yet
+    announce_disabled = bool(announce_disable_message) and (not can_queue)
+    announce_classes = ".btn-outline-success" if can_queue else ".btn-success"
+    if announce_disabled:
         announce_classes += ".disabled"
     announce_url = util.as_url(announce.selected, project_key=release.project.key, version_key=release.version)
     card = htm.div(".card.mb-4.shadow-sm", id=release.key)[
@@ -363,13 +375,14 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 htm.a(
                     f"#finish-announce.btn{announce_classes}.me-2",
                     title=f"Announce {release.key}",
-                    href=announce_url if (not announce_disable_message) else None,
+                    href=announce_url if (not announce_disabled) else None,
                     data_announce_url=announce_url,
-                    aria_disabled="true" if announce_disable_message else "false",
-                    tabindex=-1 if announce_disable_message else None,
+                    data_when_ready="true" if can_queue else None,
+                    aria_disabled="true" if announce_disabled else "false",
+                    tabindex=-1 if announce_disabled else None,
                 )[
                     htm.icon("check-circle"),
-                    " Announce",
+                    htm.span("#finish-announce-label")[" Announce when ready" if can_queue else " Announce"],
                 ],
                 htm.form(
                     ".d-inline",
@@ -380,9 +393,11 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 )[
                     form.csrf_input(),
                     htm.button(
-                        ".btn.btn-outline-secondary.me-2",
+                        "#finish-download-page.btn.btn-outline-secondary.me-2",
                         type="submit",
-                        title="Check that the project download page links to this release",
+                        title=_DOWNLOAD_PAGE_TITLE if download_page_checkable else _DOWNLOAD_PAGE_WAITING_TITLE,
+                        data_ready_title=_DOWNLOAD_PAGE_TITLE,
+                        disabled=not download_page_checkable,
                     )[
                         htm.icon("link-45deg"),
                         " Check download page",

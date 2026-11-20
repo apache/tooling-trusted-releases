@@ -22,6 +22,12 @@ import pydantic
 from . import safe, schema
 
 
+class AnnounceWhenReady(schema.Strict):
+    kind: Literal["announce_when_ready"] = "announce_when_ready"
+    announced: bool = False
+    message: str = "Waiting for the release to be ready to announce."
+
+
 class CapApprovalResolve(schema.Strict):
     kind: Literal["cap_approval_resolve"] = schema.Field(alias="kind")
 
@@ -372,7 +378,8 @@ class MetadataUpdate(schema.Strict):
 
 
 Results = Annotated[
-    CapApprovalResolve
+    AnnounceWhenReady
+    | CapApprovalResolve
     | DistributionStatusCheck
     | DistributionWorkflow
     | DistributionWorkflowStatus
