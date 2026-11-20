@@ -4,6 +4,7 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
+    UV_NO_BINARY_PACKAGE=cryptography \
     UV_NO_DEV=1 \
     UV_SYSTEM_CERTS=true \
     UV_VERSION=0.13.5
@@ -13,8 +14,10 @@ RUN apk update && \
       build-base \
       'ca-certificates>=20261020-r0' \
       'ca-certificates-bundle>=20261020-r0' \
+      cargo \
       git \
       make \
+      openssl-dev \
       patch \
       re2-dev
 
@@ -167,6 +170,8 @@ RUN chmod +x ./start-atr.sh
 RUN java -version
 
 RUN cyclonedx --version
+
+RUN .venv/bin/python -c "from cryptography.hazmat.backends.openssl import backend; print(backend.openssl_version_text())"
 
 EXPOSE 8080
 

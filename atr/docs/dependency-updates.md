@@ -52,6 +52,10 @@ Two further pre-commit hooks scan the Python dependencies for known vulnerabilit
   `PYSEC-2025-183`, is currently ignored.
 * `uv audit` queries OSV for vulnerabilities in `uv.lock`. It is being trialled alongside pip-audit.
 
+### cryptography and OpenSSL
+
+The `cryptography` wheels on PyPI include their own copy of OpenSSL, which changes only when `cryptography` publishes a new release. The container image does not use them: [`Dockerfile.alpine`](/ref/Dockerfile.alpine) sets `UV_NO_BINARY_PACKAGE=cryptography`, so uv builds `cryptography` from the source distribution pinned in `uv.lock` and links it to Alpine's OpenSSL package. The image build prints the OpenSSL version that `cryptography` loaded. CI unit tests and development environments install the wheel.
+
 ## Frontend dependencies
 
 The Bootstrap frontend toolkit is installed through npm and updated with
