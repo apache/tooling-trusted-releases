@@ -182,6 +182,14 @@ class DistributionPlatform(enum.Enum):
     )
 
 
+class DistributionStatus(enum.StrEnum):
+    # CHECKING until the platform shows the package, FOUND once it does. IGNORED is a release
+    # manager's decision not to wait for it on this release
+    CHECKING = "checking"
+    FOUND = "found"
+    IGNORED = "ignored"
+
+
 class DistRuleKind(enum.StrEnum):
     # How the dist watcher's decomposer reads a row. Each kind corresponds to a hard-coded
     # table or frozenset previously held in svn/dist.py
@@ -2177,8 +2185,12 @@ class Distribution(sqlmodel.SQLModel, table=True):
     package: str = sqlmodel.Field(primary_key=True, index=True)
     version: str = sqlmodel.Field(primary_key=True, index=True)
     staging: bool = sqlmodel.Field(default=False)
-    pending: bool = sqlmodel.Field(default=False)
+    status: DistributionStatus = sqlmodel.Field(default=DistributionStatus.FOUND)
     retries: int = sqlmodel.Field(default=0)
+    last_checked: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    # Set together, and only on IGNORED rows
+    ignored_by: str | None = sqlmodel.Field(default=None)
+    ignored_reason: str | None = sqlmodel.Field(default=None)
     upload_date: datetime.datetime | None = sqlmodel.Field(default=None)
     api_url: str | None = sqlmodel.Field(default=None)
     web_url: str | None = sqlmodel.Field(default=None)
@@ -2193,7 +2205,7 @@ class Distribution(sqlmodel.SQLModel, table=True):
 
         return distribution.Data(
             platform=self.platform,
-            owner_namespace=safe.OwnerNamespace(self.owner_namespace),
+            owner_namespace=safe.OwnerNamespace(self.owner_namespace) if self.owner_namespace else None,
             package=safe.Alphanumeric(self.package),
             version=safe.VersionKey(self.version),
             details=details,
@@ -2208,6 +2220,21 @@ class Distribution(sqlmodel.SQLModel, table=True):
         package = normal(self.package)
         version = normal(self.version)
         return f"{name}-{package}-{version}"
+
+    @property
+    def is_found(self) -> bool:
+        """True for a non-staging distribution that has been found."""
+        return (not self.staging) and (self.status == DistributionStatus.FOUND)
+
+    @property
+    def is_outstanding(self) -> bool:
+        """True for a distribution that is still being looked for."""
+        return self.status == DistributionStatus.CHECKING
+
+    @property
+    def is_staged(self) -> bool:
+        """True for a distribution found on staging, and not since found as a release."""
+        return self.staging and (self.upload_date is not None)
 
     @property
     def safe_release_key(self) -> safe.ReleaseKey:
@@ -2234,6 +2261,23 @@ class Distribution(sqlmodel.SQLModel, table=True):
 #     # 1-M: Project -> [DistributionChannel]
 #     project: Project = sqlmodel.Relationship(back_populates="distribution_channels")
 #     see_also(Project.distribution_channels)
+
+
+# ExpectedDistribution: Project
+class ExpectedDistribution(sqlmodel.SQLModel, table=True):
+    # A package each release of the project is expected to have on a platform. version_pattern is
+    # the package's version written with tokens for the release, such as {{VERSION}}-jdk17
+    project_key: str = sqlmodel.Field(foreign_key="project.key", ondelete="CASCADE", primary_key=True, index=True)
+    platform: DistributionPlatform = sqlmodel.Field(primary_key=True)
+    owner_namespace: str = sqlmodel.Field(primary_key=True, default="")
+    package: str = sqlmodel.Field(primary_key=True)
+    version_pattern: str = sqlmodel.Field(primary_key=True, default="{{VERSION}}")
+    created_by: str | None = sqlmodel.Field(default=None)
+
+    def version_for(self, version: str) -> str:
+        """The package version expected for a release of the given version."""
+        resolved = self.version_pattern.replace("{{MAJOR_VERSION}}", version.partition(".")[0])
+        return resolved.replace("{{PROJECT_KEY}}", self.project_key).replace("{{VERSION}}", version)
 
 
 # SigningCertificate: Committee SigningKey

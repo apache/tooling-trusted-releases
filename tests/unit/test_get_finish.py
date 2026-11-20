@@ -64,7 +64,7 @@ import atr.util as util
                 sql.TaskStatus.COMPLETED,
                 True,
                 True,
-                "This release cannot be announced until the following distributions have been recorded: maven",
+                "This release cannot be announced until 1 distribution is found or ignored.",
             )
             for local in [False, True]
         ],
@@ -80,10 +80,10 @@ async def test_announce_gate_reads_publication_status(
         safe_project_key=project,
         safe_version_key=version,
         safe_latest_revision_number=revision,
-        release_policy=sql.ReleasePolicy(file_tag_mappings={"maven": True}) if missing else None,
+        release_policy=None,
         project=sql.Project(key="example"),
         committee=None,
-        distributions=[],
+        distributions=[_not_found()] if missing else [],
     )
     session = mock.Mock(prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release))
     publication = mock.AsyncMock(return_value=types.SimpleNamespace(id=42) if published else None)
@@ -230,3 +230,14 @@ def test_svn_publish_label_names_release_target(monkeypatch: pytest.MonkeyPatch)
     assert finish._svn_publish_label() == "Publish to SVN dist/release"
     monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.ATR)
     assert finish._svn_publish_label() == "Publish to SVN"
+
+
+def _not_found() -> sql.Distribution:
+    return sql.Distribution(
+        release_key="example-1.0",
+        platform=sql.DistributionPlatform.MAVEN,
+        owner_namespace="org.apache.example",
+        package="example",
+        version="1.0",
+        status=sql.DistributionStatus.CHECKING,
+    )

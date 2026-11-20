@@ -267,7 +267,7 @@ def _published_distributions(
     by_release: dict[str, list[models.api.CatalogDistribution]] = collections.defaultdict(list)
     ordered = sorted(distributions, key=lambda row: (row.platform.name, row.owner_namespace, row.package))
     for row in ordered:
-        if row.staging or row.pending:
+        if not row.is_found:
             continue
         by_release[row.release_key].append(
             models.api.CatalogDistribution(

@@ -549,7 +549,9 @@ class FoundationAdmin:
         release_child_refs = [(model, attr) for model, attr in repoint.RELEASE_KEY_REFS if model is not sql.Release]
         await self._rewrite_prefix(release_child_refs, source_release_keys, source, target)
         for model, attr in repoint.PROJECT_KEY_REFS:
-            if model in (sql.Project, sql.ProjectCycle, sql.Release):
+            # Expected distributions are the source's own configuration, like its cycles, and
+            # could clash with the target's, so they go with the source rather than moving
+            if model in (sql.Project, sql.ProjectCycle, sql.Release, sql.ExpectedDistribution):
                 continue
             column = via(getattr(model, attr))
             await self.__data.execute(sqlmodel.update(model).where(column == source).values(**{attr: target}))

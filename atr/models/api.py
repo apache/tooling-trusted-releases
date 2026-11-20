@@ -683,11 +683,36 @@ class ProjectConfigPolicyArgs(PolicyArgsBase):
         return data
 
 
+class ProjectConfigDistributionArgs(schema.Strict):
+    platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.MAVEN)
+    owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "org.apache.example")
+    packages: list[safe.Alphanumeric] = schema.Field(
+        min_length=1, json_schema_extra={"example": ["example-core", "example-api"]}
+    )
+    version: str = schema.default_example("{{VERSION}}", "{{VERSION}}")
+
+    @pydantic.field_validator("platform", mode="before")
+    @classmethod
+    def platform_to_enum(cls, v):
+        if isinstance(v, str):
+            try:
+                return sql.DistributionPlatform.__members__[v.upper()]
+            except KeyError:
+                raise ValueError(f"'{v}' is not a valid DistributionPlatform")
+        return v
+
+    @pydantic.field_serializer("platform")
+    def serialise_platform(self, v):
+        return v.name if isinstance(v, sql.DistributionPlatform) else v
+
+
 class ProjectConfigArgs(schema.Strict):
     project_key: safe.ProjectKey = schema.example("example")
     committee_key: safe.CommitteeKey = schema.example("example")
     project: ProjectConfigProjectArgs | None = None
     policy: ProjectConfigPolicyArgs | None = None
+    # The project's expected distributions, replaced as a whole when given
+    distributions: list[ProjectConfigDistributionArgs] | None = None
     sync_mode: Literal["merge", "full"] = "merge"
 
     @pydantic.model_validator(mode="after")

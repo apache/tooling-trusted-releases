@@ -189,15 +189,24 @@ for example a package registry or a download platform. Release managers record a
 distributions:
 
 * **Record** a distribution - note a distribution that exists on a platform.
-* **Delete** a distribution - remove a recorded distribution.
+* **Delete** a distribution - remove a recorded distribution. One that has not been found yet can't
+  be deleted, only ignored.
+* **Ignore** a distribution that has not been found, with a reason, or stop ignoring it.
+* **Change the version** ATR looks for, when a distribution has not been found.
+* **Check now** - have ATR look again for the distributions that have not been found.
+* **Edit the expected distributions** of a project, which ATR looks for on each release.
 
 **Allowed for**: Release managers and PMC members, obtained with `as_project_release_manager`.
 
-**Constraints** (applied to both):
+**Constraints**:
 
-* The release must belong to the caller's own committee.
+* The release or project must belong to the caller's own committee.
 * The project must be active; all release actions are disabled once a project is archived.
 * Writing to an embargoed release additionally requires PMC membership.
+* Ignoring, changing the version and checking now apply only while the release is in the finish
+  phase, and a staging distribution can only be recorded during compose.
+
+The background check for distributions that have not been found runs as ATR itself, not as a user.
 
 ## Access control for tokens
 

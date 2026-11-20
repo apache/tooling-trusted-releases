@@ -154,7 +154,7 @@ async def test_distribution_record_rejects_foreign_committee() -> None:
 @pytest.mark.asyncio
 async def test_distribution_confirming_pending_row_carries_over_resolved_metadata() -> None:
     existing = SimpleNamespace(
-        pending=True,
+        status=sql.DistributionStatus.CHECKING,
         staging=False,
         upload_date=None,
         api_url=None,
@@ -201,7 +201,7 @@ async def test_distribution_confirming_pending_row_carries_over_resolved_metadat
 
     assert added is False
     assert result is existing
-    assert existing.pending is False
+    assert existing.status == sql.DistributionStatus.FOUND
     assert existing.upload_date == upload_date
     assert existing.api_url == "https://api.example/pkg"
     assert existing.web_url == "https://web.example/pkg"

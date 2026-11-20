@@ -58,6 +58,26 @@ def test_distribution_is_named_in_its_platform_type(
     assert purl.distribution(row) == expected
 
 
+def test_expected_distribution_has_no_version() -> None:
+    row = sql.ExpectedDistribution(
+        project_key="example",
+        platform=sql.DistributionPlatform.MAVEN,
+        owner_namespace="org.apache.example",
+        package="example-core",
+    )
+    assert purl.expected(row) == "pkg:maven/org.apache.example/example-core"
+
+
+def test_expected_distribution_without_a_platform_type() -> None:
+    row = sql.ExpectedDistribution(
+        project_key="example",
+        platform=sql.DistributionPlatform.ARTIFACT_HUB,
+        owner_namespace="apache",
+        package="example",
+    )
+    assert purl.expected(row) is None
+
+
 def test_software_id_names_a_project_or_one_release() -> None:
     assert purl.software_id("example") == "pkg:software-id/apache.org/example"
     assert purl.software_id("example", "1.0.0") == "pkg:software-id/apache.org/example@1.0.0"

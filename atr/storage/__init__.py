@@ -281,6 +281,7 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
         self.banner = writers.banner.FoundationAdmin(write, self, data)
         self.catalogue = writers.catalogue.FoundationAdmin(write, self, data)
         self.dist_rule = writers.dist_rule.FoundationAdmin(write, self, data)
+        self.distributions = writers.distributions.FoundationAdmin(write, self, data)
         self.policy = writers.policy.FoundationAdmin(write, self, data)
         self.project = writers.project.FoundationAdmin(write, self, data)
         self.release = writers.release.FoundationAdmin(write, self, data)
@@ -353,6 +354,13 @@ class WriteAsDistCatalogService(WriteAsSystemService):
         self.release_notify_seen = admin.release.notify_seen
         self.release_supersede_draft = admin.release.supersede_draft
         self.release_warn_unmanaged = admin.release.warn_unmanaged
+
+
+class WriteAsDistributionCheckService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.distributions_check = admin.distributions.check
 
 
 class WriteAsKeysReflectionService(WriteAsSystemService):

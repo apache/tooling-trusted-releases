@@ -165,6 +165,15 @@ async def clear_scheduled(caller_data: db.Session | None = None) -> None:
         await data.commit()
 
 
+async def distribution_check_now(asf_uid: str) -> None:
+    """Queue a distribution status check to run straight away, unless one is already waiting."""
+    async with db.session() as data:
+        queued = await data.task(task_type=sql.TaskType.DISTRIBUTION_STATUS, status=sql.TaskStatus.QUEUED).all()
+        if any(task.scheduled is None for task in queued):
+            return
+        await distribution_status_check(asf_uid, caller_data=data)
+
+
 async def distribution_status_check(
     asf_uid: str,
     caller_data: db.Session | None = None,

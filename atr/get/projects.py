@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import htpy
 import quart
@@ -44,6 +44,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.post as post
+import atr.purl as purl
 import atr.registry as registry
 import atr.render as render
 import atr.sessions as sessions
@@ -53,6 +54,9 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @get.typed
@@ -138,14 +142,15 @@ async def project_yaml(
             _committee=True,
             _release_policy=True,
         ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        expected = await data.expected_distribution(project_key=str(project_key)).all()
 
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     if not (is_committee_member or session.is_admin):
         raise errors.ASFQuartException("You are not a member of this project's committee", errorcode=403)
 
     full = project.update_type == sql.UpdateType.ASFYAML_FULL
-    yaml_merge = _asf_yaml_export(project, full=False)
-    yaml_full = _asf_yaml_export(project, full=True)
+    yaml_merge = _asf_yaml_export(project, expected, full=False)
+    yaml_full = _asf_yaml_export(project, expected, full=True)
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(view, project_key=project.key))["← Back to project"]]
@@ -386,7 +391,7 @@ async def view(
 
     content = page.collect()
 
-    javascripts = ["copy-variable", "template-url-toggle", "version-scheme-toggle"]
+    javascripts = ["copy-variable", "distribution-namespace-toggle", "template-url-toggle", "version-scheme-toggle"]
     if can_edit_policy and (quart.request.args.get("tab") in {"vote", "finish"}):
         javascripts.append("cc-bcc-exclusive")
     return await template.blank(
@@ -454,11 +459,33 @@ async def _approval_request_element(approval: sql.ApprovalRequest) -> htm.Elemen
     ]
 
 
-def _asf_yaml_export(project: sql.Project, *, full: bool = False) -> str:
+def _asf_yaml_distributions(expected: Sequence[sql.ExpectedDistribution]) -> list[dict[str, object]]:
+    # One entry for the packages that share a platform, namespace and version
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    for row in sorted(expected, key=lambda row: (row.platform.name, row.owner_namespace, row.package)):
+        groups.setdefault((row.platform.name, row.owner_namespace, row.version_pattern), []).append(row.package)
+    distributions: list[dict[str, object]] = []
+    for (platform, namespace, version_pattern), packages in groups.items():
+        entry: dict[str, object] = {"platform": platform.lower()}
+        if namespace:
+            entry["owner_namespace"] = namespace
+        entry["packages"] = packages
+        if version_pattern != "{{VERSION}}":
+            entry["version"] = version_pattern
+        distributions.append(entry)
+    return distributions
+
+
+def _asf_yaml_export(
+    project: sql.Project, expected: Sequence[sql.ExpectedDistribution] = (), *, full: bool = False
+) -> str:
     block: dict[str, object] = {"metadata": _asf_yaml_metadata(project)}
     policy = _asf_yaml_policy(project)
     if policy:
         block["policy"] = policy
+    distributions = _asf_yaml_distributions(expected)
+    if distributions:
+        block["distributions"] = distributions
     # atr_sync defaults to on, so we emit it as a visible reminder the sync exists
     features: dict[str, str] = {"atr_sync": "true"}
     if full:
@@ -694,6 +721,11 @@ async def _generate_tabs(
                 htm.Tab("compose", "Compose", lambda: _render_compose_form(project, readonly=readonly)),
                 htm.Tab("vote", "Vote", lambda: _render_vote_form(project, readonly=readonly)),
                 htm.Tab("finish", "Finish", lambda: _render_finish_form(project, readonly=readonly)),
+                htm.Tab(
+                    "third-party-distribution",
+                    "Third-party distribution",
+                    lambda: _render_expected_distributions_tab(project, readonly=readonly),
+                ),
             ]
         )
 
@@ -928,11 +960,6 @@ async def _render_compose_form(project: sql.Project, *, readonly: bool) -> htm.E
         htm.h3(".mb-0")["Release policy - Compose options"]
     ]
 
-    schema = strictyaml.EmptyDict() | strictyaml.MapPattern(strictyaml.Str(), strictyaml.UniqueSeq(strictyaml.Str()))
-    if project.policy_file_tag_mappings:
-        atr_tag_yaml = strictyaml.as_document(project.policy_file_tag_mappings, schema).as_yaml()
-    else:
-        atr_tag_yaml = ""
     with card.block(htm.div, classes=".card-body") as card_body:
         await form.render_block(
             card_body,
@@ -945,7 +972,6 @@ async def _render_compose_form(project: sql.Project, *, readonly: bool) -> htm.E
                 "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
                 "source_excludes_rat": "\n".join(project.policy_source_excludes_rat),
                 "rat_excludes_url": project.policy_rat_excludes_url,
-                "file_tag_mappings": atr_tag_yaml,
             },
             form_classes=".atr-canary.py-4.px-5",
             border=True,
@@ -1013,6 +1039,117 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
             },
         )
     return card.collect()
+
+
+async def _render_expected_distributions_add(
+    project: sql.Project, latest: sql.Release | None, missing: list[sql.ExpectedDistribution]
+) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
+        htm.h3(".mb-0")["Add expected distributions"]
+    ]
+    action = _view_action(project, "third-party-distribution")
+    with card.block(htm.div, classes=".card-body") as card_body:
+        card_body.append(shared.distribution.html_platforms_without_namespace())
+        await form.render_block(
+            card_body,
+            model_cls=shared.projects.AddExpectedDistributionsForm,
+            action=action,
+            submit_label="Add",
+            defaults={"project_key": str(project.key)},
+            form_classes=".atr-canary.py-4.px-5",
+            border=True,
+            textarea_rows=5,
+        )
+        if (latest is not None) and missing:
+            packages = util.plural(len(missing), "package", include_count=True)
+            verb = "is" if (len(missing) == 1) else "are"
+            card_body.p(".mt-4.mb-1")[f"Release {latest.version} has {packages} that {verb} not in this list."]
+            card_body.append(
+                htm.form(".m-0", method="post", action=action)[
+                    form.csrf_input(),
+                    htpy.input(type="hidden", name="project_key", value=str(project.key)),
+                    htpy.input(type="hidden", name="variant", value="seed_expected_distributions"),
+                    htpy.button(".btn.btn-secondary", type="submit")["Add them"],
+                ]
+            )
+    return card.collect()
+
+
+def _render_expected_distributions_group(
+    project: sql.Project, rows: list[sql.ExpectedDistribution], *, readonly: bool, is_open: bool
+) -> htm.Element:
+    first = rows[0]
+    table_rows = []
+    for row in rows:
+        remove_form = (
+            ""
+            if readonly
+            else htm.form(".d-inline.m-0", method="post", action=_view_action(project, "third-party-distribution"))[
+                form.csrf_input(),
+                htpy.input(type="hidden", name="project_key", value=str(project.key)),
+                htpy.input(type="hidden", name="variant", value="remove_expected_distribution"),
+                htpy.input(
+                    type="hidden",
+                    name="platform",
+                    value=shared.distribution.DistributionPlatform.from_sql(row.platform).value,
+                ),
+                htpy.input(type="hidden", name="owner_namespace", value=row.owner_namespace),
+                htpy.input(type="hidden", name="package", value=row.package),
+                htpy.input(type="hidden", name="version_pattern", value=row.version_pattern),
+                htpy.button(".btn.btn-sm.btn-outline-danger", type="submit")["Remove"],
+            ]
+        )
+        version = "Same as the release" if (row.version_pattern == "{{VERSION}}") else htm.code[row.version_pattern]
+        package = purl.expected(row) or row.package
+        table_rows.append(htm.tr[htm.td[htm.code[package]], htm.td[version], htm.td(".text-end")[remove_form]])
+    summary = htm.summary[
+        htm.span(".badge.bg-secondary.me-2.font-monospace")[str(len(rows))],
+        first.platform.value.name,
+        (" ", htm.code[first.owner_namespace]) if first.owner_namespace else "",
+    ]
+    table = htm.table(".table.table-sm.table-bordered.table-striped.mt-2")[
+        htm.thead[htm.tr[htm.th["Package"], htm.th["Version"], htm.th[""]]],
+        htm.tbody[*table_rows],
+    ]
+    if is_open:
+        return htm.details(".mb-3.rounded", open=True)[summary, table]
+    return htm.details(".mb-3.rounded")[summary, table]
+
+
+async def _render_expected_distributions_tab(project: sql.Project, *, readonly: bool) -> htm.Element:
+    async with db.session() as data:
+        expected = await data.expected_distribution(project_key=str(project.key)).all()
+        recorded = await data.distribution(project_key=str(project.key), _with_release=True).all()
+    latest, missing = shared.distribution.expected_from_latest_release(recorded, expected)
+
+    groups: dict[tuple[str, str], list[sql.ExpectedDistribution]] = {}
+    for row in sorted(expected, key=lambda row: (row.platform.value.name, row.owner_namespace, row.package)):
+        groups.setdefault((row.platform.value.name, row.owner_namespace), []).append(row)
+
+    tab = htm.Block(htm.div)
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
+        htm.h3(".mb-0")["Expected distributions"]
+    ]
+    with card.block(htm.div, classes=".card-body") as card_body:
+        if not expected:
+            card_body.p(".mb-0")["No packages are expected for this project's releases."]
+        else:
+            packages = util.plural(len(expected), "package", include_count=True)
+            verb = "is" if (len(expected) == 1) else "are"
+            card_body.p[
+                f"{packages} {verb} expected for each release."
+                " A release can be announced once each one is found or ignored."
+            ]
+        for index, rows in enumerate(groups.values()):
+            card_body.append(
+                _render_expected_distributions_group(project, rows, readonly=readonly, is_open=(index == 0))
+            )
+    tab.append(card)
+    if not readonly:
+        tab.append(await _render_expected_distributions_add(project, latest, missing))
+    return tab.collect()
 
 
 async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.Element:

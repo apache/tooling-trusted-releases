@@ -45,7 +45,6 @@ async def test_render_readonly() -> None:
             "license_check_mode": "both",
             "source_excludes_lightweight": "vendored/**",
             "source_excludes_rat": "",
-            "file_tag_mappings": "",
         },
         readonly=True,
     )

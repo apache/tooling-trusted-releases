@@ -16,6 +16,7 @@
 * [Compose](#compose)
 * [Vote](#vote)
 * [Finish](#finish)
+* [Third-party distribution](#third-party-distribution)
 * [Configuring a project with .asf.yaml](#configuring-a-project-with-asfyaml)
 
 ## Overview
@@ -28,7 +29,8 @@ though it is where you set [cycle dates](#cycle-dates).
 Who can change a setting depends on the tab:
 
 * Members of the project's committee, and its release managers, can edit the Metadata and Security
-  tabs, and the release policy tabs: Lifecycle, Trusted Publishing, Compose, Vote, and Finish.
+  tabs, and the release policy tabs: Lifecycle, Trusted Publishing, Compose, Vote, Finish, and
+  Third-party distribution.
 * Only members of the committee can change a project's categories and programming languages, or use
   **Export .asf.yaml**.
 * Everybody else sees the same settings, but cannot change them.
@@ -129,12 +131,6 @@ The Compose tab controls how ATR checks the files in a candidate:
   check.
 * **RAT excludes URL.** The URL of a `.rat-excludes` file that your project already maintains, which
   ATR fetches afresh for each revision it checks.
-* **Tagging spec.** Defines ***tags*** that apply to the files in a release, written in YAML as a
-  tag name followed by a list of glob patterns for the files it covers. A tag names a distribution
-  platform, and ATR will not let a release be announced until a distribution to each tagged platform
-  has been recorded. For example, if you tag files as `mavencentral`, the release must be
-  distributed to Maven Central before it can be announced. The platform tags are `artifacthub`,
-  `dockerhub`, `mavencentral`, `npm`, and `pypi`.
 
 [Project policy inputs](checks#project-policy-inputs) explains how the checks use these settings,
 and [License checks](license-checks) gives the syntax for the exclusions.
@@ -195,6 +191,32 @@ The Finish tab sets the defaults for publishing and announcing a release:
 * **Default announce recipient**, with optional CC and BCC recipients. The mailing list that
   announcements go to.
 
+## Third-party distribution
+
+The Third-party distribution tab lists the packages your project publishes on other platforms for
+each release, such as Maven Central, PyPI, or Docker Hub. When a release's vote passes, ATR looks
+for each of them on its platform, and the release cannot be announced until each one has been found
+or ignored. See [the finish phase](finish-phase) for the release's distribution list.
+
+To add packages, choose the platform and fill in:
+
+* **Owner or namespace.** The groupId for Maven Central, the scope for a scoped npm package, the
+  namespace on Docker Hub, or the repository on Artifact Hub. The field is hidden for a platform
+  without one.
+* **Packages.** The package names, one per line.
+* **Version.** Leave this empty when the package has the same version as the release. Otherwise
+  write the package's version using the tokens `{{PROJECT_KEY}}`, `{{VERSION}}`, and
+  `{{MAJOR_VERSION}}`, so that `{{VERSION}}-jdk17` expects `10.1.62-jdk17` for release `10.1.62`.
+  A Docker Hub version must include `{{VERSION}}`, as a tag shared between releases, such as
+  `latest`, can be moved to another image.
+
+Packages are listed by [Package URL](https://github.com/package-url/purl-spec) where the platform
+has one. If the latest release with distributions found on a platform has any that are not in the
+list, ATR offers to add them. It leaves out a package whose version differs from the release's.
+
+Changing the list affects releases whose votes pass afterwards. A release that is already in the
+finish phase keeps the list it started with.
+
 ## Configuring a project with .asf.yaml
 
 You can manage project metadata in ATR or in the `project` block of your repository's `.asf.yaml`
@@ -227,6 +249,28 @@ the next push imports the supplied values, overwriting manual changes to those f
 Correct the name in `.asf.yaml` or its linked DOAP file so that subsequent imports preserve the
 correction.
 
+The packages on the [Third-party distribution](#third-party-distribution) tab go in a `distributions`
+list, with the packages that share a platform, namespace and version under one entry:
+
+```yaml
+project:
+  distributions:
+    - platform: maven
+      owner_namespace: org.apache.example
+      packages:
+        - example-core
+        - example-api
+    - platform: docker_hub
+      owner_namespace: apache
+      packages:
+        - example
+      version: "{{VERSION}}-jdk17"
+```
+
+The platforms are `maven`, `pypi`, `npm`, `npm_scoped`, `docker_hub` and `artifact_hub`. Leave
+`owner_namespace` out for `pypi` and `npm`, and `version` out when the package has the release's
+version. A list in the file replaces the whole list in ATR.
+
 By default, synchronization only updates the fields present in the file. A field you remove from
 `.asf.yaml` keeps its value in ATR, including one set earlier by hand. To make the file the whole
 configuration, set `atr_sync_mode: full` under `features`:
@@ -239,8 +283,8 @@ project:
 ```
 
 With `full`, every field that `.asf.yaml` can set but the file leaves out is reset to the ATR
-default on each push. This is also the only way to clear a list from the file. The project name is
-never reset. The default mode is `merge`. A project created by a full push starts from the defaults
+default on each push. In either mode, giving a list as empty, such as `repositories: []`, clears
+it. The project name is never reset. The default mode is `merge`. A project created by a full push starts from the defaults
 too, rather than from a parent project's settings, since anything the file leaves out is a default.
 The export page can produce the file in either mode.
 

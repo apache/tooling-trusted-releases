@@ -506,12 +506,13 @@ async def distribution_list(
             package=dist.package,
             version=dist.version,
             staging=dist.staging,
-            pending=dist.pending,
+            pending=dist.status == sql.DistributionStatus.CHECKING,
             upload_date=dist.upload_date,
             api_url=dist.api_url,
             web_url=dist.web_url,
         )
         for dist in distributions
+        if dist.status != sql.DistributionStatus.IGNORED
     ]
     return models.api.DistributionListResults(
         endpoint="/distribution/list",

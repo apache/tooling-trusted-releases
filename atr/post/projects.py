@@ -229,6 +229,18 @@ async def _complete_action(
         await wacm.project.archive(project_key, approval_request_id)
 
 
+async def _expected_distributions_redirect(
+    session: web.Committer, project_key: safe.ProjectKey, *, success: str | None = None, error: str | None = None
+) -> web.WerkzeugResponse:
+    return await session.redirect(
+        get.projects.view,
+        project_key=str(project_key),
+        tab="third-party-distribution",
+        success=success,
+        error=error,
+    )
+
+
 async def _persist_approval(
     session: web.Committer,
     wacm: storage.WriteAsCommitteeMember,
@@ -289,6 +301,36 @@ async def _process_add_category(
         tab="metadata",
         error=f"Category '{category_to_add}' already exists.",
     )
+
+
+async def _process_add_expected_distributions(
+    session: web.Committer, add_form: shared.projects.AddExpectedDistributionsForm
+) -> web.WerkzeugResponse:
+    project_key = add_form.project_key
+    try:
+        packages = [safe.Alphanumeric(line.strip()) for line in add_form.packages.splitlines() if line.strip()]
+    except ValueError as e:
+        return await _expected_distributions_redirect(session, project_key, error=f"Invalid package name: {e}")
+    if not packages:
+        return await _expected_distributions_redirect(session, project_key, error="At least one package is required.")
+
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            added = await warm.distributions.expected_add(
+                project_key,
+                _sql_platform(add_form.platform),
+                add_form.owner_namespace,
+                packages,
+                add_form.version_pattern,
+            )
+        except storage.AccessError as e:
+            return await _expected_distributions_redirect(session, project_key, error=f"Error adding packages: {e}")
+
+    if added == 0:
+        return await _expected_distributions_redirect(session, project_key, error="Those are already expected.")
+    noun = util.plural(added, "package", include_count=True)
+    return await _expected_distributions_redirect(session, project_key, success=f"{noun} added.")
 
 
 async def _process_add_language(
@@ -481,6 +523,29 @@ async def _process_remove_category(
     )
 
 
+async def _process_remove_expected_distribution(
+    session: web.Committer, remove_form: shared.projects.RemoveExpectedDistributionForm
+) -> web.WerkzeugResponse:
+    project_key = remove_form.project_key
+
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            await warm.distributions.expected_remove(
+                project_key,
+                _sql_platform(remove_form.platform),
+                remove_form.owner_namespace,
+                remove_form.package,
+                remove_form.version_pattern,
+            )
+        except storage.AccessError as e:
+            return await _expected_distributions_redirect(session, project_key, error=f"Error removing package: {e}")
+
+    return await _expected_distributions_redirect(
+        session, project_key, success=f"{remove_form.package} is no longer expected."
+    )
+
+
 async def _process_remove_language(
     session: web.Committer, remove_form: shared.projects.RemoveLanguageForm
 ) -> web.WerkzeugResponse:
@@ -536,6 +601,24 @@ async def _process_security_form(
     return await session.redirect(
         get.projects.view, project_key=str(project_key), tab="security", success="Security metadata saved."
     )
+
+
+async def _process_seed_expected_distributions(
+    session: web.Committer, seed_form: shared.projects.SeedExpectedDistributionsForm
+) -> web.WerkzeugResponse:
+    project_key = seed_form.project_key
+
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            added = await warm.distributions.expected_add_from_latest_release(project_key)
+        except storage.AccessError as e:
+            return await _expected_distributions_redirect(session, project_key, error=f"Error adding packages: {e}")
+
+    if added == 0:
+        return await _expected_distributions_redirect(session, project_key, error="Those are already expected.")
+    noun = util.plural(added, "package", include_count=True)
+    return await _expected_distributions_redirect(session, project_key, success=f"{noun} added.")
 
 
 async def _process_trusted_publishing_form(
@@ -636,6 +719,12 @@ async def _request_approval_retry(explanation: str, error: str) -> web.WerkzeugR
     return quart.redirect(quart.request.path)
 
 
+def _sql_platform(platform: object) -> sql.DistributionPlatform:
+    if not isinstance(platform, shared.distribution.DistributionPlatform):
+        raise ValueError("Unknown distribution platform")
+    return platform.to_sql()
+
+
 async def _write_as_committee_member(
     write: storage.Write, session: web.Committer, project_key: safe.ProjectKey
 ) -> storage.WriteAsCommitteeMember:
@@ -654,6 +743,7 @@ async def _write_as_release_manager(
 
 _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.WerkzeugResponse]]]] = {
     shared.projects.AddCategoryForm: _process_add_category,
+    shared.projects.AddExpectedDistributionsForm: _process_add_expected_distributions,
     shared.projects.AddLanguageForm: _process_add_language,
     shared.projects.ComposePolicyForm: _process_compose_form,
     shared.projects.EditCycleDatesForm: _process_edit_cycle_dates_form,
@@ -661,8 +751,10 @@ _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.We
     shared.projects.EditVersionSchemeForm: _process_edit_version_scheme_form,
     shared.projects.FinishPolicyForm: _process_finish_form,
     shared.projects.SecurityForm: _process_security_form,
+    shared.projects.SeedExpectedDistributionsForm: _process_seed_expected_distributions,
     shared.projects.TrustedPublishingPolicyForm: _process_trusted_publishing_form,
     shared.projects.RemoveCategoryForm: _process_remove_category,
+    shared.projects.RemoveExpectedDistributionForm: _process_remove_expected_distribution,
     shared.projects.RemoveLanguageForm: _process_remove_language,
     shared.projects.VotePolicyForm: _process_vote_form,
 }

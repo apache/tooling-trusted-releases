@@ -501,7 +501,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         owner_namespace: Opt[str] = NOT_SET,
         package: Opt[str] = NOT_SET,
         version: Opt[str] = NOT_SET,
-        pending: Opt[bool] = NOT_SET,
+        status: Opt[sql.DistributionStatus] = NOT_SET,
         project_key: Opt[str] = NOT_SET,
         _with_release: bool = False,
         _with_release_project: bool = False,
@@ -522,14 +522,35 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Distribution.package == package)
         if is_defined(version):
             query = query.where(sql.Distribution.version == version)
-        if is_defined(pending):
-            query = query.where(sql.Distribution.pending == pending)
+        if is_defined(status):
+            query = query.where(sql.Distribution.status == status)
         if _with_release_project:
             query = query.options(joined_load_nested(sql.Distribution.release, sql.Release.project))
         elif _with_release:
             query = query.options(joined_load(sql.Distribution.release))
         if is_defined(_limit):
             query = query.limit(_limit)
+        return Query(self, query)
+
+    def expected_distribution(
+        self,
+        project_key: Opt[str] = NOT_SET,
+        platform: Opt[sql.DistributionPlatform] = NOT_SET,
+        owner_namespace: Opt[str] = NOT_SET,
+        package: Opt[str] = NOT_SET,
+        version_pattern: Opt[str] = NOT_SET,
+    ) -> Query[sql.ExpectedDistribution]:
+        query = sqlmodel.select(sql.ExpectedDistribution)
+        if is_defined(project_key):
+            query = query.where(sql.ExpectedDistribution.project_key == project_key)
+        if is_defined(platform):
+            query = query.where(sql.ExpectedDistribution.platform == platform)
+        if is_defined(owner_namespace):
+            query = query.where(sql.ExpectedDistribution.owner_namespace == owner_namespace)
+        if is_defined(package):
+            query = query.where(sql.ExpectedDistribution.package == package)
+        if is_defined(version_pattern):
+            query = query.where(sql.ExpectedDistribution.version_pattern == version_pattern)
         return Query(self, query)
 
     async def execute_query(self, query: sqlalchemy.sql.expression.Executable) -> sqlalchemy.engine.Result:
