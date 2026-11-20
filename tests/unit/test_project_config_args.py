@@ -199,6 +199,51 @@ def _project_config_project(**project: object) -> api.ProjectConfigArgs:
     )
 
 
+def test_project_config_accepts_expected_distributions() -> None:
+    args = api.ProjectConfigArgs.model_validate(
+        {
+            "project_key": "tooling",
+            "committee_key": "tooling",
+            "distributions": [
+                {"platform": "MAVEN", "owner_namespace": "org.apache.tooling", "packages": ["core", "api"]},
+                {"platform": "pypi", "packages": ["tooling"], "version": "{{VERSION}}.post1"},
+            ],
+        }
+    )
+
+    assert args.distributions is not None
+    maven, pypi = args.distributions
+    assert (maven.platform, maven.version) == (sql.DistributionPlatform.MAVEN, "{{VERSION}}")
+    assert [str(package) for package in maven.packages] == ["core", "api"]
+    assert (pypi.owner_namespace, pypi.version) == (None, "{{VERSION}}.post1")
+
+
+def test_project_config_leaves_expected_distributions_unset() -> None:
+    assert _project_config().distributions is None
+
+
+def test_project_config_rejects_distribution_without_packages() -> None:
+    with pytest.raises(pydantic.ValidationError):
+        api.ProjectConfigArgs.model_validate(
+            {
+                "project_key": "tooling",
+                "committee_key": "tooling",
+                "distributions": [{"platform": "pypi", "packages": []}],
+            }
+        )
+
+
+def test_project_config_rejects_unknown_distribution_platform() -> None:
+    with pytest.raises(pydantic.ValidationError):
+        api.ProjectConfigArgs.model_validate(
+            {
+                "project_key": "tooling",
+                "committee_key": "tooling",
+                "distributions": [{"platform": "CRATES", "packages": ["tooling"]}],
+            }
+        )
+
+
 def test_project_config_accepts_template_urls() -> None:
     url = "https://raw.githubusercontent.com/apache/example/main/vote.txt"
     args = _project_config(

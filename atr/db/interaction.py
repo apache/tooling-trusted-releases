@@ -906,6 +906,17 @@ async def release_current_vote_task(release: sql.Release, caller_data: db.Sessio
         return task
 
 
+async def release_distribution_checks_held(release: sql.Release, caller_data: db.Session | None = None) -> bool:
+    """Whether looking for the release's distributions would reveal an embargoed version."""
+    if not release.is_embargoed:
+        return False
+    # Publishing to SVN dist makes the files public, so there's nothing left to reveal after that
+    published = await release_completed_svn_publish_task(
+        release.safe_project_key, release.safe_version_key, caller_data
+    )
+    return published is None
+
+
 async def release_in_flight_svn_publish_task(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,

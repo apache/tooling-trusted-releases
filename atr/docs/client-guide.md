@@ -137,7 +137,7 @@ ATR replies to the vote thread, including the tally when available, and moves th
 
 Automatic publication starts when you resolve the vote. The finish page shows its progress and the download URL. If publication fails, read the error there before publishing again from that page.
 
-If your project ships packages to Maven Central, PyPI, or a similar platform, publish them there as usual. If your project requires recorded distributions, ATR will not announce the release until you record them. For a Maven Central package:
+If your project ships packages to Maven Central, PyPI, or a similar platform, publish them there as usual. ATR looks for each package your project [expects to distribute](project-configuration#third-party-distribution), and will not announce the release until each one has been found or ignored. You can also record a package that is not among them. For a Maven Central package:
 
 ```shell
 atr distribution record example 1.0.0 MAVEN org.apache.example example-core 1.0.0

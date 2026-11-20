@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime
 import enum
+import json
 import urllib.parse
 from typing import TYPE_CHECKING, Final
 
@@ -74,12 +75,14 @@ import atr.util as util
 
 _SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
 _TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
-MAVEN_OWNER_NAMESPACE_HELP: Final = (
-    "For Maven Central, this is the groupId, for example org.apache.maven. "
-    "For most Apache projects it starts with org.apache.<project-name>. "
-    "You can verify the groupId by searching for the artifact on search.maven.org. "
-    "For other platforms, use the npm @scope, Docker namespace, GitHub owner, or ArtifactHub repo. "
-    "Leave blank if not used."
+CHECKS_HELD_MESSAGE: Final = (
+    "This is an expedited security release, and is embargoed. ATR does not look for or record its"
+    " third-party distributions until the release is published to SVN dist, as looking them up would"
+    " reveal the version to those platforms."
+)
+OWNER_NAMESPACE_HELP: Final = (
+    "For Maven Central, the groupId, such as org.apache.maven, which you can check on search.maven.org. "
+    "For other platforms, the npm scope, Docker Hub namespace or Artifact Hub repository."
 )
 
 
@@ -145,6 +148,14 @@ class DistributionPlatform(enum.Enum):
                 return cls.PYPI
 
 
+class ChangeVersionForm(form.Form):
+    platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
+    owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
+    package: str = form.label("Package", widget=form.Widget.HIDDEN)
+    version: str = form.label("Version", widget=form.Widget.HIDDEN)
+    new_version: str = form.label("Version", required=True)
+
+
 class DeleteForm(form.Form):
     release_key: safe.ReleaseKey = form.label("Release name", widget=form.Widget.HIDDEN)
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
@@ -158,8 +169,8 @@ class DistributionAutomateForm(form.Form):
         "Platform", widget=form.Widget.SELECT, enum_filter_include=[DistributionPlatform.MAVEN.value]
     )
     owner_namespace: safe.OptionalOwnerNamespace = form.label(
-        "Owner or Namespace",
-        MAVEN_OWNER_NAMESPACE_HELP,
+        "Owner or namespace",
+        OWNER_NAMESPACE_HELP,
     )
     package: safe.Alphanumeric = form.label("Package", required=True)
     version: safe.VersionKey = form.label("Version", required=True)
@@ -184,8 +195,8 @@ class DistributionAutomateForm(form.Form):
 class DistributionRecordForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.SELECT)
     owner_namespace: safe.OptionalOwnerNamespace = form.label(
-        "Owner or Namespace",
-        MAVEN_OWNER_NAMESPACE_HELP,
+        "Owner or namespace",
+        OWNER_NAMESPACE_HELP,
     )
     package: safe.Alphanumeric = form.label("Package", required=True)
     version: safe.VersionKey = form.label("Version", required=True)
@@ -205,6 +216,21 @@ class DistributionRecordForm(form.Form):
         util.validate_distribution_owner_namespace(sql_platform, self.owner_namespace)
 
         return self
+
+
+class IgnoreForm(form.Form):
+    platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
+    owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
+    package: str = form.label("Package", widget=form.Widget.HIDDEN)
+    version: str = form.label("Version", widget=form.Widget.HIDDEN)
+    reason: str = form.label("Reason", required=True)
+
+
+class UnignoreForm(form.Form):
+    platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
+    owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
+    package: str = form.label("Package", widget=form.Widget.HIDDEN)
+    version: str = form.label("Version", widget=form.Widget.HIDDEN)
 
 
 def distribution_upload_date(  # noqa: C901
@@ -296,6 +322,35 @@ def distribution_web_url(  # noqa: C901
     raise NotImplementedError(f"Platform {platform.name} is not yet supported")
 
 
+def expected_from_latest_release(
+    recorded: Sequence[sql.Distribution], expected: Sequence[sql.ExpectedDistribution]
+) -> tuple[sql.Release | None, list[sql.ExpectedDistribution]]:
+    """The latest release with found distributions, and which of them could be added as expected."""
+    found = [row for row in recorded if row.is_found]
+    if not found:
+        return None, []
+    latest = max((row.release for row in found), key=lambda release: release.created)
+    listed = {(row.platform, row.owner_namespace, row.package, row.version_for(latest.version)) for row in expected}
+    missing = []
+    for row in found:
+        if row.release_key != latest.key:
+            continue
+        if (row.platform, row.owner_namespace, row.package, row.version) in listed:
+            continue
+        # If the versions differ we can't tell the pattern, so the package is left to be added by hand
+        if row.version != latest.version:
+            continue
+        missing.append(
+            sql.ExpectedDistribution(
+                project_key=latest.project_key,
+                platform=row.platform,
+                owner_namespace=row.owner_namespace,
+                package=row.package,
+            )
+        )
+    return latest, missing
+
+
 def get_api_url(dd: distribution.Data, staging: bool | None = None):
     namespace = str(dd.owner_namespace) if dd.owner_namespace else None
     template_url = _template_url(dd, staging)
@@ -317,11 +372,16 @@ def get_api_url(dd: distribution.Data, staging: bool | None = None):
     return api_url
 
 
+def html_platforms_without_namespace() -> htm.Element:
+    # Read by distribution-namespace-toggle.js, to hide the namespace field for these platforms
+    return htm.div(id="distribution-platforms", data_without_namespace=json.dumps(platforms_without_namespace()))
+
+
 def html_submitted_values_table(block: htm.Block, dd: distribution.Data) -> None:
     namespace = str(dd.owner_namespace) if dd.owner_namespace else "-"
     tbody = htm.tbody[
         html_tr("Platform", dd.platform.name),
-        html_tr("Owner or Namespace", namespace),
+        html_tr("Owner or namespace", namespace),
         html_tr("Package", str(dd.package)),
         html_tr("Version", str(dd.version)),
     ]
@@ -422,6 +482,30 @@ async def json_from_maven_xml(api_url: str, version_key: safe.VersionKey) -> out
         return outcome.Error(RuntimeError(f"Failed to parse Maven XML: {e}"))
 
 
+def outstanding_message(distributions: Sequence[sql.Distribution]) -> str:
+    """The message shown while distributions are outstanding, or an empty string."""
+    outstanding = sum(1 for row in distributions if row.is_outstanding)
+    if outstanding == 0:
+        return ""
+    noun = util.plural(outstanding, "distribution", include_count=True)
+    verb = "is" if (outstanding == 1) else "are"
+    return f"This release cannot be announced until {noun} {verb} found or ignored."
+
+
+def platforms_without_namespace() -> list[str]:
+    """The platforms, as the forms name them, which have no owner or namespace."""
+    return [
+        DistributionPlatform.from_sql(platform).value
+        for platform in sql.DistributionPlatform
+        if (not platform.value.requires_owner_namespace) and (not platform.value.default_owner_namespace)
+    ]
+
+
+def release_rows(distributions: Sequence[sql.Distribution]) -> list[sql.Distribution]:
+    """The distributions a release in finish is waiting on or has, which leaves out a staging record."""
+    return [row for row in distributions if not (row.staging and (row.status == sql.DistributionStatus.FOUND))]
+
+
 async def release_validated(
     project: safe.ProjectKey,
     version: safe.VersionKey,
@@ -516,6 +600,21 @@ def render_task(task: sql.Task) -> htm.Element:
             htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
             *[htm.p(".ms-4")[w] for w in workflow_message.split("\n")],
         ]
+
+
+def summary(distributions: Sequence[sql.Distribution]) -> str:
+    rows = release_rows(distributions)
+    if not rows:
+        return "No third-party distributions are recorded for this release."
+    found = sum(1 for row in rows if row.status == sql.DistributionStatus.FOUND)
+    parts = [f"{found} of {util.plural(len(rows), 'distribution', include_count=True)} found"]
+    if staged := sum(1 for row in rows if row.is_outstanding and row.staging):
+        parts.append(f"{staged} staged and not yet found")
+    if not_found := sum(1 for row in rows if row.is_outstanding and (not row.staging)):
+        parts.append(f"{not_found} not found")
+    if ignored := sum(1 for row in rows if row.status == sql.DistributionStatus.IGNORED):
+        parts.append(f"{ignored} ignored")
+    return ", ".join(parts) + "."
 
 
 def _template_url(

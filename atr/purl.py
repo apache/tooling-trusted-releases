@@ -28,21 +28,12 @@ _DOMAIN: Final[str] = "apache.org"
 
 def distribution(row: sql.Distribution) -> str | None:
     """The Package URL of a distribution in its platform's own type, or None if the platform has no type."""
-    match row.platform:
-        case sql.DistributionPlatform.ARTIFACT_HUB:
-            return None
-        case sql.DistributionPlatform.DOCKER_HUB:
-            # Official images sit in Docker Hub's default namespace, which a Package URL leaves out
-            official = row.owner_namespace == row.platform.value.default_owner_namespace
-            return _render("docker", None if official else row.owner_namespace, row.package, row.version)
-        case sql.DistributionPlatform.MAVEN:
-            return _render("maven", row.owner_namespace, row.package, row.version)
-        case sql.DistributionPlatform.NPM:
-            return _render("npm", None, row.package, row.version)
-        case sql.DistributionPlatform.NPM_SCOPED:
-            return _render("npm", f"@{row.owner_namespace}", row.package, row.version)
-        case sql.DistributionPlatform.PYPI:
-            return _render("pypi", None, row.package, row.version)
+    return _package(row.platform, row.owner_namespace, row.package, row.version)
+
+
+def expected(row: sql.ExpectedDistribution) -> str | None:
+    """The Package URL of an expected distribution, which has no version, or None if the platform has no type."""
+    return _package(row.platform, row.owner_namespace, row.package, None)
 
 
 def software_id(project_key: str, version: str | None = None) -> str:
@@ -50,6 +41,24 @@ def software_id(project_key: str, version: str | None = None) -> str:
     return f"pkg:software-id/{_DOMAIN}/{project_key}" + ("" if version is None else f"@{version}")
 
 
-def _render(kind: str, namespace: str | None, name: str, version: str) -> str:
+def _package(platform: sql.DistributionPlatform, owner_namespace: str, package: str, version: str | None) -> str | None:
+    match platform:
+        case sql.DistributionPlatform.ARTIFACT_HUB:
+            return None
+        case sql.DistributionPlatform.DOCKER_HUB:
+            # Official images sit in Docker Hub's default namespace, which a Package URL leaves out
+            official = owner_namespace == platform.value.default_owner_namespace
+            return _render("docker", None if official else owner_namespace, package, version)
+        case sql.DistributionPlatform.MAVEN:
+            return _render("maven", owner_namespace, package, version)
+        case sql.DistributionPlatform.NPM:
+            return _render("npm", None, package, version)
+        case sql.DistributionPlatform.NPM_SCOPED:
+            return _render("npm", f"@{owner_namespace}", package, version)
+        case sql.DistributionPlatform.PYPI:
+            return _render("pypi", None, package, version)
+
+
+def _render(kind: str, namespace: str | None, name: str, version: str | None) -> str:
     # The library applies each type's own rules, such as PyPI's lower case and hyphens
     return packageurl.PackageURL(kind, namespace, name, version).to_string()

@@ -30,6 +30,7 @@ import atr.models.calver as calver
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
+import atr.shared.distribution as distribution
 import atr.util as util
 
 type COMPOSE = Literal["compose"]
@@ -41,6 +42,9 @@ type SECURITY = Literal["security"]
 type TRUSTED_PUBLISHING = Literal["trusted_publishing"]
 type VOTE = Literal["vote"]
 type ADD_CATEGORY = Literal["add_category"]
+type ADD_EXPECTED_DISTRIBUTIONS = Literal["add_expected_distributions"]
+type REMOVE_EXPECTED_DISTRIBUTION = Literal["remove_expected_distribution"]
+type SEED_EXPECTED_DISTRIBUTIONS = Literal["seed_expected_distributions"]
 type REMOVE_CATEGORY = Literal["remove_category"]
 type ADD_LANGUAGE = Literal["add_language"]
 type REMOVE_LANGUAGE = Literal["remove_language"]
@@ -175,12 +179,6 @@ class ComposePolicyForm(form.Form):
         "URL of a .rat-excludes file we fetch fresh on each checked revision. Must be an"
         " apache.org host or raw.githubusercontent.com.",
         default="",
-    )
-    file_tag_mappings: str = form.label(
-        "Tagging spec",
-        "Spec for which files should be tagged for release in specific distribution types, YAML format",
-        widget=form.Widget.TEXTAREA,
-        rows=3,
     )
 
     @pydantic.field_validator("rat_excludes_url", mode="before")
@@ -644,6 +642,37 @@ class RemoveLanguageForm(form.Form):
     language_to_remove: str = form.label("Language to remove", widget=form.Widget.HIDDEN)
 
 
+class AddExpectedDistributionsForm(form.Form):
+    variant: ADD_EXPECTED_DISTRIBUTIONS = form.value(ADD_EXPECTED_DISTRIBUTIONS)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    platform: form.Enum[distribution.DistributionPlatform] = form.label("Platform", widget=form.Widget.SELECT)
+    owner_namespace: safe.OptionalOwnerNamespace = form.label(
+        "Owner or namespace",
+        distribution.OWNER_NAMESPACE_HELP,
+    )
+    packages: str = form.label("Packages", "One per line.", widget=form.Widget.TEXTAREA, required=True)
+    version_pattern: str = form.label(
+        "Version",
+        "Leave empty when the package version is the release version. May use {{MAJOR_VERSION}},"
+        " {{PROJECT_KEY}}, and {{VERSION}}, for example {{VERSION}}-jdk17.",
+        default="",
+    )
+
+
+class RemoveExpectedDistributionForm(form.Form):
+    variant: REMOVE_EXPECTED_DISTRIBUTION = form.value(REMOVE_EXPECTED_DISTRIBUTION)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    platform: form.Enum[distribution.DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
+    owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
+    package: str = form.label("Package", widget=form.Widget.HIDDEN)
+    version_pattern: str = form.label("Version", widget=form.Widget.HIDDEN)
+
+
+class SeedExpectedDistributionsForm(form.Form):
+    variant: SEED_EXPECTED_DISTRIBUTIONS = form.value(SEED_EXPECTED_DISTRIBUTIONS)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+
+
 class CompleteApprovalRequest(form.Form):
     approval_request_id: form.Int = form.label("Approval request ID", widget=form.Widget.HIDDEN)
 
@@ -676,6 +705,9 @@ type ProjectViewForm = Annotated[
     | AddCategoryForm
     | RemoveCategoryForm
     | AddLanguageForm
-    | RemoveLanguageForm,
+    | RemoveLanguageForm
+    | AddExpectedDistributionsForm
+    | RemoveExpectedDistributionForm
+    | SeedExpectedDistributionsForm,
     form.DISCRIMINATOR,
 ]

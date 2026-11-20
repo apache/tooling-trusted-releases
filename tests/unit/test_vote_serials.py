@@ -797,6 +797,40 @@ async def test_vote_start_records_revision(sqlite_sessionmaker, monkeypatch, vot
 
 
 @pytest.mark.asyncio
+async def test_promote_refuses_outstanding_distribution(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        release_model = await _seed_release(data, phase=sql.ReleasePhase.RELEASE_PREVIEW)
+        data.add(
+            sql.Distribution(
+                release_key=release_model.key,
+                platform=sql.DistributionPlatform.PYPI,
+                package="project",
+                version="1.0.0",
+                status=sql.DistributionStatus.IGNORED,
+            )
+        )
+        await data.commit()
+        # The session holds the row as ignored, then it changes underneath
+        await data.distribution(release_key=release_model.key).all()
+        await data.execute(sqlmodel.update(sql.Distribution).values(status=sql.DistributionStatus.CHECKING))
+        await data.commit()
+        announce_writer = object.__new__(announce.ReleaseManager)
+        announce_writer._ReleaseManager__data = data
+
+        with pytest.raises(storage.AccessError, match="1 distribution is found or ignored"):
+            await announce_writer._ReleaseManager__promote_in_database(
+                release_model,
+                safe.RevisionNumber("00001"),
+                datetime.datetime.now(datetime.UTC),
+            )
+        await data.rollback()
+
+    async with sqlite_sessionmaker() as data:
+        unchanged = await data.release(key="project-1.0.0").demand(RuntimeError("release missing"))
+        assert unchanged.phase == sql.ReleasePhase.RELEASE_PREVIEW
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("voted_revision_number", [None, "00001"])
 async def test_voted_revision_survives_pass_announcement_and_archive(
     sqlite_sessionmaker, voted_revision_number
@@ -810,7 +844,13 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
         )
         release_model.vote_started = datetime.datetime.now(datetime.UTC)
         await data.commit()
-        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+        writer = _member_writer_with_data(
+            data,
+            SimpleNamespace(
+                append_to_audit_log=mock.MagicMock(),
+                distributions=SimpleNamespace(expect_for_release_no_commit=mock.AsyncMock()),
+            ),
+        )
         await writer._resolve_transition(
             release_model,
             expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,

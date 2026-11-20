@@ -159,18 +159,12 @@ async def _validate_distributions(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse | None:
-    policy = release.release_policy or release.project.release_policy
-    if not (policy and policy.file_tag_mappings):
-        return None
-    published = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
-    missing = [tag for tag in policy.file_tag_mappings if tag not in published]
-    if not missing:
+    message = shared.distribution.outstanding_message(release.distributions)
+    if not message:
         return None
     return await session.redirect(
         get.announce.selected,
-        error=f"This release cannot be announced until the following distributions have been recorded: {
-            ', '.join(missing)
-        }",
+        error=message,
         project_key=str(project_key),
         version_key=str(version_key),
     )

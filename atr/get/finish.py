@@ -143,6 +143,17 @@ async def _announce_disable_message(release: sql.Release) -> str:
     return announce._missing_distributions_message(release)
 
 
+def _checks_held_summary(release: sql.Release) -> str:
+    expected = len(shared.distribution.release_rows(release.distributions))
+    if expected == 0:
+        return "You can record third-party distributions once this release is published to SVN dist."
+    noun = util.plural(expected, "third-party distribution")
+    return (
+        f"ATR will look for {noun} once this release is published to SVN dist. Looking sooner would reveal"
+        " the version to those platforms, so you cannot review them until then."
+    )
+
+
 async def _get_page_data(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[sql.Release, Sequence[sql.Task]]:
@@ -177,44 +188,6 @@ async def _get_page_data(
         raise ValueError("Release is not in preview phase")
 
     return release, tasks
-
-
-def _render_dist_warning() -> htm.Element:
-    """Render the alert about distribution tools."""
-    return htm.div(".alert.alert-warning.mb-4", role="alert")[
-        htm.p(".fw-semibold.mb-1")["NOTE:"],
-        htm.p(".mb-1")[
-            "Tools to distribute to third-party platforms automatically are still being developed, "
-            "you must do this manually at present, if required. Please use the manual record function below to do so.",
-        ],
-    ]
-
-
-def _render_distribution_buttons(release: sql.Release, is_admin: bool) -> htm.Element:
-    """Render the distribution tool buttons."""
-    buttons = []
-    if is_admin:
-        buttons.append(
-            htm.a(
-                ".btn.btn-primary.me-2",
-                href=util.as_url(
-                    distribution.automate,
-                    project_key=release.project.key,
-                    version_key=release.version,
-                ),
-            )["Automated distributions"]
-        )
-    buttons.append(
-        htm.a(
-            ".btn.btn-secondary.me-2",
-            href=util.as_url(
-                distribution.record,
-                project_key=release.project.key,
-                version_key=release.version,
-            ),
-        )[strings.VERIFY_DISTRIBUTION_BUTTON]
-    )
-    return htm.div()[htm.p(".mb-1")[buttons],]
 
 
 async def _render_page(
@@ -283,6 +256,11 @@ async def _render_page(
         "During this phase you should distribute release artifacts to your package distribution networks "
         "such as Maven Central, PyPI, or Docker Hub."
     ]
+    checks_held = await interaction.release_distribution_checks_held(release)
+    if checks_held:
+        page.p[_checks_held_summary(release)]
+    else:
+        page.p[shared.distribution.summary(release.distributions)]
 
     if len(distribution_tasks) > 0:
         page.append(
@@ -292,8 +270,13 @@ async def _render_page(
             )
         )
 
-    page.append(_render_dist_warning())
-    page.append(_render_distribution_buttons(release, session.is_admin))
+    if not checks_held:
+        page.p(".mb-4")[
+            htm.a(
+                ".btn.btn-primary",
+                href=util.as_url(distribution.list_get, project_key=release.project.key, version_key=release.version),
+            )["Review distributions"]
+        ]
 
     if user.is_participant_for_committee(release.committee, session.participant_committees):
         page.h2["Inactivity"]

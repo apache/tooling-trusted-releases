@@ -1886,6 +1886,7 @@ def _mock_write_as() -> mock.MagicMock:
     write_as.revision.create_revision_with_quarantine = mock.AsyncMock()
     write_as.release.publish_to_svn = mock.AsyncMock()
     write_as.cache.get_message_archive_url = mock.AsyncMock(return_value=None)
+    write_as.distributions.expect_for_release_no_commit = mock.AsyncMock()
     return write_as
 
 

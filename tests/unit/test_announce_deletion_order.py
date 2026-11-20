@@ -122,6 +122,7 @@ def release_row() -> SimpleNamespace:
         project=project,
         project_key="example",
         release_policy=None,
+        distributions=[],
         download_path_suffix=None,
         safe_latest_revision_number=safe.RevisionNumber("00003"),
         safe_version_key=safe.VersionKey("2.0.0"),

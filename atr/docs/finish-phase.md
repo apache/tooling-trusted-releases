@@ -34,9 +34,11 @@ For a step by step walkthrough of this phase with screenshots, see the
 The finish phase is again mostly the work of the Release Manager:
 
 * Distribute the release artifacts to any package distribution platforms your project uses, such as
-  Maven Central, PyPI, or Docker Hub. ATR does not do this for you, but you can record the results
-  on ATR. If your project's [tagging spec](project-configuration#compose) names a platform, ATR will
-  not let you announce the release until a distribution to it has been recorded.
+  Maven Central, PyPI, or Docker Hub. ATR does not do this for you, but it looks for each package
+  your project [expects to distribute](project-configuration#third-party-distribution), and will not
+  let you announce the release until each one has been found or ignored. For an expedited security
+  release, ATR does not look for them, or let you review or record them, until the release is
+  published to SVN dist, as looking them up would reveal the version to those platforms.
 * Publish the approved candidate, which commits the artifacts to `svn:dist:release`. This can be
   done automatically, if requested when the vote is started.
 * Announce the release through ATR. ATR checks that the artifacts have reached the download servers

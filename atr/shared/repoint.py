@@ -31,6 +31,7 @@ PROJECT_KEY_REFS: Final[list[tuple[type[sqlmodel.SQLModel], str]]] = [
     (sql.LifecycleEvent, "project_key"),
     (sql.Task, "project_key"),
     (sql.CheckResultIgnore, "project_key"),
+    (sql.ExpectedDistribution, "project_key"),
 ]
 
 # Tables whose column holds a release key, "{project_key}-{version}". Task.version_key holds

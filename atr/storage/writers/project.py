@@ -602,6 +602,9 @@ class FoundationAdmin(FoundationCommitter):
                     **policy_args.model_dump(exclude_unset=True),
                 )
                 await self.__write_as.policy.edit_no_commit(args.project_key, policy_update)
+            # Only replaced if the file has a distributions key, in full mode too
+            if args.distributions is not None:
+                await self.__write_as.distributions.expected_replace_no_commit(args.project_key, args.distributions)
             project.mark_updated(by=self.__asf_uid, update_type=update_type)
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:

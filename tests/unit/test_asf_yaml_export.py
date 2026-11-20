@@ -254,6 +254,29 @@ def test_export_includes_the_date_format_a_calver_project_authors() -> None:
     assert "cycle_match" not in metadata
 
 
+def test_export_groups_expected_distributions() -> None:
+    project = _FakeProject(key="trusted-releases", committee_key="tooling", name="Apache Trusted Releases")
+    expected = [
+        _expected(sql.DistributionPlatform.MAVEN, "org.apache.tooling", "core"),
+        _expected(sql.DistributionPlatform.MAVEN, "org.apache.tooling", "api"),
+        _expected(sql.DistributionPlatform.DOCKER_HUB, "apache", "tooling", "{{VERSION}}-jdk17"),
+        _expected(sql.DistributionPlatform.PYPI, "", "tooling"),
+    ]
+
+    loaded = strictyaml.load(projects._asf_yaml_export(project, expected)).data["project"]
+
+    assert loaded["distributions"] == [
+        {
+            "platform": "docker_hub",
+            "owner_namespace": "apache",
+            "packages": ["tooling"],
+            "version": "{{VERSION}}-jdk17",
+        },
+        {"platform": "maven", "owner_namespace": "org.apache.tooling", "packages": ["api", "core"]},
+        {"platform": "pypi", "packages": ["tooling"]},
+    ]
+
+
 def test_export_minimal_project_omits_empty_blocks() -> None:
     project = _FakeProject(key="trusted-releases", committee_key="tooling", name="Apache Trusted Releases")
 
@@ -366,3 +389,15 @@ def test_export_emits_full_sync_mode_on_request() -> None:
     exported = strictyaml.load(projects._asf_yaml_export(project, full=True)).data
 
     assert exported["project"]["features"] == {"atr_sync": "true", "atr_sync_mode": "full"}
+
+
+def _expected(
+    platform: sql.DistributionPlatform, owner_namespace: str, package: str, version_pattern: str = "{{VERSION}}"
+) -> sql.ExpectedDistribution:
+    return sql.ExpectedDistribution(
+        project_key="trusted-releases",
+        platform=platform,
+        owner_namespace=owner_namespace,
+        package=package,
+        version_pattern=version_pattern,
+    )

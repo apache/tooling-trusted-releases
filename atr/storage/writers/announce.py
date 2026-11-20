@@ -42,6 +42,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.shared.distribution as distribution
 import atr.storage as storage
 import atr.storage.writers.release as release
 import atr.svn as svn
@@ -168,23 +169,8 @@ class ReleaseManager(CommitteeParticipant):
             util.validate_no_duplicate_recipients(all_addrs)
         except ValueError as e:
             raise storage.AccessError(str(e), status=400) from e
-        policy = release.release_policy or release.project.release_policy
-        if policy and policy.file_tag_mappings:
-            missing = []
-            tags = policy.file_tag_mappings.keys()
-            distributions = [
-                d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)
-            ]
-            for tag in tags:
-                if tag not in distributions:
-                    missing.append(tag)
-            if missing:
-                raise storage.AccessError(
-                    f"This release cannot be announced until the following distributions have been recorded: {
-                        ', '.join(missing)
-                    }",
-                    status=409,
-                )
+        if outstanding := distribution.outstanding_message(release.distributions):
+            raise storage.AccessError(outstanding, status=409)
 
         # Fetch the current subject template and verify the hash
         subject_template = await construct.announce_release_subject_default(project_key)
@@ -567,12 +553,19 @@ class ReleaseManager(CommitteeParticipant):
         """Promote a release preview to a release and delete its old revisions."""
         via = sql.validate_instrumented_attribute
 
+        # One could have been unignored since the announcement started, so the update only applies
+        # if none are still being looked for
+        outstanding = sqlmodel.select(sql.Distribution.release_key).where(
+            via(sql.Distribution.release_key) == release.key,
+            via(sql.Distribution.status) == sql.DistributionStatus.CHECKING,
+        )
         update_stmt = (
             sqlmodel.update(sql.Release)
             .where(
                 via(sql.Release.key) == release.key,
                 via(sql.Release.phase) == sql.ReleasePhase.RELEASE_PREVIEW,
                 sql.latest_revision_number_query() == str(preview_revision_number),
+                ~outstanding.exists(),
             )
             .values(
                 phase=sql.ReleasePhase.RELEASE,
@@ -584,6 +577,13 @@ class ReleaseManager(CommitteeParticipant):
         # Could not find another way to do it, other than using a Protocol
         rowcount: int = getattr(update_result, "rowcount", 0)
         if rowcount != 1:
+            current = await self.__data.execute_query(
+                sqlmodel.select(sql.Distribution)
+                .where(via(sql.Distribution.release_key) == release.key)
+                .execution_options(populate_existing=True)
+            )
+            if message := distribution.outstanding_message(current.scalars().all()):
+                raise storage.AccessError(message, status=409)
             raise RuntimeError("A newer revision appeared, please refresh and try again.")
 
         delete_revisions_stmt = sqlmodel.delete(sql.Revision).where(

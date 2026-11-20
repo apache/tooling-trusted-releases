@@ -1278,6 +1278,8 @@ class ReleaseManager(CommitteeParticipant):
             await self.__data.rollback()
             raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
         await self._cancel_pending_vote_followups(release)
+        if new_phase == sql.ReleasePhase.RELEASE_PREVIEW:
+            await self.__write_as.distributions.expect_for_release_no_commit(release.safe_key)
 
     async def _cancel_pending_vote_followups(self, release: sql.Release) -> None:
         # There is no CANCELLED status for tasks

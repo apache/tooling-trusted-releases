@@ -128,6 +128,10 @@ _ROWS = {
         "INSERT INTO voteinterpretation (release_key, asf_eid, choice, asf_uid, created)"
         " VALUES ('p-1', 'eid', 'YES', 'u', '2026-01-01 00:00:00')",
     ),
+    "0149": (
+        "INSERT INTO expecteddistribution (project_key, platform, owner_namespace, package, version_pattern)"
+        " VALUES ('p', 'MAVEN', 'org.example', 'example', '{{VERSION}}')",
+    ),
 }
 
 _INSERT_COMMITTEE = (
@@ -149,6 +153,17 @@ _FULL_SYNC_ROWS = (
     "UPDATE project SET release_policy_id = 1, update_type = 'ASFYAML_FULL' WHERE key = 'full'",
     "UPDATE project SET release_policy_id = 2, update_type = 'MANUAL' WHERE key = 'manual'",
     "UPDATE project SET release_policy_id = 3, update_type = 'ASFYAML' WHERE key = 'merge'",
+)
+_DISTRIBUTION_STATUS_ROWS = (
+    _INSERT_COMMITTEE.format(key="committee"),
+    _INSERT_PROJECT.format(key="example", committee="committee", status="ACTIVE"),
+    "INSERT INTO release (key, project_key, version, phase, created, package_managers, sboms, cycle_key, activity_at)"
+    " VALUES ('example-1.0', 'example', '1.0', 'RELEASE_PREVIEW', 0, '[]', '[]', 'example-default', 0)",
+    *[
+        "INSERT INTO distribution (release_key, platform, owner_namespace, package, version, staging, pending,"
+        f" retries) VALUES ('example-1.0', 'PYPI', '', '{package}', '1.0', 0, {pending}, 0)"
+        for package, pending in (("confirmed", 0), ("waiting", 1))
+    ],
 )
 _TRUSTED_DEFAULT_ROWS = (
     *[_INSERT_COMMITTEE.format(key=key) for key in ("edited", "moved", "polaris", "saved", "started", "trusted")],
@@ -180,6 +195,26 @@ _TRUSTED_DEFAULT_ROWS = (
     "INSERT INTO release (key, project_key, version, phase, created, package_managers, sboms, cycle_key, activity_at)"
     " VALUES ('moved-1.0', 'moved', '1.0', 'RELEASE', 0, '[]', '[]', 'moved-1', 0)",
 )
+
+
+def test_distribution_status_follows_pending(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0148_2026.11.13_6136641d")
+    with engine.begin() as connection:
+        for statement in _DISTRIBUTION_STATUS_ROWS:
+            connection.exec_driver_sql(statement)
+
+    command.upgrade(alembic_config, "0149_2026.11.19_bc613d78")
+
+    with engine.connect() as connection:
+        statuses = connection.exec_driver_sql("SELECT package, status FROM distribution").all()
+    assert dict(tuple(row) for row in statuses) == {"confirmed": "FOUND", "waiting": "CHECKING"}
+
+    command.downgrade(alembic_config, "0148_2026.11.13_6136641d")
+
+    with engine.connect() as connection:
+        pending = connection.exec_driver_sql("SELECT package, pending FROM distribution").all()
+    assert dict(tuple(row) for row in pending) == {"confirmed": 0, "waiting": 1}
 
 
 def test_full_sync_projects_return_to_email_votes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

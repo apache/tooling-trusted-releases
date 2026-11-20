@@ -385,7 +385,7 @@ def _distribution(
         package=package,
         version=release.version,
         staging=staging,
-        pending=pending,
+        status=sql.DistributionStatus.CHECKING if pending else sql.DistributionStatus.FOUND,
     )
 
 

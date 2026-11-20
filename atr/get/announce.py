@@ -106,7 +106,7 @@ async def selected(
 
 
 async def _embargo_message(release: sql.Release) -> str:
-    if any((not d.staging) and (not d.pending) for d in release.distributions):
+    if any(d.is_found for d in release.distributions):
         return (
             "This is an expedited security release. The embargo was already lifted when the release was"
             " distributed on a third party platform. Submitting this form sends the public announcement."
@@ -152,16 +152,7 @@ async def _get_page_data(
 
 
 def _missing_distributions_message(release: sql.Release) -> str:
-    policy = release.release_policy or release.project.release_policy
-    if not (policy and policy.file_tag_mappings):
-        return ""
-    published = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
-    missing = [tag for tag in policy.file_tag_mappings if tag not in published]
-    if not missing:
-        return ""
-    return (
-        f"This release cannot be announced until the following distributions have been recorded: {', '.join(missing)}"
-    )
+    return shared.distribution.outstanding_message(release.distributions)
 
 
 async def _publication_pending_message(release: sql.Release) -> str:

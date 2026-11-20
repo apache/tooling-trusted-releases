@@ -22,8 +22,6 @@ import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlmodel
-import strictyaml
-import strictyaml.ruamel.error as error
 
 import atr.catalog_site as catalog_site
 import atr.construct as construct
@@ -131,21 +129,6 @@ class ReleaseManager(CommitteeParticipant):
         project_key = form.project_key
         _, release_policy = await self.__get_or_create_policy(project_key)
 
-        try:
-            schema = strictyaml.EmptyDict() | strictyaml.MapPattern(
-                strictyaml.Str(),
-                strictyaml.UniqueSeq(
-                    strictyaml.Str(),
-                ),
-            )
-            atr_tags_yaml = strictyaml.load(form.file_tag_mappings, schema)
-        except strictyaml.exceptions.YAMLValidationError, error.YAMLError:
-            raise ValueError("Invalid file tag mappings")
-        atr_tags_data = atr_tags_yaml.data
-        if not isinstance(atr_tags_data, dict):
-            raise ValueError("Invalid file tag mappings")
-        atr_tags_dict: dict[str, list[str]] = atr_tags_data
-        _validate_file_tag_mappings(atr_tags_dict)
         license_check_mode = form.license_check_mode
         if not isinstance(license_check_mode, models.sql.LicenseCheckMode):
             raise ValueError(f"Unsupported license check mode: {license_check_mode}")
@@ -153,7 +136,6 @@ class ReleaseManager(CommitteeParticipant):
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
         release_policy.rat_excludes_url = form.rat_excludes_url.strip()
-        release_policy.file_tag_mappings = atr_tags_dict
 
         await self.__commit_and_log(str(project_key))
 

@@ -176,17 +176,29 @@ committee. Standing committees don't have a roster of designated release manager
 ATR does not push your artifacts to Maven Central, PyPI, npm, Docker Hub or Artifact Hub, but it can
 record that you have done so. When you record a distribution, ATR looks the package up on the
 platform before it accepts the record, and the release's distribution list then links to it. If your
-project's [tagging spec](project-configuration#compose) names a platform, ATR won't let you announce
-the release until a distribution to that platform has been recorded.
+project lists [expected distributions](project-configuration#third-party-distribution), ATR looks
+for those itself once the vote has passed, and won't let you announce the release until each one
+has been found or ignored.
 
-In the web interface, open the release's finish page and select
-***Verify a third-party distribution***. Choose the platform, then fill in the package details:
+The release's distribution list, reached from ***Review distributions*** on its finish page, shows
+each package as found, not found or ignored. ATR keeps looking for a package that is not found, and
+***Check all now*** makes it look straight away. Under ***Change*** you can correct the version ATR
+looks for, or ignore the package for this release by giving a reason.
+
+A distribution you recorded as staged during compose is carried into this list as staged and not yet
+found, whether or not your project expects it, and has to be found or ignored like any other. If
+your project expects the same package under a different version, the staged record is dropped in
+favour of the expected one.
+
+To record a package that is not in the list, select ***Record another distribution*** there, or
+***Verify a third-party distribution*** if the list is empty. Choose the platform, then fill in the
+package details:
 
 | Platform | Owner or namespace | Package |
 | --- | --- | --- |
 | Maven Central | The `groupId`, such as `org.apache.example` | The `artifactId`, such as `example-core` |
-| PyPI | Leave blank | The package name, such as `apache-example` |
-| npm | Leave blank | The package name |
+| PyPI | Not used | The package name, such as `apache-example` |
+| npm | Not used | The package name |
 | npm (scoped) | The scope, without the `@` | The package name within the scope |
 | Docker Hub | The namespace, which defaults to `library` | The repository name |
 | Artifact Hub | The repository name | The chart name |

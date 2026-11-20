@@ -102,8 +102,9 @@ task.
 
 Signature and hash checks read whole artifacts; KEYS import parses keys, consults LDAP, may publish
 via SVN, and builds a revision; and metadata refresh scans every account and project. Other tasks
-with caps include mail (a 30s SMTP client timeout, not a task-level bound), distribution status (20
-per run, every two minutes), and the CAP poller (1m to 6h backoff).
+with caps include mail (a 30s SMTP client timeout, not a task-level bound), distribution status (up
+to 60 per run and 90s, every two minutes, with each distribution backing off to hourly), and the
+CAP poller (1m to 6h backoff).
 
 ## Requests and responses
 
@@ -176,5 +177,5 @@ second busy timeout and roughly 64 MB of cache per connection across processes.
 
 A first start backfill extracts uncached unfinished release archives, blocking startup, failures
 only warned, and without retries. Maintenance schedules immediately, others at six to eight minutes
-(metadata daily, workflow and distribution every two minutes). Only maintenance schedules its
-successor first, so other failures break the succession until restart.
+(metadata daily, workflow and distribution every two minutes). Maintenance and the distribution
+check schedule their successors first. A failure in any other breaks its succession until restart.

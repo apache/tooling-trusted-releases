@@ -68,10 +68,14 @@ async def test_embargoed_staging_form_is_refused(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.parametrize(
-    ("staging", "expedited", "allowed"),
-    [(True, True, False), (False, True, True), (True, False, True)],
+    ("staging", "expedited", "published", "allowed"),
+    [(True, True, False, False), (False, True, False, False), (False, True, True, True), (True, False, False, True)],
 )
-async def test_embargoed_staging_is_not_queued(staging: bool, expedited: bool, allowed: bool) -> None:
+async def test_embargoed_staging_or_unpublished_is_not_queued(
+    monkeypatch: pytest.MonkeyPatch, staging: bool, expedited: bool, published: bool, allowed: bool
+) -> None:
+    publish_task = mock.AsyncMock(return_value=mock.MagicMock() if published else None)
+    monkeypatch.setattr("atr.db.interaction.release_completed_svn_publish_task", publish_task)
     release = _release(expedited, DRAFT if staging else PREVIEW)
     release.project = mock.MagicMock(committee_key="example", is_active=True)
     data = mock.MagicMock(commit=mock.AsyncMock(), refresh=mock.AsyncMock())
@@ -96,7 +100,7 @@ async def test_embargoed_staging_is_not_queued(staging: bool, expedited: bool, a
         await automate
         data.add.assert_called_once()
         return
-    with pytest.raises(storage.AccessError, match="Embargoed"):
+    with pytest.raises(storage.AccessError, match=r"(?i)embargoed"):
         await automate
     data.add.assert_not_called()
 
