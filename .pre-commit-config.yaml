@@ -138,7 +138,7 @@ repos:
         - --deny=pedantic
         - --allow=unicorn/prefer-query-selector
 - repo: https://github.com/biomejs/pre-commit
-  rev: 2a24170fd6adbd6fb1463868533368fe9c01a04d  # frozen: v2.6.6
+  rev: 32d5a0d7e11fdd020784e4cd64ed53d3cfe81e72  # frozen: v2.6.8
   hooks:
     - id: biome-format
       name: format JS files with Biome

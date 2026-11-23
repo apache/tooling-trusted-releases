@@ -79,7 +79,7 @@ cyclonedx-python-lib==11.12.0
 decouple-types==1.0.2
 defusedxml==0.7.1
     # via py-serializable
-djlint==1.50.0
+djlint==1.54.0
 dnspython==2.9.2
     # via
     #   email-validator
@@ -96,9 +96,9 @@ editorconfig==0.17.1
     # via
     #   cssbeautifier
     #   jsbeautifier
-email-validator==2.3.0
+email-validator==2.4.0
     # via tooling-trusted-releases
-exarch==0.10.0
+exarch==0.11.0
     # via tooling-trusted-releases
 ezt==1.1
     # via
@@ -210,7 +210,7 @@ packaging==26.3
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-prek==0.5.10
+prek==0.5.11
 priority==2.0.0
     # via hypercorn
 propcache==0.5.4
@@ -219,7 +219,7 @@ propcache==0.5.4
     #   yarl
 psutil==7.2.2
     # via tooling-trusted-releases
-puremagic==2.2.0
+puremagic==2.3.0
     # via tooling-trusted-releases
 py-serializable==2.2.0
     # via cyclonedx-python-lib
@@ -263,7 +263,7 @@ quart==0.23.1
     #   quart-schema
     #   quart-uploads
     #   quart-wtforms
-quart-rate-limiter==0.12.1
+quart-rate-limiter==0.13.0
     # via tooling-trusted-releases
 quart-schema==0.25.0
     # via tooling-trusted-releases
@@ -276,7 +276,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.11.9
+regex==2026.11.18
     # via djlint
 requests==2.34.2
     # via
@@ -298,18 +298,18 @@ rpds-py==2026.9.1
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.17.4
-semver==3.1.1
+ruff==0.17.5
+semver==3.1.2
     # via tooling-trusted-releases
 six==1.17.0
     # via rfc3339-validator
 sortedcontainers==2.4.0
     # via cyclonedx-python-lib
-sqlalchemy==2.1.8
+sqlalchemy==2.1.9
     # via
     #   alembic
     #   sqlmodel
-sqlmodel==0.0.49
+sqlmodel==0.0.50
     # via tooling-trusted-releases
 ssh-audit==3.9.0
     # via tooling-trusted-releases
