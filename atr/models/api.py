@@ -1153,6 +1153,12 @@ class VoteCastArgs(schema.Strict):
                 raise ValueError(f"'{v}' is not a valid VoteChoice")
         return v
 
+    @pydantic.model_validator(mode="after")
+    def comment_required_unless_yes(self) -> Self:
+        if (self.choice != sql.VoteChoice.YES) and (not self.comment.strip()):
+            raise ValueError("A comment is required when voting 0 or -1")
+        return self
+
 
 class VoteCastResults(schema.Strict):
     endpoint: Literal["/vote/cast"] = schema.alias("endpoint")

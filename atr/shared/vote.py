@@ -16,7 +16,9 @@
 # under the License.
 
 import urllib.parse
-from typing import Literal
+from typing import Literal, Self
+
+import pydantic
 
 import atr.form as form
 import atr.models.sql as sql
@@ -34,6 +36,18 @@ def message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
 
 class CastVoteForm(form.Form):
     decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM, required=True)
-    comment: str = form.label("Comment (optional)", widget=form.Widget.TEXTAREA, max_length=50_000)
+    comment: str = form.label(
+        "Comment",
+        "Required when voting 0 or -1.",
+        widget=form.Widget.TEXTAREA,
+        max_length=50_000,
+    )
     vote_seq: form.OptionalInt = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
+
+    @pydantic.model_validator(mode="after")
+    def _validate_comment(self) -> Self:
+        # A 0 or -1 needs a reason with it, which also catches a mis-click on the wrong button
+        if (self.decision != "+1") and (not self.comment.strip()):
+            raise ValueError("Please give a reason when voting 0 or -1.", "comment")
+        return self

@@ -191,7 +191,7 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
         mock.AsyncMock(return_value=types.SimpleNamespace(error="<failed>")),
     )
     monkeypatch.setattr(finish.interaction, "latest_catalogued_directory", mock.AsyncMock(return_value=None))
-    monkeypatch.setattr(finish.form, "_get_flash_error_data", mock.AsyncMock(return_value={}))
+    monkeypatch.setattr(finish.form, "flash_error_data_pop", mock.AsyncMock(return_value={}))
     monkeypatch.setattr(finish.form.utils, "generate_csrf", lambda: "test")
     url = mock.Mock(return_value="/finish/example/1.0")
     monkeypatch.setattr(util, "as_url", url)

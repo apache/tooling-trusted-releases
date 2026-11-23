@@ -88,7 +88,7 @@ async def test_revocation_redirects_to_its_fixed_audience(monkeypatch, has_token
         admin.util, "as_url", lambda _view, **args: "/admin?" + "&".join(f"{k}={v}" for k, v in args.items())
     )
     monkeypatch.setattr(form, "csrf_input", lambda: htpy.input(type="hidden", name="csrf_token", value="csrf"))
-    monkeypatch.setattr(form, "_get_flash_error_data", mock.AsyncMock(return_value={}))
+    monkeypatch.setattr(form, "flash_error_data_pop", mock.AsyncMock(return_value={}))
     session = mock.Mock(asf_uid="admin", redirect=mock.AsyncMock())
     await admin._users_revoke_all_tokens(session)
     writer.revoke_all_users_tokens.assert_awaited_once_with()

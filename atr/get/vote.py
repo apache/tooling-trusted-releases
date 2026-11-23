@@ -20,7 +20,7 @@ from __future__ import annotations
 import datetime
 import enum
 import urllib.parse
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import htpy
 
@@ -209,7 +209,7 @@ async def selected(
 async def _append_cast_vote_form(
     page: htm.Block,
     release: sql.Release,
-    vote_widget: htm.Element,
+    potency: str,
     *,
     submit_disabled: bool = False,
     submit_label: str = "Submit vote",
@@ -235,6 +235,13 @@ async def _append_cast_vote_form(
         project_key=release.project.key,
         version_key=release.version,
     )
+    # The decision buttons are a custom widget, so a rejected submission has to be put back by hand
+    flash_error_data = await form.flash_error_data_pop()
+    vote_widget = _vote_decision_widget(
+        potency,
+        disabled=submit_disabled,
+        selected=_flashed_decision(flash_error_data),
+    )
     cast_vote_form = await form.render(
         model_cls=shared.vote.CastVoteForm,
         action=vote_action_url,
@@ -245,6 +252,7 @@ async def _append_cast_vote_form(
         submit_disabled=submit_disabled,
         pre_submit=pre_submit,
         skip=skip,
+        flash_error_data=flash_error_data,
     )
     page.append(cast_vote_form)
 
@@ -328,6 +336,15 @@ def _download_zip(release: sql.Release) -> htm.Element:
             "Download all (ZIP)",
         ],
     ]
+
+
+def _flashed_decision(flash_error_data: dict[str, Any]) -> str | None:
+    # A field is flashed under its own name when it failed validation, and under !name otherwise
+    flashed = flash_error_data.get("decision") or flash_error_data.get("!decision")
+    if flashed is None:
+        return None
+    original = flashed.get("original")
+    return original if isinstance(original, str) else None
 
 
 def _format_vote_end(vote_end: datetime.datetime) -> str:
@@ -691,7 +708,6 @@ async def _render_trusted_vote_authenticated(
 
     task_mid = interaction.task_mid_get(latest_vote_task) if (latest_vote_task is not None) else None
     casting_enabled = (release.current_vote_seq is not None) and (task_mid is not None)
-    vote_widget = _vote_decision_widget(potency, disabled=not casting_enabled)
     submit_label = "Resubmit vote" if (latest_ballot is not None) else "Submit vote"
 
     if casting_enabled:
@@ -703,14 +719,14 @@ async def _render_trusted_vote_authenticated(
             trusted_vote=True,
             recast=latest_ballot is not None,
         )
-        await _append_cast_vote_form(page, release, vote_widget, submit_label=submit_label)
+        await _append_cast_vote_form(page, release, potency, submit_label=submit_label)
         return
 
     pre_submit = _trusted_casting_disabled_notice(archive_url, vote_recipient)
     await _append_cast_vote_form(
         page,
         release,
-        vote_widget,
+        potency,
         submit_disabled=True,
         submit_label=submit_label,
         pre_submit=pre_submit,
@@ -738,8 +754,7 @@ async def _render_vote_authenticated(
     vote_round = interaction.trusted_vote_round(release)
     potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
     _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
-    vote_widget = _vote_decision_widget(potency)
-    await _append_cast_vote_form(page, release, vote_widget)
+    await _append_cast_vote_form(page, release, potency)
 
 
 def _render_vote_delivery(
@@ -913,7 +928,7 @@ def _vote_committee_name(release: sql.Release) -> str:
     return release.committee.display_name
 
 
-def _vote_decision_widget(potency: str, *, disabled: bool = False) -> htm.Element:
+def _vote_decision_widget(potency: str, *, disabled: bool = False, selected: str | None = None) -> htm.Element:
     input_attrs = {"disabled": True} if disabled else {}
     return htpy.div(id="decision", class_="btn-group", role="group")[
         htpy.input(
@@ -923,6 +938,7 @@ def _vote_decision_widget(potency: str, *, disabled: bool = False) -> htm.Elemen
             id="decision_0",
             value="+1",
             autocomplete="off",
+            checked=selected == "+1",
             **input_attrs,
         ),
         htpy.label(class_="btn btn-outline-success", for_="decision_0")[f"+1 ({potency})"],
@@ -933,6 +949,7 @@ def _vote_decision_widget(potency: str, *, disabled: bool = False) -> htm.Elemen
             id="decision_1",
             value="0",
             autocomplete="off",
+            checked=selected == "0",
             **input_attrs,
         ),
         htpy.label(class_="btn btn-outline-secondary", for_="decision_1")["0"],
@@ -943,6 +960,7 @@ def _vote_decision_widget(potency: str, *, disabled: bool = False) -> htm.Elemen
             id="decision_2",
             value="-1",
             autocomplete="off",
+            checked=selected == "-1",
             **input_attrs,
         ),
         htpy.label(class_="btn btn-outline-danger", for_="decision_2")[f"-1 ({potency})"],

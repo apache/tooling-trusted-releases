@@ -327,7 +327,7 @@ The 55 `atr` commands from [COMMANDS.md](https://github.com/apache/tooling-relea
 | `atr distribution record` | DISTRIBUTION-VERSION [ARGS] | `POST` [`/api/distribution/record`](/api/docs#/default/post_distribution_record) |
 | `atr distribution list` | List recorded distributions for a release. | `GET` [`/api/distribution/list/{project_key}/{version_key}`](/api/docs#/default/get_distribution_list) |
 
-**No `atr vote cast` command yet.** The API has [`POST /api/vote/cast`](/api/docs#/default/post_vote_cast) (Trusted Vote ballots, bearer token required), but the client at commit `a07f9fe` does not wrap it. Its body takes `project`, `version`, `choice` (`+1`, `0` or `-1`) and an optional `comment`. It returns `success` and the `receipt_email_to` address. Until the client adds a command, it can be called with `atr api post /vote/cast --project example --version 1.0.0 --choice +1 --comment "Looks good"`. That command line is untested.
+**No `atr vote cast` command yet.** The API has [`POST /api/vote/cast`](/api/docs#/default/post_vote_cast) (Trusted Vote ballots, bearer token required), but the client at commit `a07f9fe` does not wrap it. Its body takes `project`, `version`, `choice` (`+1`, `0` or `-1`) and a `comment`, which is required for `0` and `-1`. It returns `success` and the `receipt_email_to` address. Until the client adds a command, it can be called with `atr api post /vote/cast --project example --version 1.0.0 --choice +1 --comment "Looks good"`. That command line is untested.
 
 ### CLI: Keys
 

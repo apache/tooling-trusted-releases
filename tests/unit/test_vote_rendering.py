@@ -20,6 +20,7 @@ import unittest.mock as mock
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
+import pydantic
 import pytest
 import quart
 import sqlalchemy
@@ -28,6 +29,7 @@ import sqlmodel
 
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.form as form
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.results as results
@@ -193,7 +195,36 @@ async def test_email_rendering_keeps_hidden_vote_defaults_and_no_trusted_state(
     assert 'name="vote_seq" id="vote_seq" value="1"' in html
     assert 'name="vote_mode" id="vote_mode" value="email"' in html
     assert "<textarea" in html
+    assert "checked" not in html
     latest_ballot_get.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_email_rendering_restores_rejected_decision(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    form_data = {"csrf_token": "token", "decision": "-1", "comment": "", "vote_seq": "1", "vote_mode": "email"}
+    with pytest.raises(pydantic.ValidationError) as excinfo:
+        form.validate(shared.vote.CastVoteForm, form_data)
+    flash_data = form.flash_error_data(shared.vote.CastVoteForm, excinfo.value.errors(), form_data)
+    monkeypatch.setattr(sessions, "form_error_pop", mock.AsyncMock(return_value=flash_data))
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page,
+            _release(sql.VoteMode.EMAIL),
+            _session(),
+            None,
+            "dev@project.apache.org",
+            None,
+        )
+
+    html = str(page.collect())
+    assert 'id="decision_2" value="-1" autocomplete="off" checked' in html
+    assert html.count(" checked") == 1
+    assert "Please give a reason when voting 0 or -1." in html
 
 
 @pytest.mark.asyncio

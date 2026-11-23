@@ -136,6 +136,11 @@ def flash_error_data(
     return flash_data
 
 
+async def flash_error_data_pop() -> dict[str, Any]:
+    """Take the flashed form errors for this page. They can only be taken once, so pass them on to render."""
+    return await sessions.form_error_pop(quart.request.path)
+
+
 def flash_error_summary(errors: list[pydantic_core.ErrorDetails], flash_data: dict[str, Any]) -> markupsafe.Markup:
     div = htm.Block(htm.div, classes=".atr-initial")
     div.text(f"Please fix the following {util.plural(len(errors), 'issue', include_count=False)}:")
@@ -279,10 +284,6 @@ def _get_concrete_cls(form_cls: TypeAliasType, discriminator_value: str) -> type
     raise ValueError(f"Discriminator value {discriminator_value} not found in union type: {alias_value}")
 
 
-async def _get_flash_error_data() -> dict[str, Any]:
-    return await sessions.form_error_pop(quart.request.path)
-
-
 async def render(  # noqa: C901
     model_cls: type[Form],
     action: str | None = None,
@@ -322,7 +323,7 @@ async def render(  # noqa: C901
     if readonly:
         flash_error_data = {}
     elif flash_error_data is None:
-        flash_error_data = await _get_flash_error_data() if use_error_data else {}
+        flash_error_data = await flash_error_data_pop() if use_error_data else {}
     field_rows: list[htm.Element] = []
     hidden_fields: list[htm.Element | htm.VoidElement | markupsafe.Markup] = []
     if not readonly:
