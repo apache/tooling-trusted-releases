@@ -125,8 +125,13 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             return None
         repository, sha, tip = declared.repository, declared.commit, None
     if not await _in_history(repository, sha, tip):
+        message = (
+            "Source commit is not the commit the workflow run started from or one of its ancestors"
+            if tip
+            else "Source commit is not on a branch or tag of a repository in the apache GitHub organization"
+        )
         await recorder.concern(
-            "Source commit is not in the history of its GitHub repository",
+            message,
             {"repository": repository, "commit": sha, "run_commit": tip},
         )
         return None

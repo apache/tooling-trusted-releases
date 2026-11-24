@@ -952,11 +952,20 @@ async def test_source_trees_concern_when_uncomparable(
 
 
 @pytest.mark.asyncio
-async def test_source_trees_concern_when_declared_commit_outside_run_history(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("default", "expected"),
+    [
+        ("a" * 40, "Source commit is not the commit the workflow run started from or one of its ancestors"),
+        (None, "Source commit is not on a branch or tag of a repository in the apache GitHub organization"),
+    ],
+)
+async def test_source_trees_concern_when_declared_commit_outside_run_history(
+    monkeypatch: pytest.MonkeyPatch, default: str | None, expected: str
+) -> None:
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     recorded = atr.models.attestable.AttestableV2(
-        source=atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, declared="d" * 40)
+        source=atr.models.attestable.SourceV2(repository="apache/test", default=default, declared="d" * 40)
     )
     in_history = mock.AsyncMock(return_value=False)
 
@@ -966,10 +975,8 @@ async def test_source_trees_concern_when_declared_commit_outside_run_history(mon
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    in_history.assert_awaited_once_with("apache/test", "d" * 40, "a" * 40)
-    assert [message for message, _ in recorder.concern_calls] == [
-        "Source commit is not in the history of its GitHub repository"
-    ]
+    in_history.assert_awaited_once_with("apache/test", "d" * 40, default)
+    assert [message for message, _ in recorder.concern_calls] == [expected]
 
 
 @pytest.mark.asyncio
