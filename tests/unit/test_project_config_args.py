@@ -305,7 +305,7 @@ def test_full_sync_with_no_policy_block_resets_whole_policy() -> None:
 def test_project_config_rejects_trusted_publishing_settings(field: str, value: object) -> None:
     # These are a credential rather than metadata, so the .asf.yaml route refuses
     # them by name instead of as a generic unknown key
-    with pytest.raises(pydantic.ValidationError, match=re.escape("configured in ATR, not through .asf.yaml")):
+    with pytest.raises(pydantic.ValidationError, match=re.escape("not accepted through .asf.yaml")):
         _project_config(**{field: value})
 
 

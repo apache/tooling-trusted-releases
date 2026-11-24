@@ -20,40 +20,6 @@ import e2e.policy.helpers as helpers
 from playwright.sync_api import Page, expect
 
 
-def test_github_repository_branch_can_be_cleared(page_project: Page) -> None:
-    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
-    repo_input = helpers.input_github_repository_name(page_project)
-    repo_input.fill("tooling-actions")
-    branch_input = helpers.input_github_repository_branch(page_project)
-    branch_input.fill("main")
-    helpers.trusted_publishing_form_save_button(page_project).click()
-    page_project.wait_for_load_state()
-
-    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
-    branch_input = helpers.input_github_repository_branch(page_project)
-    branch_input.fill("")
-    helpers.trusted_publishing_form_save_button(page_project).click()
-    page_project.wait_for_load_state()
-
-    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
-    branch_input = helpers.input_github_repository_branch(page_project)
-    expect(branch_input).to_have_value("")
-
-
-def test_github_repository_branch_value_persists(page_project: Page) -> None:
-    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
-    repo_input = helpers.input_github_repository_name(page_project)
-    repo_input.fill("tooling-actions")
-    branch_input = helpers.input_github_repository_branch(page_project)
-    branch_input.fill("2.5.x")
-    helpers.trusted_publishing_form_save_button(page_project).click()
-    page_project.wait_for_load_state()
-
-    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
-    branch_input = helpers.input_github_repository_branch(page_project)
-    expect(branch_input).to_have_value("2.5.x")
-
-
 def test_source_excludes_lightweight_can_be_cleared(page_project: Page) -> None:
     root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)

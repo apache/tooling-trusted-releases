@@ -25,9 +25,11 @@ import atr.constants as constants
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
+import atr.get.committees as committees
 import atr.get.compose as compose
 import atr.get.docs as docs
 import atr.get.keys as keys
+import atr.get.projects as projects
 import atr.htm as htm
 import atr.models.attestable
 import atr.models.safe as safe
@@ -81,7 +83,7 @@ async def selected(
         htm.a(".btn.btn-outline-primary.me-2", href="#file-upload")["Use the browser"],
         htm.a(".btn.btn-outline-primary.me-2", href="#svn-upload")["Use SVN"],
         htm.a(".btn.btn-outline-primary.me-2", href="#rsync-upload")["Use rsync"],
-        htm.a(".btn.btn-outline-primary.me-2", href="#github-upload")["Use GitHub Workflow"],
+        htm.a(".btn.btn-outline-primary.me-2", href="#github-upload")["Use GitHub Actions"],
         htm.a(".btn.btn-outline-primary", href="#maven-upload")["Use Maven"],
     ]
 
@@ -171,35 +173,50 @@ async def selected(
 
 
 def _render_github_workflow(block: htm.Block, release: sql.Release, ci_builds_enabled: bool) -> None:
-    block.h2(id="github-upload")["GitHub Workflow"]
-    block.p[
-        "If your project is approved for reproducible builds, you can ",
-        "upload files into this draft from a GitHub repository using GitHub Actions.",
-    ]
-    if not ci_builds_enabled:
+    block.h2(id="github-upload")["GitHub Actions"]
+    guide = htm.a(href=util.as_url(docs.page, path="github-actions-uploads"))["Uploads from GitHub Actions"]
+    committee_key = release.project.committee_key
+    if (not ci_builds_enabled) and (committee_key is not None):
         block.div(".alert.alert-info")[
             htm.p[
-                "CI builds are not enabled for this committee, so ATR will not accept uploads from a GitHub workflow."
+                f"Uploads from GitHub Actions are not allowed for the {committee_key} PMC, ",
+                "so a workflow cannot upload to this draft.",
             ],
             htm.p(".mb-0")[
-                "To enable them, your builds must be reproducible and approved by the ASF Security team, ",
-                "and your committee needs an automated release signing key from ASF Infrastructure. The ",
-                htm.a(href=util.as_url(docs.page, path="trusted-publishing"))["Trusted Publishing guide"],
-                " explains each step.",
+                "The ",
+                htm.a(href=util.as_url(committees.view, name=committee_key))["committee page"],
+                " says why, and a PMC member can change it there. See ",
+                guide,
+                ".",
             ],
         ]
         return
-    block.append(
-        htm.ol[
-            htm.li["Ensure GitHub Actions is enabled for your repository"],
-            htm.li[
-                "Create a new workflow file in the .github/workflows/ directory of your repository, ",
-                "following the steps ",
-                htm.a(href="https://docs.github.com/en/actions/tutorials/create-an-example-workflow")["here"],
-            ],
-            htm.li["Add the example code below to your workflow file, making sure to set the correct file paths"],
+    if release.is_embargoed:
+        block.div(".alert.alert-info")["This release is embargoed, so a workflow cannot upload to it."]
+        return
+    block.p[
+        "A GitHub Actions workflow can upload files into this draft, when a PMC member or release manager starts it. ",
+        "See ",
+        guide,
+        ".",
+    ]
+    project_url = util.as_url(projects.view, project_key=release.project.key)
+    repositories = sorted(release.project.upload_repositories)
+    if not repositories:
+        block.div(".alert.alert-warning")[
+            "This project lists no GitHub repository under apache/, so no workflow can upload to it. ",
+            "Add one to the repositories on the ",
+            htm.a(href=project_url)["project page"],
+            ".",
         ]
-    )
+        return
+    block.p[
+        "The workflow has to run in a repository this project lists: ",
+        *render.code_list(repositories),
+        ". Change the list on the ",
+        htm.a(href=project_url)["project page"],
+        ".",
+    ]
     block.pre[
         f"""
 name: Upload to ATR
@@ -319,9 +336,9 @@ def _workflow_upload_warning(selected_source: atr.models.attestable.SourceV2) ->
         return None
     warning = htm.Block(htm.div, classes=".alert.alert-warning")
     warning.p[
-        htm.strong["This release has files uploaded by a GitHub Trusted Publishing workflow."],
+        htm.strong["This release has files uploaded by a GitHub Actions workflow."],
         " Uploading files by hand will add to or replace them, which is unusual for a release built by a workflow. ",
-        "If you meant to update the release, re-running the workflow is probably the better route.",
+        "If you meant to update the release, starting a new run of the workflow is probably the better route.",
     ]
     # An override means someone has already said which commit the files come from
     if len(selected_source.candidates) > 1:

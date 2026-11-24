@@ -465,6 +465,13 @@ async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[safe.
     return path_to_hash, path_to_size
 
 
+async def revision_made_by_workflow(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
+) -> bool:
+    """Whether a GitHub workflow made the revision, going by the token payload kept beside it."""
+    return await aiofiles.os.path.isfile(github_tp_payload_path(project_key, version_key, revision_number))
+
+
 async def write_checks_data(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,

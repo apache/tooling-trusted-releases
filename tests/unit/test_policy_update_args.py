@@ -38,34 +38,20 @@ def test_policy_update_args_rejects_invalid_min_hours(min_hours: int) -> None:
         _policy_update(min_hours=min_hours)
 
 
-def test_policy_update_args_rejects_github_repository_name_with_slash() -> None:
-    with pytest.raises(pydantic.ValidationError, match="must not contain a slash"):
-        _policy_update(github_repository_name="apache/tooling")
-
-
 @pytest.mark.parametrize(
-    "field",
+    ("field", "value"),
     [
-        "github_compose_workflow_path",
-        "github_vote_workflow_path",
-        "github_finish_workflow_path",
+        ("github_repository_name", "example"),
+        ("github_repository_branch", "main"),
+        ("github_compose_workflow_path", [".github/workflows/compose.yml"]),
+        ("github_vote_workflow_path", [".github/workflows/vote.yml"]),
+        ("github_finish_workflow_path", [".github/workflows/finish.yml"]),
+        ("github_repository_name", None),
     ],
 )
-def test_policy_update_args_rejects_invalid_workflow_paths(field: str) -> None:
-    with pytest.raises(pydantic.ValidationError, match="must start with"):
-        _policy_update(**{field: ["build.yml"]})
-
-
-def test_policy_update_args_allows_partial_trusted_publishing_update() -> None:
-    args = _policy_update(github_repository_branch="release")
-
-    assert args.github_repository_branch == "release"
-
-
-def test_policy_update_args_validates_normalised_workflow_paths() -> None:
-    args = _policy_update(github_vote_workflow_path=[" .github/workflows/vote.yml ", "  "])
-
-    assert args.github_vote_workflow_path == [" .github/workflows/vote.yml ", "  "]
+def test_policy_update_args_refuses_workflow_settings(field: str, value: object) -> None:
+    with pytest.raises(pydantic.ValidationError, match=f"are not accepted: {field}"):
+        _policy_update(**{field: value})
 
 
 def test_policy_update_args_validates_recipient_addresses() -> None:

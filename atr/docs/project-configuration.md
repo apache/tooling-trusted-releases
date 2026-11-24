@@ -12,7 +12,6 @@
 * [Metadata](#metadata)
 * [Security](#security)
 * [Lifecycle](#lifecycle)
-* [Trusted Publishing](#trusted-publishing)
 * [Compose](#compose)
 * [Vote](#vote)
 * [Finish](#finish)
@@ -29,8 +28,8 @@ though it is where you set [cycle dates](#cycle-dates).
 Who can change a setting depends on the tab:
 
 * Members of the project's committee, and its release managers, can edit the Metadata and Security
-  tabs, and the release policy tabs: Lifecycle, Trusted Publishing, Compose, Vote, Finish, and
-  Third-party distribution.
+  tabs, and the release policy tabs: Lifecycle, Compose, Vote, Finish, and Third-party
+  distribution.
 * Only members of the committee can change a project's categories and programming languages, or use
   **Export .asf.yaml**.
 * Everybody else sees the same settings, but cannot change them.
@@ -51,6 +50,9 @@ announcement emails.
 * **Homepage.** The project website. Required.
 * **Download page.** The project's official download page. Required.
 * **Repositories.** The project's source repositories, one per line. At least one is required.
+  A GitHub Actions workflow can upload to the project only from a repository on this list, when the
+  PMC allows [uploads from GitHub Actions](github-actions-uploads). The tab shows which entries ATR
+  recognises as GitHub repositories under `apache/`.
 * **Lifecycle page.** The page describing the project's release support and lifecycle plans.
 * **Bug database.** The project's issue tracker.
 * **Mailing lists page.** The page on the project website that lists its mailing lists.
@@ -110,16 +112,6 @@ Each cycle has its own dates, which you set from the cycle's entry on the Releas
 ATR fills in the dates of the cycle's first release candidate, first release, and latest release
 itself. These dates feed the project's [lifecycle events](archiving-and-lifecycle#lifecycle-events),
 which are published in the [Release catalog](release-catalog#machine-readable-data).
-
-## Trusted Publishing
-
-The Trusted Publishing tab names the GitHub repository, branch, and workflows that ATR should trust
-to act on the project's releases. See
-[Configuring repository and workflow paths](trusted-publishing#configuring-repository-and-workflow-paths).
-
-These settings can only be changed here, by a committee member. They are not part of `.asf.yaml`
-synchronization: a registered workflow acts as the PMC without a login, which makes them a
-credential rather than metadata, which should not be configurable by just anyone with repository access.
 
 ## Compose
 
@@ -229,8 +221,12 @@ finish phase keeps the list it started with.
 
 You can manage project metadata in ATR or in the `project` block of your repository's `.asf.yaml`
 file. Committee members can use **Export .asf.yaml** on the project page to get the current
-configuration as a starting point. Trusted Publishing settings are **not** configurable this way as they
-authorise access to your ATR projects from GitHub, and must be configured in ATR.
+configuration as a starting point. Allowing [uploads from GitHub Actions](github-actions-uploads)
+is **not** part of the file; a PMC member does that on the committee page. Nor are a project's
+[GitHub OIDC restrictions](github-actions-uploads#restricting-which-runs-can-upload), which a PMC
+member sets under Advanced settings on the project page. The `repositories` list is part of the
+file, and it decides which repositories' workflows can upload, so a full synchronization that leaves
+it out stops those uploads.
 
 For example, the Maven Filtering project has the following metadata:
 

@@ -99,7 +99,8 @@ atr jwt refresh         # the client renews the JWT itself afterwards
 
 * **Bearer JWT:** the endpoint declares the `BearerAuth` scheme in the spec.
 * **System token (Bearer):** `/api/project/config` accepts only system tokens, which are minted for trusted services by foundation administrators.
-* **Trusted Publisher JWT in body:** GitHub Actions workflows pass a GitHub OIDC token in the request body. These endpoints don’t declare `BearerAuth`.
+* **GitHub OIDC token in body:** GitHub Actions workflows pass a GitHub OIDC token in the request body. These endpoints don’t declare `BearerAuth`.
+* **Bearer JWT or project JWT:** also accepts the short lived JWT a workflow gets from `/api/publisher/jwt/create`, for that one project.
 * **GitHub workflow token:** callbacks from workflows that ATR itself triggered.
 * **Test mode only:** available only when ATR runs in test mode.
 * **PAT in body:** the JWT exchange itself, which takes the PAT in the request body.
@@ -189,6 +190,7 @@ The 63 endpoints, grouped by area. Each endpoint links to its entry in the [Swag
 | --- | --- | --- | --- | --- |
 | `GET` | [`/api/distribution/list/{project_key}/{version_key}`](/api/docs#/default/get_distribution_list) | Public | List recorded distributions for a release. | [`atr distribution list`](#cli-voting-announcing-and-distribution) |
 | `POST` | [`/api/distribution/record`](/api/docs#/default/post_distribution_record) | Bearer JWT | Record a manual distribution. | [`atr distribution record`](#cli-voting-announcing-and-distribution) |
+| `POST` | [`/api/distribution/stage`](/api/docs#/default/post_distribution_stage) | Bearer JWT or project JWT | Record a staging distribution for a draft release. | |
 
 ### API: Keys
 
@@ -207,7 +209,7 @@ The 63 endpoints, grouped by area. Each endpoint links to its entry in the [Swag
 | Method | Endpoint | Auth | Purpose | CLI commands |
 | --- | --- | --- | --- | --- |
 | `GET` | [`/api/policy/get/{project_key}`](/api/docs#/default/get_policy_get) | Public | Get project policy by name. | |
-| `POST` | [`/api/policy/update`](/api/docs#/default/post_policy_update) | Bearer JWT | Update release policy fields for a project. | |
+| `POST` | [`/api/policy/update`](/api/docs#/default/post_policy_update) | Bearer JWT | Update release policy fields for a project. The GitHub workflow repository, branch and workflow path fields are not accepted. | |
 | `POST` | [`/api/project/config`](/api/docs#/default/post_project_config_upsert) | System token (Bearer) | Upsert a project's full configuration. | |
 | `GET` | [`/api/project/get/{project_key}`](/api/docs#/default/get_project_get) | Public | Get a project by name. | [`atr sign`](#cli-files-and-signatures) |
 | `GET` | [`/api/project/releases/{project_key}`](/api/docs#/default/get_project_releases) | Public | List releases by project name. | [`atr release list`](#cli-releases) |
@@ -255,18 +257,21 @@ The 63 endpoints, grouped by area. Each endpoint links to its entry in the [Swag
 | --- | --- | --- | --- | --- |
 | `GET` | [`/api/task/get/{task_id}`](/api/docs#/default/get_task_get) | Bearer JWT | Not described in the spec. | [`atr sbom generate`](#cli-other-api-backed-commands) |
 
-### API: Trusted publishing
+### API: GitHub workflows
+
+The three upload endpoints, `publisher/jwt/create`, `publisher/release/source` and `publisher/ssh/register`, take a `project` field, the project the workflow uploads to. See [Uploads from GitHub Actions](github-actions-uploads#what-atr-checks). `publisher/distribution/record`, `publisher/release/announce` and `publisher/vote/resolve` accept only a workflow whose path is stored on the project's release policy, and no page or route writes those paths.
 
 | Method | Endpoint | Auth | Purpose | CLI commands |
 | --- | --- | --- | --- | --- |
 | `POST` | [`/api/distribute/record_from_workflow`](/api/docs#/default/post_distribution_record_from_workflow) | GitHub workflow token | Record the result of an automated distribution from the GH tooling-actions workflow. | |
-| `POST` | [`/api/distribute/ssh/register`](/api/docs#/default/post_distribute_ssh_register) | Trusted Publisher JWT in body | Register an SSH key sent with a corroborating Trusted Publisher JWT, validating the requested release is in the correct phase. | |
+| `POST` | [`/api/distribute/ssh/register`](/api/docs#/default/post_distribute_ssh_register) | GitHub OIDC token in body | Register an SSH key sent with a corroborating GitHub OIDC token, validating the requested release is in the correct phase. | |
 | `POST` | [`/api/distribute/task/status`](/api/docs#/default/post_update_distribution_task_status) | GitHub workflow token | Update the status of a distribution task Validates the caller is a Github workflow, triggered by ATR itself | |
-| `POST` | [`/api/publisher/distribution/record`](/api/docs#/default/post_publisher_distribution_record) | Trusted Publisher JWT in body | Record a distribution with a corroborating Trusted Publisher JWT. | |
-| `POST` | [`/api/publisher/release/announce`](/api/docs#/default/post_publisher_release_announce) | Trusted Publisher JWT in body | Announce a release with a corroborating Trusted Publisher JWT. | |
-| `POST` | [`/api/publisher/release/source`](/api/docs#/default/post_publisher_release_source) | Trusted Publisher JWT in body | Declare the repository and commit that source archives in a draft were built from, with a corroborating Trusted Publisher JWT. | |
-| `POST` | [`/api/publisher/ssh/register`](/api/docs#/default/post_publisher_ssh_register) | Trusted Publisher JWT in body | Register an SSH key sent with a corroborating Trusted Publisher JWT. | |
-| `POST` | [`/api/publisher/vote/resolve`](/api/docs#/default/post_publisher_vote_resolve) | Trusted Publisher JWT in body | Resolve a vote with a corroborating Trusted Publisher JWT. | |
+| `POST` | [`/api/publisher/distribution/record`](/api/docs#/default/post_publisher_distribution_record) | GitHub OIDC token in body | Record a distribution with a corroborating GitHub OIDC token. | |
+| `POST` | [`/api/publisher/jwt/create`](/api/docs#/default/post_publisher_jwt_create) | GitHub OIDC token in body | Exchange a GitHub OIDC token for a short lived ATR JWT. | |
+| `POST` | [`/api/publisher/release/announce`](/api/docs#/default/post_publisher_release_announce) | GitHub OIDC token in body | Announce a release with a corroborating GitHub OIDC token. | |
+| `POST` | [`/api/publisher/release/source`](/api/docs#/default/post_publisher_release_source) | GitHub OIDC token in body | Declare the repository and commit that source archives in a draft were built from, with a corroborating GitHub OIDC token. | |
+| `POST` | [`/api/publisher/ssh/register`](/api/docs#/default/post_publisher_ssh_register) | GitHub OIDC token in body | Register an SSH key sent with a corroborating GitHub OIDC token. | |
+| `POST` | [`/api/publisher/vote/resolve`](/api/docs#/default/post_publisher_vote_resolve) | GitHub OIDC token in body | Resolve a vote with a corroborating GitHub OIDC token. | |
 
 ### API: Test mode
 

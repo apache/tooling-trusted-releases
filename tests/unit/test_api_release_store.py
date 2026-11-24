@@ -40,6 +40,8 @@ def app():
 @pytest.fixture
 def state_tmp(monkeypatch, tmp_path):
     monkeypatch.setattr(atr.api.paths, "get_tmp_dir", lambda: safe.StatePath(tmp_path))
+    # There is a draft to add to, unless a test says otherwise
+    monkeypatch.setattr(atr.api.interaction, "uploadable_draft", mock.AsyncMock(return_value=sql.Release()))
     return tmp_path
 
 

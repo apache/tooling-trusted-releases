@@ -28,7 +28,10 @@ import atr.catalog_site as catalog_site
 import atr.constants as constants
 import atr.cycles as cycles
 import atr.db as db
+import atr.mail as mail
 import atr.models.api as api
+import atr.models.args as args
+import atr.models.basic as basic
 import atr.models.calver as calver
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -37,6 +40,7 @@ import atr.quota as quota
 import atr.registry as registry
 import atr.storage as storage
 import atr.tasks as tasks
+import atr.upload_restrictions as upload_restrictions
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -120,14 +124,19 @@ class ReleaseManager(CommitteeParticipant):
         project.download_page = str(form.download_page) if form.download_page else None
         project.bug_database = str(form.bug_database) if form.bug_database else None
         project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
+        upload_repositories = project.upload_repositories
         project.repositories = list(form.repositories)
         project.standards = list(form.standards)
         project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+        repositories_change = await _upload_repositories_change_no_commit(
+            self.__data, project, upload_repositories, self.__asf_uid
+        )
 
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_key=str(project.key),
+            **repositories_change,
         )
 
     async def edit_security(self, form: shared.projects.SecurityForm) -> None:
@@ -475,6 +484,41 @@ class CommitteeMember(ReleaseManager):
             approval_request_id=approval_request_id,
         )
 
+    async def upload_restrictions_set(
+        self, project_key: safe.ProjectKey, workflow_paths: list[str], ref_type: str, ref_patterns: list[str]
+    ) -> bool:
+        """Set which GitHub Actions workflow runs can upload to the project, returning whether anything changed."""
+        try:
+            upload_restrictions.validate(workflow_paths, ref_type, ref_patterns)
+        except ValueError as e:
+            raise storage.AccessError(str(e), status=400) from e
+        await self.__data.begin_immediate()
+        try:
+            project = await self.__validate_project_in_committee(project_key)
+            options = await self.__data.project_security_options(project_key=str(project.key)).get()
+            if options is None:
+                options = sql.ProjectSecurityOptions(project_key=str(project.key))
+                self.__data.add(options)
+            before = _upload_restriction_values(options)
+            options.github_upload_workflow_paths = list(workflow_paths)
+            options.github_upload_ref_type = ref_type
+            options.github_upload_ref_patterns = list(ref_patterns)
+            after = _upload_restriction_values(options)
+            if after == before:
+                await self.__data.rollback()
+                return False
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            before=before,
+            after=after,
+        )
+        return True
+
     async def __claim_approval(
         self, approval_request_id: int, project_key: safe.ProjectKey, action: sql.ApprovalAction
     ) -> None:
@@ -608,6 +652,7 @@ class FoundationAdmin(FoundationCommitter):
         try:
             await self.__data.begin_immediate()
             project, created = await self.__resolve_or_create_project_no_commit(args)
+            upload_repositories = project.upload_repositories
             project_args = args.project
             policy_args = args.policy
             if args.sync_mode == "full":
@@ -625,6 +670,9 @@ class FoundationAdmin(FoundationCommitter):
             if args.distributions is not None:
                 await self.__write_as.distributions.expected_replace_no_commit(args.project_key, args.distributions)
             project.mark_updated(by=self.__asf_uid, update_type=update_type)
+            repositories_change = await _upload_repositories_change_no_commit(
+                self.__data, project, upload_repositories, self.__asf_uid
+            )
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             await self.__data.rollback()
@@ -644,6 +692,7 @@ class FoundationAdmin(FoundationCommitter):
             committee_key=str(args.committee_key),
             project_key=str(args.project_key),
             created=created,
+            **repositories_change,
         )
         return created
 
@@ -818,6 +867,59 @@ def _complete_project_args(
 
 def _none_if_default(value: int, default: int) -> int | None:
     return None if (value == default) else value
+
+
+async def _upload_repositories_change_no_commit(
+    data: db.Session, project: sql.Project, before: set[str], asf_uid: str
+) -> dict[str, basic.JSON]:
+    """Queue the notice for a change to where a project's uploads can come from, returning the audit fields."""
+    after = project.upload_repositories
+    if (after == before) or (project.committee_key is None):
+        return {}
+    committee = await data.committee(key=project.committee_key).get()
+    # Nothing to record unless the PMC allows uploads. The whole list is recorded when it turns them on
+    if (committee is None) or (not committee.github_oidc_enabled):
+        return {}
+    data.add(
+        sql.Task(
+            task_type=sql.TaskType.MESSAGE_SEND,
+            task_args=_upload_repositories_notice(project, asf_uid, before, after).as_task_args(),
+            asf_uid=constants.SYSTEM_SERVICE_UID,
+        )
+    )
+    return {
+        "upload_repositories_before": [*sorted(before)],
+        "upload_repositories_after": [*sorted(after)],
+    }
+
+
+def _upload_repositories_notice(project: sql.Project, asf_uid: str, before: set[str], after: set[str]) -> args.Send:
+    project_url = util.absolute_url(f"/projects/{project.key}")
+    now_listed = "\n".join(f"  {name}" for name in sorted(after)) or "  none"
+    were_listed = "\n".join(f"  {name}" for name in sorted(before)) or "  none"
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=f"private@{project.committee_key}.apache.org",
+        subject=f"[ATR] Repositories that can upload to {project.key} changed",
+        body=(
+            f"{asf_uid} changed the repositories listed for {project.key}.\n\n"
+            "Workflows in these GitHub repositories can now upload files to its drafts, "
+            "when a PMC member or release manager starts them:\n\n"
+            f"{now_listed}\n\n"
+            f"Before the change they were:\n\n{were_listed}\n\n"
+            f"To review the list, see {project_url}\n"
+        ),
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
+def _upload_restriction_values(options: sql.ProjectSecurityOptions) -> dict[str, basic.JSON]:
+    return {
+        "workflow_paths": [*options.github_upload_workflow_paths],
+        "ref_type": options.github_upload_ref_type,
+        "ref_patterns": [*options.github_upload_ref_patterns],
+    }
 
 
 def _version_scheme_resets(project: sql.Project, args: api.ProjectConfigProjectArgs) -> dict[str, object]:

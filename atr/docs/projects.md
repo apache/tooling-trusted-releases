@@ -81,7 +81,7 @@ projects*.
   policies.
 * [***Lifecycle events***](archiving-and-lifecycle#lifecycle-events) are generated for project
   releases.
-* See [Trusted Publishing](trusted-publishing).
+* See [Uploads from GitHub Actions](github-actions-uploads).
 
 The initial set of projects was seeded from ***DOAP files*** and observed release activity. That
 seed was a one-off: ATR is now the record, and projects.apache.org reads from it. New projects are

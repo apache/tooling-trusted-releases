@@ -17,13 +17,11 @@
 
 import inspect
 import unittest.mock as mock
-from types import SimpleNamespace
 
 import pytest
 import werkzeug.exceptions as exceptions
 
 import atr.api as api
-import atr.db.interaction as interaction
 import atr.models.api as models_api
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -65,27 +63,6 @@ async def test_release_source_declares_for_the_caller(
     assert body["endpoint"] == "/release/source"
     assert body["revision"]["number"] == "00003"
     set_archive_sources.assert_awaited_once_with(PK, VK, args.sources, safe.RevisionNumber("00002"))
-    storage_write.assert_called_once_with("tester")
-
-
-async def test_publisher_release_source_declares_for_the_calling_project(
-    monkeypatch: pytest.MonkeyPatch, set_archive_sources: mock.AsyncMock, storage_write: mock.MagicMock
-):
-    context = SimpleNamespace(payload=object(), asf_uid="tester")
-    monkeypatch.setattr(api.api.auth, "trusted_publisher_context", lambda: context)
-    resolve = mock.AsyncMock(return_value=("tester", SimpleNamespace(safe_key=PK)))
-    monkeypatch.setattr(api.interaction, "trusted_project_for_payload", resolve)
-    args = models_api.PublisherReleaseSourceArgs(publisher="tester", jwt="token", version=VK, sources=[_declaration()])
-
-    body, status = await inspect.unwrap(api.publisher_release_source)(
-        _publisher_release_source="publisher/release/source", data=args
-    )
-
-    assert status == 201
-    assert body["endpoint"] == "/publisher/release/source"
-    # The project comes from the token, and declaring is a compose operation
-    resolve.assert_awaited_once_with(context.payload, "tester", interaction.TrustedProjectPhase.COMPOSE)
-    set_archive_sources.assert_awaited_once_with(PK, VK, args.sources, None)
     storage_write.assert_called_once_with("tester")
 
 

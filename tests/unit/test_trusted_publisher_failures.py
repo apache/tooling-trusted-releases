@@ -166,11 +166,11 @@ async def test_refused_event_is_logged_without_alerting(
 @pytest.mark.parametrize(
     ("exc", "message"),
     [
-        (pyjwt.ExpiredSignatureError(_SECRET_DETAIL), "Trusted Publisher token has expired"),
-        (pyjwt.InvalidSignatureError(_SECRET_DETAIL), "Trusted Publisher token signature is invalid"),
-        (pyjwt.InvalidAudienceError(_SECRET_DETAIL), "Trusted Publisher token audience is invalid"),
-        (pyjwt.DecodeError(_SECRET_DETAIL), "Trusted Publisher token is invalid"),
-        (interaction.InteractionError(_SECRET_DETAIL), "Trusted Publisher is not supported"),
+        (pyjwt.ExpiredSignatureError(_SECRET_DETAIL), "GitHub workflow token has expired"),
+        (pyjwt.InvalidSignatureError(_SECRET_DETAIL), "GitHub workflow token signature is invalid"),
+        (pyjwt.InvalidAudienceError(_SECRET_DETAIL), "GitHub workflow token audience is invalid"),
+        (pyjwt.DecodeError(_SECRET_DETAIL), "GitHub workflow token is invalid"),
+        (interaction.InteractionError(_SECRET_DETAIL), "Publisher is not supported"),
     ],
 )
 async def test_rejection_message_is_fixed_per_reason(
@@ -199,7 +199,7 @@ async def test_rejection_message_omits_validation_input(monkeypatch: pytest.Monk
 
     rejected = await _authenticate()
 
-    assert str(rejected) == "Trusted Publisher token claims are invalid"
+    assert str(rejected) == "GitHub workflow token claims are invalid"
     assert recorder.auth_failures == [("trusted_publisher", "claims_invalid")]
 
 

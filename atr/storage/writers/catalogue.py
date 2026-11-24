@@ -548,10 +548,12 @@ class FoundationAdmin:
         # Release-key children rewrite their prefix; project-key children point at the target
         release_child_refs = [(model, attr) for model, attr in repoint.RELEASE_KEY_REFS if model is not sql.Release]
         await self._rewrite_prefix(release_child_refs, source_release_keys, source, target)
+        # Expected distributions and security options are the source's own configuration, like
+        # its cycles, and could clash with the target's, so they go with the source rather
+        # than moving
+        stays = (sql.Project, sql.ProjectCycle, sql.Release, sql.ExpectedDistribution, sql.ProjectSecurityOptions)
         for model, attr in repoint.PROJECT_KEY_REFS:
-            # Expected distributions are the source's own configuration, like its cycles, and
-            # could clash with the target's, so they go with the source rather than moving
-            if model in (sql.Project, sql.ProjectCycle, sql.Release, sql.ExpectedDistribution):
+            if model in stays:
                 continue
             column = via(getattr(model, attr))
             await self.__data.execute(sqlmodel.update(model).where(column == source).values(**{attr: target}))

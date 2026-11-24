@@ -464,3 +464,13 @@ def test_path_uploaders_deduplicates_across_revisions():
 
     assert attestable.path_uploaders(v2, "a.tar.gz") == ["alice", "bob"]
     assert attestable.path_uploaders(v2, "missing") == []
+
+
+async def test_revision_made_by_workflow(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_sidecar_names(tmp_path / "proj" / "1.0", ["00001.json", "00002.json", "00002.github-tp.json"])
+    monkeypatch.setattr(attestable.paths, "get_attestable_dir", lambda: safe.StatePath(tmp_path))
+    project_key, version_key = safe.ProjectKey("proj"), safe.VersionKey("1.0")
+
+    assert not await attestable.revision_made_by_workflow(project_key, version_key, safe.RevisionNumber("00001"))
+    assert await attestable.revision_made_by_workflow(project_key, version_key, safe.RevisionNumber("00002"))
+    assert not await attestable.revision_made_by_workflow(project_key, version_key, safe.RevisionNumber("00003"))

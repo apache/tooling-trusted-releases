@@ -22,6 +22,7 @@ CLOSER_LUA_URL: Final[str] = "https://www.apache.org/dyn/closer.lua"
 DOWNLOADS_APACHE_URL: Final[str] = "https://downloads.apache.org"
 ARCHIVE_APACHE_URL: Final[str] = "https://archive.apache.org/dist"
 SVN_DIST_ROOT_URL: Final[str] = "https://dist.apache.org/repos/dist"
+AUTOMATED_RELEASE_SIGNING_URL: Final[str] = "https://infra.apache.org/release-signing.html#automated-release-signing"
 
 # Workflow events where the ref and sha are the ones a committer chose to run. Others, such as
 # pull_request_target, carry the default branch's ref while running on behalf of somebody else's change

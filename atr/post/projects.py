@@ -79,6 +79,34 @@ async def add_project(
 
 
 @post.typed
+async def advanced(
+    session: web.Committer,
+    _project_advanced: Literal["project/advanced"],
+    project_key: safe.ProjectKey,
+    restrictions_form: shared.projects.UploadRestrictionsForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /project/advanced/<project_key>
+    """
+    async with storage.write(session) as write:
+        try:
+            wacm = await _write_as_committee_member(write, session, project_key)
+            await wacm.project.upload_restrictions_set(
+                project_key,
+                restrictions_form.workflow_path_list(),
+                restrictions_form.stored_ref_type(),
+                restrictions_form.ref_pattern_list(),
+            )
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.advanced, project_key=str(project_key), error=f"Error saving the restrictions: {e}"
+            )
+    return await session.redirect(
+        get.projects.advanced, project_key=str(project_key), success="GitHub OIDC restrictions saved."
+    )
+
+
+@post.typed
 async def archive(
     session: web.Committer,
     _project_archive: Literal["project/archive"],
@@ -621,31 +649,6 @@ async def _process_seed_expected_distributions(
     return await _expected_distributions_redirect(session, project_key, success=f"{noun} added.")
 
 
-async def _process_trusted_publishing_form(
-    session: web.Committer, tp_form: shared.projects.TrustedPublishingPolicyForm
-) -> web.WerkzeugResponse:
-    project_key = tp_form.project_key
-
-    async with storage.write(session) as write:
-        try:
-            warm = await _write_as_release_manager(write, session, project_key)
-            await warm.policy.edit_trusted_publishing(tp_form)
-        except storage.AccessError as e:
-            return await session.redirect(
-                get.projects.view,
-                project_key=project_key,
-                tab="trusted-publishing",
-                error=f"Error editing Trusted Publishing policy: {e}",
-            )
-
-    return await session.redirect(
-        get.projects.view,
-        project_key=project_key,
-        tab="trusted-publishing",
-        success="Trusted Publishing options saved successfully.",
-    )
-
-
 async def _process_vote_form(session: web.Committer, vote_form: shared.projects.VotePolicyForm) -> web.WerkzeugResponse:
     project_key = vote_form.project_key
 
@@ -752,7 +755,6 @@ _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.We
     shared.projects.FinishPolicyForm: _process_finish_form,
     shared.projects.SecurityForm: _process_security_form,
     shared.projects.SeedExpectedDistributionsForm: _process_seed_expected_distributions,
-    shared.projects.TrustedPublishingPolicyForm: _process_trusted_publishing_form,
     shared.projects.RemoveCategoryForm: _process_remove_category,
     shared.projects.RemoveExpectedDistributionForm: _process_remove_expected_distribution,
     shared.projects.RemoveLanguageForm: _process_remove_language,

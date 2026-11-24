@@ -305,7 +305,7 @@ These checks find stored records that disagree with each other, and stored setti
 | Release and policy download path suffixes are valid paths after filling in their template variables. An unset release suffix uses the policy suffix, and an empty one means the distribution root. Both are valid. | [`release_download_path_suffix`](/ref/atr/validate.py), [`project_download_path_suffix`](/ref/atr/validate.py) | [`validate_download_path_suffix`](/ref/atr/models/validation.py) |
 | Recipient defaults have only `vote` and `announce` entries. Each has a `to` string and `cc` and `bcc` lists of strings, and every address is on `apache.org` or one of its subdomains. The web forms and policy API do not check these addresses when saving them. An entry with an empty `to` and empty lists is allowed. | [`project_recipient_defaults`](/ref/atr/validate.py) | [`_set_recipient_defaults`](/ref/atr/storage/writers/policy.py), [`_validate_recipient`](/ref/atr/mail.py) |
 | The minimum voting period is unset, 0, or 72 to 168 hours. Template and RAT excludes URLs use HTTPS on an allowed host. A security contact, if set, is `security@apache.org` or the committee's own `security@` address. | [`project_min_hours`](/ref/atr/validate.py), [`project_fetch_urls`](/ref/atr/validate.py), [`project_security_contact`](/ref/atr/validate.py) | [`validation.py`](/ref/atr/models/validation.py) |
-| A Trusted Publishing repository name, if set, has no slash, and every workflow path starts with `.github/workflows/`. | [`project_trusted_publishing`](/ref/atr/validate.py) | [`validate_trusted_publishing_constraints`](/ref/atr/util.py) |
+| A stored GitHub workflow repository name, if set, has no slash, and every stored workflow path starts with `.github/workflows/`. | [`project_trusted_publishing`](/ref/atr/validate.py) | [`validate_trusted_publishing_constraints`](/ref/atr/util.py) |
 | Each release finalisation task has a completed SVN publication task for the same project, version, and revision. That task has a valid stored result that records the SVN revision. This only audits the task records. Finalisation itself verifies the published files. | [`release_finalise_publication`](/ref/atr/validate.py) | [`release`](/ref/atr/storage/writers/announce.py) |
 | A pending quarantine has a queued or active validation task. Without one, the upload stays pending and blocks the vote. | [`quarantine_pending`](/ref/atr/validate.py) | [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py) |
 | A staging or pending quarantine has no completion time and belongs to a draft. A failed or acknowledged quarantine has a completion time. A recorded prior revision belongs to the same release, even if that revision no longer exists. | `quarantine_completed`, `quarantine_release`, `quarantine_revision` in [`quarantines`](/ref/atr/validate.py) | [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py), [`quarantine.py`](/ref/atr/tasks/quarantine.py) |
@@ -364,25 +364,36 @@ statement as a compare-and-swap guard. This binds vote initiation to release pha
 policy, committee membership, check results, file storage, and task execution rather than to form
 fields alone.
 
-### Trusted Publishing
+### GitHub workflows
 
-Trusted Publishing settings are validated when they are stored and again when they are used. On
-write, [`validate_trusted_publishing_constraints`](/ref/atr/util.py)
-(validate_trusted_publishing_constraints) and [`policy.py`](/ref/atr/storage/writers/policy.py)
-normalize the configured repository name, branch, and workflow paths. The repository name is
-optional and is stored without a slash. Every workflow path must begin with `.github/workflows/`.
+A request from a GitHub Actions workflow is validated against the project when it arrives. For an
+upload, [`compose_project_for_payload`](/ref/atr/db/interaction.py) (compose_project_for_payload)
+takes the project given in the request and checks that it exists and is active, that its committee
+allows uploads from GitHub Actions and holds an automated release signing key, that the token's
+repository is one of the project's `apache/` GitHub repositories, compared in lower case, and that
+the run is a first attempt.
 
-At request time, [`_trusted_project_checks`](/ref/atr/db/interaction.py) (_trusted_project_checks)
-and [`_trusted_project`](/ref/atr/db/interaction.py) (_trusted_project) compare the GitHub token
-claims with the stored policy. The repository must be under `apache`. The workflow reference must
-begin with that same repository, must include a git ref, and must resolve to a workflow path under
-`.github/workflows/`. ATR then looks up the project by the phase specific workflow path that was
-stored for compose, vote, or finish, and by repository: the one named in the policy when it sets
-one, or otherwise any GitHub repository in the project metadata. Distribution callbacks add one more
+A project's GitHub OIDC restrictions are validated when a PMC member saves them, by
+[`validate`](/ref/atr/upload_restrictions.py) (validate) in both the form and the writer: workflow
+paths start with `.github/workflows/`, patterns need a ref type, and each pattern is one the gate
+matcher supports. [`problem`](/ref/atr/upload_restrictions.py) (problem) compares an upload's token
+with them.
+
+The vote and finish endpoints use the workflow paths stored on the project's release policy, and an
+upload with no project uses the workflow paths in the project's restrictions. [`_trusted_project_checks`](/ref/atr/db/interaction.py)
+(_trusted_project_checks) and [`_trusted_project`](/ref/atr/db/interaction.py) (_trusted_project)
+compare the GitHub token claims with the stored policy. The repository must be under `apache`. The
+workflow reference must begin with that same repository, must include a git ref, and must resolve
+to a workflow path under `.github/workflows/`. ATR then looks up the project by workflow path, in
+the vote or finish paths on the release policy or, for an upload, in the project's restrictions,
+and by repository: the one named in the policy when it sets one, or otherwise any GitHub repository
+in the project metadata. No page or route writes the stored repository name or the vote and finish
+workflow paths, and `policy/update` and `project/config` refuse them, so no project can register a
+workflow for those endpoints. Distribution callbacks add one more
 contextual check in [`trusted_jwt_for_dist`](/ref/atr/db/interaction.py) (trusted_jwt_for_dist),
 which refuses the request unless the named release exists and is in the expected phase for the
 requested operation. The cryptographic validation of the token itself is described in
-[authentication security](authentication-security#github-actions-oidc-trusted-publishing).
+[authentication security](authentication-security#github-actions-oidc).
 
 ### Email delivery
 
@@ -491,13 +502,13 @@ subprocess.run(f"gpg --verify {signature_file} {data_file}", shell=True)
 
 * [`form.py`](/ref/atr/form.py) - Form definitions, validation, and rendering
 * [`db/interaction.py`](/ref/atr/db/interaction.py) - Contextual validation for vote initiation and
-  Trusted Publishing
-* [`storage/writers/policy.py`](/ref/atr/storage/writers/policy.py) - Trusted Publishing policy
-  validation and normalisation
+  GitHub workflow requests
+* [`storage/writers/policy.py`](/ref/atr/storage/writers/policy.py) - Release policy validation
+  and normalisation
 * [`storage/writers/release.py`](/ref/atr/storage/writers/release.py) - Release phase transition
   checks and task state guards
 * [`validate.py`](/ref/atr/validate.py) - Data integrity validators
 * [`util.py`](/ref/atr/util.py) - Shared validation helpers including path handling, recipients, and
-  Trusted Publishing
+  workflow paths
 * [`mail.py`](/ref/atr/mail.py) - Sender and recipient domain enforcement
 * [`htm.py`](/ref/atr/htm.py) - HTML generation utilities

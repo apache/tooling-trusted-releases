@@ -25,6 +25,7 @@ import htpy
 
 import atr.get as get
 import atr.htm as htm
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.source as source
@@ -104,6 +105,14 @@ def archived_project_banner(project: sql.Project, message: str = "") -> htm.Elem
     if not project.is_archived:
         return None
     return htm.div(".alert.alert-warning.mb-4")[f"This project is archived. {message}"]
+
+
+def code_list(names: list[str]) -> list[htm.Element | str]:
+    """Each name as code, with commas between them."""
+    items: list[htm.Element | str] = []
+    for name in names:
+        items.extend([", ", htm.code[name]])
+    return items[1:]
 
 
 def commit_hash(release: sql.Release) -> htm.Element | None:
@@ -465,6 +474,25 @@ def render_checks_summary(
 
     card.append(body.collect())
     return card.collect()
+
+
+def workflow_upload_note(payload: github.TrustedPublisherPayload, *, show_actor: bool = True) -> htm.Element:
+    """Say where a revision made by a GitHub Actions workflow came from."""
+    repository_url = f"https://github.com/{urllib.parse.quote(payload.repository)}"
+    details: list[htm.Element | str] = [
+        "Uploaded by a GitHub Actions workflow in ",
+        htm.code[payload.repository],
+        " at commit ",
+        htm.a(href=f"{repository_url}/commit/{urllib.parse.quote(payload.sha)}")[htm.code[payload.sha[:12]]],
+    ]
+    # The person who started the run, and the link to it, are shown only to people who are signed in
+    if show_actor:
+        details.extend([", started by ", htm.code[payload.actor], " on GitHub"])
+    if show_actor and payload.run_id:
+        run_url = f"{repository_url}/actions/runs/{urllib.parse.quote(payload.run_id)}"
+        details.extend([" (", htm.a(href=run_url)["workflow run"], ")"])
+    details.append(".")
+    return htm.p(".small.text-muted.mb-2")[*details, " Workflow uploads are not reviewed before they arrive."]
 
 
 def _page_link(label: str, url: str | None) -> htm.Element:

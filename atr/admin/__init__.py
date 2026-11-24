@@ -117,6 +117,7 @@ _BROWSABLE_MODELS: Final[tuple[type[sqlmodel.SQLModel], ...]] = (
     sql.PersonalAccessToken,
     sql.Project,
     sql.ProjectCycle,
+    sql.ProjectSecurityOptions,
     sql.PubSubFailure,
     sql.Quarantined,
     sql.Release,

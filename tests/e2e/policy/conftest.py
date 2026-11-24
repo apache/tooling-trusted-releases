@@ -44,12 +44,3 @@ def _clear_policy_excludes(page: Page) -> None:
     policy_helpers.textarea_source_excludes_rat(page).fill("")
     policy_helpers.compose_form_save_button(page).click()
     page.wait_for_load_state()
-
-    helpers.visit(page, policy_helpers.PROJECT_TP_URL)
-    policy_helpers.input_github_repository_name(page).fill("")
-    policy_helpers.input_github_repository_branch(page).fill("")
-    policy_helpers.textarea_github_compose_workflow_path(page).fill("")
-    policy_helpers.textarea_github_vote_workflow_path(page).fill("")
-    policy_helpers.textarea_github_finish_workflow_path(page).fill("")
-    policy_helpers.trusted_publishing_form_save_button(page).click()
-    page.wait_for_load_state()

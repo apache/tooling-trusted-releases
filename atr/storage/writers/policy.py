@@ -29,7 +29,6 @@ import atr.cycles as cycles
 import atr.db as db
 import atr.models as models
 import atr.storage as storage
-import atr.util as util
 
 if TYPE_CHECKING:
     import atr.shared as shared
@@ -39,19 +38,6 @@ _RECIPIENT_API_FIELDS: Final[dict[str, models.sql.RecipientAction]] = {
     "vote_recipients": models.sql.RecipientAction.VOTE,
     "announce_recipients": models.sql.RecipientAction.ANNOUNCE,
 }
-_TRUSTED_PUBLISHING_PATH_FIELDS: Final = frozenset(
-    {
-        "github_compose_workflow_path",
-        "github_vote_workflow_path",
-        "github_finish_workflow_path",
-    }
-)
-_TRUSTED_PUBLISHING_FIELDS: Final = _TRUSTED_PUBLISHING_PATH_FIELDS | frozenset(
-    {
-        "github_repository_branch",
-        "github_repository_name",
-    }
-)
 # Policy fields that carry email templates, paired with the variables each one accepts
 _TEMPLATE_VARIABLE_NAMES: Final[dict[str, frozenset[str]]] = {
     "announce_release_subject": construct.ANNOUNCE_SUBJECT_VARIABLE_NAMES,
@@ -242,18 +228,6 @@ class ReleaseManager(CommitteeParticipant):
         )
         release_policy.auto_archive_prior_release = form.archive_prior_release
         release_policy.download_path_suffix = form.download_path_suffix.strip()
-
-        await self.__commit_and_log(str(project_key))
-
-    async def edit_trusted_publishing(self, form: shared.projects.TrustedPublishingPolicyForm) -> None:
-        project_key = form.project_key
-        _, release_policy = await self.__get_or_create_policy(project_key)
-
-        release_policy.github_repository_name = form.github_repository_name.strip()
-        release_policy.github_repository_branch = form.github_repository_branch.strip()
-        release_policy.github_compose_workflow_path = _split_lines(form.github_compose_workflow_path)
-        release_policy.github_vote_workflow_path = _split_lines(form.github_vote_workflow_path)
-        release_policy.github_finish_workflow_path = _split_lines(form.github_finish_workflow_path)
 
         await self.__commit_and_log(str(project_key))
 
@@ -481,9 +455,6 @@ async def _apply_policy_update_no_commit(
 
     _validate_template_fields(update, fields_to_update)
 
-    if fields_to_update & _TRUSTED_PUBLISHING_FIELDS:
-        normalised_values.update(_normalise_trusted_publishing_update(release_policy, normalised_values))
-
     for field in fields_to_update:
         setattr(release_policy, field, normalised_values[field])
 
@@ -528,47 +499,10 @@ async def _get_or_create_policy(
     return project, release_policy
 
 
-def _normalise_text_list(values: list[str]) -> list[str]:
-    return [value.strip() for value in values if value.strip()]
-
-
-def _normalise_text_value(value: str) -> str:
-    return value.strip()
-
-
 def _normalise_url_value(field: str, value: Any) -> Any:
     if isinstance(value, str) and field.endswith("_url"):
         return value.strip()
     return value
-
-
-def _normalise_trusted_publishing_update(
-    release_policy: models.sql.ReleasePolicy,
-    values: dict[str, Any],
-) -> dict[str, Any]:
-    normalised_values: dict[str, Any] = {}
-
-    github_repository_name = release_policy.github_repository_name
-    if "github_repository_name" in values:
-        github_repository_name = _normalise_text_value(values["github_repository_name"])
-        normalised_values["github_repository_name"] = github_repository_name
-
-    github_repository_branch = release_policy.github_repository_branch
-    if "github_repository_branch" in values:
-        github_repository_branch = _normalise_text_value(values["github_repository_branch"])
-        normalised_values["github_repository_branch"] = github_repository_branch
-
-    all_paths: list[str] = []
-    for field in sorted(_TRUSTED_PUBLISHING_PATH_FIELDS):
-        paths = getattr(release_policy, field)
-        if field in values:
-            paths = _normalise_text_list(values[field])
-            normalised_values[field] = paths
-        all_paths.extend(paths)
-
-    util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
-
-    return normalised_values
 
 
 def _set_recipient_defaults(
@@ -584,10 +518,6 @@ def _set_recipient_defaults(
     else:
         defaults[action.value] = {"to": to, "cc": list(cc), "bcc": list(bcc)}
     release_policy.recipient_defaults = defaults
-
-
-def _split_lines(text: str) -> list[str]:
-    return [line.strip() for line in text.split("\n") if line.strip()]
 
 
 def _split_lines_verbatim(text: str) -> list[str]:

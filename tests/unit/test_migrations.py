@@ -132,6 +132,10 @@ _ROWS = {
         "INSERT INTO expecteddistribution (project_key, platform, owner_namespace, package, version_pattern)"
         " VALUES ('p', 'MAVEN', 'org.example', 'example', '{{VERSION}}')",
     ),
+    "0151": (
+        "INSERT INTO projectsecurityoptions (project_key, github_upload_workflow_paths, github_upload_ref_type,"
+        " github_upload_ref_patterns) VALUES ('p', '[]', '', '[]')",
+    ),
 }
 
 _INSERT_COMMITTEE = (
@@ -164,6 +168,17 @@ _DISTRIBUTION_STATUS_ROWS = (
         f" retries) VALUES ('example-1.0', 'PYPI', '', '{package}', '1.0', 0, {pending}, 0)"
         for package, pending in (("confirmed", 0), ("waiting", 1))
     ],
+)
+_SECURITY_OPTIONS_ROWS = (
+    "INSERT INTO committee (key, is_podling, committee_members, committers, release_managers, keys_mode)"
+    " VALUES ('committee', 0, '[]', '[]', '[]', 'AUTOMATIC')",
+    *[_INSERT_PROJECT.format(key=key, committee="committee", status="ACTIVE") for key in ("bare", "plain", "upload")],
+    *[_INSERT_POLICY.format(id=policy_id, mode="TRUSTED") for policy_id in (1, 2)],
+    "UPDATE project SET release_policy_id = 1 WHERE key = 'plain'",
+    "UPDATE project SET release_policy_id = 2 WHERE key = 'upload'",
+    "UPDATE releasepolicy SET github_repository_branch = 'main', github_repository_name = 'example',"
+    " github_compose_workflow_path = '[\".github/workflows/release.yml\"]',"
+    " github_vote_workflow_path = '[\".github/workflows/vote.yml\"]' WHERE id = 2",
 )
 _TRUSTED_DEFAULT_ROWS = (
     *[_INSERT_COMMITTEE.format(key=key) for key in ("edited", "moved", "polaris", "saved", "started", "trusted")],
@@ -257,6 +272,37 @@ def test_full_sync_projects_return_to_email_votes(tmp_path: pathlib.Path, monkey
             "SELECT p.key, rp.vote_mode FROM project AS p JOIN releasepolicy AS rp ON rp.id = p.release_policy_id"
         ).all()
     assert dict(tuple(row) for row in policies) == {"full": "EMAIL", "manual": "TRUSTED", "merge": "TRUSTED"}
+
+
+def test_security_options_take_the_compose_workflow_paths(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0149_2026.11.19_bc613d78")
+    with engine.begin() as connection:
+        for statement in _SECURITY_OPTIONS_ROWS:
+            connection.exec_driver_sql(statement)
+
+    command.upgrade(alembic_config, "0151_2026.11.24_81cdbaf9")
+
+    with engine.connect() as connection:
+        options = connection.exec_driver_sql("SELECT * FROM projectsecurityoptions").all()
+        kept = connection.exec_driver_sql(
+            "SELECT github_repository_name, github_vote_workflow_path FROM releasepolicy WHERE id = 2"
+        ).one()
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(releasepolicy)")}
+    # Only the project whose policy has paths gets a row, and the branch goes nowhere
+    assert [tuple(row) for row in options] == [("upload", '[".github/workflows/release.yml"]', "", "[]")]
+    assert tuple(kept) == ("example", '[".github/workflows/vote.yml"]')
+    assert not ({"github_compose_workflow_path", "github_repository_branch"} & columns)
+
+    command.downgrade(alembic_config, "0150_2026.11.24_386450a3")
+
+    with engine.connect() as connection:
+        policies = connection.exec_driver_sql(
+            "SELECT id, github_compose_workflow_path, github_repository_branch FROM releasepolicy ORDER BY id"
+        ).all()
+    assert [tuple(row) for row in policies] == [(1, "[]", ""), (2, '[".github/workflows/release.yml"]', "")]
 
 
 def test_trusted_default_keeps_committees_with_activity_on_email(

@@ -145,7 +145,7 @@ source archive.
 
 When your project metadata lists a GitHub repository, ATR compares each source archive against the
 repository at the commit it was built from. The browser upload form asks for that commit, and a
-Trusted Publishing workflow sends it. Other routes give it through the API, with a personal access
+GitHub Actions workflow sends it. Other routes give it through the API, with a personal access
 token:
 
 * `POST /api/release/store` and `POST /api/release/upload` take an optional `source_commit`, which
@@ -154,20 +154,25 @@ token:
   or after the files are uploaded. Pass `null` as the commit to clear it.
 
 Either way the commit stays recorded for later uploads with a token, until someone changes it or a
-Trusted Publishing workflow uploads to the draft. ATR does not refuse an upload without a commit,
+GitHub Actions workflow uploads to the draft. ATR does not refuse an upload without a commit,
 but the compare check records a concern that the release manager must note before starting a vote.
 
 Projects with several GitHub repositories cannot record one commit for the release. They declare
 each source archive on its own with `POST /api/release/source`, as described under
-[Trusted Publishing](trusted-publishing#projects-with-several-source-repositories). That call also
+[Uploads from GitHub Actions](github-actions-uploads#projects-with-several-source-repositories). That call also
 works for a project with one repository, and a declaration for an archive takes precedence over the
 release commit.
 
 ## GitHub Actions
 
 Projects that are approved for reproducible builds can upload from a GitHub Actions workflow, with
-no long-lived credential stored in the repository. The upload page shows an example workflow for
-your release, and [Trusted Publishing](trusted-publishing) explains the approval and setup.
+no long-lived credential stored in the repository. The PMC has to allow it on the committee page,
+and the workflow has to run in a repository the project lists and be started by a PMC member or
+release manager. The upload page shows an example workflow for your release, and
+[Uploads from GitHub Actions](github-actions-uploads) explains the approval and setup.
+
+The revision history marks each revision a workflow made, with the repository, commit and the person
+who started the run. Workflow uploads are not reviewed before they arrive.
 
 ## Revisions
 

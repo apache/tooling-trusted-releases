@@ -389,6 +389,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         vote_mode: Opt[sql.VoteMode | None] = NOT_SET,
         mail_addresses: Opt[list[str]] = NOT_SET,
         catalog_reviewed: Opt[bool] = NOT_SET,
+        github_oidc_enabled: Opt[bool] = NOT_SET,
         parent_committee_key: Opt[str] = NOT_SET,
         updated: Opt[datetime.datetime | None] = NOT_SET,
         updated_by: Opt[str | None] = NOT_SET,
@@ -428,6 +429,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.mail_addresses == mail_addresses)
         if is_defined(catalog_reviewed):
             query = query.where(sql.Committee.catalog_reviewed == catalog_reviewed)
+        if is_defined(github_oidc_enabled):
+            query = query.where(sql.Committee.github_oidc_enabled == github_oidc_enabled)
         if is_defined(parent_committee_key):
             query = query.where(sql.Committee.parent_committee_key == parent_committee_key)
         if is_defined(updated):
@@ -831,6 +834,33 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def project_security_options(
+        self,
+        project_key: Opt[str] = NOT_SET,
+        github_upload_workflow_paths: Opt[list[str]] = NOT_SET,
+        github_upload_ref_type: Opt[str] = NOT_SET,
+        github_upload_ref_patterns: Opt[list[str]] = NOT_SET,
+        github_upload_workflow_paths_has: Opt[str] = NOT_SET,
+    ) -> Query[sql.ProjectSecurityOptions]:
+        query = sqlmodel.select(sql.ProjectSecurityOptions)
+        via = sql.validate_instrumented_attribute
+
+        if is_defined(project_key):
+            query = query.where(sql.ProjectSecurityOptions.project_key == project_key)
+        if is_defined(github_upload_workflow_paths):
+            query = query.where(sql.ProjectSecurityOptions.github_upload_workflow_paths == github_upload_workflow_paths)
+        if is_defined(github_upload_ref_type):
+            query = query.where(sql.ProjectSecurityOptions.github_upload_ref_type == github_upload_ref_type)
+        if is_defined(github_upload_ref_patterns):
+            query = query.where(sql.ProjectSecurityOptions.github_upload_ref_patterns == github_upload_ref_patterns)
+
+        if is_defined(github_upload_workflow_paths_has):
+            query = query.where(
+                via(sql.ProjectSecurityOptions.github_upload_workflow_paths).contains(github_upload_workflow_paths_has)
+            )
+
+        return Query(self, query)
+
     def pub_sub_failure(
         self,
         id: Opt[int] = NOT_SET,
@@ -1130,10 +1160,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         min_hours: Opt[int] = NOT_SET,
         release_checklist: Opt[str] = NOT_SET,
         github_repository_name: Opt[str] = NOT_SET,
-        github_compose_workflow_path: Opt[list[str]] = NOT_SET,
         github_vote_workflow_path: Opt[list[str]] = NOT_SET,
         github_finish_workflow_path: Opt[list[str]] = NOT_SET,
-        github_compose_workflow_path_has: Opt[str] = NOT_SET,
         github_vote_workflow_path_has: Opt[str] = NOT_SET,
         github_finish_workflow_path_has: Opt[str] = NOT_SET,
         _project: bool = False,
@@ -1149,12 +1177,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.ReleasePolicy.release_checklist == release_checklist)
         if is_defined(github_repository_name):
             query = query.where(sql.ReleasePolicy.github_repository_name == github_repository_name)
-        if is_defined(github_compose_workflow_path):
-            query = query.where(sql.ReleasePolicy.github_compose_workflow_path == github_compose_workflow_path)
-        if is_defined(github_compose_workflow_path_has):
-            query = query.where(
-                via(sql.ReleasePolicy.github_compose_workflow_path).contains(github_compose_workflow_path_has)
-            )
         if is_defined(github_vote_workflow_path):
             query = query.where(sql.ReleasePolicy.github_vote_workflow_path == github_vote_workflow_path)
         if is_defined(github_vote_workflow_path_has):

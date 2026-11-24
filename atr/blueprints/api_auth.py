@@ -112,35 +112,35 @@ class _TrustedPublisherFailure:
 _TP_FAILURES: Final[tuple[tuple[type[Exception], _TrustedPublisherFailure], ...]] = (
     (
         pyjwt.ExpiredSignatureError,
-        _TrustedPublisherFailure("token_expired", "Trusted Publisher token has expired", False),
+        _TrustedPublisherFailure("token_expired", "GitHub workflow token has expired", False),
     ),
     (
         pyjwt.ImmatureSignatureError,
-        _TrustedPublisherFailure("token_not_yet_valid", "Trusted Publisher token is not yet valid", False),
+        _TrustedPublisherFailure("token_not_yet_valid", "GitHub workflow token is not yet valid", False),
     ),
     (
         pyjwt.InvalidSignatureError,
-        _TrustedPublisherFailure("signature_invalid", "Trusted Publisher token signature is invalid", True),
+        _TrustedPublisherFailure("signature_invalid", "GitHub workflow token signature is invalid", True),
     ),
     (
         pyjwt.InvalidAudienceError,
-        _TrustedPublisherFailure("audience_invalid", "Trusted Publisher token audience is invalid", True),
+        _TrustedPublisherFailure("audience_invalid", "GitHub workflow token audience is invalid", True),
     ),
     (
         pyjwt.InvalidIssuerError,
-        _TrustedPublisherFailure("issuer_invalid", "Trusted Publisher token issuer is invalid", True),
+        _TrustedPublisherFailure("issuer_invalid", "GitHub workflow token issuer is invalid", True),
     ),
     (
         pyjwt.InvalidTokenError,
-        _TrustedPublisherFailure("token_invalid", "Trusted Publisher token is invalid", True),
+        _TrustedPublisherFailure("token_invalid", "GitHub workflow token is invalid", True),
     ),
     (
         pydantic.ValidationError,
-        _TrustedPublisherFailure("claims_invalid", "Trusted Publisher token claims are invalid", True),
+        _TrustedPublisherFailure("claims_invalid", "GitHub workflow token claims are invalid", True),
     ),
 )
 _TP_UNSUPPORTED: Final[_TrustedPublisherFailure] = _TrustedPublisherFailure(
-    "publisher_unsupported", "Trusted Publisher is not supported", False
+    "publisher_unsupported", "Publisher is not supported", False
 )
 
 # The ATR-authored rejections from inside token validation, by status code
@@ -158,12 +158,12 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
     if scheme is not Auth.BODY_OIDC:
         return
     if data is None:
-        raise errors.ASFQuartException("Trusted Publisher auth requires a validated request body", errorcode=401)
+        raise errors.ASFQuartException("GitHub workflow auth requires a validated request body", errorcode=401)
     publisher = getattr(data, "publisher", None)
     jwt = getattr(data, "jwt", None)
     if (not isinstance(publisher, str)) or (not isinstance(jwt, str)):
         raise errors.ASFQuartException(
-            "Trusted Publisher auth requires 'publisher' and 'jwt' string fields", errorcode=401
+            "GitHub workflow auth requires 'publisher' and 'jwt' string fields", errorcode=401
         )
     # Lazy import: atr.db.interaction pulls in much of the project, so blueprint
     # modules don't import it at the top level.

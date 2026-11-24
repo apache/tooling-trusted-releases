@@ -4,7 +4,7 @@
 
 **Prev**: `4.` [Release manager setup](release-manager-setup)
 
-**Next**: `4.2.` [Trusted Publishing](trusted-publishing)
+**Next**: `4.2.` [Uploads from GitHub Actions](github-actions-uploads)
 
 **Sections**:
 

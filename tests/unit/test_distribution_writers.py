@@ -516,6 +516,29 @@ async def test_record_found_clears_ignore(sqlite_sessionmaker) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "phase",
+    [sql.ReleasePhase.RELEASE_CANDIDATE, sql.ReleasePhase.RELEASE_PREVIEW, sql.ReleasePhase.RELEASE],
+)
+async def test_record_from_data_refuses_staging_outside_compose(sqlite_sessionmaker, phase) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data, phase)
+        dd = models_distribution.Data(
+            platform=_MAVEN,
+            owner_namespace=safe.OwnerNamespace(_NAMESPACE),
+            package=safe.Alphanumeric("core"),
+            version=safe.VersionKey("1.0.0"),
+            details=False,
+        )
+
+        with pytest.raises(storage.AccessError, match="only be recorded during compose") as exc_info:
+            await _release_manager(data).record_from_data(_RELEASE, True, dd)
+
+        assert exc_info.value.status == 409
+        assert await data.distribution(release_key=str(_RELEASE)).all() == []
+
+
+@pytest.mark.asyncio
 async def test_record_staging_leaves_an_outstanding_row(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         await _seed_release(data)

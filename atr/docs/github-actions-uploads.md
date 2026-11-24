@@ -1,4 +1,4 @@
-# 4.2. Trusted Publishing
+# 4.2. Uploads from GitHub Actions
 
 **Up**: `4.` [Release manager setup](release-manager-setup)
 
@@ -10,24 +10,29 @@
 
 * [Overview](#overview)
 * [What reproducible means](#what-reproducible-means)
-* [How to set up Trusted Publishing](#how-to-set-up-trusted-publishing)
-* [Configuring repository and workflow paths](#configuring-repository-and-workflow-paths)
+* [How to set up uploads from GitHub Actions](#how-to-set-up-uploads-from-github-actions)
+* [What ATR checks](#what-atr-checks)
+* [Restricting which runs can upload](#restricting-which-runs-can-upload)
 * [Protecting the branch or tag](#protecting-the-branch-or-tag)
-* [GitHub Actions for ATR](#github-actions-for-atr)
+* [The upload action](#the-upload-action)
+* [After the vote](#after-the-vote)
 * [How ATR detects automated release keys](#how-atr-detects-automated-release-keys)
 
 ## Overview
 
-Trusted Publishing lets a project sign release artifacts automatically during a GitHub Actions
-workflow rather than requiring a release manager to sign each file locally. This is available to
-projects that can demonstrate reproducible builds, meaning that anyone can independently rebuild the
-artifacts from the same source and obtain identical results. The ASF uses Trusted Publishing to
-strengthen supply chain integrity for projects that meet this requirement.
+A project can build and sign its release artifacts in a GitHub Actions workflow and have the
+workflow upload them into a draft in ATR, rather than a release manager signing and uploading each
+file by hand. This is available to projects that can demonstrate reproducible builds, meaning that
+anyone can independently rebuild the artifacts from the same source and obtain identical results.
 
-The process involves creating a dedicated GPG signing key for the project, storing it as a GitHub
-repository secret, and registering the public half with ATR. When ATR sees a signature made by a key
-that follows the automated release key naming convention, it accepts the signature in the same way
-that it would accept one from an individual committer's key.
+There are two things to set up. The project needs a dedicated signing key, held by ASF
+Infrastructure and made available to the workflow, and the PMC has to allow uploads from GitHub
+Actions in ATR. After that, a workflow in one of the project's repositories can upload to a draft
+when a PMC member or release manager starts it. The workflow stores no ATR credentials. It
+identifies itself with a token that GitHub issues for the run.
+
+A workflow upload is not reviewed on its way in. The vote is where the files are checked, and ATR
+marks revisions that a workflow made so that voters can see where they came from.
 
 ## What reproducible means
 
@@ -56,9 +61,9 @@ If you have questions about making your build reproducible, ask on the
 [security-discuss](https://security.apache.org/mailinglist/) mailing list, or in the
 `#security-discuss` channel on the [ASF Slack](https://infra.apache.org/slack.html).
 
-## How to set up Trusted Publishing
+## How to set up uploads from GitHub Actions
 
-ATR Trusted Publishing is built on top of
+Uploads from GitHub Actions are built on top of
 [Automated Release Signing](https://infra.apache.org/release-signing.html#automated-release-signing),
 which permits signing in CI provided that all signed artifacts can be built reproducibly, that CI
 deploys them to a staging area rather than straight to users, and that every artifact is rebuilt and
@@ -94,8 +99,8 @@ following UID would be valid for a project named Example:
 Example Automated Release Signing <private@example.apache.org>
 ```
 
-If the UID does not follow this pattern, ATR will not recognise the key as automated and your
-committee will not be eligible for Trusted Publishing.
+If the UID does not follow this pattern, ATR will not recognise the key as automated and your PMC
+will not be able to allow uploads from GitHub Actions.
 
 ### Step 3: Configure the GitHub repository
 
@@ -113,84 +118,93 @@ ATR, or commit it in SVN if your committee's file is managed there, rather than 
 the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID
 tied to an individual, will match it by its email address during signature verification instead.
 
-### Step 5: Check that your committee can use CI
+### Step 5: Allow uploads on the committee page
 
-Once the key is in ATR, your committee becomes eligible for Trusted Publishing. You can check this
-on your committee's page in ATR, where the Permissions card should show _CI builds: Enabled_. If it
-still shows _Disabled_, the key is probably not linked to your committee, or its UID does not follow
-the naming convention in step 2. See
-[how ATR detects automated release keys](#how-atr-detects-automated-release-keys) for the exact
-rules.
+Once the key is in ATR, a PMC member can tick _Allow uploads from GitHub Actions_ in the Permissions
+card on your committee's page and save. The setting covers every project of the committee. ATR
+records the change and sends a notice to the PMC's private list, listing the repositories that can
+now upload to each project.
 
-Eligibility alone does not let any workflow act on your releases. You also have to tell ATR which
-repository and which workflows it should trust, as described in
-[configuring repository and workflow paths](#configuring-repository-and-workflow-paths).
+If the box can't be ticked, the page says that the committee has no automated release signing key.
+The key is probably not linked to your committee, or its UID does not follow the naming convention
+in step 2. See [how ATR detects automated release keys](#how-atr-detects-automated-release-keys)
+for the exact rules. If the key is later removed, uploads stop until there is one again.
 
-### Step 6: Sign and upload artifacts in your workflow
+### Step 6: List the repository on the project
+
+A workflow can only upload to a project from a repository that the project lists. The list is the
+_Repositories_ field of the project's reference metadata, on the project page. ATR counts an entry
+when it is a `https://github.com/apache/...` address, and the page shows which entries it
+recognises. If your release workflow lives somewhere other than the source repository, add that
+repository to the list as well.
+
+While the PMC allows uploads from GitHub Actions, a change to this list is recorded and a notice is
+sent to the PMC's private list.
+
+### Step 7: Sign and upload artifacts in your workflow
 
 In your GitHub Actions workflow, sign your release artifacts using the private key from the
 repository secret. The resulting `.asc` signature files should be uploaded to ATR alongside the
 artifacts, the same way that manually signed artifacts would be. The ASF Tooling team provides
-[GitHub Actions](#github-actions-for-atr) to do the upload, and the later release steps, for you.
+[an action](#the-upload-action) to do the upload for you. The workflow says which project it is
+uploading to.
 
-### Step 7: Confirm reproducibility during the vote
+### Step 8: Confirm reproducibility during the vote
 
 When the project starts a release vote, the artifacts must be independently rebuilt from source on
 trusted hardware and confirmed to be bit-by-bit identical to the ones uploaded to ATR, following the
-process your project documented in step 1. This has to happen before the release is published. This
-is the trust model behind Trusted Publishing: the automated signature proves that the artifacts came
-from a specific GitHub workflow, and the independent rebuild proves that the build output is
-genuine, matching what was built on the GitHub runners.
+process your project documented in step 1. This has to happen before the release is published. The
+automated signature shows that the artifacts came from a GitHub workflow, and the independent
+rebuild shows that the build output is genuine, matching what was built on the GitHub runners.
 
-## Configuring repository and workflow paths
+## What ATR checks
 
-For ATR to accept release operations that a GitHub Actions workflow performs on the project's
-behalf, it has to know which repositories the workflow may run in, and which workflows are permitted
-to perform the operations of each phase of a release. You configure this in the project's release
-policy, under the Trusted Publishing tab of the project settings.
+When a workflow asks to upload, GitHub gives it an OIDC token that says which repository and run it
+is and who started it. ATR accepts the upload when all of these hold:
 
-There are three groups of settings.
+* The workflow runs on a GitHub-hosted runner in the `apache` organisation.
+* The run was triggered by a `push`, `release` or `workflow_dispatch` event. Other events, such as
+  `pull_request` or `schedule`, are refused.
+* The project given by the workflow exists and is not archived.
+* The project's PMC allows uploads from GitHub Actions, and has an automated release signing key.
+* The repository the workflow runs in is on the project's
+  [repository list](#step-6-list-the-repository-on-the-project). The comparison ignores case.
+* The person who started the run is a member of the PMC or one of its release managers, and their
+  GitHub account is linked to their ASF account. ATR records the upload against that person.
+* The run is a first attempt. GitHub keeps the original person on a re-run and doesn't say who
+  re-ran it, so a re-run is refused. Start a new run of the workflow instead.
+* The run is inside the project's
+  [GitHub OIDC restrictions](#restricting-which-runs-can-upload), if its PMC has set any.
 
-### Repository name
+When any of these fails, the response says which one, and who can change it.
 
-The name of one GitHub repository, without the `apache/` prefix, whose workflows may act for the
-project. For example, if the repository is `apache/example`, enter `example`. The name must not
-contain a slash. This is optional. When it is set, ATR only accepts tokens from that repository.
-When it is empty, ATR accepts tokens from any GitHub repository listed in the project metadata. Set
-it when the release workflow lives somewhere other than the source repositories, or when you want
-to pin workflows to one of several.
+A workflow can't create, upload to, or download an embargoed release. ATR answers as it would for a
+release that has already left its draft, so a workflow can't tell an embargoed release from a
+finished one.
 
-### Repository branch
+## Restricting which runs can upload
 
-The branch that release builds run from, for example `main` or `2.5.x`. This is optional.
+With nothing more set, any workflow on any branch or tag of a listed repository can upload. A PMC
+member can narrow that for a project under _Advanced settings_, which is linked from the Actions
+card on the project page. The settings there are the project's GitHub OIDC restrictions, after the
+OIDC token that a workflow presents when it uploads. All of them are optional:
 
-### Workflow paths
+* **Workflow paths.** Only these workflow files can upload, for example
+  `.github/workflows/release.yml`. The path has to match in full.
+* **Branches or tags.** Only a run on a branch, or only a run on a tag, can upload.
+* **Branch or tag patterns.** Only a branch or tag whose name matches one of these can upload, for
+  example `main`, `release/*` or `v*`. A `*` stops at a slash.
 
-There is a separate field for each phase of a release: compose, vote, and finish. Each field lists
-the workflows that ATR will accept as performing that phase's operations. List one workflow path per
-line, and start each path with `.github/workflows/`. For example, the compose field might contain:
+A refused upload says which restriction it was outside.
 
-```text
-.github/workflows/release-compose.yml
-.github/workflows/release-compose-rc.yml
-```
+These settings may not be secure without matching configuration on GitHub. A workflow path alone
+does little, because anyone who can push to the repository can change that file on a branch of their
+own. A branch or tag restriction only has an effect if that branch or tag is
+[protected](#protecting-the-branch-or-tag), because anyone who can push could otherwise create or
+move it. ATR doesn't refuse an upload from an unprotected branch or tag. It records a concern on the
+release.
 
-A field can hold more than one path, so you can list several workflows for a single phase. Any path
-that does not begin with `.github/workflows/` is rejected when you save the form.
-
-The three fields are kept separate so that a workflow is only trusted for the phase it is registered
-against. A workflow listed under compose can compose a candidate, but it cannot, for instance,
-finish a release unless it is also listed under finish.
-
-### How ATR matches a workflow
-
-When a workflow calls one of the Trusted Publishing endpoints, GitHub sends ATR an OIDC token that
-names the repository, such as `apache/example`, and the workflow reference, such as
-`apache/example/.github/workflows/release-compose.yml@refs/heads/main`. ATR strips the trailing `@`
-git ref, then looks for a project whose release policy lists that workflow path under the phase
-being requested and whose repository matches the token: the policy's repository name when one is
-set, or otherwise any GitHub repository in the project metadata. If there is no match, the request
-is refused. The committee must also be eligible for Trusted Publishing, as described below.
+The restrictions are held in ATR and can't be set through `.asf.yaml`, the API or the `atr` client.
 
 ## Protecting the branch or tag
 
@@ -231,67 +245,70 @@ github:
         - type: update
 ```
 
-## GitHub Actions for ATR
+## The upload action
 
-The ASF Tooling team maintains GitHub Actions in
-[apache/tooling-actions](https://github.com/apache/tooling-actions) that call ATR on your workflow's
-behalf. Each action requests a GitHub OIDC token, which ATR uses to identify the repository and
-workflow, so you don't need to store any ATR credentials in your repository.
+The ASF Tooling team maintains
+[`upload-to-atr`](https://github.com/apache/tooling-actions/tree/main/upload-to-atr), which uploads
+a directory of artifacts and signatures into a draft. It requests a GitHub OIDC token, which ATR
+uses to identify the repository, the run and the person who started it, so you don't need to store
+any ATR credentials in your repository.
 
-| Action | What it does | Workflow path field |
-| --- | --- | --- |
-| [`upload-to-atr`](https://github.com/apache/tooling-actions/tree/main/upload-to-atr) | Uploads a directory of artifacts and signatures into a draft | Compose |
-| [`release-on-atr`](https://github.com/apache/tooling-actions/tree/main/release-on-atr) | Resolves the vote, announces the release, or both | Vote to resolve, finish to announce |
-| [`record-atr-distribution`](https://github.com/apache/tooling-actions/tree/main/record-atr-distribution) | Records a distribution made to an external platform such as PyPI (experimental) | Finish or compose |
+There are a few things to be aware of when using it:
 
-The workflow path field column shows which of the [workflow paths](#workflow-paths) your workflow
-has to be listed under for ATR to accept the call. A workflow that both resolves a vote and
-announces the release, for example, must be listed under both vote and finish.
-
-There are a few things to be aware of when using these actions:
-
-* The actions are not tagged, so you must refer to each one by a full commit hash, e.g.
+* The action is not tagged, so you must refer to it by a full commit hash, e.g.
   `apache/tooling-actions/upload-to-atr@<commit>`, and not by `@main`.
 * The job must have the `id-token: write` permission, otherwise the action can't request an OIDC
   token.
-* The workflow must run on a GitHub-hosted runner. ATR rejects tokens from self-hosted runners.
-* The workflow must be triggered by a `push`, `release` or `workflow_dispatch` event. ATR rejects
-  tokens from any other event, such as `pull_request` or `schedule`.
-* The workflow must be triggered by a committer whose GitHub account is linked to their ASF account,
-  as ATR records the release operations against that committer.
-* `upload-to-atr` uploads the `dist` directory by default, which you can change with the `src`
-  input. It also sends ATR the commit that the artifacts were built from, which you can override
-  with the `source-commit` input. ATR compares the source archives against that commit in the repository the workflow ran in, and records a concern unless the commit is the one the run started from or one of its ancestors.
+* `upload-to-atr` takes the `project` and `version` to upload to. It uploads the `dist` directory by
+  default, which you can change with the `src` input. It also sends ATR the commit that the
+  artifacts were built from, which you can override with the `source-commit` input. ATR compares the
+  source archives against that commit in the repository the workflow ran in, and records a concern
+  unless the commit is the one the run started from or one of its ancestors.
+* The key that `upload-to-atr` registers lasts twenty minutes. It can add, replace and delete files
+  in the project's drafts, and download the project's releases that are not yet announced.
 
-Each action's README has the full list of inputs and some example workflows. When you create a draft
+The action's README has the full list of inputs and some example workflows. When you create a draft
 release in ATR, the upload page also shows an example workflow already filled in with your project
 name.
 
 ### Uploading through the API
 
 `upload-to-atr` uploads with rsync over SSH. A build tool that already talks to the ATR API, such as
-a Maven plugin, can use Trusted Publishing without `ssh` or `rsync` by exchanging its GitHub OIDC
-token for a short lived ATR JWT:
+a Maven plugin, can upload without `ssh` or `rsync` by exchanging its GitHub OIDC token for a short
+lived ATR JWT:
 
 ```shell
 POST /api/publisher/jwt/create
-{"publisher": "github", "jwt": "<GitHub OIDC token>"}
+{"publisher": "github", "jwt": "<GitHub OIDC token>", "project": "example"}
 ```
 
 The request takes the same optional `source_commit` and `declare_sources` fields as the SSH
-registration that `upload-to-atr` makes. The response carries a `jwt` to send as
-`Authorization: Bearer` to `/api/release/create` and `/api/release/store`. The workflow has to be
-listed under the compose [workflow path](#workflow-paths), and everything in the list above applies
-to it too. There are a few limits to be aware of:
+registration that `upload-to-atr` makes, at `/api/publisher/ssh/register`. The response carries a
+`jwt` to send as `Authorization: Bearer` to `/api/release/create` and `/api/release/store`.
+[What ATR checks](#what-atr-checks) applies to the exchange. There are a few limits to be aware of:
 
-* The JWT works for the one project that the workflow is registered to, and only for creating a
-  release and storing files in it.
+* The JWT works for the one project given in the exchange, and only for creating a release, storing
+  files in it, and recording a staging distribution for it.
 * It lasts five minutes and can't be refreshed. Request a new OIDC token and exchange again if the
   upload needs longer. A single file that takes more than five minutes to send is not cut off.
 * Each OIDC token can be exchanged once, and a token that has registered an SSH key can't then be
   exchanged for a JWT.
 * The source commit is set at the exchange. `/api/release/store` refuses a `source_commit` of its
   own when it is called with this JWT.
+
+### Recording a staging distribution
+
+A workflow that has pushed a staging package to a platform such as Maven Central or PyPI can tell
+ATR about it with the same JWT:
+
+```shell
+POST /api/distribution/stage
+{"project": "example", "version": "1.0.0", "platform": "PYPI",
+ "distribution_package": "example", "distribution_version": "1.0.0rc1", "details": false}
+```
+
+The record is always a staging one, and the release has to be a draft. A personal JWT works here
+too, for a PMC member or release manager.
 
 ### Projects with several source repositories
 
@@ -313,8 +330,9 @@ archive:
 
 ```json
 {
-  "publisher": "user",
+  "publisher": "github",
   "jwt": "<OIDC token>",
+  "project": "example",
   "version": "1.0.0",
   "sources": [
     {"relpath": "example-1.0.0-src.tar.gz", "repository": "apache/example", "commit": "<40 hex digits>"}
@@ -322,17 +340,35 @@ archive:
 }
 ```
 
-Each call creates a new revision of the draft, so declare all of the archives in one call. The
-repository must be one that the project metadata lists, and each path must be a source archive in
-the draft. When ATR compares an archive, it also records a concern unless the repository is in the `apache` organisation and the commit is on one of its branches or tags. If you pass `expected_revision`, ATR refuses the call when the draft has changed since
-that revision. You can make the same call with a personal API token as `POST /api/release/source`,
-giving `project` in place of `publisher` and `jwt`. That call is not limited to projects with
-several repositories. A project with one repository can also declare an archive this way, and the
-declaration then takes precedence over the commit recorded for the release.
+Each call creates a new revision of the draft, so declare all of the archives in one call. The call
+uses up its OIDC token, so request a new one for it and don't reuse the token that registered the
+SSH key. [What ATR checks](#what-atr-checks) applies to this call too. The repository must be one
+that the project metadata lists, and each path must be a source archive in the draft. When ATR
+compares an archive, it also records a concern unless the repository is in the `apache`
+organisation and the commit is on one of its branches or tags. If you pass `expected_revision`, ATR
+refuses the call when the draft has changed since that revision. You can make the same call with a
+personal API token as `POST /api/release/source`, giving `project` in place of `publisher` and
+`jwt`. That call is not limited to projects with several repositories. A project with one
+repository can also declare an archive this way, and the declaration then takes precedence over the
+commit recorded for the release.
 
 A declaration applies to the archive as it was when the declaration was made, so uploading the
 archive again removes it. Until an archive has a declaration, ATR cannot compare it against its
 source, and records a concern that the release manager must note before starting a vote.
+
+## After the vote
+
+A workflow gets files into a draft and can record a staging distribution. Starting and resolving
+the vote, recording a final distribution and announcing the release are done by a person, in ATR or
+with the `atr` client.
+
+To finish a release without waiting at the keyboard, use [Announce when ready](finish-phase), which
+a release manager queues on the finish page and ATR sends once the files have been published.
+
+Don't store a [personal access token](release-manager-setup#personal-access-tokens) in your
+repository's secrets to automate these steps. A token like that acts as you on every project you
+can change, it lasts for months, and any workflow in the repository that can read the secret can use
+it. Run the steps yourself, or with a token on your own machine.
 
 ## How ATR detects automated release keys
 
@@ -354,12 +390,11 @@ You can read more about [signature verification](checks#signature-verification) 
 
 ### Committee eligibility
 
-Separately, ATR determines which committees are eligible for Trusted Publishing by querying for keys
-whose primary UID contains "Automated Release Signing" or "Services RM" (ignoring case) and whose
-email is exactly `private@`_committee_`.apache.org` for the committee that the key is linked to. A
-committee must have at least one such key before ATR will accept releases triggered by GitHub
-workflows for projects in that committee.
+Separately, ATR looks for keys whose primary UID contains "Automated Release Signing" or "Services
+RM" (ignoring case) and whose email is exactly `private@`_committee_`.apache.org` for the committee
+that the key is linked to. A committee must have at least one such key before its PMC can allow
+uploads from GitHub Actions, and for as long as it wants them accepted.
 
 Registering a correctly named key therefore does two things at once: it enables signature
-verification for artifacts signed by that key, and it marks the committee as eligible for Trusted
-Publishing.
+verification for artifacts signed by that key, and it lets the PMC allow uploads from GitHub
+Actions.

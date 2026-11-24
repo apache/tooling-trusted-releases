@@ -22,6 +22,7 @@ import hashlib
 import os
 import pathlib
 import tempfile
+import time
 from typing import Any, Final, Literal
 
 import aiofiles.os
@@ -440,7 +441,7 @@ async def distribute_ssh_register(
     """
     URL: POST /distribute/ssh/register
 
-    Register an SSH key sent with a corroborating Trusted Publisher JWT,
+    Register an SSH key sent with a corroborating GitHub OIDC token,
     validating the requested release is in the correct phase.
     """
     if util.contains_private_key_text(data.ssh_key):
@@ -604,6 +605,48 @@ async def distribution_record_from_workflow(
 
     return models.api.DistributionRecordFromWorkflowResults(
         endpoint="/distribute/record_from_workflow",
+        success=True,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER_PROJECT,
+    response=(models.api.DistributionStageResults, 200),
+    rate_limit=(60, datetime.timedelta(hours=1)),
+)
+async def distribution_stage(
+    _distribution_stage: Literal["distribution/stage"],
+    data: models.api.DistributionStageArgs,
+) -> DictResponse:
+    """
+    URL: POST /distribution/stage
+
+    Record a staging distribution for a draft release.
+
+    This takes the token a GitHub workflow gets from publisher/jwt/create, as well as a personal one.
+    """
+    asf_uid = _jwt_asf_uid()
+    util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
+    from_workflow = jwtoken.project_scope(getattr(quart.g, "jwt_claims", {})) is not None
+    release = await interaction.uploadable_draft(data.project, data.version, from_workflow=from_workflow)
+    if release is None:
+        raise _no_draft_release(data.project, data.version)
+    dd = models.distribution.Data(
+        platform=data.platform,
+        owner_namespace=data.distribution_owner_namespace,
+        package=data.distribution_package,
+        version=data.distribution_version,
+        details=data.details,
+    )
+    try:
+        async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
+            # Always a staging record, whatever the caller would like it to be
+            await warm.distributions.record_from_data(release.safe_key, True, dd)
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+
+    return models.api.DistributionStageResults(
+        endpoint="/distribution/stage",
         success=True,
     ).model_dump(mode="json"), 200
 
@@ -956,6 +999,7 @@ async def policy_get(
         project = await data.project(key=str(project_key), _release_policy=True, _committee=True).demand(
             exceptions.NotFound()
         )
+        security_options = await data.project_security_options(project_key=str(project_key)).get()
     vote_to, vote_cc, vote_bcc = project.policy_recipients(models.sql.RecipientAction.VOTE)
     announce_to, announce_cc, announce_bcc = project.policy_recipients(models.sql.RecipientAction.ANNOUNCE)
     return models.api.PolicyGetResults(
@@ -965,9 +1009,11 @@ async def policy_get(
         policy_announce_release_template=project.policy_announce_release_template,
         policy_announce_release_template_url=project.policy_announce_release_template_url,
         policy_binary_artifact_paths=project.policy_binary_artifact_paths,
-        policy_github_compose_workflow_path=project.policy_github_compose_workflow_path,
+        # The client's model has these two fields. The paths are the project's upload restriction,
+        # and nothing holds a branch
+        policy_github_compose_workflow_path=security_options.github_upload_workflow_paths if security_options else [],
         policy_github_finish_workflow_path=project.policy_github_finish_workflow_path,
-        policy_github_repository_branch=project.policy_github_repository_branch,
+        policy_github_repository_branch="",
         policy_github_repository_name=project.policy_github_repository_name,
         policy_github_vote_workflow_path=project.policy_github_vote_workflow_path,
         policy_license_check_mode=project.policy_license_check_mode,
@@ -1034,8 +1080,8 @@ async def project_config_upsert(
     Creates a project under the specified key if it does not yet exist.
     Otherwise, updates all specified fields for an existing project. With
     sync_mode "full", every field this endpoint can set but the caller omitted
-    is reset to its default as well. The trusted publishing settings are not
-    accepted here in either mode; they are set in ATR by a committee member.
+    is reset to its default as well. The GitHub workflow repository, branch and
+    workflow path fields are not accepted here in either mode.
 
     Requires a system token. This endpoint backs the .asf.yaml processor, which
     establishes upstream that the caller may act for the named committee. For an
@@ -1136,7 +1182,7 @@ async def publisher_distribution_record(
     """
     URL: POST /publisher/distribution/record
 
-    Record a distribution with a corroborating Trusted Publisher JWT.
+    Record a distribution with a corroborating GitHub OIDC token.
     """
     ctx = api.auth.trusted_publisher_context()
     try:
@@ -1186,22 +1232,19 @@ async def publisher_jwt_create(
     """
     URL: POST /publisher/jwt/create
 
-    Exchange a Trusted Publisher JWT for a short lived ATR JWT.
+    Exchange a GitHub OIDC token for a short lived ATR JWT.
 
-    The ATR JWT can create a release and store files in it, for the one project that the workflow
-    is registered to. It lasts five minutes and can't be refreshed, and each Trusted Publisher JWT
-    can be exchanged only once.
+    The ATR JWT can create a release and store files in it, for the one project given in the
+    request. It lasts five minutes and can't be refreshed, and each GitHub OIDC token can be
+    exchanged only once.
     """
     ctx = api.auth.trusted_publisher_context()
-    asf_uid, project = await interaction.trusted_project_for_payload(
-        ctx.payload,
-        ctx.asf_uid,
-        interaction.TrustedProjectPhase.COMPOSE,
-    )
+    asf_uid, project = await interaction.compose_project_for_payload(ctx.payload, ctx.asf_uid, data.project)
     payload = ctx.payload
     await _trusted_publisher_rate_limit("publisher/jwt/create", project.safe_key, asf_uid)
-    async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
-        token = await wacm.tokens.issue_workflow_jwt(
+    # PMC members and release managers can create a release, so they can make this exchange too
+    async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
+        token = await warm.tokens.issue_workflow_jwt(
             payload.actor,
             payload.actor_id,
             project.safe_key,
@@ -1227,7 +1270,7 @@ async def publisher_release_announce(
     """
     URL: POST /publisher/release/announce
 
-    Announce a release with a corroborating Trusted Publisher JWT.
+    Announce a release with a corroborating GitHub OIDC token.
     """
     ctx = api.auth.trusted_publisher_context()
     asf_uid, project = await interaction.trusted_project_for_payload(
@@ -1258,6 +1301,7 @@ async def publisher_release_announce(
 @api.typed(
     auth_scheme=api_auth.Auth.BODY_OIDC,
     response=(models.api.PublisherReleaseSourceResults, 201),
+    rate_limit=_TRUSTED_PUBLISHER_FLOOD_LIMIT,
 )
 async def publisher_release_source(
     _publisher_release_source: Literal["publisher/release/source"],
@@ -1267,15 +1311,23 @@ async def publisher_release_source(
     URL: POST /publisher/release/source
 
     Declare the repository and commit that source archives in a draft were built from,
-    with a corroborating Trusted Publisher JWT.
+    with a corroborating GitHub OIDC token.
     """
     ctx = api.auth.trusted_publisher_context()
-    asf_uid, project = await interaction.trusted_project_for_payload(
-        ctx.payload,
-        ctx.asf_uid,
-        interaction.TrustedProjectPhase.COMPOSE,
-    )
-    revision = await _declare_sources(asf_uid, project.safe_key, data.version, data.sources, data.expected_revision)
+    asf_uid, project = await interaction.compose_project_for_payload(ctx.payload, ctx.asf_uid, data.project)
+    await _trusted_publisher_rate_limit("publisher/release/source", project.safe_key, asf_uid)
+    try:
+        async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
+            # Checked before the token is marked as used, so a retry with the same token gets the same 404
+            if await interaction.uploadable_draft(project.safe_key, data.version, from_workflow=True) is None:
+                raise _no_draft_release(project.safe_key, data.version)
+            # A GitHub token can be used for one declaration, as it can for one exchange
+            await warm.tokens.consume_workflow_jti(ctx.payload, int(time.time()) + jwtoken.PROJECT_JWT_TTL)
+            revision = await warm.release.set_archive_sources(
+                project.safe_key, data.version, data.sources, data.expected_revision
+            )
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
     return models.api.PublisherReleaseSourceResults(
         endpoint="/publisher/release/source",
         revision=revision,
@@ -1290,22 +1342,18 @@ async def publisher_ssh_register(
     """
     URL: POST /publisher/ssh/register
 
-    Register an SSH key sent with a corroborating Trusted Publisher JWT.
+    Register an SSH key sent with a corroborating GitHub OIDC token.
     """
     if util.contains_private_key_text(data.ssh_key):
         vars(data)["ssh_key"] = ""
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     ctx = api.auth.trusted_publisher_context()
-    asf_uid, project = await interaction.trusted_project_for_payload(
-        ctx.payload,
-        ctx.asf_uid,
-        interaction.TrustedProjectPhase.COMPOSE,
-    )
+    asf_uid, project = await interaction.compose_project_for_payload(ctx.payload, ctx.asf_uid, data.project)
     payload = ctx.payload
     await _trusted_publisher_rate_limit("publisher/ssh/register", project.safe_key, asf_uid)
-    async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
-        fingerprint, expires = await wacm.ssh.add_workflow_key(
+    async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
+        fingerprint, expires = await warm.ssh.add_workflow_key(
             payload.actor,
             payload.actor_id,
             project.safe_key,
@@ -1331,7 +1379,7 @@ async def publisher_vote_resolve(
     """
     URL: POST /publisher/vote/resolve
 
-    Resolve a vote with a corroborating Trusted Publisher JWT.
+    Resolve a vote with a corroborating GitHub OIDC token.
     """
     # TODO: Need to be able to resolve and make the release immutable
     ctx = api.auth.trusted_publisher_context()
@@ -1727,6 +1775,8 @@ async def release_store(
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
     github_payload, source_commit, declare_sources = await _release_store_sources(source_commit)
+    if await interaction.uploadable_draft(project, version, from_workflow=github_payload is not None) is None:
+        raise _no_draft_release(project, version)
 
     source = ""
     try:
@@ -2292,15 +2342,7 @@ async def vote_start(
             if (data.revision is not None) and (data.revision != scanned_revision):
                 raise exceptions.Conflict("A newer revision appeared, please refresh and try again.")
             if data.revision is None:
-                latest_revision = await db_data.revision(
-                    release_key=release.key,
-                    number=str(scanned_revision),
-                ).demand(storage.AccessError("Latest revision not found - Invalid state", status=500))
-                if latest_revision.asfuid != asf_uid:
-                    raise exceptions.Conflict(
-                        f"The latest revision, {scanned_revision}, was created by somebody else. "
-                        "Specify a revision explicitly to start a vote on it."
-                    )
+                await _vote_start_implicit_revision(db_data, release, scanned_revision, asf_uid)
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
             asf_uid,
@@ -2646,6 +2688,11 @@ def _matched_issuer_fingerprint(
     return None
 
 
+def _no_draft_release(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> exceptions.NotFound:
+    # One answer whether the release is missing, past its draft, or one this caller is never shown
+    return exceptions.NotFound(f"There is no draft release {project_key!s} {version_key!s} to add to")
+
+
 async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: str) -> tuple[str, str]:
     fullname = await _ldap_fullname(asf_uid)
     if data.body is not None:
@@ -2836,6 +2883,26 @@ async def _vote_resolve_tally(warm: storage.WriteAsReleaseManager, release: sql.
         release.podling_thread_id,
         binding_member_label=user.binding_member_label(vote_round),
     )
+
+
+async def _vote_start_implicit_revision(
+    db_data: db.Session, release: sql.Release, revision_number: safe.RevisionNumber, asf_uid: str
+) -> None:
+    latest_revision = await db_data.revision(
+        release_key=release.key,
+        number=str(revision_number),
+    ).demand(storage.AccessError("Latest revision not found - Invalid state", status=500))
+    if latest_revision.asfuid != asf_uid:
+        raise exceptions.Conflict(
+            f"The latest revision, {revision_number}, was created by somebody else. "
+            "Specify a revision explicitly to start a vote on it."
+        )
+    # A workflow's upload carries the name of whoever started the run, who may not have seen it
+    if await attestable.revision_made_by_workflow(release.safe_project_key, release.safe_version_key, revision_number):
+        raise exceptions.Conflict(
+            f"The latest revision, {revision_number}, was uploaded by a GitHub workflow. "
+            "Specify a revision explicitly to start a vote on it."
+        )
 
 
 async def _vote_start_subject_and_body(

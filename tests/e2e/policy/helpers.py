@@ -23,31 +23,10 @@ PROJECT_KEY: Final[str] = "test"
 PROJECT_COMPOSE_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=compose"
 PROJECT_VOTE_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=vote"
 PROJECT_FINISH_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=finish"
-PROJECT_TP_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=trusted-publishing"
 
 
 def compose_form_save_button(page: Page) -> Locator:
     return page.locator('form.atr-canary button[type="submit"]').first
-
-
-def input_github_repository_branch(page: Page) -> Locator:
-    return page.locator('input[name="github_repository_branch"]')
-
-
-def input_github_repository_name(page: Page) -> Locator:
-    return page.locator('input[name="github_repository_name"]')
-
-
-def textarea_github_compose_workflow_path(page: Page) -> Locator:
-    return page.locator('textarea[name="github_compose_workflow_path"]')
-
-
-def textarea_github_finish_workflow_path(page: Page) -> Locator:
-    return page.locator('textarea[name="github_finish_workflow_path"]')
-
-
-def textarea_github_vote_workflow_path(page: Page) -> Locator:
-    return page.locator('textarea[name="github_vote_workflow_path"]')
 
 
 def textarea_source_excludes_lightweight(page: Page) -> Locator:
@@ -56,11 +35,3 @@ def textarea_source_excludes_lightweight(page: Page) -> Locator:
 
 def textarea_source_excludes_rat(page: Page) -> Locator:
     return page.locator('textarea[name="source_excludes_rat"]')
-
-
-def trusted_publishing_form_save_button(page: Page) -> Locator:
-    return (
-        page.locator('input[name="github_repository_name"]')
-        .locator("xpath=ancestor::form")
-        .locator('button[type="submit"]')
-    )

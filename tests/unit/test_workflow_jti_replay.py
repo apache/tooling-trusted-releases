@@ -224,16 +224,16 @@ def _payload(**overrides: object) -> github.TrustedPublisherPayload:
     return github.TrustedPublisherPayload.model_validate(defaults)
 
 
-def _token_writer(data: mock.MagicMock) -> tokens.CommitteeParticipant:
+def _token_writer(data: mock.MagicMock) -> tokens.ReleaseManager:
     write = mock.MagicMock()
     write.authorisation.asf_uid = "tester"
-    return tokens.CommitteeParticipant(write, mock.MagicMock(), data, "alpha")
+    return tokens.ReleaseManager(write, mock.MagicMock(), data, "alpha")
 
 
-def _writer(data: mock.MagicMock) -> ssh.CommitteeParticipant:
+def _writer(data: mock.MagicMock) -> ssh.ReleaseManager:
     write = mock.MagicMock()
     write.authorisation.asf_uid = "tester"
     write_as = mock.MagicMock()
     # add_workflow_key calls consume_workflow_jti on the tokens writer
-    write_as.tokens = tokens.CommitteeParticipant(write, write_as, data, "alpha")
-    return ssh.CommitteeParticipant(write, write_as, data, "alpha")
+    write_as.tokens = tokens.ReleaseManager(write, write_as, data, "alpha")
+    return ssh.ReleaseManager(write, write_as, data, "alpha")

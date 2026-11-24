@@ -110,6 +110,60 @@ async def add_project(
 
 
 @get.typed
+async def advanced(
+    session: web.Committer, _project_advanced: Literal["project/advanced"], project_key: safe.ProjectKey
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /project/advanced/<project_key>
+    """
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), _committee=True).demand(
+            errors.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+        )
+        options = await data.project_security_options(project_key=str(project_key)).get()
+
+    is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
+    if not (is_committee_member or session.is_admin):
+        raise errors.ASFQuartException("You are not a member of this project's committee", errorcode=403)
+
+    page = htm.Block()
+    page.p[htm.a(".atr-back-link", href=util.as_url(view, project_key=project.key))["← Back to project"]]
+    page.h1["Advanced settings"]
+    page.p[
+        f"Settings for {project.display_name} that are held in ATR and can't be set through ",
+        htm.code[".asf.yaml"],
+        ".",
+    ]
+    page.h2["GitHub OIDC restrictions"]
+    page.p[
+        "These optional settings restrict which GitHub Actions workflow runs can upload to this project. ",
+        "With nothing set, any workflow on any branch or tag in the project's repositories can upload. See ",
+        htm.a(href=util.as_url(docs.page, path="github-actions-uploads"))["Uploads from GitHub Actions"],
+        ".",
+    ]
+    page.p[
+        "They may not be secure without matching configuration on GitHub. A branch or tag restriction only has an ",
+        "effect if that branch or tag is protected there, because anyone who can push to the repository could ",
+        "otherwise create or move it.",
+    ]
+    await form.render_block(
+        page,
+        model_cls=shared.projects.UploadRestrictionsForm,
+        action=util.as_url(post.projects.advanced, project_key=project.key),
+        submit_label="Save",
+        defaults=_upload_restriction_defaults(options),
+        textarea_rows=3,
+        readonly=project.is_archived,
+    )
+
+    return await template.blank(
+        title="Advanced settings",
+        description=f"Advanced settings for {project.display_name}.",
+        content=page.collect(),
+    )
+
+
+@get.typed
 async def archive(
     session: web.Committer, _project_archive: Literal["project/archive"], project_key: safe.ProjectKey
 ) -> web.WerkzeugResponse | str:
@@ -162,8 +216,7 @@ async def project_yaml(
         project.display_name,
         ". Add it to your repository's ",
         htm.code[".asf.yaml"],
-        " to keep this metadata in sync from the repository side. The Trusted Publishing settings are not",
-        " included, as those can only be set in ATR.",
+        " to keep this metadata in sync from the repository side.",
     ]
     page.append(_render_asf_yaml_mode_choice(full=full))
 
@@ -717,11 +770,6 @@ async def _generate_tabs(
                     "Lifecycle",
                     lambda: _render_version_scheme_form(project, readonly=readonly),
                 ),
-                htm.Tab(
-                    "trusted-publishing",
-                    "Trusted Publishing",
-                    lambda: _render_trusted_publishing_form(project, readonly=readonly),
-                ),
                 htm.Tab("compose", "Compose", lambda: _render_compose_form(project, readonly=readonly)),
                 htm.Tab("vote", "Vote", lambda: _render_vote_form(project, readonly=readonly)),
                 htm.Tab("finish", "Finish", lambda: _render_finish_form(project, readonly=readonly)),
@@ -871,6 +919,12 @@ async def _render_actions_card(
                         ".btn.btn-sm.btn-outline-secondary",
                         href=util.as_url(project_yaml, project_key=project.key),
                     )["Export .asf.yaml"]
+                )
+                body.append(
+                    htm.a(
+                        ".btn.btn-sm.btn-outline-secondary",
+                        href=util.as_url(advanced, project_key=project.key),
+                    )["Advanced settings"]
                 )
     return card.collect()
 
@@ -1322,7 +1376,8 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
                 htm.tr[
                     htm.th(".border-0.w-25")[label],
                     htm.td(".text-break.border-0")[
-                        htm.ul(".mb-0.ps-3")[*[htm.li[_metadata_uri(u, schemes)] for u in urls]]
+                        htm.ul(".mb-0.ps-3")[*[htm.li[_metadata_uri(u, schemes)] for u in urls]],
+                        _upload_repositories_note(project) if (label == "Repositories") else None,
                     ],
                 ]
             )
@@ -1344,6 +1399,7 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
             action=_view_action(project, "metadata"),
             submit_label="Save",
             defaults=shared.projects.edit_metadata_defaults(project),
+            notes={"repositories": _upload_repositories_note(project)},
         )
     return card.collect()
 
@@ -1613,39 +1669,6 @@ async def _render_security_tab(project: sql.Project, *, can_edit_metadata: bool)
     return _render_security_readonly(project)
 
 
-async def _render_trusted_publishing_form(project: sql.Project, *, readonly: bool) -> htm.Element:
-    card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
-        htm.h3(".mb-0")["Release policy - Trusted Publishing"]
-    ]
-
-    with card.block(htm.div, classes=".card-body") as card_body:
-        card_body.p(".text-muted.mb-3")[
-            "See the ",
-            htm.a(href=util.as_url(docs.page, path="trusted-publishing"))["Trusted Publishing guide"],
-            " for an explanation of these settings.",
-        ]
-        await form.render_block(
-            card_body,
-            model_cls=shared.projects.TrustedPublishingPolicyForm,
-            action=_view_action(project, "trusted-publishing"),
-            submit_label="Save",
-            defaults={
-                "project_key": str(project.key),
-                "github_repository_name": project.policy_github_repository_name or "",
-                "github_repository_branch": project.policy_github_repository_branch or "",
-                "github_compose_workflow_path": "\n".join(project.policy_github_compose_workflow_path),
-                "github_vote_workflow_path": "\n".join(project.policy_github_vote_workflow_path),
-                "github_finish_workflow_path": "\n".join(project.policy_github_finish_workflow_path),
-            },
-            form_classes=".atr-canary.py-4.px-5",
-            border=True,
-            textarea_rows=5,
-            readonly=readonly,
-        )
-    return card.collect()
-
-
 async def _render_version_scheme_form(project: sql.Project, *, readonly: bool) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-0")["Version scheme"]]
@@ -1891,6 +1914,30 @@ def _textarea_with_variables(
     elements.append(details)
 
     return htm.div[elements]
+
+
+def _upload_repositories_note(project: sql.Project) -> htm.Element:
+    recognised = sorted(project.upload_repositories)
+    if recognised:
+        found: list[htm.Element | str] = ["ATR recognises ", *render.code_list(recognised), "."]
+    else:
+        found = ["ATR recognises none of these as a GitHub repository under apache/."]
+    return htm.div(".text-muted.mt-1.form-text")[
+        "GitHub Actions workflows in these repositories can upload to this project when its PMC allows"
+        " uploads from GitHub Actions. ",
+        *found,
+    ]
+
+
+def _upload_restriction_defaults(options: sql.ProjectSecurityOptions | None) -> dict[str, object]:
+    if options is None:
+        return {"ref_type": shared.projects.UploadRefType.ANY.value}
+    ref_types = {stored: ref_type for ref_type, stored in shared.projects.UPLOAD_REF_TYPES.items()}
+    return {
+        "workflow_paths": "\n".join(options.github_upload_workflow_paths),
+        "ref_type": ref_types[options.github_upload_ref_type].value,
+        "ref_patterns": "\n".join(options.github_upload_ref_patterns),
+    }
 
 
 def _view_action(project: sql.Project, tab: str) -> str:

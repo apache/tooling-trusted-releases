@@ -14,7 +14,7 @@
 * [Browser security requirements](#browser-security-requirements)
 * [Web authentication](#web-authentication)
 * [API authentication](#api-authentication)
-* [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
+* [GitHub Actions OIDC](#github-actions-oidc)
 * [SSH authentication](#ssh-authentication)
 * [Token lifecycle](#token-lifecycle)
 * [Secret rotation](#secret-rotation)
@@ -50,12 +50,12 @@ to the ASF authorization endpoint, receives an authorization code in the callbac
 exchanges that code for session data. ATR does not store authorization codes, issue OAuth tokens, or
 manage OAuth client registrations.
 
-**OIDC Relying Party.** For [trusted publishing](trusted-publishing) workflows, ATR validates OIDC
-ID tokens issued by GitHub Actions (`token.actions.githubusercontent.com`). ATR verifies the token
-signature using the provider's JWKS endpoint, checks the issuer, audience, expiration, and expected
-claims, and enforces actor identity requirements that differ between project TP and ATR distribution
-workflows. ATR does not issue OIDC tokens. See
-[GitHub Actions OIDC](#github-actions-oidc-trusted-publishing) below for full detail.
+**OIDC Relying Party.** For [uploads from GitHub Actions](github-actions-uploads), ATR validates
+OIDC ID tokens issued by GitHub Actions (`token.actions.githubusercontent.com`). ATR verifies the
+token signature using the provider's JWKS endpoint, checks the issuer, audience, expiration, and
+expected claims, and enforces actor identity requirements that differ between project workflows and
+ATR distribution workflows. ATR does not issue OIDC tokens. See
+[GitHub Actions OIDC](#github-actions-oidc) below for full detail.
 
 **Resource Server.** ATR issues its own short-lived JWTs (30-minute TTL, HS256) for API access.
 These are a custom API authentication mechanism, not OAuth access tokens or refresh tokens. See
@@ -261,7 +261,7 @@ gates committer-driven writes does not apply, so any committee authorisation for
 must be established by the calling service before it reaches ATR. The only such endpoint at present
 is `/project/config`, which the `.asf.yaml` processor uses to create and update projects.
 
-## GitHub Actions OIDC (Trusted Publishing)
+## GitHub Actions OIDC
 
 GitHub Actions workflows authenticate to ATR using OIDC tokens issued by GitHub
 (`token.actions.githubusercontent.com`). ATR uses this mechanism in two distinct contexts with
@@ -301,22 +301,50 @@ because it is what an attack through a project's workflow would send. A token re
 event is logged but sends no email, because it comes from a workflow's configuration and would
 otherwise arrive on every such run.
 
-### Project Trusted Publishing
+### Project workflows
 
-Project TP allows an `apache/*` project repository to upload release artifacts and perform actions
-on its own ATR project directly from a GitHub Actions workflow. The workflow is defined in
-[tooling-actions](https://github.com/apache/tooling-actions) and called from the project's own
-repository.
+A workflow in an `apache/*` project repository can upload release artifacts to its own ATR project.
+The upload action is defined in [tooling-actions](https://github.com/apache/tooling-actions) and
+called from the project's own repository.
 
-**Actor requirement.** After cryptographic validation, `interaction.trusted_jwt` checks that
-`actor_id` resolves to a human committer: it performs an LDAP lookup to map the numeric GitHub user
-ID to an ASF UID. If `actor_id` belongs to the ASF Infrastructure service account instead, the
+**Actor requirement.** After cryptographic validation, `interaction.validate_trusted_jwt` checks
+that `actor_id` resolves to a human committer: it performs an LDAP lookup to map the numeric GitHub
+user ID to an ASF UID. If `actor_id` belongs to the ASF Infrastructure service account instead, the
 request is rejected. The committer must have their GitHub account registered in LDAP.
 
-**Repository and workflow binding.** `interaction._trusted_project` further validates the
-`repository` and `workflow_ref` claims from the token against release policies stored in ATR. Only
-pre-registered workflow paths from pre-registered repositories are accepted, so an arbitrary
-workflow in an `apache/*` repo cannot invoke these endpoints.
+**Uploads.** The upload endpoints (`/publisher/ssh/register`, `/publisher/jwt/create` and
+`/publisher/release/source`) go through `interaction.compose_project_for_payload`. The request gives
+the project, and ATR never searches for one. The project must exist and be active, its committee
+must have `github_oidc_enabled` set and hold an automated release signing key
+(`interaction.ci_builds_enabled`), and the token's `repository` must be in
+`Project.upload_repositories`, which is the project's `apache/` GitHub repositories in lower case.
+The token's `run_attempt` must be `1`, because GitHub keeps the original `actor` on a re-run and the
+token has no claim for who re-ran it. The writer then requires the actor to be a member of the
+project's committee or one of its release managers. A request with no project is matched to the
+one project whose upload restrictions hold the workflow's path and which lists the repository.
+
+**Upload restrictions.** A project can have a `ProjectSecurityOptions` row holding the workflow
+paths, ref type and ref patterns that an upload has to match, which the UI calls its GitHub OIDC
+restrictions. `interaction.compose_project_for_payload` checks the token's `workflow_ref` and `ref`
+against them with `upload_restrictions.problem`, for a project found either way. Only a member of
+the project's committee can write the row, through `upload_restrictions_set` on the committee member
+writer. It is not on `Project` or `ReleasePolicy`, so `/project/config`, a full synchronization and
+the `.asf.yaml` export don't touch it. ATR does not check that a ref a restriction allows is
+protected on GitHub.
+
+**Embargoed releases.** A project JWT or a project workflow's SSH key cannot create, upload to or
+download an embargoed release. Each refusal is the one that the same request gets for a release
+that is past its draft, so these credentials can't be used to find out that an embargoed release
+exists.
+
+**Vote and finish.** `/publisher/vote/resolve`, `/publisher/release/announce` and
+`/publisher/distribution/record` go through `interaction._trusted_project`, which validates the
+`repository` and `workflow_ref` claims against the vote and finish workflow paths stored on the
+project's release policy. Only workflow paths on record are accepted, and no page or route writes
+them, so no project can register a workflow for these endpoints and an arbitrary workflow in an
+`apache/*` repo cannot invoke them. The committee must hold an automated release signing key. The
+PMC's setting for uploads from GitHub Actions and the project's upload restrictions are not checked
+here.
 
 ### ATR distribution workflows
 
@@ -345,39 +373,40 @@ workflow, and ATR embedded the UID when it did so.
 ### SSH key scope
 
 In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/ssh/register` for
-project TP, `/distribute/ssh/register` for distribution workflows), which generates a temporary SSH
-key bound to the specific project. The key cannot be used for any other project, and `ssh.SSHServer`
-checks this before it looks anything up, so a key can't be used to find out what exists in other
-projects. Distribution workflows only download, so their keys are read-only: a key whose
-`github_nid` is `GITHUB_TRUSTED_ROLE_NID` can't be used to upload, because only the distribution
-registration endpoint accepts that actor. The identity attached to the key differs: for project TP
-it is the committer resolved via LDAP from the OIDC `actor_id`; for distribution workflows it is the
-committer's ASF UID passed through the workflow, trusted because only the service account — which
-only ATR can trigger — could have put it there.
+project workflows, `/distribute/ssh/register` for distribution workflows), which generates a
+temporary SSH key bound to the specific project. The key cannot be used for any other project, and
+`ssh.SSHServer` checks this before it looks anything up, so a key can't be used to find out what
+exists in other projects. Distribution workflows only download, so their keys are read-only: a key
+whose `github_nid` is `GITHUB_TRUSTED_ROLE_NID` can't be used to upload, because only the
+distribution registration endpoint accepts that actor. The identity attached to the key differs:
+for project workflows it is the committer resolved via LDAP from the OIDC `actor_id`; for
+distribution workflows it is the committer's ASF UID passed through the workflow, trusted because
+only the service account — which only ATR can trigger — could have put it there.
 
 **Single-use registration.** An OIDC token registers a key once.
 `storage.writers.ssh.add_workflow_key` has `storage.writers.tokens.consume_workflow_jti` record the
 token's `jti` in `workflowjti` before it inserts the key, so a token replayed within its validity
 window fails on the primary key and mints nothing. The `jti` is committed on its own, so a
-registration that fails after that point has still used the token.
-Rows are pruned once the token's own `exp` has passed. Tokens are not single-use across the other
-OIDC endpoints, because a workflow mints one token per job and presents it to several of them.
+registration that fails after that point has still used the token. Rows are pruned once the
+token's own `exp` has passed. `/publisher/jwt/create` and `/publisher/release/source` record the
+`jti` in the same way. Tokens are not single-use across the vote, finish and distribution
+endpoints, because a workflow mints one token per job and presents it to several of them.
 
 ### Project JWTs
 
 A workflow that uploads through the HTTP API and not rsync calls `/publisher/jwt/create`, which
 exchanges its OIDC token for a project JWT. The checks are the ones `/publisher/ssh/register`
-makes, including that the actor is a member of the project's committee, and the exchange records
-the OIDC token's `jti` in the same `workflowjti` table, so one OIDC token yields a key or a JWT and
-never both.
+makes, including that the actor is a member of the project's committee or one of its release
+managers, and the exchange records the OIDC token's `jti` in the same `workflowjti` table, so one
+OIDC token yields a key or a JWT and never both.
 
 A project JWT is an ATR JWT, limited in these ways:
 
 * **Routes.** It carries an `atr_prj` claim naming one project. `jwtoken.verify` refuses a token with
   that claim unless its caller asks for project JWTs, and `api_auth.authenticate_header` asks only
-  for a route whose auth scheme is `bearer_project`, which is `release/create` and `release/store`.
-  A new route has to opt in before a project JWT can reach it.
-* **Project.** On those two routes `api_auth.authorize_project` compares the project in the request
+  for a route whose auth scheme is `bearer_project`, which is `release/create`, `release/store` and
+  `distribution/stage`. A new route has to opt in before a project JWT can reach it.
+* **Project.** On those routes `api_auth.authorize_project` compares the project in the request
   with the one in the claim before the handler runs, and before any upload body is read.
 * **Lifetime.** It lasts five minutes from the exchange, with no leeway and no refresh. A workflow
   that needs longer requests a new OIDC token and exchanges again. Authentication happens when a
@@ -409,7 +438,7 @@ depending on the route, is tightly integrated with the GitHub Actions OIDC workf
 the previous section:
 
 1. A GitHub Actions workflow authenticates to ATR via OIDC (see
-   [GitHub Actions OIDC](#github-actions-oidc-trusted-publishing) above) and calls the SSH key
+   [GitHub Actions OIDC](#github-actions-oidc) above) and calls the SSH key
    registration endpoint.
 2. ATR generates a temporary SSH key pair, stores the public key in the database with a 20-minute
    TTL, and returns the private key to the workflow.
@@ -497,11 +526,12 @@ and the API are tighter at `10` requests per hour. When an HTTP limit is exceede
 one.
 
 Those limits are applied before a request is authenticated, so they can only group requests by
-session, Bearer JWT or client address. The Trusted Publishing exchanges take a GitHub OIDC token
+session, Bearer JWT or client address. The workflow token exchanges take a GitHub OIDC token
 from runners that share addresses between unrelated projects, so `/publisher/ssh/register`,
-`/publisher/jwt/create` and `/distribute/ssh/register` have a second limit applied from inside the
-handler, once the token is verified. It allows `30` requests per hour on each route for one
-committer in one project, and counts a request whether or not the exchange then succeeds.
+`/publisher/jwt/create`, `/publisher/release/source` and `/distribute/ssh/register` have a second
+limit applied from inside the handler, once the token is verified. It allows `30` requests per hour
+on each route for one committer in one project, and counts a request whether or not the exchange
+then succeeds.
 Before the token is verified these routes allow `60` requests per hour from one client address,
 which is loose enough for shared runners and is there because verifying a token calls GitHub.
 

@@ -77,18 +77,25 @@
             <h3 class="mb-0">Permissions</h3>
           </div>
           <div class="card-body">
-            <p class="mb-1">CI builds: <strong>{{ "Enabled" if ci_builds_enabled else "Disabled" }}</strong></p>
-            {% if committee.key in ("test", "tooling") %}
+            <p class="mb-1">
+              Uploads from GitHub Actions: <strong>{{ "Allowed" if ci_builds_enabled else "Not allowed" }}</strong>
+            </p>
+            {% if committee.key in ci_builds_test_committees %}
               <p class="text-muted mb-0">
-                This committee is allowed to make automated releases for testing ATR, without an automated
-                release signing key.
+                This committee is always allowed to upload from GitHub Actions, for testing ATR.
               </p>
             {% else %}
-              <p class="text-muted mb-0">
-                Whether this committee can make releases built and signed automatically in CI, determined by
-                the presence of an automated release signing key. See the
-                <a href="{{ as_url(get.docs.page, path='trusted-publishing') }}">Trusted Publishing guide</a>.
-              </p>
+              {% if not signing_key_held %}
+                <p class="text-muted">
+                  This committee has no automated release signing key, which is required for uploads from GitHub Actions.
+                  See <a href="{{ automated_release_signing_url }}">automated release signing</a>.
+                </p>
+              {% endif %}
+              {% if github_uploads_form %}
+                {{ github_uploads_form }}
+              {% elif not is_committee_member %}
+                <p class="text-muted mb-0">A member of this PMC can change this.</p>
+              {% endif %}
             {% endif %}
           </div>
         </div>

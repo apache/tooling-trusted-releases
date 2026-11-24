@@ -56,8 +56,8 @@ There are many ways to get files into a candidate:
 * upload with [`atr` CLI](uploading-files#command-line-client)
   ([Trusted Releases Client](https://github.com/apache/tooling-releases-client)),
 * upload with [ATR Maven Plugin](uploading-files#maven-plugin),
-* upload from a [GitHub Actions workflow](uploading-files#github-actions) using
-  [Trusted Publishing](trusted-publishing).
+* upload from a [GitHub Actions workflow](uploading-files#github-actions), as described in
+  [Uploads from GitHub Actions](github-actions-uploads).
 
 [Uploading files](uploading-files) gives the commands and setup for each of these, and explains how
 each change to a candidate is recorded as a [revision](uploading-files#revisions).
