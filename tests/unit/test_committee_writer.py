@@ -48,6 +48,93 @@ def test_committee_writer_is_member_only() -> None:
 
 
 @pytest.mark.asyncio
+async def test_github_uploads_set_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _committee_row()
+    row.github_oidc_enabled = True
+    writer, data, write_as = _writer_with_mocks(row)
+    monkeypatch.setattr(committee.interaction, "automated_release_signing_key_held", mock.AsyncMock(return_value=True))
+
+    changed = await writer.github_uploads_set(True)
+
+    assert changed is False
+    data.commit.assert_not_awaited()
+    data.add.assert_not_called()
+    write_as.append_to_audit_log.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_github_uploads_set_needs_a_signing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _committee_row()
+    writer, data, write_as = _writer_with_mocks(row)
+    monkeypatch.setattr(committee.interaction, "automated_release_signing_key_held", mock.AsyncMock(return_value=False))
+
+    with pytest.raises(storage.AccessError, match="no automated release signing key") as exc_info:
+        await writer.github_uploads_set(True)
+
+    assert exc_info.value.status == 409
+    assert committee.constants.AUTOMATED_RELEASE_SIGNING_URL in str(exc_info.value)
+    assert row.github_oidc_enabled is False
+    data.commit.assert_not_awaited()
+    write_as.append_to_audit_log.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_github_uploads_set_records_and_notifies_with_repositories(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _committee_row()
+    row.projects = [
+        sql.Project(key="alpha-two", name="Two", repositories=["https://gitbox.apache.org/repos/asf/two.git"]),
+        # Only the repository under apache/ can upload, and it is matched in lower case
+        sql.Project(
+            key="alpha-one",
+            name="One",
+            repositories=["https://github.com/apache/Alpha-One.git", "https://github.com/elsewhere/alpha-one"],
+        ),
+        # An archived project takes no uploads, so it has nothing to list
+        sql.Project(
+            key="alpha-old",
+            name="Old",
+            status=sql.ProjectStatus.RETIRED,
+            repositories=["https://github.com/apache/alpha-old"],
+        ),
+    ]
+    writer, data, write_as = _writer_with_mocks(row)
+    monkeypatch.setattr(committee.interaction, "automated_release_signing_key_held", mock.AsyncMock(return_value=True))
+    monkeypatch.setattr(committee.util, "absolute_url", lambda path: f"https://atr.example{path}")
+
+    changed = await writer.github_uploads_set(True)
+
+    assert changed is True
+    assert row.github_oidc_enabled is True
+    assert row.updated_by == "chair"
+    data.commit.assert_awaited_once()
+    audit = write_as.append_to_audit_log.call_args.kwargs
+    assert audit["enabled"] is True
+    assert audit["repositories"] == {"alpha-one": ["apache/alpha-one"], "alpha-two": []}
+    task = data.add.call_args.args[0]
+    assert task.task_type is sql.TaskType.MESSAGE_SEND
+    assert task.task_args["email_to"] == "private@alpha.apache.org"
+    assert "alpha-one: apache/alpha-one" in task.task_args["body"]
+    assert "alpha-two: none" in task.task_args["body"]
+    assert "alpha-old" not in task.task_args["body"]
+    assert "elsewhere" not in task.task_args["body"]
+
+
+@pytest.mark.asyncio
+async def test_github_uploads_set_withdraws_without_a_signing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _committee_row()
+    row.github_oidc_enabled = True
+    writer, _data, write_as = _writer_with_mocks(row)
+    monkeypatch.setattr(committee.interaction, "automated_release_signing_key_held", mock.AsyncMock(return_value=False))
+    monkeypatch.setattr(committee.util, "absolute_url", lambda path: f"https://atr.example{path}")
+
+    changed = await writer.github_uploads_set(False)
+
+    assert changed is True
+    assert row.github_oidc_enabled is False
+    assert write_as.append_to_audit_log.call_args.kwargs["enabled"] is False
+
+
+@pytest.mark.asyncio
 async def test_release_manager_add_designates_committer() -> None:
     row = _committee_row()
     writer, data, write_as = _writer_with_mocks(row)

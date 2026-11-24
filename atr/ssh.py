@@ -67,6 +67,13 @@ _PATH_ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
 # From a survey of version numbers we find that only . and - are used
 # We also allow + which is in common use
 _PATH_VERSION_CHARS: Final = _PATH_ALPHANUM | frozenset(".-+")
+_READABLE_PHASES: Final = frozenset(
+    {
+        sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        sql.ReleasePhase.RELEASE_CANDIDATE,
+        sql.ReleasePhase.RELEASE_PREVIEW,
+    }
+)
 
 _RATE_LIMIT_IP: Final = 100
 _RATE_LIMIT_USER: Final = 10
@@ -375,6 +382,23 @@ def _rate_limit_check(bucket: dict[str, collections.deque[float]], key: str, lim
     return True
 
 
+def _readable_release(
+    release: sql.Release | None,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    project_workflow_key: bool,
+) -> sql.Release:
+    hidden = (release is None) or release.is_embargoed or (release.phase not in _READABLE_PHASES)
+    if project_workflow_key and hidden:
+        # One message for a release that's missing, embargoed or finished, so a workflow can't tell them apart
+        raise RsyncArgsError(f"Release '{project_key}-{version_key}' is not one this workflow can download")
+    if release is None:
+        raise RsyncArgsError(f"Release '{project_key}-{version_key}' does not exist")
+    if release.phase not in _READABLE_PHASES:
+        raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
+    return release
+
+
 async def _step_01_handle_client(process: asyncssh.SSHServerProcess, server: SSHServer) -> None:
     """Process client command, validating and dispatching to read or write handlers."""
     try:
@@ -498,6 +522,8 @@ async def _step_04_command_validate(
         raise RsyncArgsError(f"This workflow key can only be used for project '{workflow_project_key}'")
     if (not is_read_request) and server._github_read_only:
         raise RsyncArgsError("This workflow key can only be used to download files")
+    # A key that a project's own workflow registered, as opposed to one for a workflow ATR dispatched
+    project_workflow_key = (workflow_project_key is not None) and (not server._github_read_only)
 
     ssh_uid = server._get_asf_uid(process)
     async with db.session() as data:
@@ -514,14 +540,14 @@ async def _step_04_command_validate(
         ### Calls _step_06a_validate_read_permissions ###
         #################################################
         validated_release, file_patterns = await _step_06a_validate_read_permissions(
-            ssh_uid, project, release, project_key, version_key, tag, server._github_read_only
+            ssh_uid, project, release, project_key, version_key, tag, server._github_read_only, project_workflow_key
         )
         return project_key, version_key, file_patterns, validated_release
 
     ##################################################
     ### Calls _step_06b_validate_write_permissions ###
     ##################################################
-    await _step_06b_validate_write_permissions(ssh_uid, project, release)
+    await _step_06b_validate_write_permissions(ssh_uid, project, release, project_workflow_key)
     return project_key, version_key, None, None
 
 
@@ -576,18 +602,10 @@ async def _step_06a_validate_read_permissions(
     version_key: safe.VersionKey,
     tag: str | None,
     github_read_only: bool,
+    project_workflow_key: bool,
 ) -> tuple[sql.Release | None, list[str] | None]:
     """Validate permissions for a read request."""
-    if release is None:
-        raise RsyncArgsError(f"Release '{project_key}-{version_key}' does not exist")
-
-    allowed_read_phases = {
-        sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-        sql.ReleasePhase.RELEASE_CANDIDATE,
-        sql.ReleasePhase.RELEASE_PREVIEW,
-    }
-    if release.phase not in allowed_read_phases:
-        raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
+    release = _readable_release(release, project_key, version_key, project_workflow_key)
     if github_read_only and release.is_embargoed and (release.phase != sql.ReleasePhase.RELEASE_PREVIEW):
         raise RsyncArgsError(f"Release '{release.key}' is embargoed, so this workflow key cannot download it")
 
@@ -616,12 +634,19 @@ async def _step_06b_validate_write_permissions(
     ssh_uid: str,
     project: sql.Project,
     release: sql.Release | None,
+    project_workflow_key: bool,
 ) -> None:
     """Validate permissions for a write request."""
     if release is None:
-        # Creating a new release requires committee membership
-        if not user.is_committee_member(project.committee, ssh_uid):
-            raise RsyncArgsError(f"You must be a member of project '{project.key}' committee to create a release")
+        # Creating a new release needs the same standing as starting one on the website
+        is_member = user.is_committee_member(project.committee, ssh_uid)
+        if (not is_member) and (not user.is_release_manager(project.committee, ssh_uid)):
+            raise RsyncArgsError(
+                f"You must be a PMC member or release manager for project '{project.key}' to create a release"
+            )
+    elif project_workflow_key and (release.is_embargoed or (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)):
+        # One message for both, so a workflow can't tell an embargoed release from one past its draft
+        raise RsyncArgsError(f"Cannot upload: Release '{release.key}' is not a draft this workflow can upload to")
     else:
         # Uploading to existing release, requires DRAFT and participant status
         if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:

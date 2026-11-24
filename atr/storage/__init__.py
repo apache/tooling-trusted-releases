@@ -232,6 +232,8 @@ class WriteAsReleaseManager(WriteAsCommitteeParticipant):
         self.policy = writers.policy.ReleaseManager(write, self, data, committee_key)
         self.project = writers.project.ReleaseManager(write, self, data, committee_key)
         self.release = writers.release.ReleaseManager(write, self, data, committee_key)
+        self.ssh = writers.ssh.ReleaseManager(write, self, data, committee_key)
+        self.tokens = writers.tokens.ReleaseManager(write, self, data, committee_key)
         self.vote = writers.vote.ReleaseManager(write, self, data, committee_key)
         self.workflowstatus = writers.workflowstatus.ReleaseManager(write, self, data, committee_key)
 

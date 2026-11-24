@@ -23,12 +23,14 @@ import htpy
 import sqlalchemy.orm as orm
 import sqlmodel
 
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
 import atr.errors as errors
 import atr.form as form
 import atr.get.manifest as manifest
 import atr.htm as htm
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
@@ -85,6 +87,8 @@ async def selected(
         revisions_list: list[sql.Revision] = list(revisions_result.scalars().all())
 
     revision_history = []
+    # The token payload of each revision that a GitHub workflow made
+    workflow_uploads: dict[str, github.TrustedPublisherPayload] = {}
     loop_prev_revision_files: set[safe.RelPath] | None = None
     loop_prev_revision_number: str | None = None
     for current_db_revision in revisions_list:
@@ -95,6 +99,9 @@ async def selected(
             prev_revision_number=loop_prev_revision_number,
         )
         revision_history.append((current_db_revision, files_diff_for_current))
+        payload = await attestable.github_tp_payload_read(project_key, version_key, current_db_revision.safe_number)
+        if payload is not None:
+            workflow_uploads[current_db_revision.number] = payload
         loop_prev_revision_files = current_files_for_diff
         loop_prev_revision_number = current_db_revision.number
 
@@ -102,6 +109,7 @@ async def selected(
         release,
         phase_key,
         list(reversed(revision_history)),
+        workflow_uploads,
         latest_revision_number,
         str(project_key),
         str(version_key),
@@ -150,6 +158,7 @@ async def _render_page(
     release: sql.Release,
     phase_key: str,
     revision_history: list[tuple[sql.Revision, FilesDiff]],
+    workflow_uploads: dict[str, github.TrustedPublisherPayload],
     latest_revision_number: str | None,
     project_key: str,
     version_key: str,
@@ -167,8 +176,17 @@ async def _render_page(
 
     if revision_history:
         for revision, files_diff in revision_history:
+            payload = workflow_uploads.get(revision.number)
+            workflow_upload = render.workflow_upload_note(payload) if (payload is not None) else None
             await _render_revision_card(
-                page, revision, files_diff, latest_revision_number, phase_key, project_key, version_key
+                page,
+                revision,
+                files_diff,
+                latest_revision_number,
+                phase_key,
+                project_key,
+                version_key,
+                workflow_upload=workflow_upload,
             )
     else:
         page.div(".alert.alert-info")["No revision history found for this candidate draft."]
@@ -198,13 +216,18 @@ async def _render_revision_card(
     phase_key: str,
     project_key: str,
     version_key: str,
+    *,
+    workflow_upload: htm.Element | None = None,
 ) -> None:
     with page.block(htm.div, classes=".card.mb-3") as card:
         card.div(".card-header.d-flex.justify-content-between.align-items-center")[
-            _render_revision_header(revision, latest_revision_number),
+            _render_revision_header(revision, latest_revision_number, by_workflow=workflow_upload is not None),
             _render_revision_timestamp(revision),
         ]
         with card.block(htm.div, classes=".card-body") as card_body:
+            if workflow_upload is not None:
+                card_body.append(workflow_upload)
+
             if revision.description:
                 card_body.p(".mb-2")[htm.strong[revision.description]]
 
@@ -237,13 +260,17 @@ async def _render_revision_card(
                 await _render_revision_actions(card_body, revision, project_key, version_key)
 
 
-def _render_revision_header(revision: sql.Revision, latest_revision_number: str | None) -> htm.Element:
+def _render_revision_header(
+    revision: sql.Revision, latest_revision_number: str | None, *, by_workflow: bool
+) -> htm.Element:
     revision_phase_key = revision.phase.value.lower().split("_")[-1]
     badges = [
         htm.span(".badge.bg-secondary.ms-2")[revision_phase_key.upper()],
     ]
     if revision.number == latest_revision_number:
         badges.append(htm.span(".badge.bg-primary.ms-2")["Current"])
+    if by_workflow:
+        badges.append(htm.span(".badge.text-bg-warning.ms-2")["GitHub Actions"])
 
     display_label = f"{revision.number} ({revision.tag})" if revision.tag else revision.number
     return htm.h2(".fs-6.my-2.mx-0.p-0.border-0.atr-sans")[

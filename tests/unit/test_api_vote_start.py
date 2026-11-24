@@ -15,10 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import unittest.mock as mock
 from types import SimpleNamespace
 
 import pydantic
 import pytest
+import werkzeug.exceptions as exceptions
 
 import atr.api as api
 import atr.construct as construct
@@ -49,6 +51,37 @@ async def test_vote_start_expedited_release_uses_expedited_template(monkeypatch)
     assert calls["subject"] == ""
     assert calls["body"] == construct.START_VOTE_EXPEDITED_DEFAULT
     assert calls["options"].vote_duration == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("created_by", "made_by_workflow", "refusal"),
+    [
+        pytest.param("user", False, None, id="own-upload"),
+        pytest.param("other", False, "created by somebody else", id="somebody-else"),
+        pytest.param("user", True, "uploaded by a GitHub workflow", id="workflow-under-own-name"),
+    ],
+)
+async def test_vote_start_implicit_revision_has_to_be_the_callers_own_upload(
+    monkeypatch, created_by: str, made_by_workflow: bool, refusal: str | None
+) -> None:
+    made = mock.AsyncMock(return_value=made_by_workflow)
+    monkeypatch.setattr(api.attestable, "revision_made_by_workflow", made)
+    db_data = mock.MagicMock()
+    db_data.revision.return_value.demand = mock.AsyncMock(return_value=SimpleNamespace(asfuid=created_by))
+    release = SimpleNamespace(
+        key="example-1.0.0",
+        safe_project_key=safe.ProjectKey("example"),
+        safe_version_key=safe.VersionKey("1.0.0"),
+    )
+    revision = safe.RevisionNumber("00002")
+
+    if refusal is None:
+        await api._vote_start_implicit_revision(db_data, release, revision, "user")
+        made.assert_awaited_once_with(release.safe_project_key, release.safe_version_key, revision)
+        return
+    with pytest.raises(exceptions.Conflict, match=refusal):
+        await api._vote_start_implicit_revision(db_data, release, revision, "user")
 
 
 @pytest.mark.asyncio

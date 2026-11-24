@@ -35,11 +35,18 @@ VOTE = sql.ReleasePhase.RELEASE_CANDIDATE
 
 
 @pytest.mark.parametrize(
-    ("read_only", "phase", "allowed"),
-    [(True, DRAFT, False), (True, VOTE, False), (True, PREVIEW, True), (False, DRAFT, True)],
+    ("read_only", "phase", "refusal"),
+    [
+        (True, DRAFT, "embargoed"),
+        (True, VOTE, "embargoed"),
+        (True, PREVIEW, None),
+        # A project's own workflow is told what it would be told about a release it can't download
+        (False, DRAFT, "not one this workflow can download"),
+        (False, PREVIEW, "not one this workflow can download"),
+    ],
 )
 async def test_embargoed_download_is_refused_to_workflows_before_finish(
-    monkeypatch: pytest.MonkeyPatch, read_only: bool, phase: sql.ReleasePhase, allowed: bool
+    monkeypatch: pytest.MonkeyPatch, read_only: bool, phase: sql.ReleasePhase, refusal: str | None
 ) -> None:
     monkeypatch.setattr("atr.user.embargo_denies", lambda *_args, **_kwargs: False)
     data = mock.MagicMock()
@@ -52,10 +59,10 @@ async def test_embargoed_download_is_refused_to_workflows_before_finish(
     server._get_github_project_key.return_value = PROJECT
     server._get_asf_uid.return_value = "alice"
     args = [mock.MagicMock(), [".", f"/{PROJECT}/{VERSION}/"], True, server]
-    if allowed:
+    if refusal is None:
         await ssh._step_04_command_validate(*args)
         return
-    with pytest.raises(ssh.RsyncArgsError, match="embargoed"):
+    with pytest.raises(ssh.RsyncArgsError, match=refusal):
         await ssh._step_04_command_validate(*args)
 
 

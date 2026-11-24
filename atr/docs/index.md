@@ -13,7 +13,7 @@ NOTE: This documentation is a work in progress.
   * `3.1.` [Project configuration](project-configuration)
 * `4.` [Release manager setup](release-manager-setup)
   * `4.1.` [Signing artifacts](signing-artifacts)
-  * `4.2.` [Trusted Publishing](trusted-publishing)
+  * `4.2.` [Uploads from GitHub Actions](github-actions-uploads)
 * `5.` [Making releases](making-releases)
   * `5.1.` [Compose phase](compose-phase)
     * `5.1.1.` [Uploading files](uploading-files)

@@ -24,6 +24,7 @@ import atr.models.sql as sql
 type ADD_RELEASE_MANAGER = Literal["add_release_manager"]
 type REMOVE_RELEASE_MANAGER = Literal["remove_release_manager"]
 type REQUEST_VOTE_MODE = Literal["request_vote_mode"]
+type SET_GITHUB_UPLOADS = Literal["set_github_uploads"]
 
 
 class AddReleaseManagerForm(form.Form):
@@ -52,7 +53,19 @@ class RequestVoteModeForm(form.Form):
     )
 
 
+class SetGithubUploadsForm(form.Form):
+    variant: SET_GITHUB_UPLOADS = form.value(SET_GITHUB_UPLOADS)
+    committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+    enabled: form.Bool = form.label(
+        "Allow uploads from GitHub Actions",
+        "Workflows in your projects' repositories can upload files to drafts, "
+        "when a PMC member or release manager starts them.",
+        widget=form.Widget.CHECKBOX,
+        default=False,
+    )
+
+
 type CommitteesForm = Annotated[
-    AddReleaseManagerForm | RemoveReleaseManagerForm | RequestVoteModeForm,
+    AddReleaseManagerForm | RemoveReleaseManagerForm | RequestVoteModeForm | SetGithubUploadsForm,
     form.DISCRIMINATOR,
 ]

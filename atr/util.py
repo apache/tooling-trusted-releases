@@ -1925,11 +1925,7 @@ def validate_path_segment(path_segment: str, position: str = "Path segment") -> 
     return path_segment
 
 
-def validate_trusted_publishing_constraints(
-    github_repository_name: str | None,
-    github_repository_branch: str | None,
-    all_paths: list[str],
-) -> None:
+def validate_trusted_publishing_constraints(github_repository_name: str | None, all_paths: list[str]) -> None:
     # The repository name is optional
     validation.validate_github_repository_name(github_repository_name)
     validation.validate_trusted_publishing_workflow_paths(all_paths)

@@ -317,8 +317,6 @@ The policy is changed through a set of edit operations, all on the release manag
 * **Compose policy** (`edit_compose`) - composition and artifact settings.
 * **Vote policy** (`edit_vote`) - voting settings.
 * **Finish policy** (`edit_finish`) - settings applied when a release is finished.
-* **Trusted publishing** (`edit_trusted_publishing`) - trusted publishing configuration (see
-  [Trusted Publishing](trusted-publishing)).
 * **Version scheme** (`edit_version_scheme`) - the project's version numbering.
 * **Cycle dates** (`edit_cycle_dates`) - release cycle dates.
 

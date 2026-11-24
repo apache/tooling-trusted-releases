@@ -1157,6 +1157,10 @@ class Committee(sqlmodel.SQLModel, table=True):
     # True once the PMC has been through the projects and releases we seeded for them.
     # Until then the catalogue says as much, because nobody who would know has checked it
     catalog_reviewed: bool = sqlmodel.Field(default=False)
+    # True when the PMC allows GitHub Actions workflows in its projects' repositories to upload
+    # to drafts. Uploads also need an automated release signing key, so this alone isn't enough.
+    # Kept out of serialised output, as the API returns whole committee rows
+    github_oidc_enabled: bool = sqlmodel.Field(default=False, exclude=True)
 
     # 1-M: Committee -> [Committee]
     # M-1: Committee -> Committee
@@ -1379,6 +1383,12 @@ class Project(sqlmodel.SQLModel, table=True):
             for url in self.repositories
             if (match := re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?", url))
         }
+
+    @property
+    def upload_repositories(self) -> set[str]:
+        # The GitHub repositories whose workflows can upload to this project, which have to be
+        # under apache/. Lower-cased, as GitHub doesn't tell apache/Foo from apache/foo
+        return {name.lower() for name in self.github_repositories if name.lower().startswith("apache/")}
 
     @property
     def safe_key(self) -> safe.ProjectKey:
@@ -1624,18 +1634,6 @@ Sincerely,
         if (policy := self.release_policy) is None:
             return ""
         return policy.github_repository_name
-
-    @property
-    def policy_github_repository_branch(self) -> str:
-        if (policy := self.release_policy) is None:
-            return ""
-        return policy.github_repository_branch
-
-    @property
-    def policy_github_compose_workflow_path(self) -> list[str]:
-        if (policy := self.release_policy) is None:
-            return []
-        return policy.github_compose_workflow_path or []
 
     @property
     def policy_file_tag_mappings(self) -> dict[str, Any]:
@@ -2290,6 +2288,23 @@ class ExpectedDistribution(sqlmodel.SQLModel, table=True):
         return resolved.replace("{{PROJECT_KEY}}", self.project_key).replace("{{VERSION}}", version)
 
 
+# ProjectSecurityOptions: Project
+class ProjectSecurityOptions(sqlmodel.SQLModel, table=True):
+    # Settings for a project that only a PMC member sets, in ATR. Kept off Project and
+    # ReleasePolicy so that nothing which reads .asf.yaml can set them
+    project_key: str = sqlmodel.Field(foreign_key="project.key", ondelete="CASCADE", primary_key=True)
+    # Which GitHub Actions workflow runs can upload to the project, beyond the checks every
+    # upload gets. An empty field restricts nothing
+    github_upload_workflow_paths: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    # "branch", "tag", or empty for either
+    github_upload_ref_type: str = sqlmodel.Field(default="")
+    github_upload_ref_patterns: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+
+
 # SigningCertificate: Committee SigningKey
 class SigningCertificate(sqlmodel.SQLModel, table=True):
     # The fingerprint of the certificate's primary key, stored as lowercase hex. The keys which can
@@ -2546,10 +2561,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     )
     rat_excludes_url: str = sqlmodel.Field(default="")
     github_repository_name: str = sqlmodel.Field(default="")
-    github_repository_branch: str = sqlmodel.Field(default="")
-    github_compose_workflow_path: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
-    )
     file_tag_mappings: dict[str, Any] = sqlmodel.Field(
         default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
@@ -2591,8 +2602,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             source_excludes_rat=list(self.source_excludes_rat),
             rat_excludes_url=self.rat_excludes_url,
             github_repository_name=self.github_repository_name,
-            github_repository_branch=self.github_repository_branch,
-            github_compose_workflow_path=list(self.github_compose_workflow_path),
             file_tag_mappings=dict(self.file_tag_mappings),
             github_vote_workflow_path=list(self.github_vote_workflow_path),
             github_finish_workflow_path=list(self.github_finish_workflow_path),

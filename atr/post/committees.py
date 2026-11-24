@@ -44,7 +44,7 @@ async def view(
 ) -> web.WerkzeugResponse:
     """
     URL: /committees/<name>
-    Handle the release manager designation forms on the committee page.
+    Handle the release manager and GitHub Actions upload forms on the committee page.
     """
     if committees_form.committee_key != str(name):
         raise RuntimeError("Committee key mismatch")
@@ -58,6 +58,24 @@ async def view(
 
         case shared.committees.RequestVoteModeForm() as request_form:
             return await _vote_mode_request(session, name, request_form)
+
+        case shared.committees.SetGithubUploadsForm() as uploads_form:
+            return await _github_uploads_set(session, name, uploads_form)
+
+
+async def _github_uploads_set(
+    session: web.Committer, name: safe.CommitteeKey, uploads_form: shared.committees.SetGithubUploadsForm
+) -> web.WerkzeugResponse:
+    try:
+        async with storage.write_as_committee_member(str(name), session) as wacm:
+            await wacm.committee.github_uploads_set(uploads_form.enabled)
+    except storage.AccessError as e:
+        return await session.redirect(get.committees.view, error=str(e), name=str(name))
+    if uploads_form.enabled:
+        message = "Uploads from GitHub Actions are allowed."
+    else:
+        message = "Uploads from GitHub Actions are not allowed."
+    return await session.redirect(get.committees.view, success=message, name=str(name))
 
 
 async def _release_manager_add(

@@ -40,10 +40,13 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.principal as principal
+import atr.upload_restrictions as upload_restrictions
 import atr.user as user
 import atr.util as util
 import atr.web as web
 
+# Committees allowed to make automated releases for testing, with no opt-in or signing key
+CI_BUILDS_TEST_COMMITTEES: Final[frozenset[str]] = frozenset({"test", "tooling"})
 # Infra-provided service account with permission to run ATR workflows
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
@@ -219,13 +222,12 @@ async def certificate_artifact_counts(data: db.Session, fingerprints: list[str])
 async def automated_release_signing_committees(caller_data: db.Session | None = None) -> frozenset[str]:
     """Get all automated release signing committees."""
     keys = await automated_release_signing_keys(caller_data)
-    committees = [key.committee.key for key in keys]
+    return frozenset(key.committee.key for key in keys) | CI_BUILDS_TEST_COMMITTEES
 
-    # Committees allowed to make automated releases for testing
-    committees.append("test")
-    committees.append("tooling")
 
-    return frozenset(committees)
+async def automated_release_signing_key_held(committee_key: str, caller_data: db.Session | None = None) -> bool:
+    keys = await automated_release_signing_keys(caller_data)
+    return any(key.committee.key == committee_key for key in keys)
 
 
 async def automated_release_signing_keys(caller_data: db.Session | None = None) -> list[AutomatedReleaseSigningKey]:
@@ -420,8 +422,62 @@ async def checks_tally_for(
 
 
 async def ci_builds_enabled(committee_key: str | None, caller_data: db.Session | None = None) -> bool:
-    """Whether the committee can make automated releases from CI."""
-    return committee_key in await automated_release_signing_committees(caller_data)
+    """Whether GitHub Actions workflows can upload to the committee's projects."""
+    if committee_key is None:
+        return False
+    if committee_key in CI_BUILDS_TEST_COMMITTEES:
+        return True
+    async with db.ensure_session(caller_data) as data:
+        committee = await data.committee(key=committee_key).get()
+    if (committee is None) or (not committee.github_oidc_enabled):
+        return False
+    # The setting has no effect without a key, so a committee that loses its key stops uploading
+    return await automated_release_signing_key_held(committee_key, caller_data)
+
+
+async def compose_project_for_payload(
+    payload: github.TrustedPublisherPayload,
+    asf_uid: str | None,
+    project_key: safe.ProjectKey | None,
+) -> tuple[str, sql.Project]:
+    """Find the project a verified GitHub workflow token may upload to, or refuse with a 4xx error."""
+    if asf_uid is None:
+        raise errors.ASFQuartException("Uploads need a GitHub account linked to an ASF user", errorcode=403)
+    # GitHub keeps the original actor on a re-run and the token doesn't say who re-ran it
+    if payload.run_attempt != "1":
+        raise errors.ASFQuartException(
+            f"This is attempt {payload.run_attempt} of workflow run {payload.run_id}, and ATR only accepts "
+            "the first attempt of a run. Start a new run of the workflow instead of re-running this one.",
+            errorcode=403,
+        )
+    if project_key is None:
+        project = await _trusted_project(payload.repository, payload.workflow_ref, TrustedProjectPhase.COMPOSE)
+        log.info(f"GitHub workflow token from {payload.repository} gave no project, and resolved to {project.key}")
+        await _upload_restrictions_check(project, payload)
+        return asf_uid, project
+
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), _committee=True).get()
+        if project is None:
+            raise errors.ASFQuartException(f"Project '{project_key}' not found", errorcode=404)
+        if not project.is_active:
+            raise errors.ASFQuartException(
+                f"Project '{project_key}' is archived, so it cannot take uploads", errorcode=403
+            )
+        committee = project.committee
+        if committee is None:
+            raise errors.ASFQuartException(f"Project '{project_key}' has no committee", errorcode=409)
+        if not await ci_builds_enabled(committee.key, data):
+            raise errors.ASFQuartException(_ci_builds_refusal(committee), errorcode=403)
+    if payload.repository.lower() not in project.upload_repositories:
+        raise errors.ASFQuartException(
+            f"Repository {payload.repository} is not in the repository list of project '{project_key}'. "
+            f"A {committee.key} PMC member or release manager can add it at "
+            f"{util.absolute_url(f'/projects/{project_key}')}",
+            errorcode=403,
+        )
+    await _upload_restrictions_check(project, payload)
+    return asf_uid, project
 
 
 def committee_vote_mode_request_action(committee: sql.Committee) -> sql.ApprovalAction:
@@ -1382,6 +1438,19 @@ async def trusted_workflow_run(
         )
 
 
+async def uploadable_draft(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, *, from_workflow: bool
+) -> sql.Release | None:
+    """The draft a caller could add to, or None. A workflow's credential is never shown an embargoed one."""
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).get()
+    if (release is None) or (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
+        return None
+    if from_workflow and release.is_embargoed:
+        return None
+    return release
+
+
 async def user_committees(asf_uid: str) -> list[tuple[str, str]]:
     results = []
     for committee in await user_committees_participant(asf_uid):
@@ -1601,6 +1670,19 @@ async def _check_results_query(
     )
 
 
+def _ci_builds_refusal(committee: sql.Committee) -> str:
+    committee_url = util.absolute_url(f"/committees/{committee.key}")
+    if not committee.github_oidc_enabled:
+        return (
+            f"The {committee.key} PMC has not allowed uploads from GitHub Actions. "
+            f"A PMC member can allow them at {committee_url}"
+        )
+    return (
+        f"The {committee.key} PMC has no automated release signing key, so ATR does not accept uploads "
+        f"from GitHub Actions for its projects. See {committee_url}"
+    )
+
+
 def _content_in_progress() -> sqlalchemy.Subquery:
     """Select the size of each distinct content of each release in progress, with its project."""
     via = sql.validate_instrumented_attribute
@@ -1731,15 +1813,16 @@ async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedPro
     async with db.session() as db_data:
         match phase:
             case TrustedProjectPhase.COMPOSE:
-                # Searches in github_*compose*_workflow_path
-                policies = await db_data.release_policy(github_compose_workflow_path_has=workflow_path).all()
+                # Searches in the workflow paths a project restricts its uploads to
+                matches = await _trusted_project_upload_matches(db_data, workflow_path, repository)
             case TrustedProjectPhase.VOTE:
                 # Searches in github_*vote*_workflow_path
                 policies = await db_data.release_policy(github_vote_workflow_path_has=workflow_path).all()
+                matches = await _trusted_project_matches(db_data, policies, repository)
             case TrustedProjectPhase.FINISH:
                 # Searches in github_*finish*_workflow_path
                 policies = await db_data.release_policy(github_finish_workflow_path_has=workflow_path).all()
-        matches = await _trusted_project_matches(db_data, policies, repository)
+                matches = await _trusted_project_matches(db_data, policies, repository)
     if not matches:
         raise rpnf_error
     # Two projects with the same repository and workflow can't be told apart, so neither is chosen
@@ -1749,7 +1832,7 @@ async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedPro
     project = matches[0]
     if project.committee is None:
         raise InteractionError(f"Project {project.key} has no committee")
-    if not await ci_builds_enabled(project.committee.key):
+    if not await _trusted_project_enabled(project.committee.key, phase):
         raise InteractionError(f"Project {project.key} is not in a committee that can make automated releases")
     return project
 
@@ -1768,6 +1851,13 @@ def _trusted_project_checks(repository: str, workflow_ref: str) -> str:
     return workflow_path
 
 
+async def _trusted_project_enabled(committee_key: str, phase: TrustedProjectPhase) -> bool:
+    if phase is TrustedProjectPhase.COMPOSE:
+        return await ci_builds_enabled(committee_key)
+    # The committee's setting is about uploads. After the vote a workflow needs the signing key and nothing more
+    return committee_key in await automated_release_signing_committees()
+
+
 async def _trusted_project_matches(
     db_data: db.Session, policies: Sequence[sql.ReleasePolicy], repository: str
 ) -> list[sql.Project]:
@@ -1781,6 +1871,27 @@ async def _trusted_project_matches(
         # A named repository pins the workflow to it - an empty one means any repository the metadata lists
         if policy.github_repository_name:
             allowed = {"apache/" + policy.github_repository_name}
+        else:
+            allowed = project.github_repositories
+        if repository in allowed:
+            matches.append(project)
+    return matches
+
+
+async def _trusted_project_upload_matches(
+    db_data: db.Session, workflow_path: str, repository: str
+) -> list[sql.Project]:
+    matches: list[sql.Project] = []
+    for options in await db_data.project_security_options(github_upload_workflow_paths_has=workflow_path).all():
+        # The query matches on the stored text, so a longer path that contains this one gets this far
+        if workflow_path not in options.github_upload_workflow_paths:
+            continue
+        project = await db_data.project(key=options.project_key, _committee=True, _release_policy=True).get()
+        if project is None:
+            continue
+        # A repository on the policy pins the workflow to it - without one, any repository the metadata lists will do
+        if project.policy_github_repository_name:
+            allowed = {"apache/" + project.policy_github_repository_name}
         else:
             allowed = project.github_repositories
         if repository in allowed:
@@ -1805,3 +1916,17 @@ def _trusted_summary_add(summary: TrustedVoteSummary, choice: sql.VoteChoice, is
                 summary.binding_votes_no += 1
             else:
                 summary.non_binding_votes_no += 1
+
+
+async def _upload_restrictions_check(project: sql.Project, payload: github.TrustedPublisherPayload) -> None:
+    async with db.session() as data:
+        options = await data.project_security_options(project_key=project.key).get()
+    if options is None:
+        return
+    problem = upload_restrictions.problem(options, payload.repository, payload.workflow_ref, payload.ref)
+    if problem is not None:
+        raise errors.ASFQuartException(
+            f"{problem}. A member of the {project.committee_key} PMC can change the GitHub OIDC restrictions of "
+            f"project '{project.key}' in ATR.",
+            errorcode=403,
+        )

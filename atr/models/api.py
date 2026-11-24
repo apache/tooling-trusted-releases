@@ -28,7 +28,7 @@ T = TypeVar("T")
 
 type TrustedWorkflowPhase = Literal["compose", "vote", "finish"]
 
-# The policy fields that the .asf.yaml route refuses, by name so the error can say why
+# The policy fields that no route writes, refused by name so the error can say why
 _TRUSTED_PUBLISHING_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "github_compose_workflow_path",
@@ -287,6 +287,35 @@ class DistributionRecordResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class DistributionStageArgs(schema.Strict):
+    project: safe.ProjectKey = schema.example("example")
+    version: safe.VersionKey = schema.example("0.0.1")
+    platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
+    distribution_owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "example")
+    distribution_package: safe.Alphanumeric = schema.example("example")
+    distribution_version: safe.VersionKey = schema.example("0.0.1")
+    details: bool = schema.example(False)
+
+    @pydantic.field_validator("platform", mode="before")
+    @classmethod
+    def platform_to_enum(cls, v):
+        if isinstance(v, str):
+            try:
+                return sql.DistributionPlatform.__members__[v]
+            except KeyError:
+                raise ValueError(f"'{v}' is not a valid DistributionPlatform")
+        return v
+
+    @pydantic.field_serializer("platform")
+    def serialise_platform(self, v):
+        return v.name if isinstance(v, sql.DistributionPlatform) else v
+
+
+class DistributionStageResults(schema.Strict):
+    endpoint: Literal["/distribution/stage"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
+
+
 class IgnoreAddArgs(schema.Strict):
     project_key: safe.ProjectKey = schema.example("example")
     release_glob: str | None = schema.default_example(None, "example-0.0.*")
@@ -469,8 +498,8 @@ class PolicyArgsBase(schema.Strict):
     """
     Base class to allow one endpoint to take a project key and another not
 
-    The trusted publishing settings are not here on purpose. They're a credential,
-    so only PolicyUpdateArgs carries them and the .asf.yaml route can't reach them.
+    The workflow settings on a release policy are not here on purpose. No route
+    writes them, and both subclasses refuse them with an error that lists them.
     """
 
     announce_release_subject: str | None = None
@@ -548,33 +577,22 @@ class PolicyArgsBase(schema.Strict):
 
 class PolicyUpdateArgs(PolicyArgsBase):
     project: safe.ProjectKey = schema.example("example")
-    # A workflow registered here acts in ATR as the PMC with no login or MFA, so
-    # these are a credential. They can only arrive on a committer's own token, which
-    # is why they sit on this class rather than the base the .asf.yaml route shares
-    github_compose_workflow_path: list[str] | None = None
-    github_finish_workflow_path: list[str] | None = None
-    github_repository_branch: str | None = None
-    github_repository_name: str | None = None
-    github_vote_workflow_path: list[str] | None = None
 
-    @pydantic.model_validator(mode="after")
-    def validate_trusted_publishing_fields(self) -> Self:
-        github_repository_name = self.github_repository_name
-        if github_repository_name is not None:
-            validation.validate_github_repository_name(github_repository_name.strip())
-
-        workflow_paths: list[str] = []
-        for paths in (
-            self.github_compose_workflow_path,
-            self.github_vote_workflow_path,
-            self.github_finish_workflow_path,
-        ):
-            if paths is None:
-                continue
-            workflow_paths.extend(path.strip() for path in paths if path.strip())
-        validation.validate_trusted_publishing_workflow_paths(workflow_paths)
-
-        return self
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _refuse_workflow_fields(cls, data: Any) -> Any:
+        # Strict would refuse these as unknown keys anyway, but this way the error says
+        # where uploads from GitHub Actions are set up
+        if not isinstance(data, dict):
+            return data
+        named = sorted(_TRUSTED_PUBLISHING_FIELDS & set(data))
+        if named:
+            raise ValueError(
+                f"These settings are not accepted: {', '.join(named)}. Uploads from GitHub Actions are"
+                " allowed by the project's PMC on its committee page, for workflows in the repositories the"
+                " project lists"
+            )
+        return data
 
 
 class PolicyUpdateResults(schema.Strict):
@@ -675,15 +693,12 @@ class ProjectConfigPolicyArgs(PolicyArgsBase):
     def _refuse_trusted_publishing_fields(cls, data: Any) -> Any:
         # Strict would refuse these as unknown keys anyway, but the reason deserves
         # saying: a file that anyone with push access can edit is no place to keep
-        # what amounts to a credential, so these are only ever set in ATR itself
+        # what amounts to a credential
         if not isinstance(data, dict):
             return data
         named = sorted(_TRUSTED_PUBLISHING_FIELDS & set(data))
         if named:
-            raise ValueError(
-                f"Trusted publishing is configured in ATR, not through .asf.yaml, so these fields are not"
-                f" accepted here: {', '.join(named)}"
-            )
+            raise ValueError(f"These fields are not accepted through .asf.yaml: {', '.join(named)}")
         return data
 
 
@@ -821,6 +836,8 @@ class PublisherReleaseAnnounceResults(schema.Strict):
 class PublisherJwtCreateArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    # The project the workflow is uploading to. Without it the project is found from the workflow path
+    project: safe.ProjectKey | None = schema.default_example(None, "example")
     source_commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
     # False when the workflow builds from more than one repository, and declares each archive itself
     declare_sources: bool = schema.default_example(True, True)
@@ -837,6 +854,7 @@ class PublisherJwtCreateResults(schema.Strict):
 class PublisherReleaseSourceArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    project: safe.ProjectKey | None = schema.default_example(None, "example")
     version: safe.VersionKey = schema.example("0.0.1")
     sources: list[SourceDeclaration] = schema.example(
         [
@@ -858,6 +876,7 @@ class PublisherReleaseSourceResults(schema.Strict):
 class PublisherSshRegisterArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    project: safe.ProjectKey | None = schema.default_example(None, "example")
     ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
     source_commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
     # False when the workflow builds from more than one repository, and declares each archive itself

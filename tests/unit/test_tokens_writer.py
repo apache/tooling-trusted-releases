@@ -53,16 +53,16 @@ async def test_consume_workflow_jti_commits_and_then_refuses_the_same_token(
     sqlite_sessionmaker, github_payload: github.TrustedPublisherPayload
 ) -> None:
     async with sqlite_sessionmaker() as data:
-        writer = object.__new__(tokens.CommitteeParticipant)
-        writer._CommitteeParticipant__data = data
+        writer = object.__new__(tokens.ReleaseManager)
+        writer._ReleaseManager__data = data
         await writer.consume_workflow_jti(github_payload, 0)
         # The caller goes on to fail, and never commits anything itself
         await data.rollback()
 
     async with sqlite_sessionmaker() as data:
         assert [row.jti for row in await data.query_all(sqlmodel.select(sql.WorkflowJti))] == ["test-jti"]
-        writer = object.__new__(tokens.CommitteeParticipant)
-        writer._CommitteeParticipant__data = data
+        writer = object.__new__(tokens.ReleaseManager)
+        writer._ReleaseManager__data = data
         with pytest.raises(storage.AccessError, match="already been used") as exc_info:
             await writer.consume_workflow_jti(github_payload, 0)
         assert exc_info.value.status == 409

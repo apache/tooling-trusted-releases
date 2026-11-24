@@ -78,7 +78,8 @@ page that covers it in full.
 * **PAT** - Personal Access Token, a credential that identifies you to ATR's API and command line
   tooling. See [Access credentials](release-manager-setup#access-credentials).
 * **JWT** - JSON Web Token, a short-lived credential issued in exchange for a PAT.
-* **Trusted Publishing** - signing release artifacts automatically in a GitHub Actions workflow,
-  available to projects with reproducible builds. See [Trusted Publishing](trusted-publishing).
+* **Uploads from GitHub Actions** - building and signing release artifacts in a GitHub Actions
+  workflow that uploads them to ATR, available to projects with reproducible builds. See
+  [Uploads from GitHub Actions](github-actions-uploads).
 * **PURL** - Package URL, a standard identifier given to every release in the catalog. See
   [Package URLs](release-catalog#package-urls).

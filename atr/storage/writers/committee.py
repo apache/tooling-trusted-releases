@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 import atr.constants as constants
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.mail as mail
+import atr.models.args as args
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks as tasks
@@ -112,6 +114,52 @@ class CommitteeMember(ReleaseManager):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def github_uploads_set(self, enabled: bool) -> bool:
+        """Allow or stop uploads from GitHub Actions for the committee's projects, returning whether it changed."""
+        await self.__data.begin_immediate()
+        try:
+            committee = await self.__data.committee(key=self.__committee_key, _projects=True).demand(
+                storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+            )
+            if committee.github_oidc_enabled == enabled:
+                await self.__data.rollback()
+                return False
+            if enabled and (not await interaction.automated_release_signing_key_held(committee.key, self.__data)):
+                raise storage.AccessError(
+                    f"The {committee.key} PMC has no automated release signing key, which uploads from "
+                    f"GitHub Actions need. See {constants.AUTOMATED_RELEASE_SIGNING_URL}",
+                    status=409,
+                )
+            committee.github_oidc_enabled = enabled
+            committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            # The repositories that can upload as of this change. Only an active project takes
+            # uploads, and only from its repositories under apache/
+            repositories = {
+                str(project.key): sorted(project.upload_repositories)
+                for project in committee.projects
+                if project.is_active
+            }
+            self.__data.add(
+                sql.Task(
+                    task_type=sql.TaskType.MESSAGE_SEND,
+                    task_args=_github_uploads_notice(
+                        committee.key, self.__asf_uid, enabled, repositories
+                    ).as_task_args(),
+                    asf_uid=constants.SYSTEM_SERVICE_UID,
+                )
+            )
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            enabled=enabled,
+            repositories={key: [*names] for key, names in repositories.items()},
+        )
+        return True
 
     async def release_manager_add(self, asf_uid: str) -> bool:
         asf_uid = asf_uid.strip().lower()
@@ -424,3 +472,35 @@ class FoundationAdmin(CommitteeMember):
         return await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
         )
+
+
+def _github_uploads_notice(
+    committee_key: str, asf_uid: str, enabled: bool, repositories: dict[str, list[str]]
+) -> args.Send:
+    committee_url = util.absolute_url(f"/committees/{committee_key}")
+    if enabled:
+        subject = f"[ATR] Uploads from GitHub Actions allowed for {committee_key}"
+        listed = [
+            f"  {project_key}: {', '.join(names) or 'none'}" for project_key, names in sorted(repositories.items())
+        ]
+        body = (
+            f"{asf_uid} has allowed uploads from GitHub Actions for the {committee_key} PMC.\n\n"
+            "A workflow in one of a project's repositories can now upload files to that project's drafts, "
+            "when a PMC member or release manager starts it. These are the repositories that applies to:\n\n"
+            + "\n".join(listed)
+            + f"\n\nTo stop this, or to review it, see {committee_url}\n"
+        )
+    else:
+        subject = f"[ATR] Uploads from GitHub Actions stopped for {committee_key}"
+        body = (
+            f"{asf_uid} has stopped uploads from GitHub Actions for the {committee_key} PMC.\n\n"
+            f"To allow them again, see {committee_url}\n"
+        )
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=f"private@{committee_key}.apache.org",
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )

@@ -77,8 +77,6 @@ class _FakePolicy:
             "announce_release_subject": "",
             "announce_release_template": "",
             "github_repository_name": "",
-            "github_repository_branch": "",
-            "github_compose_workflow_path": [],
             "github_vote_workflow_path": [],
             "github_finish_workflow_path": [],
             "download_path_suffix": "",
@@ -221,8 +219,6 @@ def test_export_omits_trusted_publishing_settings() -> None:
         name="Apache Example",
         release_policy=_FakePolicy(
             github_repository_name="example",
-            github_repository_branch="main",
-            github_compose_workflow_path=[".github/workflows/compose.yml"],
             github_vote_workflow_path=[".github/workflows/vote.yml"],
             github_finish_workflow_path=[".github/workflows/finish.yml"],
         ),

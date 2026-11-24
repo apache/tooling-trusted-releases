@@ -114,12 +114,13 @@ def test_issue_for_project_limits_the_token_to_five_minutes_and_one_project() ->
     assert "atr_sys" not in claims
 
 
-def test_only_release_create_and_store_take_a_project_token() -> None:
+def test_only_draft_routes_take_a_project_token() -> None:
     # Importing atr.api is what registers the routes
     importlib.import_module("atr.api")
 
     schemes = api_blueprint.route_auth_schemes()
     assert {name for name, scheme in schemes.items() if scheme == "bearer_project"} == {
+        "distribution_stage",
         "release_create",
         "release_store",
     }

@@ -17,8 +17,9 @@
 
 from __future__ import annotations
 
+import enum
 import re
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 import pydantic
 
@@ -31,6 +32,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.shared.distribution as distribution
+import atr.upload_restrictions as upload_restrictions
 import atr.util as util
 
 type COMPOSE = Literal["compose"]
@@ -39,7 +41,6 @@ type EDIT_METADATA = Literal["edit_metadata"]
 type EDIT_VERSION_SCHEME = Literal["edit_version_scheme"]
 type FINISH = Literal["finish"]
 type SECURITY = Literal["security"]
-type TRUSTED_PUBLISHING = Literal["trusted_publishing"]
 type VOTE = Literal["vote"]
 type ADD_CATEGORY = Literal["add_category"]
 type ADD_EXPECTED_DISTRIBUTIONS = Literal["add_expected_distributions"]
@@ -52,6 +53,10 @@ type REMOVE_LANGUAGE = Literal["remove_language"]
 
 def _strip_whitespace(value: object) -> object:
     return value.strip() if isinstance(value, str) else value
+
+
+def _stripped_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 
 def _validate_display_name(val: str) -> str:
@@ -560,60 +565,6 @@ class FinishPolicyForm(form.Form):
         return _validate_template_variables(val, construct.ANNOUNCE_VARIABLE_NAMES)
 
 
-class TrustedPublishingPolicyForm(form.Form):
-    variant: TRUSTED_PUBLISHING = form.value(TRUSTED_PUBLISHING)
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    github_repository_name: str = form.label(
-        "GitHub repository name",
-        "Excluding the apache/ prefix. Leave empty to accept workflows from any GitHub repository in the"
-        " project metadata.",
-    )
-    github_repository_branch: str = form.label(
-        "GitHub repository branch",
-        "Branch used for release builds (for example, main or 2.5.x). Optional.",
-    )
-    # TODO: We should think about making these a list[RelUrlPath]
-    # But note that they contain .github, so that will be awkward
-    github_compose_workflow_path: str = form.label(
-        "Compose workflow paths",
-        "Workflows permitted to perform compose-phase operations for this project. One path per line,"
-        " each starting with .github/workflows/ (for example, .github/workflows/release-compose.yml).",
-        widget=form.Widget.TEXTAREA,
-        rows=3,
-    )
-    github_vote_workflow_path: str = form.label(
-        "Vote workflow paths",
-        "Workflows permitted to perform vote-phase operations for this project. One path per line,"
-        " each starting with .github/workflows/.",
-        widget=form.Widget.TEXTAREA,
-        rows=3,
-    )
-    github_finish_workflow_path: str = form.label(
-        "Finish workflow paths",
-        "Workflows permitted to perform finish-phase operations for this project. One path per line,"
-        " each starting with .github/workflows/.",
-        widget=form.Widget.TEXTAREA,
-        rows=3,
-    )
-
-    @pydantic.model_validator(mode="after")
-    def validate_trusted_publishing_fields(self) -> TrustedPublishingPolicyForm:
-        github_repository_name = self.github_repository_name.strip()
-        github_repository_branch = self.github_repository_branch.strip()
-
-        all_paths: list[str] = []
-        for raw in (
-            self.github_compose_workflow_path,
-            self.github_vote_workflow_path,
-            self.github_finish_workflow_path,
-        ):
-            all_paths.extend(p.strip() for p in (raw or "").split("\n") if p.strip())
-
-        util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
-
-        return self
-
-
 class AddCategoryForm(form.Form):
     variant: ADD_CATEGORY = form.value(ADD_CATEGORY)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
@@ -689,6 +640,59 @@ class RequestApprovalForm(form.Form):
     )
 
 
+class UploadRefType(enum.Enum):
+    ANY = "Any branch or tag"
+    BRANCH = "Branches"
+    TAG = "Tags"
+
+
+# The value ProjectSecurityOptions.github_upload_ref_type holds for each
+UPLOAD_REF_TYPES: Final[dict[UploadRefType, str]] = {
+    UploadRefType.ANY: "",
+    UploadRefType.BRANCH: "branch",
+    UploadRefType.TAG: "tag",
+}
+
+
+class UploadRestrictionsForm(form.Form):
+    workflow_paths: str = form.label(
+        "Workflow paths",
+        "One per line, each starting with .github/workflows/. Leave empty for any workflow.",
+        default="",
+        widget=form.Widget.TEXTAREA,
+        rows=3,
+    )
+    ref_type: form.Enum[UploadRefType] = form.label(
+        "Branches or tags",
+        "What the workflow has to run on.",
+        widget=form.Widget.RADIO,
+    )
+    ref_patterns: str = form.label(
+        "Branch or tag patterns",
+        "One per line, such as main, release/* or v*. A * stops at a slash. Leave empty for any branch, or any tag.",
+        default="",
+        widget=form.Widget.TEXTAREA,
+        rows=3,
+    )
+
+    @pydantic.model_validator(mode="after")
+    def validate_restrictions(self) -> UploadRestrictionsForm:
+        upload_restrictions.validate(self.workflow_path_list(), self.stored_ref_type(), self.ref_pattern_list())
+        return self
+
+    def ref_pattern_list(self) -> list[str]:
+        return _stripped_lines(self.ref_patterns)
+
+    def stored_ref_type(self) -> str:
+        ref_type = self.ref_type
+        if not isinstance(ref_type, UploadRefType):
+            raise ValueError(f"Unsupported ref type: {ref_type}")
+        return UPLOAD_REF_TYPES[ref_type]
+
+    def workflow_path_list(self) -> list[str]:
+        return _stripped_lines(self.workflow_paths)
+
+
 type ProjectViewForm = Annotated[
     ComposePolicyForm
     | EditCycleDatesForm
@@ -696,7 +700,6 @@ type ProjectViewForm = Annotated[
     | EditVersionSchemeForm
     | FinishPolicyForm
     | SecurityForm
-    | TrustedPublishingPolicyForm
     | VotePolicyForm
     | AddCategoryForm
     | RemoveCategoryForm

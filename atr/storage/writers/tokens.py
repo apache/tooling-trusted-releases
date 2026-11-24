@@ -161,6 +161,25 @@ class CommitteeParticipant(FoundationCommitter):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
+
+class ReleaseManager(CommitteeParticipant):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsReleaseManager,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
+
     async def consume_workflow_jti(self, github_payload: github.TrustedPublisherPayload, fallback: int) -> None:
         """Record a GitHub OIDC token as exchanged, refusing a replay."""
         # Fall back to the lifetime of what's being issued if the token carried no exp, so the row outlives any replay
@@ -173,7 +192,7 @@ class CommitteeParticipant(FoundationCommitter):
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             await self.__data.rollback()
-            raise storage.AccessError("Trusted Publisher token has already been used", status=409) from e
+            raise storage.AccessError("GitHub workflow token has already been used", status=409) from e
 
     async def issue_workflow_jwt(
         self,
@@ -217,7 +236,7 @@ class CommitteeParticipant(FoundationCommitter):
         return token
 
 
-class CommitteeMember(CommitteeParticipant):
+class CommitteeMember(ReleaseManager):
     def __init__(
         self,
         write: storage.Write,

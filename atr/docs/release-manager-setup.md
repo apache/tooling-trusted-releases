@@ -9,7 +9,7 @@
 **Pages**:
 
 * `4.1.` [Signing artifacts](signing-artifacts)
-* `4.2.` [Trusted Publishing](trusted-publishing)
+* `4.2.` [Uploads from GitHub Actions](github-actions-uploads)
 
 **Sections**:
 
@@ -42,7 +42,7 @@ verify them later against your committee's `KEYS` file.
 Add your public key on the [keys page](/keys). For a quick guide to generating a key and signing
 your files, see [Signing artifacts](signing-artifacts). Projects whose builds are reproducible can
 sign automatically during a GitHub Actions workflow rather than signing each file by hand; see
-[Trusted Publishing](trusted-publishing).
+[Uploads from GitHub Actions](github-actions-uploads).
 
 Keep your private key secure, and never upload it or store it on untrusted equipment. The email
 address in your key is publicly associated with the releases you sign, so treat it as a lasting
@@ -89,7 +89,7 @@ to suit each step. Whichever you use, the artifacts land in the same release can
   a [JWT](#json-web-tokens).
 * **GitHub Actions.** Projects with reproducible builds can sign and
   [upload automatically from a workflow](uploading-files#github-actions), with no long-lived
-  credential stored in the repository. See [Trusted Publishing](trusted-publishing).
+  credential stored in the repository. See [Uploads from GitHub Actions](github-actions-uploads).
 * **Maven plugin.** Projects that release through Maven can upload with the
   [ATR Maven Plugin](uploading-files#maven-plugin), for example during `mvn release:perform`. Uses a
   [personal access token](#personal-access-tokens), configured in your Maven `settings.xml`.
@@ -234,6 +234,7 @@ not finished syncing, the call fails and nothing is recorded, so wait and try ag
 what has been recorded with `GET /api/distribution/list/example/1.2.0`, which needs no
 authentication.
 
-A GitHub Actions workflow can record a distribution without a PAT, using the
-`record-atr-distribution` action described in
-[Trusted Publishing](trusted-publishing#github-actions-for-atr).
+A GitHub Actions workflow can record a staged distribution without a PAT, as described under
+[Recording a staging distribution](github-actions-uploads#recording-a-staging-distribution). Don't
+put a PAT in your repository's secrets; [After the vote](github-actions-uploads#after-the-vote)
+says why.

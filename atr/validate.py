@@ -612,19 +612,17 @@ def project_security_contact(p: sql.Project) -> Divergences:
         yield Divergence("security@apache.org or the committee security address", repr(p.security_contact))
 
 
-@project_components("ReleasePolicy.github_repository_name", "ReleasePolicy.github_repository_branch")
+@project_components("ReleasePolicy.github_repository_name")
 def project_trusted_publishing(p: sql.Project) -> Divergences:
     name = p.policy_github_repository_name
-    branch = p.policy_github_repository_branch
     workflow_paths = [
-        *p.policy_github_compose_workflow_path,
         *p.policy_github_vote_workflow_path,
         *p.policy_github_finish_workflow_path,
     ]
     try:
-        util.validate_trusted_publishing_constraints(name, branch, workflow_paths)
+        util.validate_trusted_publishing_constraints(name, workflow_paths)
     except ValueError as error:
-        yield Divergence(str(error), repr((name, branch, workflow_paths)))
+        yield Divergence(str(error), repr((name, workflow_paths)))
 
 
 @project_components("Project.version_pattern")

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import datetime
 import inspect
 import unittest.mock as mock
@@ -25,31 +26,33 @@ import pytest
 import atr.api as api
 import atr.jwtoken as jwtoken
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.storage as storage
 
 
 @pytest.mark.asyncio
-async def test_publisher_jwt_create_exchanges_as_a_committee_member_of_the_compose_project(monkeypatch) -> None:
+async def test_publisher_jwt_create_exchanges_as_a_release_manager_of_the_given_project(monkeypatch) -> None:
     payload = SimpleNamespace(actor="alice-gh", actor_id=7)
     project = SimpleNamespace(safe_key=safe.ProjectKey("example"), committee=SimpleNamespace(key="example"))
     lookup = mock.AsyncMock(return_value=("alice", project))
-    wacm = mock.MagicMock()
-    wacm.tokens.issue_workflow_jwt = mock.AsyncMock(
+    warm = mock.MagicMock()
+    warm.tokens.issue_workflow_jwt = mock.AsyncMock(
         return_value=jwtoken.ProjectToken(jwt="token", jti="jti", expires=99)
     )
     write = mock.MagicMock()
-    write.return_value.__aenter__.return_value = wacm
+    write.return_value.__aenter__.return_value = warm
     monkeypatch.setattr(
         api.api.auth, "trusted_publisher_context", lambda: SimpleNamespace(payload=payload, asf_uid="alice")
     )
-    monkeypatch.setattr(api.interaction, "trusted_project_for_payload", lookup)
-    monkeypatch.setattr(storage, "write_as_committee_member", write)
+    monkeypatch.setattr(api.interaction, "compose_project_for_payload", lookup)
+    monkeypatch.setattr(storage, "write_as_project_release_manager", write)
     limit = mock.AsyncMock()
     monkeypatch.setattr(api.ratelimit, "check", limit)
     source_commit = safe.CommitHash("d" * 40)
 
     response, status = await inspect.unwrap(api.publisher_jwt_create)(
-        "publisher/jwt/create", SimpleNamespace(source_commit=source_commit, declare_sources=False)
+        "publisher/jwt/create",
+        SimpleNamespace(project=safe.ProjectKey("example"), source_commit=source_commit, declare_sources=False),
     )
 
     assert status == 200
@@ -60,9 +63,61 @@ async def test_publisher_jwt_create_exchanges_as_a_committee_member_of_the_compo
         "jwt": "token",
         "expires": 99,
     }
-    lookup.assert_awaited_once_with(payload, "alice", api.interaction.TrustedProjectPhase.COMPOSE)
-    write.assert_called_once_with("example", "alice")
+    lookup.assert_awaited_once_with(payload, "alice", safe.ProjectKey("example"))
+    write.assert_called_once_with(safe.ProjectKey("example"), "alice")
     limit.assert_awaited_once_with("publisher/jwt/create", "example:alice", 30, datetime.timedelta(hours=1))
-    wacm.tokens.issue_workflow_jwt.assert_awaited_once_with(
+    warm.tokens.issue_workflow_jwt.assert_awaited_once_with(
         "alice-gh", 7, safe.ProjectKey("example"), payload, source_commit=source_commit, declare_sources=False
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("release_manager", "issued"),
+    [pytest.param(False, False, id="committer"), pytest.param(True, True, id="release-manager")],
+)
+@pytest.mark.parametrize("route", ["publisher/jwt/create", "publisher/ssh/register"])
+async def test_exchange_is_refused_to_a_committer_who_is_not_a_release_manager(
+    monkeypatch, route: str, release_manager: bool, issued: bool
+) -> None:
+    # The storage layer decides this for real here. Alice commits to the project and is not on its PMC
+    committee = sql.Committee(
+        key="example", committers=["alice"], committee_members=[], release_managers=["alice"] if release_manager else []
+    )
+    project = sql.Project(key="example", name="Example", committee=committee)
+    payload = SimpleNamespace(actor="alice-gh", actor_id=7)
+    authorisation = mock.MagicMock(asf_uid="alice")
+    authorisation.is_member_of.return_value = False
+    data = mock.MagicMock()
+    data.project.return_value.demand = mock.AsyncMock(return_value=project)
+    token = jwtoken.ProjectToken(jwt="token", jti="jti", expires=99)
+    issue_jwt = mock.AsyncMock(return_value=token)
+    add_key = mock.AsyncMock(return_value=("SHA256:fingerprint", 99))
+
+    @contextlib.asynccontextmanager
+    async def write(_asf_uid: str):
+        yield storage.Write(authorisation, data)
+
+    monkeypatch.setattr(storage, "write", write)
+    monkeypatch.setattr(storage.writers.tokens.ReleaseManager, "issue_workflow_jwt", issue_jwt)
+    monkeypatch.setattr(storage.writers.ssh.ReleaseManager, "add_workflow_key", add_key)
+    monkeypatch.setattr(
+        api.api.auth, "trusted_publisher_context", lambda: SimpleNamespace(payload=payload, asf_uid="alice")
+    )
+    monkeypatch.setattr(api.interaction, "compose_project_for_payload", mock.AsyncMock(return_value=("alice", project)))
+    monkeypatch.setattr(api.ratelimit, "check", mock.AsyncMock())
+    handler = api.publisher_jwt_create if (route == "publisher/jwt/create") else api.publisher_ssh_register
+    request = SimpleNamespace(
+        project=safe.ProjectKey("example"), source_commit=None, declare_sources=True, ssh_key="ssh-ed25519 AAAA"
+    )
+
+    if issued:
+        _response, status = await inspect.unwrap(handler)(route, request)
+        assert status == 200
+        assert issue_jwt.await_count + add_key.await_count == 1
+        return
+    with pytest.raises(storage.AccessError) as refused:
+        await inspect.unwrap(handler)(route, request)
+    assert refused.value.status == 403
+    issue_jwt.assert_not_awaited()
+    add_key.assert_not_awaited()

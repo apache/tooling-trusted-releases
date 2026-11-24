@@ -22,6 +22,7 @@ import htpy
 import sqlmodel
 
 import atr.blueprints.get as get
+import atr.constants as constants
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
@@ -95,6 +96,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         flagged_keys = set(flagged_rows.scalars().all())
 
         ci_builds_enabled = await interaction.ci_builds_enabled(committee.key, data)
+        signing_key_held = await interaction.automated_release_signing_key_held(committee.key, data)
         vote_mode_error = await interaction.committee_vote_mode_request_error(committee, data)
 
         latest_releases = await interaction.project_latest_releases(
@@ -146,6 +148,16 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
                 defaults={"committee_key": committee.key, "asf_uid": uid},
             )
 
+    github_uploads_form = None
+    # A committee with no key can turn the setting off but not on
+    if committee_member and (signing_key_held or committee.github_oidc_enabled):
+        github_uploads_form = await form.render(
+            model_cls=shared.committees.SetGithubUploadsForm,
+            action=util.as_url(post.committees.view, name=committee.key),
+            submit_label="Save",
+            defaults={"committee_key": committee.key, "enabled": committee.github_oidc_enabled},
+        )
+
     keys_mode = committee.keys_mode
     keys_mode_form = await form.render(
         model_cls=shared.keys.SetKeysModeForm,
@@ -170,6 +182,10 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         revoked_certificates=revoked_certificates,
         artifact_counts=artifact_counts,
         ci_builds_enabled=ci_builds_enabled,
+        github_uploads_form=github_uploads_form,
+        signing_key_held=signing_key_held,
+        automated_release_signing_url=constants.AUTOMATED_RELEASE_SIGNING_URL,
+        ci_builds_test_committees=interaction.CI_BUILDS_TEST_COMMITTEES,
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,

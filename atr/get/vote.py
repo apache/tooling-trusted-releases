@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import htpy
 
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.config as config
 import atr.constants as constants
@@ -122,7 +123,8 @@ async def render_options_page(
     archive_url = await _get_archive_url(release, session, latest_vote_task)
 
     page = htm.Block()
-    _render_header(page, release, show_resolve_section, latest_vote_task)
+    workflow_upload_note = await _workflow_upload_note(release, signed_in=session is not None)
+    _render_header(page, release, show_resolve_section, latest_vote_task, workflow_upload_note)
     if session is not None:
         _render_vote_task_warnings(page, latest_vote_task)
     _render_section_download(page, release, session, user_category)
@@ -468,7 +470,11 @@ def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
 
 
 def _render_header(
-    page: htm.Block, release: sql.Release, show_resolve_section: bool, latest_vote_task: sql.Task | None
+    page: htm.Block,
+    release: sql.Release,
+    show_resolve_section: bool,
+    latest_vote_task: sql.Task | None,
+    workflow_upload_note: htm.Element | None,
 ) -> None:
     render.html_nav(
         page,
@@ -499,6 +505,8 @@ def _render_header(
         f" {release.project.display_name} {release.version}.",
         [" This release was cut from SHA ", commit_link, "."] if (commit_link is not None) else "",
     ]
+    if workflow_upload_note is not None:
+        page.append(workflow_upload_note)
 
     vote_end = interaction.vote_end_get(latest_vote_task)
     if vote_end is not None:
@@ -1005,3 +1013,16 @@ def _voting_committee_membership(binding_committee: str, vote_round: int | None)
     if vote_round == 1:
         return f"{binding_committee} PPMC member"
     return f"{binding_committee} PMC member"
+
+
+async def _workflow_upload_note(release: sql.Release, *, signed_in: bool) -> htm.Element | None:
+    # Only the revision being voted on counts. An earlier workflow upload that somebody has since
+    # changed by hand is not what the vote is about
+    if release.latest_revision_number is None:
+        return None
+    payload = await attestable.github_tp_payload_read(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if payload is None:
+        return None
+    return render.workflow_upload_note(payload, show_actor=signed_in)
