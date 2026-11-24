@@ -373,6 +373,31 @@ async def test_trusted_rendering_round_two_carryover_shows_carried_card_and_resu
 
 
 @pytest.mark.asyncio
+async def test_trusted_rendering_shows_automatic_publish_location(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=None))
+    task = _completed_vote_task()
+    task.task_args = {**task.task_args, "automatic_publish_when_resolved": True, "download_path_suffix": "sub/1.0.0"}
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page,
+            _release(sql.VoteMode.TRUSTED),
+            _session(),
+            "https://lists.apache.org/thread/abc",
+            "dev@project.apache.org",
+            task,
+        )
+
+    html = str(page.collect())
+    assert "If this vote passes and every vote is +1, ATR will publish the release to" in html
+    assert "/project/sub/1.0.0/</code>" in html
+
+
+@pytest.mark.asyncio
 async def test_trusted_rendering_with_current_vote_seq_none_does_not_query_ballots(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -392,7 +417,7 @@ async def test_trusted_rendering_with_current_vote_seq_none_does_not_query_ballo
         )
 
     html = str(page.collect())
-    assert "Trusted ballots are unavailable until the vote-start email has a message ID." in html
+    assert "ATR ballots are unavailable until the vote-start email has a message ID." in html
     assert 'name="vote_seq" id="vote_seq"' in html
     assert 'name="vote_seq" id="vote_seq" value=' not in html
     assert "<textarea" not in html
@@ -507,7 +532,7 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
         "Submitting again records a new ballot. New ballots during the voting period always replace old ballots."
         in html
     )
-    assert "Trusted ballots are unavailable until the vote-start email has a message ID." in html
+    assert "ATR ballots are unavailable until the vote-start email has a message ID." in html
     assert "Resubmit vote" in html
     assert 'name="decision"' in html
     assert "disabled" in html

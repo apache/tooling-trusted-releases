@@ -197,14 +197,16 @@ def test_task_recipient_get_returns_full_vote_recipient() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("podling_thread_id", "current_vote_seq", "vote_seq"), [("abc123", None, None), (None, 1, 2)])
 async def test_worker_accepts_incubator_address_for_podling_round_two(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, podling_thread_id: str | None, current_vote_seq: int | None, vote_seq: int | None
 ) -> None:
-    release = _make_release(is_podling=True, podling_thread_id="abc123")
+    release = _make_release(is_podling=True, podling_thread_id=podling_thread_id, current_vote_seq=current_vote_seq)
     _patch_db_and_interaction(monkeypatch, release)
     _patch_storage_write(monkeypatch)
 
     task_args = _make_initiate_args(email_to="general@incubator.apache.org")
+    task_args.vote_seq = vote_seq
     result = await atr.tasks.vote._initiate_core_logic(task_args)
 
     assert isinstance(result, results.VoteInitiate)

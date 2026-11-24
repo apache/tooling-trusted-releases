@@ -408,6 +408,8 @@ def _approval_link(project: sql.Project, action: sql.ApprovalAction) -> htm.Elem
             route, classes = archive, ".btn.btn-sm.btn-outline-secondary"
         case sql.ApprovalAction.DELETE:
             route, classes = delete, ".btn.btn-sm.btn-outline-danger"
+        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
+            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             route, classes = unarchive, ".btn.btn-sm.btn-outline-secondary"
     return htm.a(classes, href=util.as_url(route, project_key=str(project.key)))[f"Request {_approval_noun(action)}"]
@@ -419,6 +421,8 @@ def _approval_notice(action: sql.ApprovalAction) -> str:
             effect = ", which deletes any draft releases and marks the project dormant"
         case sql.ApprovalAction.DELETE:
             effect = ""
+        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
+            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             effect = ", which makes the project active again. Its archived releases stay archived"
     return (
@@ -433,6 +437,8 @@ def _approval_noun(action: sql.ApprovalAction) -> str:
             return "archival"
         case sql.ApprovalAction.DELETE:
             return "deletion"
+        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
+            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             return "unarchival"
 
@@ -548,8 +554,6 @@ def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, obje
         extras["file_tag_mappings"] = {tag: list(paths) for tag, paths in release_policy.file_tag_mappings.items()}
     if release_policy.license_check_mode != sql.LicenseCheckMode.BOTH:
         extras["license_check_mode"] = release_policy.license_check_mode.value
-    if release_policy.vote_mode != sql.VoteMode.EMAIL:
-        extras["vote_mode"] = release_policy.vote_mode.value
     if release_policy.min_hours is not None:
         extras["min_hours"] = str(release_policy.min_hours)
     if release_policy.require_version_in_filenames:
@@ -1675,7 +1679,6 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
 
     defaults_dict = {
         "project_key": str(project.key),
-        "vote_mode": project.policy_vote_mode,
         "min_hours": project.policy_min_hours,
         "release_checklist": project.policy_release_checklist or "",
         "vote_comment_template": project.policy_vote_comment_template or "",
@@ -1716,9 +1719,15 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
         rows=18,
         documentation="Email template for vote resolution messages.",
     )
-    vote_mode_widget = _vote_mode_radios(project)
-
     with card.block(htm.div, classes=".card-body") as card_body:
+        if project.policy_vote_mode == sql.VoteMode.TRUSTED:
+            card_body.p[
+                "Streamlined voting is ",
+                htm.strong["on"],
+                ". This is set for all of the committee's projects on the ",
+                htm.a(href=util.as_url(committees.view, name=str(project.committee_key)) + "#voting")["committee page"],
+                ".",
+            ]
         await form.render_block(
             card_body,
             model_cls=shared.projects.VotePolicyForm,
@@ -1735,7 +1744,6 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,
                 "finish_vote_template": finish_vote_template_widget,
-                "vote_mode": vote_mode_widget,
             },
             skip=["email_cc", "email_bcc"],
             flash_error_data=flash_error_data,
@@ -1765,6 +1773,8 @@ async def _request_approval_page(
             post_route = post.projects.archive
         case sql.ApprovalAction.DELETE:
             post_route = post.projects.delete
+        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
+            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             post_route = post.projects.unarchive
     project_path = util.as_url(view, project_key=str(project_key))
@@ -1885,42 +1895,3 @@ def _textarea_with_variables(
 
 def _view_action(project: sql.Project, tab: str) -> str:
     return util.as_url(post.projects.view, name=str(project.key)) + f"?tab={tab}"
-
-
-def _vote_mode_description(mode: sql.VoteMode) -> str:
-    match mode:
-        case sql.VoteMode.EMAIL:
-            return (
-                "ATR announces the vote, and votes are cast by replying to the thread."
-                " ATR tabulates the replies when the vote is resolved."
-            )
-        case sql.VoteMode.TRUSTED:
-            return (
-                "ATR announces the vote, but votes are cast on the ATR vote page and"
-                " recorded as ballots, with receipts sent to the thread."
-                " The vote can be resolved automatically."
-            )
-
-
-def _vote_mode_radios(project: sql.Project) -> htm.Element:
-    radios = []
-    for mode in sql.VoteMode:
-        radio_id = f"vote_mode_{mode.value}"
-        attrs: dict[str, str] = {
-            "type": "radio",
-            "name": "vote_mode",
-            "id": radio_id,
-            "value": mode.value,
-            "class_": "form-check-input",
-            "required": "",
-        }
-        if mode == project.policy_vote_mode:
-            attrs["checked"] = ""
-        radios.append(
-            htpy.div(".form-check")[
-                htpy.input(**attrs),
-                htpy.label(".form-check-label", for_=radio_id)[mode.value.capitalize()],
-                htm.div(".form-text.text-muted.mt-0.mb-2")[_vote_mode_description(mode)],
-            ]
-        )
-    return htm.div("#vote_mode")[*radios]

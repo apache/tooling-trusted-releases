@@ -29,6 +29,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post.projects as projects
 import atr.storage as storage
+import atr.storage.writers.committee as committee_writer
 import atr.storage.writers.project as project
 import atr.tasks.cap as cap
 import atr.util as util
@@ -93,6 +94,8 @@ class FakeData:
     def __init__(self, row: sql.ApprovalRequest | None):
         self.row = row
         self.project_row = sql.Project(key="commons-foo", committee_key="commons", status=sql.ProjectStatus.ACTIVE)
+        self.committee_row = sql.Committee(key="commons")
+        self.added: list[object] = []
 
     def approval_request(self, **kwargs: object) -> FakeQuery:
         return FakeQuery(self.row)
@@ -101,9 +104,13 @@ class FakeData:
         return None
 
     def add(self, obj: object) -> None:
+        self.added.append(obj)
         if isinstance(obj, sql.ApprovalRequest) and obj.id is None:
             obj.id = 1
         return None
+
+    def committee(self, **kwargs: object) -> FakeProjectQuery:
+        return FakeProjectQuery(self.committee_row)
 
     async def commit(self) -> None:
         return None
@@ -434,6 +441,52 @@ async def test_request_approval_schedules_initial_resolution(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_request_trusted_voting_records_committee_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = FakeData(None)
+    wacm = committee_writer.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "commons")
+    schedule = mock.AsyncMock()
+    monkeypatch.setattr(committee_writer.tasks, "cap_approval_resolve", schedule)
+    approval_id = await wacm.vote_mode_request_reserve(
+        sql.ApprovalAction.TRUSTED_VOTING, datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+    )
+    [approval] = data.added
+    assert isinstance(approval, sql.ApprovalRequest)
+    assert approval.project_key is None
+    assert approval.action == sql.ApprovalAction.TRUSTED_VOTING
+    assert approval.cap_question_id is None
+    schedule.assert_awaited_once()
+    data.row = approval
+    await wacm.vote_mode_request_record(approval_id, 42)
+    assert approval.cap_question_id == 42
+
+
+@pytest.mark.asyncio
+async def test_request_vote_mode_refused_for_standing_committee() -> None:
+    data = FakeData(None)
+    data.committee_row = sql.Committee(key="comdev")
+    wacm = committee_writer.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "comdev")
+    with pytest.raises(storage.AccessError, match="doesn't make releases"):
+        await wacm.vote_mode_request_reserve(
+            sql.ApprovalAction.TRUSTED_VOTING, datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+        )
+    assert data.added == []
+
+
+@pytest.mark.asyncio
+async def test_request_vote_mode_refused_while_reserved() -> None:
+    reserved = _approval_row(action=sql.ApprovalAction.TRUSTED_VOTING)
+    reserved.project_key = None
+    reserved.cap_question_id = None
+    data = FakeData(reserved)
+    wacm = committee_writer.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "commons")
+    with pytest.raises(storage.AccessError, match="closes"):
+        await wacm.vote_mode_request_reserve(
+            sql.ApprovalAction.TRUSTED_VOTING, datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+        )
+    assert data.added == []
+
+
+@pytest.mark.asyncio
 async def test_resolve_approved_marks_approved(monkeypatch: pytest.MonkeyPatch) -> None:
     data = FakeData(_approval_row())
     reenqueue = _patch_resolve_env(monkeypatch, data, {"outcome": "approved", "permalink": "https://cap/x"})
@@ -443,6 +496,31 @@ async def test_resolve_approved_marks_approved(monkeypatch: pytest.MonkeyPatch) 
     assert data.row.status == sql.ApprovalStatus.APPROVED
     assert data.row.permalink == "https://cap/x"
     reenqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "before", "after"),
+    [
+        (sql.ApprovalAction.TRUSTED_VOTING, None, sql.VoteMode.TRUSTED),
+        (sql.ApprovalAction.EMAIL_VOTING, sql.VoteMode.TRUSTED, sql.VoteMode.EMAIL),
+    ],
+)
+async def test_resolve_approved_vote_mode_switches_committee(
+    monkeypatch: pytest.MonkeyPatch, action: sql.ApprovalAction, before: sql.VoteMode | None, after: sql.VoteMode
+) -> None:
+    row = _approval_row(action=action)
+    row.project_key = None
+    data = FakeData(row)
+    data.committee_row.vote_mode = before
+    audit = mock.Mock()
+    monkeypatch.setattr(FakeWriteAs, "append_to_audit_log", audit)
+    _patch_resolve_env(monkeypatch, data, {"outcome": "approved", "permalink": "https://cap/x"})
+    await cap.resolve({"approval_request_id": 1, "attempt": 0})
+    assert row.status == sql.ApprovalStatus.COMPLETED
+    assert data.committee_row.vote_mode == after
+    entry = audit.call_args.kwargs
+    assert (entry["committee_key"], entry["previous_vote_mode"], entry["vote_mode"]) == ("commons", before, after)
 
 
 @pytest.mark.asyncio
@@ -496,6 +574,19 @@ async def test_resolve_not_approved_marks_rejected(monkeypatch: pytest.MonkeyPat
     assert data.row is not None
     assert data.row.status == sql.ApprovalStatus.REJECTED
     assert data.row.outcome == "insufficient_votes"
+
+
+@pytest.mark.asyncio
+async def test_resolve_reservation_without_question_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _approval_row(action=sql.ApprovalAction.TRUSTED_VOTING)
+    row.project_key = None
+    row.cap_question_id = None
+    data = FakeData(row)
+    reenqueue = _patch_resolve_env(monkeypatch, data, {"outcome": "approved", "permalink": "https://cap/x"})
+    await cap.resolve({"approval_request_id": 1, "attempt": 0})
+    assert row.status == sql.ApprovalStatus.FAILED
+    assert data.committee_row.vote_mode is None
+    reenqueue.assert_not_awaited()
 
 
 @pytest.mark.asyncio

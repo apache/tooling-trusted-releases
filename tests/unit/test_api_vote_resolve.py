@@ -83,7 +83,7 @@ async def test_vote_resolve_release_accepts_trusted_vote(monkeypatch) -> None:
 async def test_vote_resolve_release_rejects_email_vote(monkeypatch) -> None:
     _patch_release(monkeypatch, sql.VoteMode.EMAIL)
 
-    with pytest.raises(storage.AccessError, match="only available in Trusted Vote mode") as exc_info:
+    with pytest.raises(storage.AccessError, match="only available with streamlined voting") as exc_info:
         await api._vote_resolve_release(safe.ProjectKey("example"), safe.VersionKey("1.0.0"), "user")
 
     assert exc_info.value.status == 403

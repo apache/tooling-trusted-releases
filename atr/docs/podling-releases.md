@@ -44,9 +44,9 @@ these:
   held on the podling's `private@` list. When you start the vote, you also choose the list that the
   second round will be sent to, which is `general@incubator.apache.org`.
 * **Moving to the second round.** When you resolve the first round as passed, ATR does not move the
-  release on to the finish phase. Instead it starts the second round straight away, sending a new
+  release on to the finish phase. Instead it starts the second round straight away, unless you already started it, sending a new
   vote email to the Incubator list. The second round is held on the same revision, with the same
-  duration, using your project's vote email template. The default template links to the first round vote thread, and a custom template can do the same by including the `{{FIRST_ROUND_THREAD}}` variable.
+  duration, using your project's vote email template. The default template links to the first round vote thread, and a custom template can do the same by including the `{{FIRST_ROUND_THREAD}}` variable. You can start the second round early from the resolve page while the first round is still open, but you must still resolve the first round first.
 * **Second round.** The vote is held by the Incubator PMC. When you resolve it as passed, the
   release moves on to the finish phase, and ATR sends the result to the second round thread and
   also, as a reply, to the first round thread.
@@ -68,8 +68,8 @@ Some options on the vote form behave differently for a podling:
 
 * If you ask ATR to publish the release automatically when the vote resolves, that choice is carried
   over to the second round, and publication happens once the second round passes.
-* Automatic vote resolution, which is offered in the Trusted
-  [vote mode](project-configuration#vote), is not available for the first round.
+* Podlings cannot use [streamlined voting](project-configuration#vote), because the second round is
+  the Incubator PMC's vote. The release manager resolves both rounds.
 
 See [Vote phase](vote-phase) and [Staging and voting](staging-and-voting) for everything that is
 common to all votes.

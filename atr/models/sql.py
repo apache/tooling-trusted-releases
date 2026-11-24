@@ -75,6 +75,8 @@ class DistributionPlatformValue:
 class ApprovalAction(enum.StrEnum):
     ARCHIVE = "archive"
     DELETE = "delete"
+    EMAIL_VOTING = "email voting"
+    TRUSTED_VOTING = "trusted voting"
     UNARCHIVE = "unarchive"
 
 
@@ -685,10 +687,10 @@ def example(value: Any) -> dict[Literal["schema_extra"], dict[str, Any]]:
 # ApprovalRequest:
 class ApprovalRequest(sqlmodel.SQLModel, table=True):
     id: int | None = sqlmodel.Field(default=None, primary_key=True)
-    project_key: str = sqlmodel.Field()
+    project_key: str | None = sqlmodel.Field(default=None)
     committee_key: str = sqlmodel.Field()
     action: ApprovalAction = sqlmodel.Field()
-    cap_question_id: int = sqlmodel.Field(unique=True)
+    cap_question_id: int | None = sqlmodel.Field(default=None, unique=True)
     status: ApprovalStatus = sqlmodel.Field(default=ApprovalStatus.PENDING, index=True)
     outcome: str | None = None
     requested_by: str = sqlmodel.Field()
@@ -1136,6 +1138,7 @@ class Committee(sqlmodel.SQLModel, table=True):
     # True only if this is an incubator podling with a PPMC
     is_podling: bool = sqlmodel.Field(default=False)
     keys_mode: KeysMode = sqlmodel.Field(default=KeysMode.REFLECT)
+    vote_mode: VoteMode | None = sqlmodel.Field(default=None)
     mail_addresses: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
@@ -1206,6 +1209,10 @@ class Committee(sqlmodel.SQLModel, table=True):
         """Get the display name for the committee."""
         name = self.name or self.key.title()
         return f"{name} (Incubating)" if self.is_podling else name
+
+    @property
+    def effective_vote_mode(self) -> VoteMode:
+        return self.vote_mode or VoteMode.EMAIL
 
     @property
     def in_attic(self) -> bool:
@@ -1501,9 +1508,9 @@ Sincerely,
 
     @property
     def policy_vote_mode(self) -> VoteMode:
-        if (policy := self.release_policy) is None:
+        if self.committee is None:
             return VoteMode.EMAIL
-        return policy.vote_mode
+        return self.committee.effective_vote_mode
 
     @property
     def policy_min_hours(self) -> int:
@@ -2512,7 +2519,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     recipient_defaults: dict[str, Any] = sqlmodel.Field(
         default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
-    vote_mode: VoteMode = sqlmodel.Field(default=VoteMode.EMAIL)
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
     vote_comment_template: str = sqlmodel.Field(default="")
@@ -2566,7 +2572,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
         # Cannot call this .copy because that's an existing BaseModel method
         return ReleasePolicy(
             recipient_defaults=copy.deepcopy(self.recipient_defaults),
-            vote_mode=self.vote_mode,
             min_hours=self.min_hours,
             release_checklist=self.release_checklist,
             vote_comment_template=self.vote_comment_template,

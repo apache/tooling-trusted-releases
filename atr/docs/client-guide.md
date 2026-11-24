@@ -101,7 +101,7 @@ Fix any blockers locally, make fresh signatures and checksums for the changed fi
 
 ## Start and resolve the vote
 
-`--auto-publish` asks ATR to publish the files when you resolve the vote as passed. Only PMC members can use it. With the client, ATR currently publishes to the top of your committee's distribution area, even if your project has configured a different path. If you need a project or version directory, or are a designated release manager, omit this option and publish from the release's finish page on the website. The client has no separate publish command.
+`--auto-publish` asks ATR to publish the files when you resolve an email vote as passed. Only PMC members can use it. With the client, ATR publishes to the location configured for your project. If you need a different directory, or are a designated release manager, omit this option and publish from the release's finish page on the website. With streamlined voting, ATR always publishes to the configured location when the vote passes and every vote is +1, with or without this option. The client has no separate publish command.
 
 If concerns remain, add `--concerns-noted` with their group keys from `atr check concerns`, separated by commas without spaces. For example, `--concerns-noted atr.tasks.checks.rat.check` acknowledges the Apache RAT group. Acknowledge only groups you have reviewed. If you miss one, ATR names it when it refuses to start the vote.
 
@@ -117,7 +117,7 @@ To choose a revision explicitly, put its number after the version, for example `
 
 ATR takes the subject, body, and voting duration from your project's settings, and sends the email only to lists that your project allows. To write your own body, add `--body-file vote.txt`. ATR sends that text exactly as written, without filling in template variables. Check that the vote email reaches the list before you ask people to vote.
 
-If your project uses Trusted Voting, the same command starts a Trusted Vote and voters cast ballots in ATR. Start the vote on the website if you want automatic resolution, which the client cannot request yet.
+If your project uses streamlined voting, the same command starts a streamlined vote and voters cast ballots in ATR. When the vote ends, ATR resolves it and publishes the release automatically if the vote passed and every vote is +1.
 
 Once the voting period has ended, compare ATR's tally with the mailing list thread:
 
@@ -125,7 +125,7 @@ Once the voting period has ended, compare ATR's tally with the mailing list thre
 atr vote tabulate example 1.0.0
 ```
 
-When the result is clear, record it. Resolve an email vote on the website. If your project uses Trusted Voting, you can use the client:
+When the result is clear, record it. Resolve an email vote on the website. If your project uses streamlined voting and ATR did not resolve the vote itself, you can use the client:
 
 ```shell
 atr vote resolve example 1.0.0 passed
@@ -135,7 +135,7 @@ ATR replies to the vote thread, including the tally when available, and moves th
 
 ## Finish the release
 
-Automatic publication starts when you resolve the vote. The finish page shows its progress and the download URL. If publication fails, read the error there before publishing again from that page.
+Automatic publication starts when the vote is resolved. Otherwise, press Publish on the finish page. The finish page shows its progress and the download URL. If publication fails, read the error there before publishing again from that page.
 
 If your project ships packages to Maven Central, PyPI, or a similar platform, publish them there as usual. ATR looks for each package your project [expects to distribute](project-configuration#third-party-distribution), and will not announce the release until each one has been found or ignored. You can also record a package that is not among them. For a Maven Central package:
 

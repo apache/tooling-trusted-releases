@@ -142,12 +142,20 @@ them when starting a vote.
 
 * **Default vote recipient**, with optional CC and BCC recipients. The mailing list that vote emails
   go to.
-* **Vote mode.** How votes are cast and counted:
-  * *Email*. ATR sends the vote email, and votes are cast by replying to the thread. ATR tallies the
+* **Streamlined voting.** How votes are cast and counted. The Vote tab says when streamlined voting
+  is on, but it is set for all of a committee's projects at once, in the Streamlined voting section
+  of the committee page:
+  * *Off*. ATR sends the vote email, and votes are cast by replying to the thread. ATR tallies the
     replies when the vote is resolved.
-  * *Trusted*. ATR sends the vote email, but votes are cast on the vote page in ATR and recorded
-    there, with a receipt for each vote sent to the thread. Only in this mode can the vote be
-    resolved automatically when it ends.
+  * *On*. ATR sends the vote email, but votes are cast on the vote page in ATR and recorded there,
+    with a receipt for each vote sent to the thread. When the vote ends, ATR resolves it and
+    publishes the release to SVN automatically if the vote passed and every vote is +1. If anyone
+    votes 0 or -1, the release manager resolves the vote and publishes the release by hand.
+
+  A PMC member turns streamlined voting on or off from the committee page, which starts a seven day
+  approval vote by the PMC on CAP. ATR makes the change if that vote passes. The API reports
+  streamlined voting as the `trusted` vote mode. It cannot be turned on for one project, so
+  `.asf.yaml` does not accept `vote_mode: trusted`. Podlings cannot use streamlined voting.
 * **Minimum voting period.** The shortest time a vote may run, between 72 and 168 hours.
 * **Release checklist.** Markdown text telling voters how to test a release candidate.
 * **Vote comment template.** Starting text for the comment that accompanies a vote, which each voter

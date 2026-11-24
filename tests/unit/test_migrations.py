@@ -196,6 +196,32 @@ _TRUSTED_DEFAULT_ROWS = (
     " VALUES ('moved-1.0', 'moved', '1.0', 'RELEASE', 0, '[]', '[]', 'moved-1', 0)",
 )
 
+_VOTE_MODE_ROWS = (
+    *[_INSERT_COMMITTEE.format(key=key) for key in ("email", "empty", "mixed", "podling", "trusted")],
+    "UPDATE committee SET is_podling = 1 WHERE key = 'podling'",
+    *[
+        _INSERT_PROJECT.format(key=key, committee=committee, status="ACTIVE")
+        for key, committee in (
+            ("email", "email"),
+            ("mixed", "mixed"),
+            ("mixed-email", "mixed"),
+            ("mixed-unset", "mixed"),
+            ("podling", "podling"),
+            ("trusted", "trusted"),
+        )
+    ],
+    _INSERT_POLICY.format(id=1, mode="EMAIL"),
+    _INSERT_POLICY.format(id=2, mode="TRUSTED"),
+    _INSERT_POLICY.format(id=3, mode="TRUSTED"),
+    _INSERT_POLICY.format(id=4, mode="EMAIL"),
+    _INSERT_POLICY.format(id=5, mode="TRUSTED"),
+    "UPDATE project SET release_policy_id = 1 WHERE key = 'email'",
+    "UPDATE project SET release_policy_id = 2 WHERE key = 'mixed'",
+    "UPDATE project SET release_policy_id = 3 WHERE key = 'trusted'",
+    "UPDATE project SET release_policy_id = 4 WHERE key = 'mixed-email'",
+    "UPDATE project SET release_policy_id = 5 WHERE key = 'podling'",
+)
+
 
 def test_distribution_status_follows_pending(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
@@ -292,6 +318,28 @@ def test_upgrade_populated_database(tmp_path: pathlib.Path, monkeypatch: pytest.
             for constraint in table.constraints:
                 if isinstance(constraint, sqlalchemy.CheckConstraint):
                     assert f"CONSTRAINT {constraint.name} CHECK" in definitions[table.name], constraint.name
+
+
+def test_vote_mode_moves_to_non_podling_committees_with_a_trusted_project(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0149_2026.11.19_bc613d78")
+    with engine.begin() as connection:
+        for statement in _VOTE_MODE_ROWS:
+            connection.exec_driver_sql(statement)
+
+    command.upgrade(alembic_config, "0150_2026.11.24_386450a3")
+
+    with engine.connect() as connection:
+        committees = connection.exec_driver_sql("SELECT key, vote_mode FROM committee").all()
+    assert dict(tuple(row) for row in committees) == {
+        "email": None,
+        "empty": None,
+        "mixed": "TRUSTED",
+        "podling": None,
+        "trusted": "TRUSTED",
+    }
 
 
 def _alembic_setup(

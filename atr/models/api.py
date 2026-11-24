@@ -521,6 +521,10 @@ class PolicyArgsBase(schema.Strict):
 
     @pydantic.model_validator(mode="after")
     def validate_policy_fields(self) -> Self:
+        if self.vote_mode == sql.VoteMode.TRUSTED:
+            raise ValueError(
+                "Streamlined voting (vote mode trusted) is turned on for the whole committee, on its committee page"
+            )
         if self.min_hours is not None:
             validation.validate_policy_min_hours(self.min_hours)
 

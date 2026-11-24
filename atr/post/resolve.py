@@ -57,6 +57,35 @@ async def interpret(
 
 
 @post.typed
+async def second_round(
+    session: web.Committer,
+    _resolve_second_round: Literal["resolve/second-round"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    second_round_form: shared.resolve.SecondRoundForm,
+) -> web.WerkzeugResponse:
+    try:
+        async with storage.write() as write:
+            warm = await write.as_project_release_manager(project_key)
+            task = await warm.vote.start_second_round(
+                project_key, version_key, session.fullname, second_round_form.vote_seq
+            )
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.resolve.selected,
+            error=str(e),
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
+    return await session.redirect(
+        get.resolve.selected,
+        project_key=str(project_key),
+        version_key=str(version_key),
+        success=f"The second round vote announcement email will soon be sent to {task.task_args['email_to']}.",
+    )
+
+
+@post.typed
 async def selected(
     session: web.Committer,
     _resolve: Literal["resolve"],

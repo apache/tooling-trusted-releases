@@ -35,7 +35,6 @@ _VOTE_BASE = {
     "project_key": "test",
     "email_cc": [],
     "email_bcc": [],
-    "vote_mode": "email",
     "min_hours": 72,
     "release_checklist": "Check {{PROJECT_NAME}} {{VERSION}}",
     "vote_comment_template": "",

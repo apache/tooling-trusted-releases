@@ -543,7 +543,7 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     writer._ReleaseManager__asf_uid = "chair"
     writer._ReleaseManager__committee_key = "project"
 
-    with pytest.raises(storage.AccessError, match="Trusted Vote mode"):
+    with pytest.raises(storage.AccessError, match="streamlined voting"):
         await writer.start(
             "dev@project.apache.org",
             safe.ProjectKey("project"),

@@ -31,6 +31,7 @@ CAP_VOTE_DURATION_MINUTES: Final[int] = 7 * 24 * 60
 CAP_EXPLANATION_MAX_LENGTH: Final[int] = 2000
 CAP_ARCHIVE_APPROVAL_TYPE: Final[str] = "majority_approval"
 CAP_DELETE_APPROVAL_TYPE: Final[str] = "majority_approval"
+CAP_VOTE_MODE_APPROVAL_TYPE: Final[str] = "majority_approval"
 CAP_UNARCHIVE_APPROVAL_TYPE: Final[str] = "majority_approval"
 CAP_RESOLVE_INITIAL_DELAY: Final[datetime.timedelta] = datetime.timedelta(minutes=1)
 CAP_RESOLVE_RETRY_DELAYS: Final[tuple[datetime.timedelta, ...]] = (

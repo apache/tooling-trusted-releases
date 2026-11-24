@@ -138,7 +138,7 @@ Release operations have the following access requirements:
 * Checked via: the release manager storage tier, obtained with `as_project_release_manager`, which
   admits a project's designated release managers (`is_release_manager`) and its PMC members
   (`is_member_of`)
-* Constraint: Through the API, only votes in Trusted Vote mode, except that Solr MCP can also resolve email votes
+* Constraint: Through the API, only votes with streamlined voting, except that Solr MCP can also resolve email votes
 
 **Finish a release (publish to distribution)**:
 

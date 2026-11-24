@@ -74,7 +74,8 @@ once the vote has resolved successfully. There are two ways to trigger it:
 
 * Automatically, by selecting "Automatically publish to SVN distribution area when this vote
   resolves" when starting the vote. This option is offered when a committee member starts a
-  non-expedited vote in email or Trusted Vote mode.
+  non-expedited vote with email voting. With streamlined voting, ATR always publishes automatically
+  after a passing vote in which every vote is +1.
 * Manually, by pressing the publish button on the finish page for the release.
 
 The publish form on the finish page shows the full path that the files will be published to, beneath

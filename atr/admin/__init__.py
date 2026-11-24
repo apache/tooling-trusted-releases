@@ -285,7 +285,7 @@ class PresentationsVoteBypassForm(form.Form):
     variant: PRESENTATIONS_VOTE_BYPASS = form.value(PRESENTATIONS_VOTE_BYPASS)
     enabled: form.Bool = form.label(
         "Allow presentations vote shortcuts",
-        "Allow release managers to resolve tooling-presentations votes early or without enough trusted votes. "
+        "Allow release managers to resolve tooling-presentations votes early or without enough ATR ballots. "
         "Resets to off when the web application restarts or reloads.",
         default=False,
     )

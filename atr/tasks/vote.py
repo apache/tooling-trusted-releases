@@ -97,19 +97,36 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
         task_recipient = interaction.task_recipient_get(latest_vote_task)
         notify_when_finished = bool(latest_vote_task.task_args.get("notify_when_finished", False))
 
+    if passed and (not tabulate.all_ballots_yes(summary)):
+        log.info(f"Vote automatic resolution skipped for {task_args.release_key}: somebody voted 0 or -1")
+        await _send_auto_resolve_outcome_notify(
+            task_args.release_key,
+            str(project_key),
+            str(version_key),
+            task_args.resolver_id,
+            "needs_review",
+        )
+        return results.VoteAutoResolve(
+            kind="vote_auto_resolve",
+            resolved=False,
+            vote_result="passed",
+            skip_reason="vote_needs_review",
+            success_message=None,
+            error_message=None,
+        )
+
     if (not passed) and (not AUTOMATICALLY_RESOLVE_ON_FAILURE):
         log.info(
             f"Vote automatic resolution skipped for {task_args.release_key}: "
             "vote did not pass and AUTOMATICALLY_RESOLVE_ON_FAILURE is False"
         )
-        if notify_when_finished:
-            await _send_auto_resolve_outcome_notify(
-                task_args.release_key,
-                str(project_key),
-                str(version_key),
-                task_args.resolver_id,
-                "failure_skipped",
-            )
+        await _send_auto_resolve_outcome_notify(
+            task_args.release_key,
+            str(project_key),
+            str(version_key),
+            task_args.resolver_id,
+            "failure_skipped",
+        )
         return results.VoteAutoResolve(
             kind="vote_auto_resolve",
             resolved=False,
@@ -154,17 +171,17 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
                 resolution_body,
                 expected_vote_seq=vote_seq,
                 expected_vote_mode=sql.VoteMode.TRUSTED,
+                unattended=True,
             )
     except storage.AccessError as e:
         log.info(f"Vote automatic resolution skipped for {task_args.release_key}: writer rejected resolution: {e}")
-        if notify_when_finished:
-            await _send_auto_resolve_outcome_notify(
-                task_args.release_key,
-                str(project_key),
-                str(version_key),
-                task_args.resolver_id,
-                "resolve_rejected",
-            )
+        await _send_auto_resolve_outcome_notify(
+            task_args.release_key,
+            str(project_key),
+            str(version_key),
+            task_args.resolver_id,
+            "resolve_rejected",
+        )
         return results.VoteAutoResolve(
             kind="vote_auto_resolve",
             resolved=False,
@@ -302,7 +319,7 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
         if task_args.vote_seq is None:
             if release.current_vote_seq is not None:
                 raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
-        elif release.current_vote_seq != task_args.vote_seq:
+        elif (release.current_vote_seq is None) or (release.current_vote_seq > task_args.vote_seq):
             raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
@@ -339,7 +356,9 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
     subject = task_args.subject
     body = task_args.body
 
-    is_podling_round_two = release.committee.is_podling and (release.podling_thread_id is not None)
+    is_podling_round_two = release.committee.is_podling and (
+        (release.podling_thread_id is not None) or (task_args.vote_seq != release.current_vote_seq)
+    )
     # A second round vote may be started by a different user, so the permitted recipients will be different
     # Since we only have to validate before task boundaries, we can skip this for second rounds
     if not is_podling_round_two:
@@ -498,7 +517,7 @@ async def _send_auto_resolve_outcome_notify(
     project_key: str,
     version_key: str,
     recipient_id: str,
-    outcome: Literal["passed", "failed", "failure_skipped", "resolve_rejected"],
+    outcome: Literal["passed", "failed", "failure_skipped", "needs_review", "resolve_rejected"],
 ) -> None:
     review_url = util.absolute_url(f"/vote/{project_key}/{version_key}")
     subject = f"[ATR] Vote ended for {release_key}"
@@ -520,6 +539,13 @@ async def _send_auto_resolve_outcome_notify(
                 f"The vote for {release_key} has ended. "
                 "The vote did not pass and ATR has left it for you to resolve manually. "
                 f"You can resolve the vote at {review_url}"
+            )
+        case "needs_review":
+            subject = f"[ATR] This vote needs your review: {release_key}"
+            body = (
+                f"The vote for {release_key} has ended. "
+                "Somebody voted 0 or -1, so ATR has not resolved it automatically. "
+                f"Please resolve the vote at {review_url} and, if it passed, publish the release from the Finish page."
             )
         case "resolve_rejected":
             body = (

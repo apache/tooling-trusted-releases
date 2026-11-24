@@ -515,6 +515,22 @@ def _render_header(
     page.append(steps.collect())
 
 
+def _render_publish_location(page: htm.Block, release: sql.Release, latest_vote_task: sql.Task | None) -> None:
+    if (latest_vote_task is None) or (release.committee is None):
+        return
+    if not latest_vote_task.task_args.get("automatic_publish_when_resolved", False):
+        return
+    suffix = latest_vote_task.task_args.get("download_path_suffix")
+    location = util.publish_location(release.committee, safe.RelPath(suffix) if isinstance(suffix, str) else None)
+    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
+        condition = "passes and every vote is +1"
+    elif release.committee.is_podling and (release.podling_thread_id is None):
+        condition = "and the Incubator PMC vote both pass"
+    else:
+        condition = "is resolved as passed"
+    page.p["If this vote ", condition, ", ATR will publish the release to ", htm.code[location], "."]
+
+
 def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: checks.FileStats) -> None:
     import atr.get.checks as checks
 
@@ -719,6 +735,7 @@ async def _render_trusted_vote_authenticated(
             trusted_vote=True,
             recast=latest_ballot is not None,
         )
+        _render_publish_location(page, release, latest_vote_task)
         await _append_cast_vote_form(page, release, potency, submit_label=submit_label)
         return
 
@@ -754,6 +771,7 @@ async def _render_vote_authenticated(
     vote_round = interaction.trusted_vote_round(release)
     potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
     _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
+    _render_publish_location(page, release, latest_vote_task)
     await _append_cast_vote_form(page, release, potency)
 
 
@@ -869,8 +887,8 @@ def _render_vote_unauthenticated(
 
 def _trusted_casting_disabled_notice(archive_url: str | None, vote_recipient: str) -> htm.Element:
     children: list[str | htm.Element] = [
-        "Trusted ballots are unavailable until the vote-start email has a message ID. ",
-        "Trusted votes will be recorded by ATR and receipts will be queued for ",
+        "ATR ballots are unavailable until the vote-start email has a message ID. ",
+        "Votes will be recorded by ATR and receipts will be queued for ",
         htpy.code[vote_recipient],
     ]
     if archive_url is not None:

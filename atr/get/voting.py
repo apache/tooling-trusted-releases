@@ -38,6 +38,7 @@ import atr.render as render
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
+import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -146,14 +147,11 @@ def _add_automatic_publish_fields(
     custom: dict[str, htm.Element | htm.VoidElement],
     skip: list[str],
     publish_eligible: bool,
-    vote_mode: sql.VoteMode,
-    podling_vote_round: int | None,
 ) -> None:
     if not publish_eligible:
         skip.append("automatic_publish_when_resolved")
         skip.append("download_path_suffix")
         return
-    vote_label = _publish_vote_label(vote_mode, podling_vote_round)
     custom["automatic_publish_when_resolved"] = htm.div[
         htpy.input(
             type="checkbox",
@@ -165,7 +163,7 @@ def _add_automatic_publish_fields(
         ),
         htm.div(".form-text.text-muted.mt-1")[
             "If enabled, ATR will publish the approved revision to SVN automatically",
-            f" when the final approving {vote_label} resolves.",
+            " when the final approving vote resolves.",
         ],
     ]
 
@@ -178,16 +176,6 @@ def _podling_vote_round(release: sql.Release, committee: sql.Committee) -> int |
     if not committee.is_podling:
         return None
     return 2 if (release.podling_thread_id is not None) else 1
-
-
-def _publish_vote_label(vote_mode: sql.VoteMode, podling_vote_round: int | None) -> str:
-    if vote_mode != sql.VoteMode.TRUSTED:
-        return "vote"
-    if podling_vote_round == 1:
-        return "first round vote"
-    if podling_vote_round == 2:
-        return "second round vote"
-    return "vote"
 
 
 def _render_body_field(default_body: str, project_key: str) -> htm.Element:
@@ -262,11 +250,16 @@ async def _render_page(  # noqa: C901
     if template_warning is not None:
         page.div(".alert.alert-warning.mb-4", role="alert")[template_warning]
 
+    if (vote_mode == sql.VoteMode.TRUSTED) and (not expedited) and (podling_vote_round is None):
+        page.div(".p-3.mb-4.bg-info-subtle.border.border-info.rounded")[
+            htm.strong["Streamlined voting. "], strings.STREAMLINED_VOTING_RULE
+        ]
+
     if expedited:
         private_address = f"private@{release.committee.key}.apache.org"
         page.div(".p-3.mb-4.bg-info-subtle.border.border-info.rounded")[
             htm.strong["Expedited release. "],
-            "Voting uses Trusted mode, and ballots and the announcement are sent only to ",
+            "People vote on the ATR website, and ballots and the announcement are sent only to ",
             htm.code[private_address],
             ". There is no minimum duration, and a PMC member must resolve the vote manually.",
         ]
@@ -305,7 +298,6 @@ async def _render_page(  # noqa: C901
             "second_round_email_to",
             "vote_duration",
             "notify_when_finished",
-            "automatic_resolve_when_finished",
             "automatic_publish_when_resolved",
             "download_path_suffix",
         ]
@@ -381,31 +373,14 @@ async def _render_page(  # noqa: C901
                     class_="form-check-input",
                 ),
                 htm.div(".form-text.text-muted.mt-1")[
-                    f"If enabled, ATR will send a reminder to {asf_uid}@apache.org when the {vote_label} finishes.",
+                    f"If enabled, ATR will email {asf_uid}@apache.org when it resolves the {vote_label} itself. "
+                    f"It always emails you if the {vote_label} ends and you need to resolve it.",
                 ],
             ]
-            if podling_vote_round is None:
-                custom["automatic_resolve_when_finished"] = htm.div[
-                    htpy.input(
-                        type="checkbox",
-                        name="automatic_resolve_when_finished",
-                        id="automatic_resolve_when_finished",
-                        value="on",
-                        checked=True,
-                        class_="form-check-input",
-                    ),
-                    htm.div(".form-text.text-muted.mt-1")[
-                        f"If enabled, ATR will resolve the {vote_label} automatically, "
-                        "using only ATR ballots, when the voting period ends.",
-                    ],
-                ]
-            else:
-                skip.append("automatic_resolve_when_finished")
+            skip.append("automatic_publish_when_resolved")
         else:
             skip.append("notify_when_finished")
-            skip.append("automatic_resolve_when_finished")
-
-        _add_automatic_publish_fields(custom, skip, publish_eligible, vote_mode, podling_vote_round)
+            _add_automatic_publish_fields(custom, skip, publish_eligible)
 
     download_suffix_default = str(default_download_path_suffix) if (default_download_path_suffix is not None) else ""
     publish_location, publish_mismatch = await construct.publish_location_for_release(

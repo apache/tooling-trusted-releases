@@ -30,8 +30,19 @@ import atr.tasks.vote as vote
 
 
 @pytest.mark.asyncio
-async def test_auto_resolve_skips_when_vote_failed_and_flag_off(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("passes", "abstain", "vote_result", "skip_reason", "outcome"),
+    [
+        (False, 0, "failed", "vote_failed_manual_resolution_required", "failure_skipped"),
+        (True, 1, "passed", "vote_needs_review", "needs_review"),
+    ],
+)
+async def test_auto_resolve_leaves_vote_for_release_manager(
+    monkeypatch, passes, abstain, vote_result, skip_reason, outcome
+) -> None:
     monkeypatch.setattr(vote, "AUTOMATICALLY_RESOLVE_ON_FAILURE", False)
+    notify = mock.AsyncMock()
+    monkeypatch.setattr(vote, "_send_auto_resolve_outcome_notify", notify)
 
     release = SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -82,7 +93,7 @@ async def test_auto_resolve_skips_when_vote_failed_and_flag_off(monkeypatch) -> 
     summary = SimpleNamespace(
         binding_votes_yes=0,
         binding_votes_no=0,
-        binding_votes_abstain=0,
+        binding_votes_abstain=abstain,
         non_binding_votes_yes=0,
         non_binding_votes_no=0,
         non_binding_votes_abstain=0,
@@ -95,7 +106,7 @@ async def test_auto_resolve_skips_when_vote_failed_and_flag_off(monkeypatch) -> 
     monkeypatch.setattr(vote.interaction, "trusted_vote_round", lambda _release: 1)
     monkeypatch.setattr(vote.interaction, "task_mid_get", lambda _task: None)
     monkeypatch.setattr(vote.interaction, "task_recipient_get", lambda _task: None)
-    monkeypatch.setattr(vote.tabulate, "binding_vote_passes", lambda yes, no: False)
+    monkeypatch.setattr(vote.tabulate, "binding_vote_passes", lambda yes, no: passes)
     monkeypatch.setattr(vote.user, "binding_terminology", lambda _round: ("Binding", "Non-binding"))
 
     resolve_mock = mock.AsyncMock()
@@ -121,9 +132,10 @@ async def test_auto_resolve_skips_when_vote_failed_and_flag_off(monkeypatch) -> 
 
     assert isinstance(result, results.VoteAutoResolve)
     assert result.resolved is False
-    assert result.vote_result == "failed"
-    assert result.skip_reason == "vote_failed_manual_resolution_required"
+    assert result.vote_result == vote_result
+    assert result.skip_reason == skip_reason
     resolve_mock.assert_not_awaited()
+    assert notify.await_args.args[-1] == outcome
 
 
 def test_auto_resolve_supported_handles_podling_rounds() -> None:

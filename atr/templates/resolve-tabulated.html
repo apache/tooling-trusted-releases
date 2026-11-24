@@ -36,10 +36,10 @@
   {% if trusted_mode %}
     <h2>Authoritative votes</h2>
     <p>
-      Trusted votes are resolved from ATR ballot records.
+      Streamlined votes are resolved from ATR ballot records.
     </p>
     {% if not trusted_has_vote_serial %}
-      <p>Trusted ballots are unavailable until the current vote serial is known.</p>
+      <p>ATR ballots are unavailable until the current vote serial is known.</p>
     {% elif trusted_ballots %}
       <h3>ATR votes</h3>
       <table class="table table-striped">
@@ -114,7 +114,7 @@
     {% if not release.expedited %}
       <h2>Informative votes</h2>
       <p>
-        Mailing list votes are shown for context only in trusted mode. In trusted mode, votes sent from committee members to the mailing list directly are never counted as {{ binding_label_inline }} votes. Any {{ binding_label_inline }} votes are in the ATR ballots section above.
+        Mailing list votes are shown for context only in streamlined voting. In streamlined voting, votes sent from committee members to the mailing list directly are never counted as {{ binding_label_inline }} votes. Any {{ binding_label_inline }} votes are in the ATR ballots section above.
       </p>
       {% if email_context_votes %}
         <h3>Mailing list votes</h3>
@@ -300,6 +300,20 @@
       <p>No votes tabulated yet.</p>
     {% endif %}
   {% endif %}
+  {% if second_round_startable %}
+    <h2>Second round vote</h2>
+    <p>
+      You can start the second round vote on the Incubator list now.
+      This first round vote must still be resolved before the second round vote can be resolved.
+    </p>
+    <form method="post"
+          action="{{ as_url(post.resolve.second_round, project_key=release.project.key, version_key=release.version) }}"
+          class="mb-4">
+      {{ csrf_input_fn()|safe }}
+      <input type="hidden" name="vote_seq" value="{{ release.current_vote_seq }}" />
+      <button type="submit" class="btn btn-outline-primary">Start second round vote</button>
+    </form>
+  {% endif %}
   {% if resolve_form %}
     <h2>{% if cancel_only %}Cancel vote{% else %}Resolve vote{% endif %}</h2>
     {% if not pass_fail_allowed %}
@@ -341,7 +355,7 @@
       </p>
     {% elif trusted_mode %}
       <p>
-        After reviewing the trusted ballot record and any email thread context, please enter the resolution email body here. Sending this will send the email to a new vote result thread, and the vote will be resolved from the trusted ballot record.
+        After reviewing the ATR ballot record and any email thread context, please enter the resolution email body here. Sending this will send the email to a new vote result thread, and the vote will be resolved from the ATR ballot record.
       </p>
     {% else %}
       <p>

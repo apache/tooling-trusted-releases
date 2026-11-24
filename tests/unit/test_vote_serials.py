@@ -200,7 +200,7 @@ async def test_cast_trusted_rejects_stale_or_non_trusted_release_state(sqlite_se
             expected_vote_mode=sql.VoteMode.TRUSTED,
         )
         assert email_to == []
-        assert error == "This release is not accepting trusted votes."
+        assert error == "This release is not accepting votes on ATR."
 
         release_model.vote_mode = sql.VoteMode.TRUSTED
         release_model.current_vote_seq = None
@@ -405,6 +405,43 @@ async def test_interpret_rejects_trusted_votes(sqlite_sessionmaker) -> None:
 
         with pytest.raises(storage.AccessError):
             await writer.interpret(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "eid", sql.VoteChoice.YES)
+
+
+@pytest.mark.asyncio
+async def test_podling_early_second_round_becomes_current_when_first_round_passes(
+    sqlite_sessionmaker, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        vote.construct, "resolve_template", mock.AsyncMock(return_value=vote.construct.ResolvedTemplate("body"))
+    )
+    monkeypatch.setattr(vote.construct, "start_vote_subject_default", mock.AsyncMock(return_value="subject"))
+    monkeypatch.setattr(vote.construct, "start_vote_subject_and_body", mock.AsyncMock(return_value=("subject", "body")))
+    async with sqlite_sessionmaker() as data:
+        seeded_release = await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            current_vote_seq=1,
+            is_podling=True,
+            vote_mode=sql.VoteMode.EMAIL,
+        )
+        first_round_task = _completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
+        data.add_all([sql.VoteCounter(release_key=seeded_release.key, last_allocated_number=1), first_round_task])
+        await data.commit()
+        cache = SimpleNamespace(
+            get_message_archive_url=mock.AsyncMock(return_value="https://lists.apache.org/thread/t")
+        )
+        write_as = SimpleNamespace(
+            release=_release_writer_with_data(data), cache=cache, append_to_audit_log=mock.MagicMock()
+        )
+        writer = _member_writer_with_data(data, write_as)
+
+        early_task = await writer.start_second_round(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "Chair", 1)
+        release_model = await data.release(key="project-1.0.0").demand(RuntimeError("release missing"))
+        assert release_model.current_vote_seq == 1
+
+        await writer.resolve(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "passed", "Chair", "Passed")
+        assert release_model.current_vote_seq == early_task.task_args["vote_seq"]
+        assert release_model.podling_thread_id == "t"
 
 
 @pytest.mark.asyncio
@@ -777,7 +814,7 @@ async def test_vote_start_records_revision(sqlite_sessionmaker, monkeypatch, vot
     monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
     async with sqlite_sessionmaker() as data:
         release_model = await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
-        release_model.project.release_policy = sql.ReleasePolicy(vote_mode=vote_mode)
+        release_model.project.committee.vote_mode = vote_mode
         release_model.expedited = expedited
         await data.commit()
         await data.begin_immediate()

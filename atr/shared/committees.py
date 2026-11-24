@@ -17,10 +17,13 @@
 
 from typing import Annotated, Literal
 
+import atr.constants as constants
 import atr.form as form
+import atr.models.sql as sql
 
 type ADD_RELEASE_MANAGER = Literal["add_release_manager"]
 type REMOVE_RELEASE_MANAGER = Literal["remove_release_manager"]
+type REQUEST_VOTE_MODE = Literal["request_vote_mode"]
 
 
 class AddReleaseManagerForm(form.Form):
@@ -35,7 +38,21 @@ class RemoveReleaseManagerForm(form.Form):
     asf_uid: str = form.label("ASF UID", widget=form.Widget.HIDDEN)
 
 
+class RequestVoteModeForm(form.Form):
+    variant: REQUEST_VOTE_MODE = form.value(REQUEST_VOTE_MODE)
+    committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
+    explanation: str = form.label(
+        "Reason",
+        "Optional. Shown to the PMC in the CAP vote description.",
+        default="",
+        widget=form.Widget.TEXTAREA,
+        max_length=constants.CAP_EXPLANATION_MAX_LENGTH,
+        rows=3,
+    )
+
+
 type CommitteesForm = Annotated[
-    AddReleaseManagerForm | RemoveReleaseManagerForm,
+    AddReleaseManagerForm | RemoveReleaseManagerForm | RequestVoteModeForm,
     form.DISCRIMINATOR,
 ]

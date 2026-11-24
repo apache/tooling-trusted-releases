@@ -304,7 +304,6 @@ class ReleaseManager(CommitteeParticipant):
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
-        release_policy.vote_mode = form.vote_mode
         _set_recipient_defaults(
             release_policy, models.sql.RecipientAction.VOTE, form.email_to, form.email_cc, form.email_bcc
         )
@@ -450,7 +449,7 @@ async def _apply_policy_update_no_commit(
     update: models.api.PolicyUpdateArgs,
 ) -> None:
     _, release_policy = await _get_or_create_policy(data, project_key)
-    excluded_fields = {"project"} | set(_RECIPIENT_API_FIELDS)
+    excluded_fields = {"project", "vote_mode"} | set(_RECIPIENT_API_FIELDS)
     fields_to_update = update.model_fields_set - excluded_fields
     normalised_values: dict[str, Any] = {}
 

@@ -1352,6 +1352,7 @@ async def publisher_vote_resolve(
                 asf_uid,
                 f"The vote {data.resolution}.",
                 expected_vote_mode=release.effective_vote_mode,
+                unattended=True,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
@@ -2337,6 +2338,7 @@ async def vote_start(
                 notify_when_finished=data.notify_when_finished,
                 automatic_resolve_when_finished=data.automatic_resolve_when_finished,
                 automatic_publish_when_resolved=data.automatic_publish_when_resolved,
+                download_path_suffix=construct.effective_download_path_suffix(release),
                 acknowledged_concerns=frozenset(data.concerns_noted),
             )
     # except Exception as e:
@@ -2766,8 +2768,14 @@ async def _vote_resolve_release(
         ).get()
     if (release is None) or user.embargo_denies(release, asf_uid, is_member=False):
         raise storage.AccessError("Release not found", status=404)
-    if (release.effective_vote_mode != sql.VoteMode.TRUSTED) and (str(project_key) not in _EMAIL_VOTE_RESOLVE_PROJECTS):
-        raise storage.AccessError("Resolving votes through the API is only available in Trusted Vote mode", status=403)
+    if (
+        (release.effective_vote_mode != sql.VoteMode.TRUSTED)
+        and (str(project_key) not in _EMAIL_VOTE_RESOLVE_PROJECTS)
+        and (not (config.is_test_mode() and (str(project_key) == "test-client")))
+    ):
+        raise storage.AccessError(
+            "Resolving votes through the API is only available with streamlined voting (vote mode trusted)", status=403
+        )
     return release
 
 

@@ -94,7 +94,7 @@ class FoundationCommitter(GeneralPublic):
                 return [], "The vote form is stale, please refresh and try again."
             if release.effective_vote_mode != sql.VoteMode.TRUSTED:
                 await self.__data.rollback()
-                return [], "This release is not accepting trusted votes."
+                return [], "This release is not accepting votes on ATR."
             if release.current_vote_seq is None:
                 await self.__data.rollback()
                 return [], "Vote serial is missing, please refresh and try again."
@@ -437,11 +437,14 @@ class ReleaseManager(CommitteeParticipant):
                 notify_when_finished = False
                 automatic_resolve_when_finished = False
                 download_path_suffix = None
+            elif promote and (vote_mode == sql.VoteMode.TRUSTED):
+                automatic_resolve_when_finished = (not committee.is_podling) or (release.podling_thread_id is not None)
+                automatic_publish_when_resolved = True
             if notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
-                raise storage.AccessError("Vote end reminders are only available in Trusted Vote mode", status=403)
+                raise storage.AccessError("Vote end reminders are only available with streamlined voting", status=403)
             if automatic_resolve_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
                 raise storage.AccessError(
-                    "Automatic vote resolution is only available in Trusted Vote mode", status=403
+                    "Automatic vote resolution is only available with streamlined voting", status=403
                 )
             if automatic_resolve_when_finished and committee.is_podling and (release.podling_thread_id is None):
                 raise storage.AccessError(
@@ -453,7 +456,7 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError(
                         "Automatic SVN publish is not available for expedited releases", status=403
                     )
-                if not self.__write.authorisation.is_member_of(committee.key):
+                if (vote_mode == sql.VoteMode.EMAIL) and (not self.__write.authorisation.is_member_of(committee.key)):
                     raise storage.AccessError("Automatic SVN publish requires a committee member initiator", status=403)
                 if automatic_publish_asf_uid is None:
                     automatic_publish_asf_uid = self.__asf_uid
@@ -535,6 +538,49 @@ class ReleaseManager(CommitteeParticipant):
 
         return task
 
+    async def start_second_round(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        asf_fullname: str,
+        expected_vote_seq: int,
+    ) -> sql.Task:
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            _project=True,
+            _committee=True,
+            _project_release_policy=True,
+        ).demand(storage.AccessError("Release not found", status=404))
+        if (release.committee is None) or (not release.committee.is_podling) or (release.podling_thread_id is not None):
+            raise storage.AccessError("Only a podling first round vote can start a second round vote", status=409)
+        if release.current_vote_seq != expected_vote_seq:
+            raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
+        latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
+        archive_url = await self.__resolved_vote_thread_url(latest_vote_task)
+        if (latest_vote_task is None) or (archive_url is None):
+            raise storage.AccessError("The first round vote thread is not archived yet, please try later", status=409)
+        body_template = (await construct.resolve_template(release.project, "start_vote")).body
+        await self.__data.commit()
+        await self.__data.begin_immediate()
+        try:
+            if await interaction.release_early_second_round_task(release, self.__data) is not None:
+                raise storage.AccessError("The second round vote has already been started", status=409)
+            task = await self.__queue_second_round(
+                release, latest_vote_task, asf_fullname, archive_url.split("/")[-1], body_template
+            )
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            release_key=release.key,
+            vote_seq=task.task_args["vote_seq"],
+        )
+        return task
+
     async def _committee_for_release(self, release: sql.Release) -> sql.Committee | None:
         project = await self.__data.project(key=release.project_key, _committee=True).get()
         if project is None:
@@ -555,6 +601,7 @@ class ReleaseManager(CommitteeParticipant):
         additional_cc: list[str] | None = None,
         additional_bcc: list[str] | None = None,
         early_reason: str = "",
+        unattended: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         security_override = isinstance(self, SecurityTeam)
         automatic_resolve_when_finished = automatic_resolve_when_finished and (not security_override)
@@ -633,6 +680,7 @@ class ReleaseManager(CommitteeParticipant):
                 additional_cc=additional_cc,
                 additional_bcc=additional_bcc,
                 early_reason=early_reason,
+                unattended=unattended,
             )
         if (
             (expected_vote_seq is not None)
@@ -684,7 +732,7 @@ class ReleaseManager(CommitteeParticipant):
             early_reason=completed_early_reason,
         )
 
-    async def __resolve_release(  # noqa: C901
+    async def __resolve_release(
         self,
         project_key: safe.ProjectKey,
         release: sql.Release,
@@ -701,9 +749,6 @@ class ReleaseManager(CommitteeParticipant):
         early_reason: str | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         security_override = isinstance(self, SecurityTeam)
-        if (voting_round == 1) and (vote_result == "passed"):
-            await self.__data.commit()
-            await self.__data.begin_immediate()
         # Attach the existing release to the session
         release = await self.__data.merge(release)
         storage.ensure_project_active(release.project)
@@ -723,71 +768,16 @@ class ReleaseManager(CommitteeParticipant):
                 if archive_url is None:
                     raise storage.AccessError("No archive URL found for podling vote", status=404)
                 thread_id = archive_url.split("/")[-1]
-                await self._resolve_transition(
+                await self.__data.commit()
+                await self.__data.begin_immediate()
+                second_round_task = await self.__pass_first_round(
                     release,
-                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    expected_podling_thread_id=None,
-                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    new_vote_mode=release.effective_vote_mode,
-                    new_vote_resolved=None,
-                    new_podling_thread_id=thread_id,
-                )
-                await self.__data.refresh(release)
-                incubator_vote_address = (
-                    latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
-                )
-                if not release.project.committee:
-                    raise storage.AccessError("Project has no committee - Invalid state", status=500)
-                revision_number = release.latest_revision_number
-                if revision_number is None:
-                    raise storage.AccessError("Release has no revision number - Invalid state", status=500)
-                vote_duration = latest_vote_task.task_args["vote_duration"]
-                subject_template = await construct.start_vote_subject_default(release.safe_project_key)
-                body_template = second_round_body_template
-                if body_template is None:
-                    raise storage.AccessError("Second round vote template was not resolved", status=500)
-                options = construct.StartVoteOptions(
-                    asfuid=self.__asf_uid,
-                    fullname=asf_fullname,
-                    project_key=release.safe_project_key,
-                    version_key=release.safe_version_key,
-                    revision_number=release.safe_latest_revision_number,
-                    vote_duration=vote_duration,
-                    first_round_thread_id=thread_id,
-                )
-                subject_data, body_data = await construct.start_vote_subject_and_body(
-                    subject_template, body_template, options
-                )
-                carried_publish_when_resolved = (not security_override) and bool(
-                    latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
-                )
-                carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
-                if not isinstance(carried_publish_asf_uid, str):
-                    carried_publish_asf_uid = latest_vote_task.task_args.get("initiator_id")
-                if not isinstance(carried_publish_asf_uid, str):
-                    carried_publish_asf_uid = self.__asf_uid
-                carried_download_path_suffix_raw = latest_vote_task.task_args.get("download_path_suffix")
-                carried_download_path_suffix = (
-                    safe.RelPath(carried_download_path_suffix_raw)
-                    if isinstance(carried_download_path_suffix_raw, str)
-                    else None
-                )
-                second_round_task = await self.start(
-                    email_to=incubator_vote_address,
-                    permitted_recipients=[incubator_vote_address],
-                    project_key=release.safe_project_key,
-                    version_key=release.safe_version_key,
-                    asf_fullname=asf_fullname,
-                    vote_duration_choice=vote_duration,
-                    subject=subject_data,
-                    body_data=body_data,
-                    promote=False,
-                    expected_revision=release.safe_latest_revision_number,
+                    latest_vote_task,
+                    asf_fullname,
+                    thread_id,
+                    second_round_body_template,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
                     notify_when_finished=notify_when_finished,
-                    automatic_publish_when_resolved=carried_publish_when_resolved,
-                    automatic_publish_asf_uid=carried_publish_asf_uid,
-                    download_path_suffix=carried_download_path_suffix,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -799,8 +789,8 @@ class ReleaseManager(CommitteeParticipant):
                 await self.__data.rollback()
                 raise
             success_message = (
-                f"First round vote marked as passed, and second round vote automatically started"
-                f" (sent to {incubator_vote_address})"
+                f"First round vote marked as passed, and second round vote started"
+                f" (sent to {second_round_task.task_args['email_to']})"
             )
         elif vote_result == "passed":
             vote_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
@@ -993,6 +983,7 @@ class ReleaseManager(CommitteeParticipant):
         additional_cc: list[str] | None = None,
         additional_bcc: list[str] | None = None,
         early_reason: str = "",
+        unattended: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         security_override = isinstance(self, SecurityTeam)
         completed_early_reason: str | None = None
@@ -1014,7 +1005,7 @@ class ReleaseManager(CommitteeParticipant):
             if (expected_vote_mode is not None) and (expected_vote_mode != sql.VoteMode.TRUSTED):
                 raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
             if release.effective_vote_mode != sql.VoteMode.TRUSTED:
-                raise storage.AccessError("Release is not configured for trusted voting", status=409)
+                raise storage.AccessError("Release does not use streamlined voting", status=409)
             if release.current_vote_seq is None:
                 raise storage.AccessError("Vote serial is missing, please refresh and try again", status=409)
             if (expected_vote_seq is not None) and (release.current_vote_seq != expected_vote_seq):
@@ -1040,6 +1031,11 @@ class ReleaseManager(CommitteeParticipant):
 
             ballots = await interaction.effective_trusted_ballots(release, vote_seq, self.__data)
             summary = await interaction.trusted_ballot_summary(release, ballots, self.__data)
+            all_yes = tabulate.all_ballots_yes(summary)
+            if unattended and (not release.expedited) and (vote_result == "passed") and (not all_yes):
+                raise storage.AccessError(
+                    "Somebody voted 0 or -1, so the release manager must resolve this vote", status=409
+                )
             if (
                 (vote_result == "passed")
                 and (not tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no))
@@ -1048,7 +1044,7 @@ class ReleaseManager(CommitteeParticipant):
                 binding_label, _non_binding_label = user.binding_terminology(voting_round)
                 binding_label_inline = user.binding_label_inline(binding_label)
                 raise storage.AccessError(
-                    f"The trusted ballot record does not have enough {binding_label_inline} +1 votes to pass.",
+                    f"The ATR ballot record does not have enough {binding_label_inline} +1 votes to pass.",
                     status=409,
                 )
 
@@ -1057,69 +1053,14 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError("No vote task found, unable to start the Incubator vote.", status=404)
                 if podling_round_one_thread_id is None:
                     raise storage.AccessError("No archive URL found for podling vote", status=404)
-                await self._resolve_transition(
+                second_round_task = await self.__pass_first_round(
                     release,
-                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    expected_podling_thread_id=None,
-                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    new_vote_mode=release.effective_vote_mode,
-                    new_vote_resolved=None,
-                    new_podling_thread_id=podling_round_one_thread_id,
-                )
-                await self.__data.refresh(release)
-                incubator_vote_address = (
-                    latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
-                )
-                revision_number = release.latest_revision_number
-                if revision_number is None:
-                    raise storage.AccessError("Release has no revision number - Invalid state", status=500)
-                vote_duration = latest_vote_task.task_args["vote_duration"]
-                subject_template = await construct.start_vote_subject_default(release.safe_project_key)
-                body_template = second_round_body_template
-                if body_template is None:
-                    raise storage.AccessError("Second round vote template was not resolved", status=500)
-                options = construct.StartVoteOptions(
-                    asfuid=self.__asf_uid,
-                    fullname=asf_fullname,
-                    project_key=release.safe_project_key,
-                    version_key=release.safe_version_key,
-                    revision_number=release.safe_latest_revision_number,
-                    vote_duration=vote_duration,
-                    first_round_thread_id=podling_round_one_thread_id,
-                )
-                subject_data, body_data = await construct.start_vote_subject_and_body(
-                    subject_template, body_template, options
-                )
-                carried_publish_when_resolved = (not security_override) and bool(
-                    latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
-                )
-                carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
-                if not isinstance(carried_publish_asf_uid, str):
-                    carried_publish_asf_uid = latest_vote_task.task_args.get("initiator_id")
-                if not isinstance(carried_publish_asf_uid, str):
-                    carried_publish_asf_uid = self.__asf_uid
-                carried_download_path_suffix_raw = latest_vote_task.task_args.get("download_path_suffix")
-                carried_download_path_suffix = (
-                    safe.RelPath(carried_download_path_suffix_raw)
-                    if isinstance(carried_download_path_suffix_raw, str)
-                    else None
-                )
-                second_round_task = await self.start(
-                    email_to=incubator_vote_address,
-                    permitted_recipients=[incubator_vote_address],
-                    project_key=release.safe_project_key,
-                    version_key=release.safe_version_key,
-                    asf_fullname=asf_fullname,
-                    vote_duration_choice=vote_duration,
-                    subject=subject_data,
-                    body_data=body_data,
-                    promote=False,
-                    expected_revision=release.safe_latest_revision_number,
+                    latest_vote_task,
+                    asf_fullname,
+                    podling_round_one_thread_id,
+                    second_round_body_template,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
                     notify_when_finished=notify_when_finished,
-                    automatic_publish_when_resolved=carried_publish_when_resolved,
-                    automatic_publish_asf_uid=carried_publish_asf_uid,
-                    download_path_suffix=carried_download_path_suffix,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -1128,8 +1069,8 @@ class ReleaseManager(CommitteeParticipant):
                 await self.__data.commit()
                 await self.__data.refresh(release)
                 success_message = (
-                    f"First round vote marked as passed, and second round vote automatically started"
-                    f" (sent to {incubator_vote_address})"
+                    f"First round vote marked as passed, and second round vote started"
+                    f" (sent to {second_round_task.task_args['email_to']})"
                 )
             elif vote_result == "passed":
                 vote_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
@@ -1164,7 +1105,7 @@ class ReleaseManager(CommitteeParticipant):
             raise
 
         extra_destination = None
-        if (vote_result == "passed") and (voting_round != 1):
+        if (vote_result == "passed") and (voting_round != 1) and (release.expedited or all_yes):
             publish_enqueue_error = await self.__enqueue_automatic_svn_publish(
                 project_key,
                 release.safe_version_key,
@@ -1172,11 +1113,11 @@ class ReleaseManager(CommitteeParticipant):
                 latest_vote_task,
                 release,
             )
-            if (voting_round == 2) and (release.podling_thread_id is not None):
-                round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
-                    release.podling_thread_id
-                )
-                extra_destination = (round_one_email_address, round_one_message_id)
+        if (vote_result == "passed") and (voting_round == 2) and (release.podling_thread_id is not None):
+            round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
+                release.podling_thread_id
+            )
+            extra_destination = (round_one_email_address, round_one_message_id)
 
         if latest_vote_task is None:
             error_message = "No vote task found, unable to send resolution message."
@@ -1240,6 +1181,7 @@ class ReleaseManager(CommitteeParticipant):
         new_vote_resolved: datetime.datetime | None,
         new_podling_thread_id: str | None,
         new_vote_thread_url: str | None = None,
+        new_current_vote_seq: int | None = None,
     ) -> None:
         via = sql.validate_instrumented_attribute
         stmt = sqlmodel.update(sql.Release).where(
@@ -1263,6 +1205,8 @@ class ReleaseManager(CommitteeParticipant):
         )
         if new_phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             stmt = stmt.values(voted_revision_number=None)
+        if new_current_vote_seq is not None:
+            stmt = stmt.values(current_vote_seq=new_current_vote_seq)
         result = await self.__data.execute(
             stmt.values(
                 phase=new_phase,
@@ -1400,6 +1344,110 @@ class ReleaseManager(CommitteeParticipant):
             await self.__data.refresh(vote_task_with_publish_options)
             return f"Automatic SVN publish was not queued: {exc}"
         return None
+
+    async def __pass_first_round(
+        self,
+        release: sql.Release,
+        latest_vote_task: sql.Task,
+        asf_fullname: str,
+        thread_id: str,
+        second_round_body_template: str | None,
+        *,
+        automatic_resolve_when_finished: bool,
+        notify_when_finished: bool,
+    ) -> sql.Task:
+        early_second_round_task = await interaction.release_early_second_round_task(release, self.__data)
+        await self._resolve_transition(
+            release,
+            expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            expected_podling_thread_id=None,
+            new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            new_vote_mode=release.effective_vote_mode,
+            new_vote_resolved=None,
+            new_podling_thread_id=thread_id,
+            new_current_vote_seq=(
+                early_second_round_task.task_args["vote_seq"] if (early_second_round_task is not None) else None
+            ),
+        )
+        await self.__data.refresh(release)
+        if early_second_round_task is not None:
+            return early_second_round_task
+        return await self.__queue_second_round(
+            release,
+            latest_vote_task,
+            asf_fullname,
+            thread_id,
+            second_round_body_template,
+            automatic_resolve_when_finished=automatic_resolve_when_finished,
+            notify_when_finished=notify_when_finished,
+        )
+
+    async def __queue_second_round(
+        self,
+        release: sql.Release,
+        latest_vote_task: sql.Task,
+        asf_fullname: str,
+        thread_id: str,
+        second_round_body_template: str | None,
+        *,
+        automatic_resolve_when_finished: bool = False,
+        notify_when_finished: bool = False,
+    ) -> sql.Task:
+        security_override = isinstance(self, SecurityTeam)
+        incubator_vote_address = (
+            latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
+        )
+        if not release.project.committee:
+            raise storage.AccessError("Project has no committee - Invalid state", status=500)
+        revision_number = release.latest_revision_number
+        if revision_number is None:
+            raise storage.AccessError("Release has no revision number - Invalid state", status=500)
+        vote_duration = latest_vote_task.task_args["vote_duration"]
+        subject_template = await construct.start_vote_subject_default(release.safe_project_key)
+        body_template = second_round_body_template
+        if body_template is None:
+            raise storage.AccessError("Second round vote template was not resolved", status=500)
+        options = construct.StartVoteOptions(
+            asfuid=self.__asf_uid,
+            fullname=asf_fullname,
+            project_key=release.safe_project_key,
+            version_key=release.safe_version_key,
+            revision_number=release.safe_latest_revision_number,
+            vote_duration=vote_duration,
+            first_round_thread_id=thread_id,
+        )
+        subject_data, body_data = await construct.start_vote_subject_and_body(subject_template, body_template, options)
+        carried_publish_when_resolved = (not security_override) and bool(
+            latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
+        )
+        carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
+        if not isinstance(carried_publish_asf_uid, str):
+            carried_publish_asf_uid = latest_vote_task.task_args.get("initiator_id")
+        if not isinstance(carried_publish_asf_uid, str):
+            carried_publish_asf_uid = self.__asf_uid
+        carried_download_path_suffix_raw = latest_vote_task.task_args.get("download_path_suffix")
+        carried_download_path_suffix = (
+            safe.RelPath(carried_download_path_suffix_raw)
+            if isinstance(carried_download_path_suffix_raw, str)
+            else None
+        )
+        return await self.start(
+            email_to=incubator_vote_address,
+            permitted_recipients=[incubator_vote_address],
+            project_key=release.safe_project_key,
+            version_key=release.safe_version_key,
+            asf_fullname=asf_fullname,
+            vote_duration_choice=vote_duration,
+            subject=subject_data,
+            body_data=body_data,
+            promote=False,
+            expected_revision=release.safe_latest_revision_number,
+            automatic_resolve_when_finished=automatic_resolve_when_finished,
+            notify_when_finished=notify_when_finished,
+            automatic_publish_when_resolved=carried_publish_when_resolved,
+            automatic_publish_asf_uid=carried_publish_asf_uid,
+            download_path_suffix=carried_download_path_suffix,
+        )
 
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):

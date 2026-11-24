@@ -293,17 +293,18 @@ def test_format_utc_returns_utc_minute_string() -> None:
 
 
 @pytest.mark.parametrize(
-    ("vote_mode", "automatic_publish", "expedited"),
+    ("vote_mode", "automatic_publish", "expedited", "abstain"),
     [
-        (sql.VoteMode.EMAIL, False, False),
-        (sql.VoteMode.EMAIL, True, False),
-        (sql.VoteMode.TRUSTED, False, False),
-        (sql.VoteMode.TRUSTED, True, False),
-        (sql.VoteMode.TRUSTED, False, True),
+        (sql.VoteMode.EMAIL, False, False, 0),
+        (sql.VoteMode.EMAIL, True, False, 0),
+        (sql.VoteMode.TRUSTED, False, False, 0),
+        (sql.VoteMode.TRUSTED, True, False, 0),
+        (sql.VoteMode.TRUSTED, True, False, 1),
+        (sql.VoteMode.TRUSTED, False, True, 0),
     ],
 )
 async def test_passed_vote_retains_revision_for_publication(
-    monkeypatch, vote_mode, automatic_publish, expedited
+    monkeypatch, vote_mode, automatic_publish, expedited, abstain
 ) -> None:
     data = _mock_data()
     write_as = _mock_write_as()
@@ -330,7 +331,7 @@ async def test_passed_vote_retains_revision_for_publication(
     monkeypatch.setattr(
         interaction,
         "trusted_ballot_summary",
-        mock.AsyncMock(return_value=interaction.TrustedVoteSummary(binding_votes_yes=3)),
+        mock.AsyncMock(return_value=interaction.TrustedVoteSummary(binding_votes_yes=3, binding_votes_abstain=abstain)),
     )
 
     _release, _round, success, error = await writer.resolve(
@@ -348,7 +349,7 @@ async def test_passed_vote_retains_revision_for_publication(
     assert release.phase == sql.ReleasePhase.RELEASE_PREVIEW
     assert release.latest_revision_number == "00001"
     write_as.revision.create_revision_with_quarantine.assert_not_awaited()
-    if automatic_publish:
+    if automatic_publish and (abstain == 0):
         write_as.release.publish_to_svn.assert_awaited_once_with(
             _project_key(),
             release.safe_version_key,
@@ -358,6 +359,36 @@ async def test_passed_vote_retains_revision_for_publication(
         )
     else:
         write_as.release.publish_to_svn.assert_not_awaited()
+
+
+async def test_unattended_pass_refused_unless_every_vote_is_yes(monkeypatch) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.current_vote_seq = 1
+    data.release.return_value.demand = mock.AsyncMock(return_value=release)
+    vote_task = _latest_vote_task_with_end(-24)
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
+    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    summary = interaction.TrustedVoteSummary(binding_votes_yes=3, non_binding_votes_no=1)
+    monkeypatch.setattr(interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=summary))
+
+    with pytest.raises(storage.AccessError, match="voted 0 or -1"):
+        await writer.resolve(
+            _project_key(),
+            _version_key(),
+            "passed",
+            "Chair",
+            "The vote has passed.",
+            expected_vote_seq=1,
+            expected_vote_mode=sql.VoteMode.TRUSTED,
+            unattended=True,
+        )
+
+    write_as.release.publish_to_svn.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -396,7 +427,9 @@ async def test_podling_round_one_pass_passes_thread_to_second_round_body(
     write_as = _mock_write_as()
     writer = writer_cls(_security_owner_write(), write_as, data, "project")
     writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
-    writer.start = mock.AsyncMock(return_value=SimpleNamespace(task_args={"vote_seq": 4}))
+    writer.start = mock.AsyncMock(
+        return_value=SimpleNamespace(task_args={"vote_seq": 4, "email_to": "general@incubator.apache.org"})
+    )
 
     release = _candidate_release()
     release.vote_mode = vote_mode
@@ -416,6 +449,7 @@ async def test_podling_round_one_pass_passes_thread_to_second_round_body(
     vote_task.task_args["automatic_publish_when_resolved"] = True
     render = mock.AsyncMock(return_value=("subject", "body"))
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
+    monkeypatch.setattr(interaction, "release_early_second_round_task", mock.AsyncMock(return_value=None))
     monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
     monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(

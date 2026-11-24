@@ -176,6 +176,54 @@ async def test_start_rejects_automatic_publish_for_expedited(monkeypatch) -> Non
     data.rollback.assert_awaited_once()
 
 
+async def test_start_forces_automation_in_trusted_mode(monkeypatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    committee = SimpleNamespace(key="example", is_podling=False, committee_members=["alice"])
+    release = SimpleNamespace(
+        key="example-1.0",
+        project_key="example",
+        project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True),
+        committee=committee,
+        expedited=False,
+        podling_thread_id=None,
+    )
+    data.release = mock.MagicMock(return_value=SimpleNamespace(demand=mock.AsyncMock(return_value=release)))
+    data.project = mock.MagicMock(
+        return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
+    )
+    release_writer = SimpleNamespace(
+        start_vote_no_commit=mock.AsyncMock(
+            return_value=(release, 1, sql.VoteMode.TRUSTED, safe.RevisionNumber("00001"))
+        ),
+    )
+    write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
+    writer = object.__new__(vote_writer.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write = SimpleNamespace(authorisation=SimpleNamespace(is_member_of=lambda _key: False))
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "bob"
+
+    task = await writer.start(
+        "dev@example.apache.org",
+        safe.ProjectKey("example"),
+        safe.VersionKey("1.0"),
+        72,
+        "[VOTE] Release example 1.0",
+        "Please vote.",
+        "Bob",
+        permitted_recipients=["dev@example.apache.org"],
+        download_path_suffix=safe.RelPath("example-1.0"),
+    )
+
+    assert task.task_args["automatic_resolve_when_finished"] is True
+    assert task.task_args["automatic_publish_when_resolved"] is True
+    assert task.task_args["automatic_publish_asf_uid"] == "bob"
+    assert release.download_path_suffix == "example-1.0"
+
+
 def test_start_voting_form_publish_on() -> None:
     parsed = voting_shared.StartVotingForm.model_validate(
         {

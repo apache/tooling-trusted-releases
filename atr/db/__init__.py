@@ -191,9 +191,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     def approval_request(
         self,
         id: Opt[int] = NOT_SET,
-        project_key: Opt[str] = NOT_SET,
+        project_key: Opt[str | None] = NOT_SET,
+        committee_key: Opt[str] = NOT_SET,
         action: Opt[sql.ApprovalAction] = NOT_SET,
-        cap_question_id: Opt[int] = NOT_SET,
+        cap_question_id: Opt[int | None] = NOT_SET,
         status: Opt[sql.ApprovalStatus] = NOT_SET,
         status_in: Opt[Sequence[sql.ApprovalStatus]] = NOT_SET,
         project_key_in: Opt[Sequence[str]] = NOT_SET,
@@ -206,6 +207,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.ApprovalRequest.id == id)
         if is_defined(project_key):
             query = query.where(sql.ApprovalRequest.project_key == project_key)
+        if is_defined(committee_key):
+            query = query.where(sql.ApprovalRequest.committee_key == committee_key)
         if is_defined(action):
             query = query.where(sql.ApprovalRequest.action == action)
         if is_defined(cap_question_id):
@@ -383,6 +386,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         is_archived: Opt[bool] = NOT_SET,
         archived: Opt[datetime.datetime | None] = NOT_SET,
         keys_mode: Opt[sql.KeysMode] = NOT_SET,
+        vote_mode: Opt[sql.VoteMode | None] = NOT_SET,
         mail_addresses: Opt[list[str]] = NOT_SET,
         catalog_reviewed: Opt[bool] = NOT_SET,
         parent_committee_key: Opt[str] = NOT_SET,
@@ -418,6 +422,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.archived == archived)
         if is_defined(keys_mode):
             query = query.where(sql.Committee.keys_mode == keys_mode)
+        if is_defined(vote_mode):
+            query = query.where(sql.Committee.vote_mode == vote_mode)
         if is_defined(mail_addresses):
             query = query.where(sql.Committee.mail_addresses == mail_addresses)
         if is_defined(catalog_reviewed):
@@ -1121,7 +1127,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     def release_policy(
         self,
         id: Opt[int] = NOT_SET,
-        vote_mode: Opt[sql.VoteMode] = NOT_SET,
         min_hours: Opt[int] = NOT_SET,
         release_checklist: Opt[str] = NOT_SET,
         github_repository_name: Opt[str] = NOT_SET,
@@ -1138,8 +1143,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         if is_defined(id):
             query = query.where(sql.ReleasePolicy.id == id)
-        if is_defined(vote_mode):
-            query = query.where(sql.ReleasePolicy.vote_mode == vote_mode)
         if is_defined(min_hours):
             query = query.where(sql.ReleasePolicy.min_hours == min_hours)
         if is_defined(release_checklist):

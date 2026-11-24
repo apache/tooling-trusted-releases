@@ -64,6 +64,10 @@ class InterpretForm(form.Form):
     choice: Literal["+1", "0", "-1", ""] = form.label("Vote", widget=form.Widget.HIDDEN)
 
 
+class SecondRoundForm(form.Form):
+    vote_seq: form.Int = form.label("Vote serial", widget=form.Widget.HIDDEN)
+
+
 class SubmitForm(ResolveFormBase):
     variant: SUBMIT = form.value(SUBMIT)
     result_subject: str = form.label("Subject", widget=form.Widget.TEXT, default="", readonly=True)
@@ -87,7 +91,9 @@ class SubmitForm(ResolveFormBase):
     security_override: form.Bool = form.label(
         "Force as the ASF Security Team",
         "Resolve this vote regardless of the vote count and voting period. This action is audited."
-        " Passed releases are published to SVN automatically. Automatic second round resolution is not applied.",
+        " Passed releases are published to SVN automatically,"
+        " unless somebody voted 0 or -1 in a non-expedited streamlined vote."
+        " Automatic second round resolution is not applied.",
     )
     automatic_resolve_when_finished: form.Bool = form.label(
         "Automatically resolve the second round vote",

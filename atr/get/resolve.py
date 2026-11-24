@@ -277,15 +277,16 @@ async def selected(  # noqa: C901
     else:
         form_cls = shared.resolve.SubmitForm
 
-    is_podling_first_round = (
-        is_trusted_mode
-        and (release.committee is not None)
+    second_round_startable = (
+        (release.committee is not None)
         and release.committee.is_podling
         and (release.podling_thread_id is None)
+        and (release.current_vote_seq is not None)
+        and (await interaction.release_early_second_round_task(release) is None)
     )
     custom: dict[str, htm.Element | htm.VoidElement] = {}
     skip: list[str] = []
-    if (form_cls is shared.resolve.SubmitForm) and is_podling_first_round:
+    if (form_cls is shared.resolve.SubmitForm) and is_trusted_mode and second_round_startable:
         defaults["automatic_resolve_when_finished"] = True
         custom["automatic_resolve_when_finished"] = htm.div[
             htpy.input(
@@ -363,7 +364,7 @@ async def selected(  # noqa: C901
         icon = htpy.i(class_="bi bi-exclamation-triangle me-1")
         if is_trusted_mode:
             message = (
-                f"The trusted ballot record does not contain sufficient {binding_label_inline} +1 votes to"
+                f"The ATR ballot record does not contain sufficient {binding_label_inline} +1 votes to"
                 f" pass (at least 3 {binding_label_inline} +1 votes are required, with more +1 than -1)."
             )
         elif details is not None:
@@ -385,9 +386,16 @@ async def selected(  # noqa: C901
         pre_submit = htm.div(".border.rounded.bg-warning-subtle.p-3.mb-3")[icon, message]
 
     # Mirrors the gate in the vote writer: no publish after podling round one
-    publishes_on_pass = (vote_round != 1) and (
-        is_security_team
-        or ((latest_vote_task is not None) and bool(latest_vote_task.task_args.get("automatic_publish_when_resolved")))
+    publishes_on_pass = (
+        (vote_round != 1)
+        and (release.expedited or (trusted_summary is None) or tabulate.all_ballots_yes(trusted_summary))
+        and (
+            is_security_team
+            or (
+                (latest_vote_task is not None)
+                and bool(latest_vote_task.task_args.get("automatic_publish_when_resolved"))
+            )
+        )
     )
     if (form_cls is shared.resolve.SubmitForm) and publishes_on_pass:
         publish_notice = htm.div(".border.rounded.bg-info-subtle.p-3.mb-3")[
@@ -417,6 +425,7 @@ async def selected(  # noqa: C901
         summary=details.summary if (details is not None) else {},
         outcome=details.outcome if (details is not None) else "",
         resolve_form=resolve_form,
+        second_round_startable=second_round_startable,
         fetch_error=fetch_error,
         mail_warnings=mail_warnings,
         template_warning=resolved_template.warning,

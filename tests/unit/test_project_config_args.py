@@ -278,7 +278,7 @@ def test_full_sync_fills_omitted_policy_fields_with_defaults() -> None:
     completed = project_writer._complete_policy_args(args)
 
     assert completed.min_hours == 72
-    assert completed.vote_mode == sql.VoteMode.EMAIL
+    assert completed.vote_mode is None
     assert completed.source_artifact_paths == []
     # Recipients clear only if the field is marked as set, since None is already the default
     assert "vote_recipients" in completed.model_fields_set
@@ -307,6 +307,12 @@ def test_project_config_rejects_trusted_publishing_settings(field: str, value: o
     # them by name instead of as a generic unknown key
     with pytest.raises(pydantic.ValidationError, match=re.escape("configured in ATR, not through .asf.yaml")):
         _project_config(**{field: value})
+
+
+def test_project_config_rejects_trusted_vote_mode() -> None:
+    with pytest.raises(pydantic.ValidationError, match="committee page"):
+        api.ProjectConfigPolicyArgs.model_validate({"vote_mode": "trusted"})
+    assert api.ProjectConfigPolicyArgs.model_validate({"vote_mode": "email"}).vote_mode == sql.VoteMode.EMAIL
 
 
 def test_full_sync_leaves_trusted_publishing_settings_alone() -> None:

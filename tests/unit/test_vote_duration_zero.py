@@ -28,7 +28,6 @@ _POLICY_BASE = {
     "project_key": "test",
     "email_cc": [],
     "email_bcc": [],
-    "vote_mode": "email",
     "min_hours": 0,
     "release_checklist": "",
     "vote_comment_template": "",

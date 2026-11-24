@@ -424,6 +424,29 @@ async def ci_builds_enabled(committee_key: str | None, caller_data: db.Session |
     return committee_key in await automated_release_signing_committees(caller_data)
 
 
+def committee_vote_mode_request_action(committee: sql.Committee) -> sql.ApprovalAction:
+    if committee.effective_vote_mode == sql.VoteMode.TRUSTED:
+        return sql.ApprovalAction.EMAIL_VOTING
+    return sql.ApprovalAction.TRUSTED_VOTING
+
+
+async def committee_vote_mode_request_error(committee: sql.Committee, data: db.Session) -> str | None:
+    if util.committee_is_standing(committee.key):
+        return "Streamlined voting isn't available for this committee, because it doesn't make releases."
+    if committee.is_podling and (committee.effective_vote_mode == sql.VoteMode.EMAIL):
+        return "Streamlined voting can't be turned on for a podling."
+    pending = await data.approval_request(
+        committee_key=committee.key,
+        project_key=None,
+        status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+    ).get()
+    if pending is None:
+        return None
+    direction = "on" if (pending.action == sql.ApprovalAction.TRUSTED_VOTING) else "off"
+    closes = pending.closes_at.strftime("%Y-%m-%d %H:%M UTC")
+    return f"The CAP vote to turn streamlined voting {direction} closes {closes}."
+
+
 async def count_checks_for_revision_by_status(
     status: sql.CheckResultStatus,
     release: sql.Release,
@@ -915,6 +938,26 @@ async def release_distribution_checks_held(release: sql.Release, caller_data: db
         release.safe_project_key, release.safe_version_key, caller_data
     )
     return published is None
+
+
+async def release_early_second_round_task(
+    release: sql.Release, caller_data: db.Session | None = None
+) -> sql.Task | None:
+    if release.current_vote_seq is None:
+        return None
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == release.project_key)
+            .where(sql.Task.version_key == release.version)
+            .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
+            .where(sql.Task.status != sql.TaskStatus.FAILED)
+            .where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.vote_seq") > release.current_vote_seq)
+            .order_by(via(sql.Task.added).desc())
+            .limit(1)
+        )
+        return (await data.execute(query)).scalar_one_or_none()
 
 
 async def release_in_flight_svn_publish_task(

@@ -105,7 +105,7 @@ async def complete_approval(
         approval = await data.approval_request(id=approval_request_id).get()
     if approval is None:
         return await session.redirect(get.projects.projects, error="Approval request not found.")
-    if approval.status != sql.ApprovalStatus.APPROVED:
+    if (approval.status != sql.ApprovalStatus.APPROVED) or (approval.project_key is None):
         return await session.redirect(get.projects.projects, error="This approval request is not ready to complete.")
 
     project_key = safe.ProjectKey(approval.project_key)

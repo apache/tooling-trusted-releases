@@ -63,6 +63,15 @@ class TrustedVoteSummaryData(Protocol):
     def non_binding_votes(self) -> int: ...
 
 
+def all_ballots_yes(summary: TrustedVoteSummaryData) -> bool:
+    return (
+        summary.binding_votes_no
+        + summary.binding_votes_abstain
+        + summary.non_binding_votes_no
+        + summary.non_binding_votes_abstain
+    ) == 0
+
+
 def binding_vote_passes(binding_plus_one: int, binding_minus_one: int) -> bool:
     return (binding_plus_one >= 3) and (binding_plus_one > binding_minus_one)
 

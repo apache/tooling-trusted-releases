@@ -199,10 +199,6 @@ class VotePolicyForm(form.Form):
     )
     email_cc: form.StrList = form.label("Default CC")
     email_bcc: form.StrList = form.label("Default BCC")
-    vote_mode: sql.VoteMode = form.label(
-        "Vote mode",
-        widget=form.Widget.CUSTOM,
-    )
     min_hours: form.Int = form.label(
         "Minimum voting period",
         "The minimum time to run the vote, in hours. Must be between 72 and 168 inclusive.",

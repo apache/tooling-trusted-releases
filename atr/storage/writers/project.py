@@ -568,6 +568,20 @@ class FoundationAdmin(FoundationCommitter):
             approval.error = error
             if error is None:
                 approval.resolved_at = datetime.datetime.now(datetime.UTC)
+            previous_vote_mode: sql.VoteMode | None = None
+            vote_mode: sql.VoteMode | None = None
+            if (approval.project_key is None) and (status == sql.ApprovalStatus.APPROVED):
+                committee = await self.__data.committee(key=approval.committee_key).demand(
+                    storage.AccessError(f"Committee not found: {approval.committee_key}", status=404)
+                )
+                previous_vote_mode = committee.vote_mode
+                vote_mode = (
+                    sql.VoteMode.TRUSTED
+                    if (approval.action == sql.ApprovalAction.TRUSTED_VOTING)
+                    else sql.VoteMode.EMAIL
+                )
+                committee.vote_mode = vote_mode
+                approval.status = sql.ApprovalStatus.COMPLETED
             await self.__data.commit()
         except Exception:
             await self.__data.rollback()
@@ -575,9 +589,14 @@ class FoundationAdmin(FoundationCommitter):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             approval_request_id=approval_request_id,
-            approval_status=status.value,
+            committee_key=approval.committee_key,
+            project_key=approval.project_key,
+            approval_action=approval.action.value,
+            approval_status=approval.status.value,
             outcome=vote_outcome,
             error=error,
+            previous_vote_mode=previous_vote_mode,
+            vote_mode=vote_mode,
         )
         return True
 
@@ -776,7 +795,7 @@ def _complete_policy_args(args: api.ProjectConfigPolicyArgs | None) -> api.Proje
     defaults = sql.ReleasePolicy()
     missing: dict[str, object] = {}
     for field in api.ProjectConfigPolicyArgs.model_fields:
-        if field in provided:
+        if (field in provided) or (field == "vote_mode"):
             continue
         missing[field] = None if field.endswith("_recipients") else getattr(defaults, field)
     return args.model_copy(update=missing)

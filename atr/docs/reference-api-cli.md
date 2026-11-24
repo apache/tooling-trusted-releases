@@ -44,7 +44,7 @@ Changes between spec `v0.1.0.dev3631` and `v0.1.0.dev3675-31cdc7e3+dirty`.
 
 * [`POST /api/release/source`](/api/docs#/default/post_release_source) declares sources archive by archive. Projects with several GitHub repositories must use it.
 * The test-mode [`POST /api/test/archive-project`](/api/docs#/default/post_test_archive_project) now sets `DORMANT` rather than `RETIRED`.
-* [`POST /api/vote/resolve`](/api/docs#/default/post_vote_resolve) is refused with 403 unless the release is in Trusted Vote mode (the `solr-mcp` project is exempt). This comes from the source code. The spec’s description does not mention it.
+* [`POST /api/vote/resolve`](/api/docs#/default/post_vote_resolve) is refused with 403 unless the release uses streamlined voting, the `trusted` vote mode (the `solr-mcp` project is exempt). This comes from the source code. The spec’s description does not mention it.
 
 ## Authentication
 
@@ -113,8 +113,8 @@ Each step gives the `atr` command and the API call beneath it.
 2. **Upload artifacts** with `.asc` signature and SHA256/512 checksum. [`atr upload`](#cli-files-and-signatures) calls [`POST /api/release/store`](/api/docs#/default/post_release_store) (raw bytes), or send JSON to [`POST /api/release/upload`](/api/docs#/default/post_release_upload). Each upload creates a revision. Over 512 MiB, use [`atr rsync`](#cli-files-and-signatures). Optionally record the source commit with [`POST /api/release/commit`](/api/docs#/default/post_release_commit).
 3. **Wait for checks.** [`atr check wait`](#cli-checks) polls [`GET /api/checks/ongoing/{project_key}/{version_key}`](/api/docs#/default/get_checks_ongoing). Finished doesn’t mean passed.
 4. **Review.** [`atr check blockers`](#cli-checks) and [`atr check concerns`](#cli-checks) read [`GET /api/checks/list/{project_key}/{version_key}`](/api/docs#/default/get_checks_list). Acknowledge remaining concerns when starting the vote.
-5. **Start the vote.** [`atr vote start`](#cli-voting-announcing-and-distribution) calls [`POST /api/vote/start`](/api/docs#/default/post_vote_start). The revision is frozen once voting starts. In Trusted Vote mode, voters cast ballots with [`POST /api/vote/cast`](/api/docs#/default/post_vote_cast) (no `atr` command for this yet).
-6. **Tabulate and resolve.** [`atr vote tabulate`](#cli-voting-announcing-and-distribution) calls [`POST /api/vote/tabulate`](/api/docs#/default/post_vote_tabulate), then [`atr vote resolve`](#cli-voting-announcing-and-distribution) calls [`POST /api/vote/resolve`](/api/docs#/default/post_vote_resolve) (Trusted Vote mode only).
+5. **Start the vote.** [`atr vote start`](#cli-voting-announcing-and-distribution) calls [`POST /api/vote/start`](/api/docs#/default/post_vote_start). The revision is frozen once voting starts. With streamlined voting, voters cast ballots with [`POST /api/vote/cast`](/api/docs#/default/post_vote_cast) (no `atr` command for this yet), and ATR treats `automatic_resolve_when_finished` and `automatic_publish_when_resolved` as `true` whatever the request says, because it always resolves and publishes a vote that passes with every vote +1.
+6. **Tabulate and resolve.** [`atr vote tabulate`](#cli-voting-announcing-and-distribution) calls [`POST /api/vote/tabulate`](/api/docs#/default/post_vote_tabulate), then [`atr vote resolve`](#cli-voting-announcing-and-distribution) calls [`POST /api/vote/resolve`](/api/docs#/default/post_vote_resolve) (streamlined voting only).
 7. **Record distributions** if your project requires them. [`atr distribution record`](#cli-voting-announcing-and-distribution) calls [`POST /api/distribution/record`](/api/docs#/default/post_distribution_record).
 8. **Announce.** [`atr announce`](#cli-voting-announcing-and-distribution) calls [`POST /api/release/announce`](/api/docs#/default/post_release_announce). Five attempts per hour. After this, files can’t change.
 
@@ -166,7 +166,7 @@ The 63 endpoints, grouped by area. Each endpoint links to its entry in the [Swag
 
 | Method | Endpoint | Auth | Purpose | CLI commands |
 | --- | --- | --- | --- | --- |
-| `POST` | [`/api/vote/cast`](/api/docs#/default/post_vote_cast) | Bearer JWT | Cast a Trusted Vote ballot. | |
+| `POST` | [`/api/vote/cast`](/api/docs#/default/post_vote_cast) | Bearer JWT | Cast a ballot in a streamlined vote. | |
 | `POST` | [`/api/vote/resolve`](/api/docs#/default/post_vote_resolve) | Bearer JWT | Resolve a vote. | [`atr vote resolve`](#cli-voting-announcing-and-distribution) |
 | `POST` | [`/api/vote/start`](/api/docs#/default/post_vote_start) | Bearer JWT | Start a vote. | [`atr vote start`](#cli-voting-announcing-and-distribution) |
 | `POST` | [`/api/vote/tabulate`](/api/docs#/default/post_vote_tabulate) | Bearer JWT | Tabulate a vote. | [`atr vote tabulate`](#cli-voting-announcing-and-distribution) |
@@ -322,12 +322,12 @@ The 55 `atr` commands from [COMMANDS.md](https://github.com/apache/tooling-relea
 | --- | --- | --- |
 | `atr vote start` | Start a vote. | `POST` [`/api/vote/start`](/api/docs#/default/post_vote_start) |
 | `atr vote tabulate` | Tabulate a vote. | `POST` [`/api/vote/tabulate`](/api/docs#/default/post_vote_tabulate) |
-| `atr vote resolve` | Resolve a vote. | `POST` [`/api/vote/resolve`](/api/docs#/default/post_vote_resolve) The client accepts passed or failed. The server refuses this outside Trusted Vote mode. |
+| `atr vote resolve` | Resolve a vote. | `POST` [`/api/vote/resolve`](/api/docs#/default/post_vote_resolve) The client accepts passed or failed. The server refuses this unless the release uses streamlined voting. |
 | `atr announce` | Announce a release. | `POST` [`/api/release/announce`](/api/docs#/default/post_release_announce) --body or --body-file sets the email body. If neither is given, the server renders the project’s announce template. |
 | `atr distribution record` | DISTRIBUTION-VERSION [ARGS] | `POST` [`/api/distribution/record`](/api/docs#/default/post_distribution_record) |
 | `atr distribution list` | List recorded distributions for a release. | `GET` [`/api/distribution/list/{project_key}/{version_key}`](/api/docs#/default/get_distribution_list) |
 
-**No `atr vote cast` command yet.** The API has [`POST /api/vote/cast`](/api/docs#/default/post_vote_cast) (Trusted Vote ballots, bearer token required), but the client at commit `a07f9fe` does not wrap it. Its body takes `project`, `version`, `choice` (`+1`, `0` or `-1`) and a `comment`, which is required for `0` and `-1`. It returns `success` and the `receipt_email_to` address. Until the client adds a command, it can be called with `atr api post /vote/cast --project example --version 1.0.0 --choice +1 --comment "Looks good"`. That command line is untested.
+**No `atr vote cast` command yet.** The API has [`POST /api/vote/cast`](/api/docs#/default/post_vote_cast) (ballots in streamlined votes, bearer token required), but the client at commit `a07f9fe` does not wrap it. Its body takes `project`, `version`, `choice` (`+1`, `0` or `-1`) and a `comment`, which is required for `0` and `-1`. It returns `success` and the `receipt_email_to` address. Until the client adds a command, it can be called with `atr api post /vote/cast --project example --version 1.0.0 --choice +1 --comment "Looks good"`. That command line is untested.
 
 ### CLI: Keys
 

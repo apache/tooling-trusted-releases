@@ -1036,6 +1036,8 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
         revision_for_cas = expected_revision if (expected_revision is not None) else revision_number
         if promote:
+            if release_for_pre_checks.project.committee is not None:
+                await self.__data.refresh(release_for_pre_checks.project.committee, ["vote_mode"])
             vote_mode = release_for_pre_checks.effective_vote_mode
         else:
             vote_mode = release_for_pre_checks.vote_mode
@@ -1101,12 +1103,11 @@ class CommitteeParticipant(FoundationCommitter):
             else_=None,
         )
         values: dict[str, object] = {
-            "vote_started": now,
-            "vote_resolved": None,
-            "current_vote_seq": vote_seq,
             "activity_at": activity_at_value,
             "inactivity_notice_key": notice_key_value,
         }
+        if promote or (expected_podling_thread_id is not None):
+            values |= {"vote_started": now, "vote_resolved": None, "current_vote_seq": vote_seq}
         if promote:
             values["phase"] = sql.ReleasePhase.RELEASE_CANDIDATE
             values["vote_mode"] = vote_mode
@@ -1124,7 +1125,10 @@ class CommitteeParticipant(FoundationCommitter):
                 )
             )
             if expected_podling_thread_id is None:
-                stmt = stmt.where(via(sql.Release.podling_thread_id).is_(None))
+                stmt = stmt.where(
+                    via(sql.Release.podling_thread_id).is_(None),
+                    via(sql.Release.current_vote_seq) == release_for_pre_checks.current_vote_seq,
+                )
             else:
                 stmt = stmt.where(via(sql.Release.podling_thread_id) == expected_podling_thread_id)
         result = await self.__data.execute(stmt.values(**values))

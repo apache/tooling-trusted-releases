@@ -125,12 +125,7 @@ async def selected(  # noqa: C901
         if release.expedited:
             return await _start_expedited(session, release, committee, start_voting_form, project_key, version_key)
 
-        notify_error = await _notify_opt_in_error(
-            session,
-            start_voting_form,
-            vote_mode,
-            committee.is_podling,
-        )
+        notify_error = await _notify_opt_in_error(session, start_voting_form, vote_mode)
         if notify_error is not None:
             return notify_error
 
@@ -208,13 +203,8 @@ async def selected(  # noqa: C901
                     expected_vote_mode=start_voting_form.vote_mode,
                     expected_revision=start_voting_form.rendered_revision,
                     notify_when_finished=start_voting_form.notify_when_finished,
-                    automatic_resolve_when_finished=start_voting_form.automatic_resolve_when_finished,
                     automatic_publish_when_resolved=start_voting_form.automatic_publish_when_resolved,
-                    download_path_suffix=(
-                        start_voting_form.download_path_suffix
-                        if start_voting_form.automatic_publish_when_resolved
-                        else None
-                    ),
+                    download_path_suffix=start_voting_form.download_path_suffix,
                     acknowledged_concerns=frozenset(start_voting_form.concerns_noted),
                 )
         except storage.AccessError as e:
@@ -240,22 +230,11 @@ async def _notify_opt_in_error(
     session: web.Committer,
     start_voting_form: shared.voting.StartVotingForm,
     vote_mode: sql.VoteMode,
-    is_podling: bool,
 ) -> web.WerkzeugResponse | None:
     if start_voting_form.notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
         return await session.form_error(
             "notify_when_finished",
-            "Vote end reminders are only available in Trusted Vote mode.",
-        )
-    if start_voting_form.automatic_resolve_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
-        return await session.form_error(
-            "automatic_resolve_when_finished",
-            "Automatic vote resolution is only available in Trusted Vote mode.",
-        )
-    if start_voting_form.automatic_resolve_when_finished and is_podling:
-        return await session.form_error(
-            "automatic_resolve_when_finished",
-            "Automatic vote resolution is not available for the first round of podling votes.",
+            "Vote end reminders are only available with streamlined voting.",
         )
     return None
 
