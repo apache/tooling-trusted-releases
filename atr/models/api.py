@@ -1299,6 +1299,7 @@ type Results = Annotated[
     | PublisherSshRegisterResults
     | PublisherVoteResolveResults
     | ReleaseAnnounceResults
+    | ReleaseCommitResults
     | ReleaseCreateResults
     | ReleaseDeleteResults
     | ReleaseDraftDeleteResults
@@ -1364,6 +1365,7 @@ validate_publisher_release_source = validator(PublisherReleaseSourceResults)
 validate_publisher_ssh_register = validator(PublisherSshRegisterResults)
 validate_publisher_vote_resolve = validator(PublisherVoteResolveResults)
 validate_release_announce = validator(ReleaseAnnounceResults)
+validate_release_commit = validator(ReleaseCommitResults)
 validate_release_create = validator(ReleaseCreateResults)
 validate_release_delete = validator(ReleaseDeleteResults)
 validate_release_draft_delete = validator(ReleaseDraftDeleteResults)
