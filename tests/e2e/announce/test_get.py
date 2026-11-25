@@ -51,7 +51,7 @@ def test_finish_refreshes_svn_and_announcement_status(page: Page, published: boo
     page.goto("https://atr.test/")
     page.set_content(
         '<a id="finish-announce" class="disabled" aria-disabled="true" tabindex="-1" '
-        'data-announce-url="/announce/example/1.0">Announce</a>'
+        'data-announce-url="/announce/example/1.0"><span id="finish-announce-label"> Announce</span></a>'
         '<div id="finish-publication-status" data-status-url="/downloads">'
         '<p id="finish-publication-message">Cannot announce until SVN and download area publications are complete.</p>'
         '<p id="finish-publication-refresh" hidden>Refreshing every 30s.</p></div>'

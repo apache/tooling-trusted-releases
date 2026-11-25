@@ -39,7 +39,8 @@ function applyPublicationStatus(data, button, message, whenReady) {
 	button.removeAttribute("tabindex");
 	// Nothing is left to wait for, so it becomes the ordinary button
 	button.classList.replace("btn-outline-success", "btn-success");
-	document.getElementById("finish-announce-label").textContent = " Announce";
+	const label = document.getElementById("finish-announce-label");
+	if (label) label.textContent = " Announce";
 }
 
 function initFinishDownloads() {
