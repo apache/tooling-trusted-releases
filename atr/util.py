@@ -2210,7 +2210,7 @@ async def _propagation_probe(
 ) -> PropagationOutcome:
     try:
         async with asyncio.timeout(PROPAGATION_PROBE_DEADLINE):
-            async with http_session.head(public_url, allow_redirects=True) as resp:
+            async with http_session.head(public_url, allow_redirects=False) as resp:
                 status = resp.status
                 ok = 200 <= status < 300
                 return PropagationOutcome(
