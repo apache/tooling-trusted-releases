@@ -7,7 +7,7 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P5D"
 
 [options.exclude-newer-package]
-noisysecrets = "2026-11-18T22:00:00Z"
+noisysecrets = "2026-11-19T00:00:00Z"
 
 [manifest]
 overrides = [
@@ -211,13 +211,13 @@ wheels = [
 
 [[package]]
 name = "asfquart"
-version = "0.1.13"
-source = { git = "https://github.com/apache/infrastructure-asfquart.git?rev=8bdae02be8a934d94d75ad140baa121ec630ef54#8bdae02be8a934d94d75ad140baa121ec630ef54" }
+version = "0.2.0.dev0+dev"
+source = { git = "https://github.com/apache/infrastructure-asfquart.git?rev=db3df663adc8673cc563018169acaa267050075f#db3df663adc8673cc563018169acaa267050075f" }
 dependencies = [
     { name = "aiohttp" },
     { name = "asfpy" },
-    { name = "easydict" },
     { name = "ezt" },
+    { name = "python-box" },
     { name = "pyyaml" },
     { name = "quart" },
     { name = "watchfiles" },
@@ -1671,6 +1671,17 @@ wheels = [
 ]
 
 [[package]]
+name = "python-box"
+version = "7.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/0f/34e7ee0a72f1464b4c7a2e8bafb389f230477256af586bc82bcfad85295a/python_box-7.4.1.tar.gz", hash = "sha256:e412e36c25fca8223560516d53ef6c7993591c3b0ec8bb4ec582bf7defdd79f0", size = 49859, upload-time = "2026-02-21T16:21:16.008Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/a2/771b5e526bba2214ac2d30e321209a66680c40788616a45cf01005e95204/python_box-7.4.1-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:33c6701faa51fd87f0dcc538873c0fad2b3a1cc3750eab85835cd071cadf1948", size = 1875508, upload-time = "2026-02-21T16:21:37.432Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/5f/0e7ea7640ba60ff459ce37e340d816ac5e91b7a9a7c3c161f9dabe622be6/python_box-7.4.1-cp314-cp314-win_amd64.whl", hash = "sha256:ae8c540a0457f52350211d24690211251912018e1e0c1857f50792729d6f562c", size = 1314304, upload-time = "2026-02-21T16:22:22.173Z" },
+    { url = "https://files.pythonhosted.org/packages/06/a6/5d3f3abf46b37aa44b1f6788d287c8b4f2319b55013191dddf25b9e6d62c/python_box-7.4.1-py3-none-any.whl", hash = "sha256:a3b0d84d003882fb6abe505b1b883b3a5dcbf226b0fe168d24bc5ff75d9826e5", size = 30402, upload-time = "2026-02-21T16:21:14.78Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2212,7 +2223,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.21.0,<0.23.0" },
     { name = "aiozipstream", specifier = ">=0.4,<0.5" },
     { name = "alembic", specifier = ">=1.14,<2.0.0" },
-    { name = "asfquart", git = "https://github.com/apache/infrastructure-asfquart.git?rev=8bdae02be8a934d94d75ad140baa121ec630ef54" },
+    { name = "asfquart", git = "https://github.com/apache/infrastructure-asfquart.git?rev=db3df663adc8673cc563018169acaa267050075f" },
     { name = "asyncssh", specifier = ">=2.20.0,<3.0.0" },
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "blockbuster", specifier = ">=1.5.23,<2.0.0" },
