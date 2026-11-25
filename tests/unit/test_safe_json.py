@@ -74,6 +74,20 @@ def test_all_safe_types_round_trip_through_safe_json() -> None:
     assert decoded["StatePath"].root == _STATE_PATH.root
 
 
+def test_task_with_safe_typed_args_serialises_to_json() -> None:
+    # API responses return tasks straight after creating them, while their args
+    # still hold safe-typed values, so a JSON dump must encode them as the
+    # column does rather than refuse them
+    values: dict[str, object] = {cls.__name__: cls(example) for cls, example in _SAFE_TYPE_EXAMPLES.items()}
+    values["StatePath"] = _STATE_PATH
+    task = sql.Task(task_type=sql.TaskType.VOTE_INITIATE, task_args=values, asf_uid="user1")
+
+    dumped = task.model_dump(mode="json")
+
+    assert dumped["task_args"] == sql.SafeJSON().process_bind_param(values, _DIALECT)
+    assert json.loads(json.dumps(dumped["task_args"])) == dumped["task_args"]
+
+
 def test_every_safe_type_has_a_serialisation_example() -> None:
     missing = _concrete_safe_types() - set(_SAFE_TYPE_EXAMPLES)
     assert not missing, f"New safe type(s) without SafeJSON round-trip coverage: {sorted(c.__name__ for c in missing)}"

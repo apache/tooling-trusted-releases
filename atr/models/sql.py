@@ -971,6 +971,11 @@ class Task(sqlmodel.SQLModel, table=True):
     revision_number: str | None = sqlmodel.Field(default=None, index=True)
     primary_rel_path: str | None = sqlmodel.Field(default=None, index=True)
 
+    @pydantic.field_serializer("task_args", when_used="json")
+    def serialise_task_args(self, value: Any) -> Any:
+        # The args can hold safe-typed values, which Pydantic can't encode alone
+        return _safe_json_encode(value)
+
     def model_post_init(self, _context):
         if isinstance(self.task_type, str):
             self.task_type = TaskType(self.task_type)
