@@ -31,7 +31,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_STRUCTURE: Final[str] = "6"
+CHECK_VERSION_STRUCTURE: Final[str] = "7"
 
 
 class RootDirectoryError(Exception):
@@ -51,8 +51,7 @@ def root_directory(archive_dir: safe.StatePath) -> tuple[str, bytes | None]:
         raise RootDirectoryError(f"Multiple root directories found: {entries[0]}, {entries[1]}")
 
     root = entries[0]
-    root_path = archive_dir / root
-    root_stat = root_path.path.lstat()
+    root_stat = (archive_dir.path / root).lstat()
     if not stat.S_ISDIR(root_stat.st_mode):
         raise RootDirectoryError(f"Root entry is not a directory: {root}")
 

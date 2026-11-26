@@ -156,7 +156,7 @@ def test_files_multiple_root_dirs(tmp_path):
     cache_dir = temp_dir / "cache"
     cache_dir.path.mkdir()
     (cache_dir / "root-a").path.mkdir()
-    (cache_dir / "root-b").path.mkdir()
+    (cache_dir.path / ".github").mkdir()
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     assert len(results) >= 1
     assert results[0].status == sql.CheckResultStatus.CONCERN
@@ -193,6 +193,18 @@ def test_files_single_root_with_stray_top_level_file(tmp_path):
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     statuses = [r.status for r in results if isinstance(r, license.ArtifactResult)]
     assert sql.CheckResultStatus.NOTE in statuses
+
+
+def test_files_single_root_with_unsafe_name(tmp_path):
+    temp_dir = safe.StatePath(tmp_path)
+    cache_dir = temp_dir / "cache"
+    root = cache_dir.path / "apache test-0.2"
+    root.mkdir(parents=True)
+    (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (root / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
+    statuses = [r.status for r in results if isinstance(r, license.ArtifactResult)]
+    assert statuses == [sql.CheckResultStatus.NOTE, sql.CheckResultStatus.NOTE]
 
 
 def test_files_source_invalid_license_is_blocker(tmp_path):

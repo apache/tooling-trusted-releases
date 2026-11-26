@@ -65,7 +65,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "10"
+CHECK_VERSION: Final[str] = "11"
 
 
 @dataclasses.dataclass
@@ -286,7 +286,7 @@ async def _compare_checkout_and_archive(  # noqa: C901
                 },
             )
             return None
-        archive_content_dir = extracted_dir / archive_root_result.root
+        archive_content_dir = safe.StatePath(extracted_dir.path / archive_root_result.root, root=extracted_dir.path)
         archive_dir = str(archive_content_dir)
         try:
             comparison = await _compare_trees(github_dir, archive_content_dir)
@@ -415,7 +415,7 @@ async def _find_archive_root(archive_path: safe.StatePath, extract_dir: safe.Sta
     for entry in entries:
         if entry.startswith("._"):
             continue
-        entry_path = extract_dir / entry
+        entry_path = extract_dir.path / entry
         if await aiofiles.os.path.isdir(entry_path):
             directories.append(entry)
     if len(directories) != 1:

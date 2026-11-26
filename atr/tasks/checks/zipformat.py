@@ -30,7 +30,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_STRUCTURE: Final[str] = "5"
+CHECK_VERSION_STRUCTURE: Final[str] = "6"
 
 
 async def structure(args: checks.FunctionArguments) -> results.Results | None:
@@ -81,7 +81,7 @@ def _structure_check_core_logic(archive_dir: safe.StatePath, artifact_path: str)
     root_dirs: list[str] = []
     non_rooted_entries: list[str] = []
     for entry in entries:
-        entry_path = (archive_dir / entry).path
+        entry_path = archive_dir.path / entry
         entry_stat = entry_path.lstat()
         if stat.S_ISDIR(entry_stat.st_mode):
             root_dirs.append(entry)

@@ -821,7 +821,7 @@ async def test_find_archive_root_returns_none_when_multiple_directories(tmp_path
     extract_dir = temp_dir / "extracted"
     extract_dir.path.mkdir(parents=True)
     (extract_dir / "dir1").path.mkdir()
-    (extract_dir / "dir2").path.mkdir()
+    (extract_dir.path / ".github").mkdir()
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -1001,7 +1001,7 @@ async def test_source_trees_uses_declared_source(monkeypatch: pytest.MonkeyPatch
     checkout = CheckoutRecorder()
     cache_dir = temp_dir / "cache"
     cache_dir.path.mkdir()
-    find_root = FindArchiveRootRecorder("artifact")
+    find_root = FindArchiveRootRecorder(".hidden")
     compare = CompareRecorder(repo_only=set())
     # Two candidates and no release level choice, but this archive has said where it came from
     declared = atr.models.attestable.ArchiveSourceV2(repository="apache/second", commit="d" * 40)

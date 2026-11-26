@@ -244,6 +244,17 @@ async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.
     assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
+@pytest.mark.asyncio
+async def test_targz_structure_reports_dot_named_root(tmp_path: pathlib.Path) -> None:
+    cache_dir = _make_cache_tree(tmp_path, [".hidden/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
+
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
+        await targz.structure(args)
+
+    assert any("Root directory '.hidden' does not match" in message for _, message, _ in recorder.messages)
+
+
 def test_zipformat_structure_accepts_bin_suffix_variant(tmp_path: pathlib.Path) -> None:
     cache_dir = _make_cache_tree(tmp_path, ["apache-maven-3.9.15/README.txt"])
 
@@ -357,6 +368,14 @@ async def test_zipformat_structure_reports_root_mismatch_as_suggestion(tmp_path:
     assert any(status == sql.CheckResultStatus.SUGGESTION.value for status, _, _ in recorder.messages)
     assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
     assert any("Root directory mismatch" in message for _, message, _ in recorder.messages)
+
+
+def test_zipformat_structure_reports_top_level_dotfile(tmp_path: pathlib.Path) -> None:
+    cache_dir = _make_cache_tree(tmp_path, [".java-version", "src/Main.java"])
+
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "apache-example-1.2.3-src.zip")
+
+    assert result.get("error") == "Files found directly in root: ['.java-version']"
 
 
 def _make_cache_tree(base: pathlib.Path, members: list[str]) -> pathlib.Path:

@@ -93,7 +93,7 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION_FILES: Final[str] = "8"
+CHECK_VERSION_FILES: Final[str] = "9"
 CHECK_VERSION_HEADERS: Final[str] = "8"
 
 _LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
@@ -332,7 +332,7 @@ def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_bi
 
     # Check for license files in the root directory
     top_entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
-    root_dirs = [e for e in top_entries if (archive_dir / e).path.is_dir()]
+    root_dirs = [e for e in top_entries if (archive_dir.path / e).is_dir()]
     if len(root_dirs) != 1:
         yield ArtifactResult(
             status=sql.CheckResultStatus.CONCERN,
@@ -341,7 +341,7 @@ def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_bi
         )
         return
 
-    root_path = archive_dir / root_dirs[0]
+    root_path = safe.StatePath(archive_dir.path / root_dirs[0], root=archive_dir.path)
     if is_binary:
         yield from _files_check_binary(root_path)
     else:
