@@ -552,6 +552,7 @@ async def test_vote_send_resolution_blocks_retired() -> None:
     writer._ReleaseManager__write = mock.MagicMock()
 
     rel = _retired_release()
+    writer._ReleaseManager__data.project = mock.MagicMock(return_value=_query_returning(rel.project))
     with pytest.raises(storage.AccessError, match="archived"):
         await writer._ReleaseManager__send_resolution(
             rel,
@@ -624,5 +625,6 @@ def _retired_release(project_key: str = "project", version: str = "1.0.0") -> Si
     return SimpleNamespace(
         key=sql.release_key(project_key, version),
         project=_retired_project(project_key),
+        project_key=project_key,
         version=version,
     )

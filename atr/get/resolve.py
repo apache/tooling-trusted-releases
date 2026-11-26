@@ -356,7 +356,7 @@ async def selected(  # noqa: C901
         skip.append("security_override")
 
     if form_cls is shared.resolve.SubmitForm:
-        defaults["result_subject"] = tabulate.vote_result_subject(release, "{{OUTCOME}}")
+        defaults["result_subject"] = tabulate.vote_result_subject(release.project, release.version, "{{OUTCOME}}")
 
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):

@@ -179,8 +179,8 @@ def email_tally_block(
     )
 
 
-def vote_result_subject(release: sql.Release, resolution: str) -> str:
-    return f"[RESULT] [VOTE] Release {release.project.display_name} {release.version} {resolution.upper()}"
+def vote_result_subject(project: sql.Project, version: str, resolution: str) -> str:
+    return f"[RESULT] [VOTE] Release {project.display_name} {version} {resolution.upper()}"
 
 
 def vote_summary(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> dict[str, int]:

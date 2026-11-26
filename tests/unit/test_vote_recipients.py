@@ -109,18 +109,18 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
     data = mock.MagicMock()
     data.flush = mock.AsyncMock()
     data.commit = mock.AsyncMock()
-
-    writer = _writer_with_data(data)
-    latest_vote_task = _latest_vote_task()
-    release = SimpleNamespace(
-        project=SimpleNamespace(
+    data.project.return_value.demand = mock.AsyncMock(
+        return_value=SimpleNamespace(
             key="project",
             status=sql.ProjectStatus.ACTIVE,
             is_active=True,
             display_name="Project",
-        ),
-        version="1.0.0",
+        )
     )
+
+    writer = _writer_with_data(data)
+    latest_vote_task = _latest_vote_task()
+    release = SimpleNamespace(project_key="project", version="1.0.0")
 
     error = await writer._ReleaseManager__send_resolution(
         release,

@@ -971,7 +971,7 @@ class ReleaseManager(CommitteeParticipant):
                 footer_category=mail.MailFooterCategory.USER,
             ).as_task_args(),
             asf_uid=self.__asf_uid,
-            project_key=release.project.key,
+            project_key=release.project_key,
             version_key=release.version,
         )
 
@@ -986,7 +986,10 @@ class ReleaseManager(CommitteeParticipant):
         additional_bcc: list[str] | None = None,
         early_reason: str | None = None,
     ) -> str | None:
-        storage.ensure_project_active(release.project)
+        project = await self.__data.project(key=release.project_key, _committee=True).demand(
+            storage.AccessError(f"Project '{release.project_key}' not found.", status=404)
+        )
+        storage.ensure_project_active(project)
         vote_thread_mid = interaction.task_mid_get(latest_vote_task)
         if vote_thread_mid is None:
             return "No vote thread found, unable to send resolution message."
@@ -1005,7 +1008,7 @@ class ReleaseManager(CommitteeParticipant):
         email_cc = _extend_unique(email_cc, additional_cc, seen)
         email_bcc = _extend_unique(email_bcc, additional_bcc, seen)
 
-        subject = tabulate.vote_result_subject(release, resolution)
+        subject = tabulate.vote_result_subject(project, release.version, resolution)
         tasks = [
             self.__queue_send(
                 release,
@@ -1345,7 +1348,7 @@ class ReleaseManager(CommitteeParticipant):
             self.__queue_send(
                 release,
                 email_to=email_to,
-                subject=tabulate.vote_result_subject(release, "cancelled"),
+                subject=tabulate.vote_result_subject(release.project, release.version, "cancelled"),
                 body=body,
                 in_reply_to=in_reply_to,
             )

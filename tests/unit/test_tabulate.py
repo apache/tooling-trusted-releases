@@ -246,9 +246,9 @@ def test_vote_resolution_body_votes_uses_ppmc_binding_label() -> None:
 
 
 def test_vote_result_subject_formats_result_before_vote() -> None:
-    release = SimpleNamespace(project=SimpleNamespace(display_name="Project"), version="1.0.0")
+    project = SimpleNamespace(display_name="Project")
 
-    assert tabulate.vote_result_subject(release, "passed") == "[RESULT] [VOTE] Release Project 1.0.0 PASSED"
+    assert tabulate.vote_result_subject(project, "1.0.0", "passed") == "[RESULT] [VOTE] Release Project 1.0.0 PASSED"
 
 
 @pytest.mark.asyncio

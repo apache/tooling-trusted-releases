@@ -1046,16 +1046,7 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
     data = _mock_data()
     writer = _writer_with_data(data)
     latest_vote_task = _latest_vote_task()
-    release = SimpleNamespace(
-        project=SimpleNamespace(
-            key="project",
-            status=sql.ProjectStatus.ACTIVE,
-            is_active=True,
-            display_name="Project",
-            policy_recipients=lambda action: ("", [], []),
-        ),
-        version="1.0.0",
-    )
+    release = SimpleNamespace(project_key="project", version="1.0.0")
 
     error = await writer._ReleaseManager__send_resolution(
         release,
@@ -1723,6 +1714,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
         commit_hash=None,
         version="1.0.0",
         latest_revision_number="00001",
+        project_key="project",
         committee=SimpleNamespace(
             key="project",
             display_name="Project",
@@ -1850,6 +1842,7 @@ def _mock_data() -> mock.MagicMock:
     data.execute = mock.AsyncMock(return_value=_mock_cursor_result())
     data.flush = mock.AsyncMock()
     data.merge = mock.AsyncMock()
+    data.project.return_value.demand = mock.AsyncMock(return_value=_candidate_release().project)
     data.refresh = mock.AsyncMock()
     data.rollback = mock.AsyncMock()
     return data
