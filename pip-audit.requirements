@@ -49,7 +49,7 @@ blockbuster==1.5.29
     # via tooling-trusted-releases
 boolean-py==5.0
     # via license-expression
-certifi==2026.10.23
+certifi==2026.11.20
     # via requests
 cffi==2.1.1
     # via
@@ -159,7 +159,7 @@ jsbeautifier==2.0.3
     #   djlint
 json5==0.17.3
     # via djlint
-jsonpatch==1.47
+jsonpatch==1.48
     # via tooling-trusted-releases
 jsonpointer==3.12
     # via
@@ -227,12 +227,12 @@ pycparser==3.12 ; implementation_name != 'PyPy'
     # via cffi
 pycryptodomex==3.24.2
     # via ldap3
-pydantic==2.14.3
+pydantic==2.14.4
     # via
     #   pydantic-xml
     #   quart-schema
     #   sqlmodel
-pydantic-core==2.50.4
+pydantic-core==2.50.5
     # via
     #   pydantic
     #   pydantic-xml
@@ -251,7 +251,7 @@ python-dateutil==4.0.0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-pyyaml==6.0.3
+pyyaml==6.0.4
     # via
     #   asfpy
     #   asfquart
@@ -276,7 +276,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.11.18
+regex==2026.11.19
     # via djlint
 requests==2.34.2
     # via
@@ -298,7 +298,7 @@ rpds-py==2026.9.1
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.17.5
+ruff==0.17.6
 semver==3.1.2
     # via tooling-trusted-releases
 six==1.17.0
