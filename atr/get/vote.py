@@ -47,7 +47,6 @@ import atr.post as post
 import atr.render as render
 import atr.shared as shared
 import atr.storage as storage
-import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -620,7 +619,7 @@ def _render_header(
     else:
         steps.li[htpy.a(".atr-step-link", href="#vote")["Cast your vote"]]
     if show_resolve_section:
-        steps.li[htpy.a(".atr-step-link", href="#resolve")["Resolve the vote (release managers only)"]]
+        steps.li[htpy.a(".atr-step-link", href="#resolve")["Review vote results"]]
     page.append(steps.collect())
 
 
@@ -751,7 +750,7 @@ def _render_section_download(
 
 
 def _render_section_resolve(page: htm.Block, release: sql.Release, user_category: UserCategory, number: int) -> None:
-    page.h2("#resolve")[f"{number}. Resolve the vote (release managers only)"]
+    page.h2("#resolve")[f"{number}. Review vote results"]
 
     if user_category == UserCategory.UNAUTHENTICATED:
         page.p["If you are the release manager, log in to access vote tallying and resolution tools."]
@@ -774,7 +773,7 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
         page.div[
             htpy.a(".btn.btn-success", href=resolve_url)[
                 htpy.i(".bi.bi-clipboard-check.me-1"),
-                strings.RESOLVE_VOTE_BUTTON,
+                "Review vote results",
             ],
         ]
 

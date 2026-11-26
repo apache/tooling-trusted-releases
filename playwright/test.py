@@ -241,13 +241,13 @@ def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_key:
     if not link_found:
         logging.warning("Vote thread link not detected after 15s, proceeding anyway")
 
-    logging.info("Locating the 'Resolve vote' link")
+    logging.info("Locating the 'Review vote results' link")
     resolve_link_locator = page.locator(
-        f'a[href="/resolve/{TEST_PROJECT}/{esc_id(version_key)}"]', has_text="Resolve vote"
+        f'a[href="/resolve/{TEST_PROJECT}/{esc_id(version_key)}"]', has_text="Review vote results"
     )
     expect(resolve_link_locator).to_be_visible()
 
-    logging.info("Clicking 'Resolve vote' link")
+    logging.info("Clicking 'Review vote results' link")
     resolve_link_locator.click()
 
     logging.info("Waiting for navigation to resolve page")

@@ -92,7 +92,7 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     helpers.visit(page, f"/vote/{PROJECT_KEY}/{VERSION_KEY}")
     _poll_for_vote_thread_link(page)
 
-    page.get_by_role("link", name="Resolve vote").click()
+    page.get_by_role("link", name="Review vote results").click()
     page.wait_for_url(f"**/resolve/{PROJECT_KEY}/{VERSION_KEY}")
 
     page.locator('input[name="vote_result"][value="Passed"]').check()
@@ -237,7 +237,7 @@ def _run_release_to_finish(context: BrowserContext, page: Page, version: str, op
     helpers.visit(page, f"/vote/{PROJECT_KEY}/{version}")
     _poll_for_vote_thread_link(page)
 
-    page.get_by_role("link", name="Resolve vote").click()
+    page.get_by_role("link", name="Review vote results").click()
     page.wait_for_url(f"**/resolve/{PROJECT_KEY}/{version}")
 
     page.locator('input[name="vote_result"][value="Passed"]').check()
