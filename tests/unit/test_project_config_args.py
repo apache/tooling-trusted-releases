@@ -278,7 +278,6 @@ def test_full_sync_fills_omitted_policy_fields_with_defaults() -> None:
     completed = project_writer._complete_policy_args(args)
 
     assert completed.min_hours == 72
-    assert completed.vote_mode is None
     assert completed.source_artifact_paths == []
     # Recipients clear only if the field is marked as set, since None is already the default
     assert "vote_recipients" in completed.model_fields_set
@@ -309,10 +308,22 @@ def test_project_config_rejects_trusted_publishing_settings(field: str, value: o
         _project_config(**{field: value})
 
 
-def test_project_config_rejects_trusted_vote_mode() -> None:
-    with pytest.raises(pydantic.ValidationError, match="committee page"):
-        api.ProjectConfigPolicyArgs.model_validate({"vote_mode": "trusted"})
-    assert api.ProjectConfigPolicyArgs.model_validate({"vote_mode": "email"}).vote_mode == sql.VoteMode.EMAIL
+def test_policy_and_vote_start_args_reject_removed_vote_mode_fields() -> None:
+    with pytest.raises(pydantic.ValidationError, match="Extra inputs are not permitted"):
+        api.ProjectConfigPolicyArgs.model_validate({"vote_mode": "email"})
+    with pytest.raises(pydantic.ValidationError, match="Extra inputs are not permitted"):
+        api.PolicyUpdateArgs.model_validate({"project": "tooling", "vote_mode": "trusted"})
+    with pytest.raises(pydantic.ValidationError, match="Extra inputs are not permitted"):
+        api.VoteStartArgs.model_validate(
+            {
+                "project": "tooling",
+                "version": "1.0.0",
+                "email_to": "dev@tooling.apache.org",
+                "automatic_resolve_when_finished": True,
+            }
+        )
+    assert "policy_vote_mode" not in api.PolicyGetResults.model_fields
+    assert "vote_mode" not in api.PolicyArgsBase.model_fields
 
 
 def test_full_sync_leaves_trusted_publishing_settings_alone() -> None:

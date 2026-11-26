@@ -63,7 +63,6 @@ class StartVotingForm(form.Form):
         default=None,
     )
     concerns_noted: form.StrList = form.label("Concerns noted", widget=form.Widget.CUSTOM)
-    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
     rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)
 
     @pydantic.field_validator("vote_duration")

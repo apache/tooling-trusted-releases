@@ -34,6 +34,7 @@ import atr.models.sql as sql
         (sql.SigningCertificate, ("latest_self_signature",)),
         (sql.SigningKey, ("created", "expires")),
         (sql.Task, ("added", "started", "completed")),
+        (sql.VoteInterpretation, ("email_timestamp", "created")),
     ],
 )
 @pytest.mark.parametrize("timestamp", ["2026-09-28T12:34:56.123456Z", "2026-09-28T14:34:56.123456+02:00"])

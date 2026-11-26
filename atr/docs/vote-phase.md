@@ -37,22 +37,12 @@ Both the Release Manager and the wider PMC have a part to play in this phase:
 
 * The ***Release Manager*** starts the vote, links to the artifacts under vote, and, when the vote
   is over, tallies the result and resolves it.
-* PMC members review the candidate and cast their votes, on the vote page in ATR or on the vote
-  thread according to the project's [vote mode](project-configuration#vote). Whose votes are binding
-  is a matter of [ASF policy](https://www.apache.org/legal/release-policy.html#release-approval).
+* PMC members and other ASF committers review the candidate and cast their votes, either directly on the vote page in ATR (which records the ballot and sends a receipt to the mailing list) or by replying to the vote thread on the mailing list (for non-expedited releases). Whose votes are binding is a matter of [ASF policy](https://www.apache.org/legal/release-policy.html#release-approval).
 
 ## Casting and resolving the vote
 
-ATR keeps the candidate and its artifacts staged for the whole of the vote. With streamlined voting,
-ATR records each vote itself, and replies to the vote thread are not counted. With email voting,
-ATR tallies the votes from the vote thread on the mailing list. That tally is there to help, but the
-Release Manager must check it against the thread before relying on it. When the vote is complete the
-Release Manager resolves it: a passing vote moves the candidate on to the finish phase, and a failed
-or canceled vote returns it to compose so that it can be revised. When starting an email vote, the
-Release Manager can also ask ATR to publish the release automatically once the vote resolves
-successfully, as described in [Promoting to release](promoting-to-release). With streamlined voting, ATR
-resolves the vote and publishes the release itself if the vote passed and every vote is +1, and
-leaves both to the Release Manager if anyone voted 0 or -1. See
-[Staging and voting](staging-and-voting) for how staging, vote emails, and resolution work in ATR.
+ATR keeps the candidate and its artifacts staged for the whole of the vote. Ballots cast on ATR are recorded immediately in the official tally. For non-expedited releases, replies sent directly to the mailing-list thread are parsed heuristically for context on the resolution page and remain uncounted until a PMC member (or Incubator PMC member in podling round 2) confirms them into the official tally; if the same voter both casts an ATR ballot and has a confirmed email reply, the newer vote wins.
+
+When the vote is complete, a PMC member, designated release manager, or (for podling round 2) Incubator PMC member resolves it: a passing vote moves the candidate on to the finish phase (or starts podling round 2), and a failed or canceled vote returns it to compose so that it can be revised. When starting a non-expedited vote, the initiator can request an end-of-vote email reminder, and a committee member can ask ATR to publish the release to SVN automatically once the final approving vote is resolved as passed, as described in [Promoting to release](promoting-to-release). See [Staging and voting](staging-and-voting) for how staging, vote emails, and resolution work in ATR.
 
 If a vote is already passing before its voting period ends, a binding voter can complete it early as passed by giving a reason, which ATR adds to the result email. Release votes should normally remain open for at least 72 hours, so do this only in [exceptional circumstances](https://www.apache.org/legal/release-policy.html#expedited-releases).

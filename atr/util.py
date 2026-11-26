@@ -69,7 +69,6 @@ import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.paths as paths
 import atr.registry as registry
-import atr.strings as strings
 import atr.user as user
 
 if TYPE_CHECKING:
@@ -513,8 +512,6 @@ def cap_approval_description(
             consequence = "ATR will mark the project dormant"
         case sql.ApprovalAction.DELETE:
             consequence = "ATR will permanently delete the project and its metadata"
-        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
-            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             consequence = "ATR will mark the project active again, so it can make releases"
     request = (
@@ -555,8 +552,6 @@ async def cap_create_approval_question(
             approval_type = constants.CAP_ARCHIVE_APPROVAL_TYPE
         case sql.ApprovalAction.DELETE:
             approval_type = constants.CAP_DELETE_APPROVAL_TYPE
-        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
-            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             approval_type = constants.CAP_UNARCHIVE_APPROVAL_TYPE
     return await cap_create_question(
@@ -614,45 +609,6 @@ async def cap_create_question(
         return cap.Question.model_validate_json(body)
     except pydantic.ValidationError as exc:
         raise FetchError(f"CAP question creation returned an invalid response: {exc}", url=url) from exc
-
-
-async def cap_create_vote_mode_question(
-    action: sql.ApprovalAction,
-    committee_key: str,
-    requested_by: str,
-    closes_at: datetime.datetime,
-    *,
-    committee_url: str,
-    explanation: str,
-) -> cap.Question:
-    direction = "on" if (action == sql.ApprovalAction.TRUSTED_VOTING) else "off"
-    paragraphs = [
-        f"{requested_by} has requested, through ATR, that streamlined voting be turned {direction} for every"
-        f" project of the {committee_key} PMC."
-    ]
-    if explanation:
-        paragraphs.append(f"Reason given by {requested_by}: {explanation}")
-    paragraphs.append(
-        "With streamlined voting, people vote on the ATR website instead of replying to the vote email, and ATR"
-        " sends a receipt for each vote to the vote thread. Release managers designated by the PMC, as well as"
-        f" PMC members, may start these votes. {strings.STREAMLINED_VOTING_RULE} Without it, people vote by"
-        " replying to the vote email, and the release manager resolves each vote."
-    )
-    paragraphs.append(
-        f"If this vote passes, ATR will turn streamlined voting {direction} for the {committee_key} PMC. Votes"
-        " already running finish as they started. This request was filed by Apache Trusted Releases on behalf of"
-        f" {requested_by}."
-    )
-    paragraphs.append(f"Committee in ATR: {committee_url}")
-    return await cap_create_question(
-        await cap_mint_token(),
-        project_id=committee_key,
-        title=f"[ATR] Turn streamlined voting {direction} for {committee_key} projects",
-        description="\n\n".join(paragraphs),
-        target_audience=f"Binding voters: {committee_key} PMC members",
-        approval_type=constants.CAP_VOTE_MODE_APPROVAL_TYPE,
-        closes_at=closes_at,
-    )
 
 
 async def cap_mint_token() -> str:
@@ -2301,6 +2257,7 @@ def _thread_message_from_source(mid: str, content: bytes) -> dict[str, Any]:
         "body": body_text,
         "message-id": str(message.get("Message-ID", "")),
         "date": str(message.get("Date", "")),
+        "received": [str(value) for value in message.get_all("Received", [])],
         "received_spf": [str(value) for value in message.get_all("Received-SPF", [])],
     }
 

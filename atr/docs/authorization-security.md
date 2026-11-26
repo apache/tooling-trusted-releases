@@ -132,13 +132,17 @@ Release operations have the following access requirements:
 * Allowed for: Committers
 * Constraint: Cannot vote multiple times; can change existing vote
 
+**Confirm a mailing-list vote reply**:
+
+* Allowed for: Committee PMC or PPMC members, or Incubator PMC (`incubator`) members for podling round-2 votes
+* Checked via: `as_vote_committee_member(project_key, version_key)`
+* Constraint: Not available for expedited releases (which have no public mailing-list archive)
+
 **Resolve a vote (tally votes and determine outcome)**:
 
-* Allowed for: Release managers and PMC members
-* Checked via: the release manager storage tier, obtained with `as_project_release_manager`, which
-  admits a project's designated release managers (`is_release_manager`) and its PMC members
-  (`is_member_of`)
-* Constraint: Through the API, only votes with streamlined voting, except that Solr MCP can also resolve email votes
+* Allowed for: Release managers, committee PMC/PPMC members, and (for podling round 2) Incubator PMC members
+* Checked via: `as_vote_resolver(project_key, version_key)`, which admits the project's designated release managers (`is_release_manager`), its PMC/PPMC members (`is_member_of`), and Incubator PMC members once `podling_thread_id` is set, exposing only `resolve` and `start_second_round` for that release version
+* Constraint: Expedited releases require committee PMC membership (or ASF Security Team override). Unattended GitHub OIDC resolution (`/api/publisher/vote/resolve`) passes only when every counted ballot is `+1`
 
 **Finish a release (publish to distribution)**:
 
@@ -166,7 +170,7 @@ consolidate those phase rules; the roles they name are defined in
 | Upload or edit files | **Draft** only | Participant *(the starter, or a PMC member)* |
 | Start a vote | **Draft** → Candidate | Release manager or PMC member |
 | Cast a vote | **Candidate** | Committer |
-| Resolve a vote | **Candidate** → Preview (passed) / Draft (failed) | Release manager or PMC member |
+| Resolve a vote | **Candidate** → Preview (passed) / Draft (failed) | Release manager, PMC/PPMC member, or Incubator PMC member (round 2) |
 | Announce / publish | **Preview** → Release | Release manager or PMC member |
 
 ### rsync (SSH) access
@@ -322,9 +326,7 @@ The policy is changed through a set of edit operations, all on the release manag
 
 **Allowed for**: Release managers and PMC members, obtained with `as_project_release_manager`.
 
-**See also**: value and type constraints on these settings - such as which vote modes a project may
-use - are validation rather than access control, and are covered under
-[Business logic validation](input-validation#business-logic-validation).
+**See also**: value and type constraints on these settings are validation rather than access control, and are covered under [Business logic validation](input-validation#business-logic-validation).
 
 ## Access control for projects
 

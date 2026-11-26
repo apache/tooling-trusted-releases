@@ -97,7 +97,6 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
 
         ci_builds_enabled = await interaction.ci_builds_enabled(committee.key, data)
         signing_key_held = await interaction.automated_release_signing_key_held(committee.key, data)
-        vote_mode_error = await interaction.committee_vote_mode_request_error(committee, data)
 
         latest_releases = await interaction.project_latest_releases(
             data, project_keys=[str(p.key) for p in committee.projects]
@@ -120,10 +119,8 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
     is_standing = util.committee_is_standing(committee.key)
     release_managers = sorted(committee.release_managers)
     roster_action_forms: dict[str, htm.Element] = {}
-    vote_mode_form: htm.Element | None = None
     if committee_member and (not is_standing):
         action = util.as_url(post.committees.view, name=committee.key)
-        vote_mode_form = await _vote_mode_form(committee, action, vote_mode_error)
         for uid in roster:
             if uid in committee.committee_members:
                 # PMC members are release managers implicitly, so there is no action
@@ -202,8 +199,6 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
             empty=True,
         ),
         is_standing=is_standing,
-        vote_mode_error=vote_mode_error,
-        vote_mode_form=vote_mode_form,
     )
 
 
@@ -236,15 +231,3 @@ def _keys_processing_radios(current: sql.KeysMode) -> htm.Element:
             ]
         )
     return htm.div(".mb-3")[*checks]
-
-
-async def _vote_mode_form(committee: sql.Committee, action: str, vote_mode_error: str | None) -> htm.Element | None:
-    if vote_mode_error is not None:
-        return None
-    direction = "off" if (committee.effective_vote_mode == sql.VoteMode.TRUSTED) else "on"
-    return await form.render(
-        model_cls=shared.committees.RequestVoteModeForm,
-        action=action,
-        submit_label=f"Ask the PMC to turn streamlined voting {direction}",
-        defaults={"committee_key": committee.key, "vote_mode": committee.effective_vote_mode},
-    )

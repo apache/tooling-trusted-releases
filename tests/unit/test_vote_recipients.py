@@ -138,7 +138,7 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
 
 
 @pytest.mark.asyncio
-async def test_start_email_vote_sets_vote_seq_on_task() -> None:
+async def test_start_vote_sets_vote_seq_on_task() -> None:
     data = mock.MagicMock()
     data.add = mock.MagicMock()
     data.begin_immediate = mock.AsyncMock()
@@ -161,9 +161,7 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
         return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
     )
     release_writer = SimpleNamespace(
-        start_vote_no_commit=mock.AsyncMock(
-            return_value=(release, 7, sql.VoteMode.EMAIL, safe.RevisionNumber("00001"))
-        ),
+        start_vote_no_commit=mock.AsyncMock(return_value=(release, 7, safe.RevisionNumber("00001"))),
     )
     write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
     writer = _release_manager_writer_with_mocks(data, write_as)

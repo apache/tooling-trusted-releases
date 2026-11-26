@@ -14,22 +14,23 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import dataclasses
+import datetime
+import email.utils
 import re
-import time
-from collections.abc import Generator
-from typing import Final, Protocol
+from collections.abc import AsyncIterator, Generator, Sequence
+from typing import Any, Final, Literal, Protocol
 
 import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
-import atr.log as log
 import atr.models as models
 import atr.models.sql as sql
 import atr.user as user
 import atr.util as util
 
-MAX_THREAD_MESSAGES = 10000
+MAX_THREAD_MESSAGES: Final[int] = 10000
 
 _NON_BINDING_STATUSES: Final = frozenset(
     {
@@ -48,22 +49,62 @@ SPF_ENVELOPE_FROM_RE: Final = re.compile(
 )
 
 
-class TrustedVoteSummaryData(Protocol):
-    binding_votes_abstain: int
-    binding_votes_no: int
-    binding_votes_yes: int
-    non_binding_votes_abstain: int
-    non_binding_votes_no: int
-    non_binding_votes_yes: int
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ConfirmableEmail:
+    asf_eid: str
+    email_timestamp: datetime.datetime
+    voter_asf_uid: str | None
+    voter_email: str
+    voter_fullname: str
 
+
+class CountedVoteEntryData(Protocol):
+    @property
+    def choice(self) -> sql.VoteChoice: ...
+
+    @property
+    def confirmed_by(self) -> str | None: ...
+
+    @property
+    def is_binding(self) -> bool: ...
+
+    @property
+    def source(self) -> Literal["atr", "email"]: ...
+
+    @property
+    def voter_asf_uid(self) -> str | None: ...
+
+    @property
+    def voter_email(self) -> str | None: ...
+
+
+class CountedVoteSummaryData(Protocol):
     @property
     def binding_votes(self) -> int: ...
 
     @property
+    def binding_votes_abstain(self) -> int: ...
+
+    @property
+    def binding_votes_no(self) -> int: ...
+
+    @property
+    def binding_votes_yes(self) -> int: ...
+
+    @property
     def non_binding_votes(self) -> int: ...
 
+    @property
+    def non_binding_votes_abstain(self) -> int: ...
 
-def all_ballots_yes(summary: TrustedVoteSummaryData) -> bool:
+    @property
+    def non_binding_votes_no(self) -> int: ...
+
+    @property
+    def non_binding_votes_yes(self) -> int: ...
+
+
+def all_ballots_yes(summary: CountedVoteSummaryData) -> bool:
     return (
         summary.binding_votes_no
         + summary.binding_votes_abstain
@@ -76,14 +117,41 @@ def binding_vote_passes(binding_plus_one: int, binding_minus_one: int) -> bool:
     return (binding_plus_one >= 3) and (binding_plus_one > binding_minus_one)
 
 
-def trusted_tally_block(
-    summary: TrustedVoteSummaryData,
-    binding_label: str = "Binding",
-    non_binding_label: str = "Non-binding",
-    thread_id: str | None = None,
-    podling_thread_id: str | None = None,
-) -> str:
-    return "\n".join(_trusted_tally_block(summary, binding_label, non_binding_label, thread_id, podling_thread_id))
+async def email_for_confirmation(
+    thread_id: str,
+    asf_eid: str,
+    *,
+    excluded_message_ids: set[str] | None = None,
+) -> ConfirmableEmail:
+    """Resolve sender identity and capped UTC email timestamp for a specific thread message."""
+    _validate_thread_id(thread_id)
+    if not asf_eid.strip():
+        raise interaction.InteractionError("An archive message ID is required")
+    try:
+        email_to_uid = await cache.email_uid_view_or_live()
+    except Exception as exc:
+        raise interaction.InteractionError(f"email-to-UID lookup unavailable for confirmation: {exc}") from exc
+
+    target = _message_id_normalize(asf_eid)
+    excluded_normalized = {_message_id_normalize(mid) for mid in (excluded_message_ids or ()) if mid}
+    async for msg in _thread_vote_messages(thread_id):
+        if _message_id_normalize(msg.get("mid", "")) != target:
+            continue
+        if _is_vote_root(msg, thread_id):
+            raise interaction.InteractionError("The opening vote message cannot be confirmed as a ballot")
+        if _message_id_normalize(msg.get("message-id", "")) in excluded_normalized:
+            raise interaction.InteractionError("An ATR ballot receipt cannot be confirmed as an email vote")
+        ok, name, from_email_lower, asf_uid = _message_identity(msg, email_to_uid)
+        if not ok:
+            raise interaction.InteractionError("Could not identify the sender of the email vote")
+        return ConfirmableEmail(
+            asf_eid=str(msg.get("mid", "")) or asf_eid,
+            email_timestamp=_email_timestamp(msg),
+            voter_asf_uid=asf_uid,
+            voter_email=from_email_lower,
+            voter_fullname=name or asf_uid or from_email_lower.split("@", 1)[0],
+        )
+    raise interaction.InteractionError(f"Message {asf_eid} was not found in thread {thread_id}")
 
 
 async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee | None:
@@ -112,70 +180,18 @@ async def vote_details(
     *,
     excluded_message_ids: set[str] | None = None,
 ) -> models.tabulate.VoteDetails:
-    interpretations = await interaction.vote_interpretations(release.key)
+    interpretations = await interaction.vote_interpretations(release.key, release.current_vote_seq)
     start_unixtime, tabulated_votes = await votes(
         committee,
         thread_id,
         excluded_message_ids=excluded_message_ids,
-        interpretations={interpretation.asf_eid: interpretation.choice for interpretation in interpretations},
+        interpretations={interpretation.asf_eid: interpretation for interpretation in interpretations},
     )
     summary = vote_summary(tabulated_votes)
-    passed, outcome = vote_outcome(release, start_unixtime, tabulated_votes)
     return models.tabulate.VoteDetails(
         start_unixtime=start_unixtime,
         votes=tabulated_votes,
         summary=summary,
-        passed=passed,
-        outcome=outcome,
-    )
-
-
-def vote_outcome(
-    release: sql.Release, start_unixtime: int | None, tabulated_votes: dict[str, models.tabulate.VoteEmail]
-) -> tuple[bool, str]:
-    now = int(time.time())
-    duration_hours = 0
-    if start_unixtime is not None:
-        duration_hours = (now - start_unixtime) / 3600
-
-    min_duration_hours = release.project.policy_min_hours or None
-    duration_hours_remaining = None
-    if min_duration_hours is not None:
-        duration_hours_remaining = min_duration_hours - duration_hours
-
-    binding_plus_one = 0
-    binding_minus_one = 0
-    for vote_email in tabulated_votes.values():
-        if vote_email.status != models.tabulate.VoteStatus.BINDING:
-            continue
-        if vote_email.vote == models.tabulate.Vote.YES:
-            binding_plus_one += 1
-        elif vote_email.vote == models.tabulate.Vote.NO:
-            binding_minus_one += 1
-
-    return _vote_outcome_format(duration_hours_remaining, binding_plus_one, binding_minus_one)
-
-
-def email_tally_block(
-    tabulated_votes: dict[str, models.tabulate.VoteEmail],
-    summary: dict[str, int],
-    thread_id: str,
-    binding_label: str = "Binding",
-    non_binding_label: str = "Non-binding",
-    podling_thread_id: str | None = None,
-    *,
-    binding_member_label: str,
-) -> str:
-    return "\n".join(
-        _email_tally_block(
-            tabulated_votes,
-            summary,
-            thread_id,
-            binding_label,
-            non_binding_label,
-            podling_thread_id,
-            binding_member_label=binding_member_label,
-        )
     )
 
 
@@ -198,146 +214,100 @@ def vote_summary(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> dict[
         "unknown_votes_no": 0,
         "unknown_votes_abstain": 0,
     }
-
     for vote_email in tabulated_votes.values():
-        if vote_email.status == models.tabulate.VoteStatus.BINDING:
-            result["binding_votes"] += 1
-            result["binding_votes_yes"] += 1 if (vote_email.vote.value == "Yes") else 0
-            result["binding_votes_no"] += 1 if (vote_email.vote.value == "No") else 0
-            result["binding_votes_abstain"] += 1 if (vote_email.vote.value == "-") else 0
-        elif vote_email.status in _NON_BINDING_STATUSES:
-            result["non_binding_votes"] += 1
-            result["non_binding_votes_yes"] += 1 if (vote_email.vote.value == "Yes") else 0
-            result["non_binding_votes_no"] += 1 if (vote_email.vote.value == "No") else 0
-            result["non_binding_votes_abstain"] += 1 if (vote_email.vote.value == "-") else 0
-        else:
-            result["unknown_votes"] += 1
-            result["unknown_votes_yes"] += 1 if (vote_email.vote.value == "Yes") else 0
-            result["unknown_votes_no"] += 1 if (vote_email.vote.value == "No") else 0
-            result["unknown_votes_abstain"] += 1 if (vote_email.vote.value == "-") else 0
-
+        _vote_summary_add(result, vote_email)
     return result
 
 
-async def votes(  # noqa: C901
+def vote_tally_block(
+    summary: CountedVoteSummaryData,
+    binding_label: str = "Binding",
+    non_binding_label: str = "Non-binding",
+    thread_id: str | None = None,
+    podling_thread_id: str | None = None,
+    *,
+    ballots: Sequence[CountedVoteEntryData] = (),
+) -> str:
+    return "\n".join(
+        _vote_tally_block(
+            summary,
+            binding_label,
+            non_binding_label,
+            thread_id,
+            podling_thread_id,
+            ballots=ballots,
+        )
+    )
+
+
+async def votes(
     committee: sql.Committee | None,
     thread_id: str,
     *,
     excluded_message_ids: set[str] | None = None,
-    interpretations: dict[str, sql.VoteChoice] | None = None,
+    interpretations: dict[str, sql.VoteInterpretation | sql.VoteChoice] | None = None,
 ) -> tuple[int | None, dict[str, models.tabulate.VoteEmail]]:
-    """Tabulate votes."""
-    excluded_message_ids_normalized = {
-        _message_id_normalize(message_id) for message_id in (excluded_message_ids or set()) if message_id
-    }
-
+    """Tabulate heuristic and confirmed mailing-list replies, excluding ATR receipt messages."""
+    _validate_thread_id(thread_id)
+    excluded_normalized = {_message_id_normalize(mid) for mid in (excluded_message_ids or ()) if mid}
     try:
         email_to_uid = await cache.email_uid_view_or_live()
-    except Exception as e:
-        raise ValueError(f"email-to-UID lookup unavailable for tabulation: {e}") from e
-    log.info(f"Email hashes available: {len(email_to_uid)}")
+    except Exception as exc:
+        raise ValueError(f"email-to-UID lookup unavailable for tabulation: {exc}") from exc
 
-    start = time.perf_counter_ns()
-    tabulated_votes = {}
     start_unixtime = None
-    message_count = 0
-    _validate_thread_id(thread_id)
-    async for _archive_doc_id, msg in util.thread_messages(thread_id, strict=True, source=True):
-        message_count += 1
-        if message_count > MAX_THREAD_MESSAGES:
-            raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
-        message_id = msg.get("message-id")
-        if isinstance(message_id, str) and (_message_id_normalize(message_id) in excluded_message_ids_normalized):
-            continue
-        from_raw = msg.get("from_raw", "")
-        list_raw = msg.get("list_raw", "")
-        cc = msg.get("cc", "").split(",\n")
-        received_spf = msg.get("received_spf", [])
-        if not isinstance(received_spf, list):
-            received_spf = []
-        ok, name, from_email_lower, asf_uid = _vote_identity(from_raw, email_to_uid, list_raw, cc, received_spf)
-        if not ok:
-            continue
-
-        if asf_uid is not None:
-            asf_uid_or_email = asf_uid
-            status = await _vote_status(asf_uid, list_raw, committee)
-        else:
-            asf_uid_or_email = from_email_lower
-            status = models.tabulate.VoteStatus.CONTRIBUTOR
-
+    tabulated_votes: dict[str, models.tabulate.VoteEmail] = {}
+    async for msg in _thread_vote_messages(thread_id):
         if start_unixtime is None:
-            epoch = msg.get("epoch", "")
-            if epoch:
-                start_unixtime = int(epoch)
-
-        subject = msg.get("subject", "")
-        if "[RESULT]" in subject:
+            start_unixtime = _parse_epoch(msg.get("epoch"))
+        if "[RESULT]" in msg.get("subject", ""):
             break
-
-        body = msg.get("body", "")
-        if not body:
+        if _is_vote_root(msg, thread_id) or (_message_id_normalize(msg.get("message-id", "")) in excluded_normalized):
             continue
-
-        castings = _vote_castings(body)
-        if not castings:
-            continue
-
-        if len(castings) == 1:
-            vote_cast = castings[0][0]
-        else:
-            vote_cast = models.tabulate.Vote.UNKNOWN
         interpretation = (interpretations or {}).get(msg.get("mid", ""))
-        fraction = None
-        if interpretation is not None:
-            vote_cast = models.tabulate.Vote[interpretation.name]
-        else:
-            fraction = _vote_fraction(castings)
-        if (fraction is not None) and (status == models.tabulate.VoteStatus.BINDING):
-            status = models.tabulate.VoteStatus.FRACTIONAL
-        quotation = " // ".join([c[1] for c in castings])
-
-        vote_email = models.tabulate.VoteEmail(
-            name=name,
-            asf_uid_or_email=asf_uid_or_email,
-            from_email=from_email_lower,
-            status=status,
-            asf_eid=msg.get("mid", ""),
-            iso_datetime=msg.get("date", ""),
-            vote=vote_cast,
-            fraction=fraction,
-            quotation=quotation,
-            updated=asf_uid_or_email in tabulated_votes,
-        )
-        tabulated_votes[asf_uid_or_email] = vote_email
-    end = time.perf_counter_ns()
-    log.info(f"Tabulated votes: {len(tabulated_votes)}")
-    log.info(f"Tabulation took {(end - start) / 1000000} ms")
-
+        await _tabulate_message(msg, committee, email_to_uid, interpretation, tabulated_votes)
     return start_unixtime, tabulated_votes
 
 
-def _format_duration(duration_hours: float | int) -> str:
-    hours = int(duration_hours)
-    minutes = round((duration_hours - hours) * 60)
-    if minutes == 60:
-        # Happens when the remainder is 59.5 / 60 or more
-        hours += 1
-        minutes = 0
+def _email_timestamp(msg: dict[str, Any]) -> datetime.datetime:
+    received = msg.get("received")
+    parsed = None
+    if isinstance(received, list) and received:
+        _trace, separator, date = str(received[0]).rpartition(";")
+        if separator:
+            parsed = _parse_mail_date(date.strip())
+    if parsed is None:
+        parsed = _parse_mail_date(msg.get("date", ""), allow_iso=True)
+    if parsed is None:
+        epoch = _parse_epoch(msg.get("epoch"))
+        if epoch is not None:
+            try:
+                parsed = datetime.datetime.fromtimestamp(epoch, datetime.UTC)
+            except OverflowError, OSError, ValueError:
+                pass
+    now = datetime.datetime.now(datetime.UTC)
+    return min(parsed or now, now)
 
-    parts: list[str] = []
-    if hours > 0:
-        parts.append(util.plural(hours, "hour"))
-    if minutes > 0:
-        parts.append(util.plural(minutes, "minute"))
 
-    if not parts:
-        return "less than 1 minute"
-    return " and ".join(parts)
+def _is_vote_root(msg: dict[str, Any], thread_id: str) -> bool:
+    mid = _message_id_normalize(str(msg.get("mid") or ""))
+    subject = str(msg.get("subject") or "")
+    return (mid == _message_id_normalize(thread_id)) or subject.lstrip().startswith("[VOTE]")
 
 
 def _message_id_normalize(message_id: str) -> str:
     return message_id.strip().removeprefix("<").removesuffix(">")
+
+
+def _message_identity(msg: dict[str, Any], email_to_uid: cache.EmailUidLookup) -> tuple[bool, str, str, str | None]:
+    received_spf = msg.get("received_spf", [])
+    return _vote_identity(
+        msg.get("from_raw", ""),
+        email_to_uid,
+        msg.get("list_raw", ""),
+        msg.get("cc", "").split(",\n"),
+        received_spf if isinstance(received_spf, list) else [],
+    )
 
 
 def _name_from_raw(from_raw: str) -> str:
@@ -351,63 +321,122 @@ def _name_from_raw(from_raw: str) -> str:
     return name.strip()
 
 
+def _parse_epoch(value: object) -> int | None:
+    if isinstance(value, bool) or (not isinstance(value, (int, float, str))):
+        return None
+    try:
+        return int(value)
+    except ValueError, OverflowError:
+        return None
+
+
+def _parse_mail_date(value: str, *, allow_iso: bool = False) -> datetime.datetime | None:
+    if (not isinstance(value, str)) or (not value):
+        return None
+    try:
+        try:
+            parsed = email.utils.parsedate_to_datetime(value)
+        except ValueError:
+            if not allow_iso:
+                return None
+            parsed = datetime.datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=datetime.UTC)
+        return parsed.astimezone(datetime.UTC)
+    except TypeError, ValueError, OverflowError:
+        return None
+
+
 def _received_spf_envelope_from(received_spf: list[object]) -> str | None:
     for value in received_spf:
-        if not isinstance(value, str):
-            continue
-        match = SPF_ENVELOPE_FROM_RE.search(value)
-        if match is None:
-            continue
-        candidate = match.group(1).strip()
-        if (len(candidate) >= 2) and (candidate[0] == '"') and (candidate[-1] == '"'):
-            candidate = candidate[1:-1]
-        if (len(candidate) >= 2) and (candidate[0] == "<") and (candidate[-1] == ">"):
-            candidate = candidate[1:-1]
-        candidate = candidate.rstrip(";").strip().lower()
-        if not candidate:
-            continue
-        if candidate == "<>":
-            continue
-        if "@" not in candidate:
-            continue
-        if any(ch.isspace() for ch in candidate):
-            continue
-        return candidate
+        candidate = _spf_candidate(value)
+        if candidate is not None:
+            return candidate
     return None
 
 
-def _trusted_tally_block(
-    summary: TrustedVoteSummaryData,
-    binding_label: str,
-    non_binding_label: str,
-    thread_id: str | None,
-    podling_thread_id: str | None,
-) -> Generator[str]:
-    if podling_thread_id:
-        yield "The previous round of voting is archived at the following URL:"
-        yield ""
-        yield f"https://lists.apache.org/thread/{podling_thread_id}"
-        yield ""
+def _spf_candidate(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    match = SPF_ENVELOPE_FROM_RE.search(value)
+    if match is None:
+        return None
+    candidate = match.group(1).strip().strip('"')
+    if candidate.startswith("<") and candidate.endswith(">"):
+        candidate = candidate[1:-1]
+    candidate = candidate.rstrip(";").strip().lower()
+    if (not candidate) or (candidate == "<>") or ("@" not in candidate) or any(ch.isspace() for ch in candidate):
+        return None
+    return candidate
 
-    if thread_id is not None:
-        yield "The vote thread is archived at the following URL:"
-        yield ""
-        yield f"https://lists.apache.org/thread/{thread_id}"
-        yield ""
 
-    yield f"There were {summary.binding_votes} {user.binding_label_inline(binding_label)} votes."
-    yield (
-        f"{binding_label} votes: +1: {summary.binding_votes_yes}, "
-        f"0: {summary.binding_votes_abstain}, -1: {summary.binding_votes_no}."
+async def _tabulate_message(
+    msg: dict[str, Any],
+    committee: sql.Committee | None,
+    email_to_uid: cache.EmailUidLookup,
+    interpretation: sql.VoteInterpretation | sql.VoteChoice | None,
+    tabulated_votes: dict[str, models.tabulate.VoteEmail],
+) -> None:
+    ok, name, from_email_lower, asf_uid = _message_identity(msg, email_to_uid)
+    if not ok:
+        return
+    castings = _vote_castings(msg.get("body", ""))
+    if (not castings) and (interpretation is None):
+        return
+
+    status = models.tabulate.VoteStatus.CONTRIBUTOR
+    if asf_uid is not None:
+        status = await _vote_status(asf_uid, msg.get("list_raw", ""), committee)
+    unixtime = _parse_epoch(msg.get("epoch"))
+    fraction = None
+    confirmed_by = None
+    if interpretation is None:
+        vote_cast = castings[0][0] if (len(castings) == 1) else models.tabulate.Vote.UNKNOWN
+        fraction = _vote_fraction(castings)
+        if (fraction is not None) and (status == models.tabulate.VoteStatus.BINDING):
+            status = models.tabulate.VoteStatus.FRACTIONAL
+    else:
+        if isinstance(interpretation, sql.VoteInterpretation):
+            choice = interpretation.choice
+            confirmed_by = interpretation.confirmed_by
+            if unixtime is None:
+                unixtime = int(interpretation.email_timestamp.timestamp())
+            if interpretation.is_binding_at_confirm:
+                status = models.tabulate.VoteStatus.BINDING
+        else:
+            choice = interpretation
+        vote_cast = models.tabulate.Vote[choice.name]
+
+    asf_uid_or_email = asf_uid if asf_uid is not None else from_email_lower
+    tabulated_votes[asf_uid_or_email] = models.tabulate.VoteEmail(
+        name=name,
+        asf_uid_or_email=asf_uid_or_email,
+        from_email=from_email_lower,
+        status=status,
+        asf_eid=msg.get("mid", ""),
+        iso_datetime=msg.get("date", ""),
+        vote=vote_cast,
+        fraction=fraction,
+        quotation=" // ".join(line for _vote, line in castings),
+        updated=asf_uid_or_email in tabulated_votes,
+        asf_uid=asf_uid,
+        unixtime=unixtime,
+        confirmed=interpretation is not None,
+        confirmed_by=confirmed_by,
     )
-    yield (
-        f"{non_binding_label} votes: +1: {summary.non_binding_votes_yes}, "
-        f"0: {summary.non_binding_votes_abstain}, -1: {summary.non_binding_votes_no}."
-    )
+
+
+async def _thread_vote_messages(thread_id: str) -> AsyncIterator[dict[str, Any]]:
+    count = 0
+    async for _archive_id, msg in util.thread_messages(thread_id, strict=True, source=True):
+        count += 1
+        if count > MAX_THREAD_MESSAGES:
+            raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
+        yield msg
 
 
 def _validate_thread_id(thread_id: str) -> None:
-    if not thread_id or not isinstance(thread_id, str):
+    if (not thread_id) or (not isinstance(thread_id, str)):
         raise ValueError(f"Invalid thread_id: {thread_id}")
     if not re.match(r"^[a-zA-Z0-9]{32}$", thread_id):
         raise ValueError(f"Invalid thread_id format: {thread_id}")
@@ -415,68 +444,41 @@ def _validate_thread_id(thread_id: str) -> None:
 
 def _vote_break(line: str) -> bool:
     if line == "-- ":
-        # Start of a signature
         return True
     if line.startswith("On ") and (line[6:8] == ", "):
-        # Start of a quoted email
         return True
     if line.startswith("From: "):
-        # Start of a quoted email
         return True
     if line.startswith("________"):
-        # This is sometimes used as an "On " style quotation marker
         return True
     return False
 
 
 def _vote_castings(body: str) -> list[tuple[models.tabulate.Vote, str]]:
-    castings = []
+    castings: list[tuple[models.tabulate.Vote, str]] = []
     for line in body.split("\n"):
         if _vote_continue(line):
             continue
         if _vote_break(line):
             break
-
-        fractional = _FRACTIONAL_VOTE_RE.search(line) is not None
-        # Fractions come out first, otherwise "+1.5" also reads as "+1"
-        whole = _FRACTIONAL_VOTE_RE.sub(" ", line)
-        # The "/" forms catch a list of the options, such as "+1/0/-1"
-        plus_one = whole.startswith("+1") or (" +1" in whole) or ("/+1" in whole)
-        minus_one = whole.startswith("-1") or (" -1" in whole) or ("/-1" in whole)
-        # We must be more stringent about zero votes, can't just check for "0" in line
-        zero = (
-            (whole in {"0", "-0", "+0"}) or whole.startswith("0 ") or whole.startswith("+0 ") or whole.startswith("-0 ")
-        )
-        if sum((plus_one, minus_one, zero, fractional)) > 1:
-            # Confusing result
-            continue
-        if plus_one:
-            castings.append((models.tabulate.Vote.YES, line))
-        elif minus_one:
-            castings.append((models.tabulate.Vote.NO, line))
-        elif zero or fractional:
-            # Release votes must be +1, 0 or -1 to be binding, so a fraction counts as 0
-            castings.append((models.tabulate.Vote.ABSTAIN, line))
+        casting = _vote_line_casting(line)
+        if casting is not None:
+            castings.append((casting, line))
     return castings
 
 
 def _vote_continue(line: str) -> bool:
-    explanation_indicators = [
+    explanation_indicators = (
         "[ ] +1",
         "[ ] +0",
         "[ ] -0",
         "[ ] -1",
         "+1 votes",
         "-1 votes",
-    ]
+    )
     if any((indicator in line) for indicator in explanation_indicators):
-        # These indicators are used by the [VOTE] OP to indicate how to vote
         return True
-
-    if line.startswith(">"):
-        # Used to quote other emails
-        return True
-    return False
+    return line.startswith(">")
 
 
 def _vote_fraction(castings: list[tuple[models.tabulate.Vote, str]]) -> str | None:
@@ -498,183 +500,31 @@ def _vote_identity(
         return False, "", "", None
     name = _name_from_raw(from_raw)
     from_email_lower = from_email_lower.removesuffix(".invalid")
-    asf_uid = None
     if from_email_lower.endswith("@apache.org"):
-        asf_uid = from_email_lower.split("@")[0]
-    else:
-        if ("via" in from_raw) and (from_email_lower.replace("@", ".") in list_email):
-            envelope_from = _received_spf_envelope_from(received_spf)
-            if envelope_from is not None:
-                from_email_lower = envelope_from
-            elif cc:
-                # Take the last CC, appended by ezmlm, and use that as the email. Otherwise, use their name
-                from_email_lower = util.email_from_uid(cc[-1]) or from_email_lower
-        if from_email_lower in email_to_uid:
-            asf_uid = email_to_uid[from_email_lower]
-
-    return True, name, from_email_lower, asf_uid
+        return True, name, from_email_lower, from_email_lower.split("@")[0]
+    from_email_lower = _vote_via_address(from_raw, from_email_lower, list_email, cc, received_spf)
+    return True, name, from_email_lower, email_to_uid.get(from_email_lower)
 
 
-def _vote_outcome_format(
-    duration_hours_remaining: float | int | None, binding_plus_one: int, binding_minus_one: int
-) -> tuple[bool, str]:
-    outcome_passed = binding_vote_passes(binding_plus_one, binding_minus_one)
-    if not outcome_passed:
-        if (duration_hours_remaining is not None) and (duration_hours_remaining > 0):
-            duration_str = _format_duration(duration_hours_remaining)
-            msg = f"The vote is still open for {duration_str}, but it would fail if closed now."
-        elif duration_hours_remaining is None:
-            msg = "The vote would fail if closed now."
-        else:
-            msg = "The vote failed."
-        return False, msg
-
-    if (duration_hours_remaining is not None) and (duration_hours_remaining > 0):
-        duration_str = _format_duration(duration_hours_remaining)
-        msg = f"The vote is still open for {duration_str}, but it would pass if closed now."
-    else:
-        msg = "The vote passed."
-    return True, msg
-
-
-def _email_tally_block(
-    tabulated_votes: dict[str, models.tabulate.VoteEmail],
-    summary: dict[str, int],
-    thread_id: str,
-    binding_label: str,
-    non_binding_label: str,
-    podling_thread_id: str | None,
-    *,
-    binding_member_label: str,
-) -> Generator[str]:
-    if podling_thread_id:
-        yield "The previous round of voting is archived at the following URL:"
-        yield ""
-        yield f"https://lists.apache.org/thread/{podling_thread_id}"
-        yield ""
-        yield "The current vote thread is archived at the following URL:"
-    else:
-        yield "The vote thread is archived at the following URL:"
-    yield ""
-    yield f"https://lists.apache.org/thread/{thread_id}"
-    yield ""
-
-    yield from _vote_resolution_body_votes(
-        tabulated_votes, summary, binding_label, non_binding_label, binding_member_label=binding_member_label
-    )
-
-
-def _vote_resolution_body_votes(
-    tabulated_votes: dict[str, models.tabulate.VoteEmail],
-    summary: dict[str, int],
-    binding_label: str = "Binding",
-    non_binding_label: str = "Non-binding",
-    *,
-    binding_member_label: str,
-) -> Generator[str]:
-    yield from _vote_resolution_votes(
-        tabulated_votes,
-        {models.tabulate.VoteStatus.BINDING},
-        binding_label,
-        non_binding_label,
-        binding_member_label=binding_member_label,
-    )
-
-    binding_label_inline = user.binding_label_inline(binding_label)
-    binding_total = summary["binding_votes"]
-    were_word = "was" if (binding_total == 1) else "were"
-    votes_word = "vote" if (binding_total == 1) else "votes"
-    yield f"There {were_word} {binding_total} {binding_label_inline} {votes_word}."
-    yield ""
-
-    binding_yes = summary["binding_votes_yes"]
-    binding_no = summary["binding_votes_no"]
-    binding_abstain = summary["binding_votes_abstain"]
-    binding_vote_counts = [
-        _vote_resolution_count(binding_yes, "+1"),
-        _vote_resolution_count(binding_no, "-1"),
-        _vote_resolution_count(binding_abstain, "0"),
-    ]
-    yield f"Of these {binding_label_inline} votes, {', '.join(binding_vote_counts[:2])}, and {binding_vote_counts[2]}."
-    yield ""
-
-    yield from _vote_resolution_votes(
-        tabulated_votes,
-        {models.tabulate.VoteStatus.COMMITTER},
-        binding_label,
-        non_binding_label,
-        binding_member_label=binding_member_label,
-    )
-    yield from _vote_resolution_votes(
-        tabulated_votes,
-        {
-            models.tabulate.VoteStatus.CONTRIBUTOR,
-            models.tabulate.VoteStatus.FRACTIONAL,
-            models.tabulate.VoteStatus.UNKNOWN,
-        },
-        binding_label,
-        non_binding_label,
-        binding_member_label=binding_member_label,
-    )
-
-
-def _vote_resolution_count(count: int, symbol: str) -> str:
-    were_word = "was" if (count == 1) else "were"
-    return f"{count} {were_word} {symbol}"
-
-
-def _vote_resolution_votes(  # noqa: C901
-    tabulated_votes: dict[str, models.tabulate.VoteEmail],
-    statuses: set[models.tabulate.VoteStatus],
-    binding_label: str = "Binding",
-    non_binding_label: str = "Non-binding",
-    *,
-    binding_member_label: str,
-) -> Generator[str]:
-    status_labels = []
-    if models.tabulate.VoteStatus.BINDING in statuses:
-        status_labels.append(user.binding_label_inline(binding_label))
-    for status in (models.tabulate.VoteStatus.COMMITTER, models.tabulate.VoteStatus.CONTRIBUTOR):
-        if status in statuses:
-            status_labels.append(status.value.lower())
-    if statuses & {models.tabulate.VoteStatus.FRACTIONAL, models.tabulate.VoteStatus.UNKNOWN}:
-        status_labels.append(non_binding_label.lower())
-    header: str | None = f"The {' and '.join(status_labels)} votes were cast as follows:"
-    for vote_email in tabulated_votes.values():
-        if vote_email.status not in statuses:
-            continue
-        if header is not None:
-            yield header
-            yield ""
-            header = None
-        match vote_email.vote:
-            case models.tabulate.Vote.YES:
-                symbol = "+1"
-            case models.tabulate.Vote.NO:
-                symbol = "-1"
-            case models.tabulate.Vote.ABSTAIN:
-                symbol = "0"
-            case models.tabulate.Vote.UNKNOWN:
-                symbol = "?"
-        if vote_email.fraction is not None:
-            # The fraction is shown as cast, the tally has it as 0
-            symbol = vote_email.fraction
-        user_info = vote_email.asf_uid_or_email
-        status = vote_email.status.value.lower()
-        if vote_email.status == models.tabulate.VoteStatus.BINDING:
-            status = user.binding_label_inline(binding_label)
-        elif vote_email.status == models.tabulate.VoteStatus.FRACTIONAL:
-            status = f"{binding_member_label}, {non_binding_label.lower()}"
-        if vote_email.updated:
-            status += ", updated"
-        yield f"{symbol} {user_info} ({status})"
-    if header is None:
-        yield ""
+def _vote_line_casting(line: str) -> models.tabulate.Vote | None:
+    fractional = _FRACTIONAL_VOTE_RE.search(line) is not None
+    whole = _FRACTIONAL_VOTE_RE.sub(" ", line)
+    plus_one = whole.startswith("+1") or (" +1" in whole) or ("/+1" in whole)
+    minus_one = whole.startswith("-1") or (" -1" in whole) or ("/-1" in whole)
+    zero = (whole in {"0", "-0", "+0"}) or whole.startswith(("0 ", "+0 ", "-0 "))
+    if sum((plus_one, minus_one, zero, fractional)) > 1:
+        return None
+    if plus_one:
+        return models.tabulate.Vote.YES
+    if minus_one:
+        return models.tabulate.Vote.NO
+    if zero or fractional:
+        return models.tabulate.Vote.ABSTAIN
+    return None
 
 
 async def _vote_status(asf_uid: str, list_raw: str, committee: sql.Committee | None) -> models.tabulate.VoteStatus:
     status = models.tabulate.VoteStatus.UNKNOWN
-
     if config.is_dev_environment():
         committee_label = list_raw.split(".apache.org", 1)[0].split(".", 1)[-1]
         async with db.session() as data:
@@ -687,3 +537,86 @@ async def _vote_status(asf_uid: str, list_raw: str, committee: sql.Committee | N
         else:
             status = models.tabulate.VoteStatus.CONTRIBUTOR
     return status
+
+
+def _vote_summary_add(result: dict[str, int], vote_email: models.tabulate.VoteEmail) -> None:
+    if vote_email.status == models.tabulate.VoteStatus.BINDING:
+        prefix = "binding_votes"
+    elif vote_email.status in _NON_BINDING_STATUSES:
+        prefix = "non_binding_votes"
+    else:
+        prefix = "unknown_votes"
+    result[prefix] += 1
+    if vote_email.vote == models.tabulate.Vote.YES:
+        result[f"{prefix}_yes"] += 1
+    elif vote_email.vote == models.tabulate.Vote.NO:
+        result[f"{prefix}_no"] += 1
+    elif vote_email.vote == models.tabulate.Vote.ABSTAIN:
+        result[f"{prefix}_abstain"] += 1
+
+
+def _vote_tally_block(
+    summary: CountedVoteSummaryData,
+    binding_label: str,
+    non_binding_label: str,
+    thread_id: str | None,
+    podling_thread_id: str | None,
+    *,
+    ballots: Sequence[CountedVoteEntryData] = (),
+) -> Generator[str]:
+    if podling_thread_id:
+        yield "The previous round of voting is archived at the following URL:"
+        yield ""
+        yield f"https://lists.apache.org/thread/{podling_thread_id}"
+        yield ""
+
+    if thread_id is not None:
+        yield "The vote thread is archived at the following URL:"
+        yield ""
+        yield f"https://lists.apache.org/thread/{thread_id}"
+        yield ""
+
+    if ballots:
+        yield from _vote_tally_entry_lines(ballots, binding_label, non_binding_label)
+        yield ""
+
+    yield f"There were {summary.binding_votes} {user.binding_label_inline(binding_label)} votes."
+    yield (
+        f"{binding_label} votes: +1: {summary.binding_votes_yes}, "
+        f"0: {summary.binding_votes_abstain}, -1: {summary.binding_votes_no}."
+    )
+    yield (
+        f"{non_binding_label} votes: +1: {summary.non_binding_votes_yes}, "
+        f"0: {summary.non_binding_votes_abstain}, -1: {summary.non_binding_votes_no}."
+    )
+
+
+def _vote_tally_entry_lines(
+    ballots: Sequence[CountedVoteEntryData],
+    binding_label: str,
+    non_binding_label: str,
+) -> Generator[str]:
+    binding_inline = user.binding_label_inline(binding_label)
+    non_binding_inline = non_binding_label.lower()
+    for entry in ballots:
+        voter = entry.voter_asf_uid or entry.voter_email or "unknown"
+        potency = binding_inline if entry.is_binding else non_binding_inline
+        provenance = "" if (entry.source == "atr") else ", email confirmed"
+        yield f"{entry.choice.value} {voter} ({potency}{provenance})"
+
+
+def _vote_via_address(
+    from_raw: str,
+    from_email_lower: str,
+    list_email: str,
+    cc: list[str],
+    received_spf: list[object],
+) -> str:
+    if ("via" not in from_raw) or (from_email_lower.replace("@", ".") not in list_email):
+        return from_email_lower
+    envelope_from = _received_spf_envelope_from(received_spf)
+    if envelope_from is not None:
+        return envelope_from
+    if cc:
+        return util.email_from_uid(cc[-1]) or from_email_lower
+    return from_email_lower

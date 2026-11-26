@@ -36,7 +36,7 @@ import atr.storage as storage
 import atr.storage.writers.announce as announce
 import atr.storage.writers.release as release
 import atr.storage.writers.vote as vote
-import atr.user as user
+import atr.tabulate as tabulate
 import atr.util as util
 
 
@@ -56,7 +56,55 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
 
 
 @pytest.mark.asyncio
-async def test_cast_trusted_recomputes_podling_bindingness(sqlite_sessionmaker, monkeypatch) -> None:
+async def test_cast_preserves_private_recipient_and_requires_comment_for_no(sqlite_sessionmaker, monkeypatch) -> None:
+    monkeypatch.setattr(vote.mail, "message_id_create", lambda: "receipt-priv@apache.org")
+
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            current_vote_seq=1,
+            expedited=True,
+        )
+        data.add(
+            _completed_vote_task(
+                1,
+                datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+                email_to="private@project.apache.org",
+            )
+        )
+        await data.commit()
+
+        writer, _write_as = _foundation_writer_with_data(data)
+        with pytest.raises(storage.AccessError, match="comment is required") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.NO,
+                "   ",
+                "Voter",
+                expected_vote_seq=1,
+            )
+        assert exc_info.value.status == 400
+
+        email_to, receipt_mid = await writer.cast(
+            safe.ProjectKey("project"),
+            safe.VersionKey("1.0.0"),
+            sql.VoteChoice.YES,
+            "",
+            "Voter",
+            expected_vote_seq=1,
+        )
+        assert email_to == ["private@project.apache.org"]
+        assert receipt_mid == "receipt-priv@apache.org"
+        receipt_task = (
+            await data.execute(sqlmodel.select(sql.Task).where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND))
+        ).scalar_one()
+        assert receipt_task.task_args["email_to"] == "private@project.apache.org"
+
+
+@pytest.mark.asyncio
+async def test_cast_recomputes_podling_bindingness(sqlite_sessionmaker, monkeypatch) -> None:
     monkeypatch.setattr(vote.mail, "message_id_create", lambda: "receipt-1@apache.org")
 
     async with sqlite_sessionmaker() as data:
@@ -65,32 +113,30 @@ async def test_cast_trusted_recomputes_podling_bindingness(sqlite_sessionmaker, 
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
             is_podling=True,
-            vote_mode=sql.VoteMode.TRUSTED,
         )
         data.add(sql.Committee(key="incubator", name="Incubator", committee_members=["chair"], committers=[]))
         data.add(_completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)))
         await data.commit()
 
         writer, _write_as = _foundation_writer_with_data(data)
-        email_to, error = await writer.cast_trusted(
+        email_to, receipt_mid = await writer.cast(
             safe.ProjectKey("project"),
             safe.VersionKey("1.0.0"),
             sql.VoteChoice.YES,
             "",
             "Voter",
             expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
         )
 
         assert email_to == ["dev@project.apache.org"]
-        assert error == ""
+        assert receipt_mid == "receipt-1@apache.org"
         ballot = (await data.execute(sqlmodel.select(sql.BallotPaper))).scalar_one()
         assert ballot.vote_round == 1
         assert ballot.is_binding_at_cast is True
 
 
 @pytest.mark.asyncio
-async def test_cast_trusted_records_additive_ballots_and_receipt_tasks(sqlite_sessionmaker, monkeypatch) -> None:
+async def test_cast_records_additive_ballots_and_receipt_tasks(sqlite_sessionmaker, monkeypatch) -> None:
     message_ids = iter(["receipt-1@apache.org", "receipt-2@apache.org"])
     monkeypatch.setattr(vote.mail, "message_id_create", lambda: next(message_ids))
 
@@ -99,25 +145,23 @@ async def test_cast_trusted_records_additive_ballots_and_receipt_tasks(sqlite_se
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
-            vote_mode=sql.VoteMode.TRUSTED,
         )
         start_task = _completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
         data.add(start_task)
         await data.commit()
 
         writer, write_as = _foundation_writer_with_data(data)
-        email_to, error = await writer.cast_trusted(
+        email_to, receipt_mid = await writer.cast(
             safe.ProjectKey("project"),
             safe.VersionKey("1.0.0"),
             sql.VoteChoice.YES,
             "Looks good",
             "Voter",
             expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
         )
 
         assert email_to == ["dev@project.apache.org"]
-        assert error == ""
+        assert receipt_mid == "receipt-1@apache.org"
         receipt_tasks = (
             await data.execute(sqlmodel.select(sql.Task).where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND))
         ).scalars()
@@ -133,18 +177,17 @@ async def test_cast_trusted_records_additive_ballots_and_receipt_tasks(sqlite_se
         assert write_as.append_to_audit_log.call_args.kwargs["ballot_id"] == ballot.id
         assert write_as.append_to_audit_log.call_args.kwargs["replaced_ballot_id"] is None
 
-        email_to, error = await writer.cast_trusted(
+        email_to, receipt_mid = await writer.cast(
             safe.ProjectKey("project"),
             safe.VersionKey("1.0.0"),
             sql.VoteChoice.NO,
             "Changed my mind",
             "Voter",
             expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
         )
 
         assert email_to == ["dev@project.apache.org"]
-        assert error == ""
+        assert receipt_mid == "receipt-2@apache.org"
         receipt_tasks = (
             await data.execute(
                 sqlmodel.select(sql.Task)
@@ -169,105 +212,89 @@ async def test_cast_trusted_records_additive_ballots_and_receipt_tasks(sqlite_se
 
 
 @pytest.mark.asyncio
-async def test_cast_trusted_rejects_stale_or_non_trusted_release_state(sqlite_sessionmaker) -> None:
+async def test_cast_rejects_stale_closed_or_missing_seq_release_state(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         release_model = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
-            vote_mode=sql.VoteMode.EMAIL,
         )
         writer, _write_as = _foundation_writer_with_data(data)
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.EMAIL,
-        )
-        assert email_to == []
-        assert error == "The vote form is stale, please refresh and try again."
 
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
-        )
-        assert email_to == []
-        assert error == "This release is not accepting votes on ATR."
+        release_model.vote_started = None
+        await data.commit()
+        with pytest.raises(storage.AccessError, match="not currently open") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.YES,
+                "",
+                "Voter",
+                expected_vote_seq=1,
+            )
+        assert exc_info.value.status == 409
 
-        release_model.vote_mode = sql.VoteMode.TRUSTED
+        release_model.vote_started = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
         release_model.current_vote_seq = None
         await data.commit()
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
-        )
-        assert email_to == []
-        assert error == "Vote serial is missing, please refresh and try again."
+        with pytest.raises(storage.AccessError, match="Vote serial is missing") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.YES,
+                "",
+                "Voter",
+                expected_vote_seq=1,
+            )
+        assert exc_info.value.status == 409
 
         release_model.current_vote_seq = 1
         await data.commit()
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=2,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
-        )
-        assert email_to == []
-        assert error == "The vote form is stale, please refresh and try again."
+        with pytest.raises(storage.AccessError, match="vote form is stale") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.YES,
+                "",
+                "Voter",
+                expected_vote_seq=2,
+            )
+        assert exc_info.value.status == 409
 
 
 @pytest.mark.asyncio
-async def test_cast_trusted_rejects_unready_start_tasks(sqlite_sessionmaker) -> None:
+async def test_cast_rejects_unready_start_tasks(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
-            vote_mode=sql.VoteMode.TRUSTED,
         )
         writer, write_as = _foundation_writer_with_data(data)
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
-        )
-        assert email_to == []
-        assert error == "No vote task found."
+        with pytest.raises(storage.AccessError, match="not been sent yet") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.YES,
+                "",
+                "Voter",
+                expected_vote_seq=1,
+            )
+        assert exc_info.value.status == 409
 
         start_task = _vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
         data.add(start_task)
         await data.commit()
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
-        )
-        assert email_to == []
-        assert error == "Vote task has not completed yet."
+        with pytest.raises(storage.AccessError, match="not been sent yet") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.YES,
+                "",
+                "Voter",
+                expected_vote_seq=1,
+            )
+        assert exc_info.value.status == 409
 
         start_task.status = sql.TaskStatus.COMPLETED
         start_task.completed = datetime.datetime(2026, 1, 1, 1, tzinfo=datetime.UTC)
@@ -281,24 +308,23 @@ async def test_cast_trusted_rejects_unready_start_tasks(sqlite_sessionmaker) -> 
             mail_send_warnings=[],
         )
         await data.commit()
-        email_to, error = await writer.cast_trusted(
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            sql.VoteChoice.YES,
-            "",
-            "Voter",
-            expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
-        )
-        assert email_to == []
-        assert error == "No vote thread found."
+        with pytest.raises(storage.AccessError, match="not been sent yet") as exc_info:
+            await writer.cast(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                sql.VoteChoice.YES,
+                "",
+                "Voter",
+                expected_vote_seq=1,
+            )
+        assert exc_info.value.status == 409
 
         assert write_as.append_to_audit_log.call_count == 0
         assert (await data.execute(sqlmodel.select(sql.BallotPaper))).scalars().all() == []
 
 
 @pytest.mark.asyncio
-async def test_cast_trusted_rolls_back_duplicate_receipt_id(sqlite_sessionmaker, monkeypatch) -> None:
+async def test_cast_rolls_back_duplicate_receipt_id(sqlite_sessionmaker, monkeypatch) -> None:
     monkeypatch.setattr(vote.mail, "message_id_create", lambda: "receipt-1@apache.org")
 
     async with sqlite_sessionmaker() as data:
@@ -306,34 +332,31 @@ async def test_cast_trusted_rolls_back_duplicate_receipt_id(sqlite_sessionmaker,
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
-            vote_mode=sql.VoteMode.TRUSTED,
         )
         data.add(_completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)))
         await data.commit()
 
         writer, write_as = _foundation_writer_with_data(data)
-        email_to, error = await writer.cast_trusted(
+        email_to, receipt_mid = await writer.cast(
             safe.ProjectKey("project"),
             safe.VersionKey("1.0.0"),
             sql.VoteChoice.YES,
             "",
             "Voter",
             expected_vote_seq=1,
-            expected_vote_mode=sql.VoteMode.TRUSTED,
         )
         assert email_to == ["dev@project.apache.org"]
-        assert error == ""
+        assert receipt_mid == "receipt-1@apache.org"
         await data.rollback()
 
         with pytest.raises(sqlalchemy.exc.IntegrityError):
-            await writer.cast_trusted(
+            await writer.cast(
                 safe.ProjectKey("project"),
                 safe.VersionKey("1.0.0"),
                 sql.VoteChoice.NO,
-                "",
+                "Objection",
                 "Voter",
                 expected_vote_seq=1,
-                expected_vote_mode=sql.VoteMode.TRUSTED,
             )
 
         receipt_tasks = (
@@ -346,65 +369,83 @@ async def test_cast_trusted_rolls_back_duplicate_receipt_id(sqlite_sessionmaker,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("update", [False, True])
-@pytest.mark.parametrize(
-    ("expedited", "vote_mode", "valid"),
-    [
-        (False, None, True),
-        (False, sql.VoteMode.EMAIL, True),
-        (False, sql.VoteMode.TRUSTED, True),
-        (True, None, True),
-        (True, sql.VoteMode.EMAIL, False),
-        (True, sql.VoteMode.TRUSTED, True),
-    ],
-)
-async def test_expedited_vote_mode_constraint(sqlite_sessionmaker, update, expedited, vote_mode, valid) -> None:
-    async with sqlite_sessionmaker() as data:
-        release_model = sql.Release(
-            project_key="project",
-            version="1.0.0",
-            phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-            created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
-        )
-        data.add(release_model)
-        if update:
-            await data.commit()
-        release_model.expedited = expedited
-        release_model.vote_mode = vote_mode
-        if valid:
-            await data.commit()
-            return
-        with pytest.raises(sqlalchemy.exc.IntegrityError, match="ck_release_expedited_vote_mode_trusted"):
-            await data.commit()
-
-
-@pytest.mark.asyncio
-async def test_interpret_records_replaces_and_resets(sqlite_sessionmaker) -> None:
+async def test_confirm_email_vote_records_updates_unconfirms_and_guards(sqlite_sessionmaker, monkeypatch) -> None:
     project_key = safe.ProjectKey("project")
     version_key = safe.VersionKey("1.0.0")
+    email_ts = datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC)
 
     async with sqlite_sessionmaker() as data:
-        await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE, vote_mode=sql.VoteMode.EMAIL)
-        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+        release_model = await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            current_vote_seq=1,
+        )
+        vote_task = _completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
+        receipt_ballot = sql.BallotPaper(
+            release_key=release_model.key,
+            vote_seq=1,
+            vote_round=None,
+            voter_asf_uid="alice",
+            voter_fullname="Alice",
+            choice=sql.VoteChoice.YES,
+            comment="",
+            is_binding_at_cast=False,
+            revision_number_at_cast="00001",
+            receipt_message_id="receipt-1@apache.org",
+        )
+        data.add_all([vote_task, receipt_ballot])
+        await data.commit()
 
-        await writer.interpret(project_key, version_key, "eid", sql.VoteChoice.YES)
-        await writer.interpret(project_key, version_key, "eid", sql.VoteChoice.NO)
+        cache = SimpleNamespace(
+            get_message_archive_url=mock.AsyncMock(return_value="https://lists.apache.org/thread/threadabc")
+        )
+        write_as = SimpleNamespace(cache=cache, append_to_audit_log=mock.MagicMock())
+        writer = _member_writer_with_data(data, write_as)
+
+        async def _confirmable(_thread_id: str, asf_eid: str, *, excluded_message_ids: set[str]):
+            assert not data.in_transaction()
+            assert excluded_message_ids == {"receipt-1@apache.org"}
+            return tabulate.ConfirmableEmail(
+                asf_eid=asf_eid,
+                email_timestamp=email_ts,
+                voter_asf_uid="chair",
+                voter_email="chair@apache.org",
+                voter_fullname="Chair",
+            )
+
+        monkeypatch.setattr(tabulate, "email_for_confirmation", _confirmable)
+
+        with pytest.raises(storage.AccessError, match="receipt") as exc_info:
+            await writer.confirm_email_vote(project_key, version_key, " <receipt-1@apache.org> ", sql.VoteChoice.YES)
+        assert exc_info.value.status == 409
+
+        await writer.confirm_email_vote(project_key, version_key, "eid-1", sql.VoteChoice.YES, expected_vote_seq=1)
+        await writer.confirm_email_vote(project_key, version_key, "eid-1", sql.VoteChoice.NO, expected_vote_seq=1)
         interpretation = (await data.execute(sqlmodel.select(sql.VoteInterpretation))).scalar_one()
         assert interpretation.choice == sql.VoteChoice.NO
-        assert interpretation.asf_uid == "chair"
+        assert interpretation.confirmed_by == "chair"
+        assert interpretation.is_binding_at_confirm is True
+        assert interpretation.vote_seq == 1
 
-        await writer.interpret(project_key, version_key, "eid", None)
+        await writer.confirm_email_vote(project_key, version_key, "eid-1", None, expected_vote_seq=1)
         assert (await data.execute(sqlmodel.select(sql.VoteInterpretation))).all() == []
 
+        async def _transition_during_fetch(_thread_id: str, asf_eid: str, *, excluded_message_ids: set[str]):
+            res = await _confirmable(_thread_id, asf_eid, excluded_message_ids=excluded_message_ids)
+            await data.execute(sqlmodel.update(sql.Release).values(current_vote_seq=2))
+            await data.commit()
+            return res
 
-@pytest.mark.asyncio
-async def test_interpret_rejects_trusted_votes(sqlite_sessionmaker) -> None:
-    async with sqlite_sessionmaker() as data:
-        await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE, vote_mode=sql.VoteMode.TRUSTED)
-        writer = _member_writer_with_data(data, SimpleNamespace(append_to_audit_log=mock.MagicMock()))
+        monkeypatch.setattr(tabulate, "email_for_confirmation", _transition_during_fetch)
+        with pytest.raises(storage.AccessError, match=r"vote form is stale|vote has changed") as exc_info:
+            await writer.confirm_email_vote(project_key, version_key, "eid-late", sql.VoteChoice.YES)
+        assert exc_info.value.status == 409
 
-        with pytest.raises(storage.AccessError):
-            await writer.interpret(safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "eid", sql.VoteChoice.YES)
+        release_model.expedited = True
+        await data.commit()
+        with pytest.raises(storage.AccessError, match="Expedited releases") as exc_info:
+            await writer.confirm_email_vote(project_key, version_key, "eid-1", sql.VoteChoice.YES)
+        assert exc_info.value.status == 409
 
 
 @pytest.mark.asyncio
@@ -416,13 +457,17 @@ async def test_podling_early_second_round_becomes_current_when_first_round_passe
     )
     monkeypatch.setattr(vote.construct, "start_vote_subject_default", mock.AsyncMock(return_value="subject"))
     monkeypatch.setattr(vote.construct, "start_vote_subject_and_body", mock.AsyncMock(return_value=("subject", "body")))
+    monkeypatch.setattr(
+        vote.interaction,
+        "counted_vote_details_and_summary",
+        mock.AsyncMock(return_value=([], interaction.CountedVoteSummary(binding_votes_yes=3))),
+    )
     async with sqlite_sessionmaker() as data:
         seeded_release = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
             is_podling=True,
-            vote_mode=sql.VoteMode.EMAIL,
         )
         first_round_task = _completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
         data.add_all([sql.VoteCounter(release_key=seeded_release.key, last_allocated_number=1), first_round_task])
@@ -445,17 +490,13 @@ async def test_podling_early_second_round_becomes_current_when_first_round_passe
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.parametrize("voted_revision_number", [None, "00001", "00002"])
-async def test_podling_second_round_preserves_voted_revision(
-    sqlite_sessionmaker, vote_mode, voted_revision_number
-) -> None:
+async def test_podling_second_round_preserves_voted_revision(sqlite_sessionmaker, voted_revision_number) -> None:
     async with sqlite_sessionmaker() as data:
         await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             is_podling=True,
-            vote_mode=vote_mode,
             voted_revision_number=voted_revision_number,
         )
         writer = _release_writer_with_data(data)
@@ -465,17 +506,15 @@ async def test_podling_second_round_preserves_voted_revision(
                 await writer.start_vote_no_commit(
                     safe.ReleaseKey("project-1.0.0"),
                     safe.RevisionNumber("00001"),
-                    expected_vote_mode=vote_mode,
                     promote=False,
                 )
             assert error.value.status == 409
             await data.rollback()
             assert await data.get(sql.VoteCounter, "project-1.0.0") is None
         else:
-            release_model, _seq, _mode, _revision = await writer.start_vote_no_commit(
+            release_model, _seq, _revision = await writer.start_vote_no_commit(
                 safe.ReleaseKey("project-1.0.0"),
                 safe.RevisionNumber("00001"),
-                expected_vote_mode=vote_mode,
                 promote=False,
             )
             assert release_model.voted_revision_number == voted_revision_number
@@ -495,7 +534,6 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
             is_podling=True,
-            vote_mode=sql.VoteMode.EMAIL,
             voted_revision_number=voted_revision_number,
         )
         data.add(sql.VoteCounter(release_key=seeded_release.key, last_allocated_number=1))
@@ -519,7 +557,6 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
                     expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                     expected_podling_thread_id=None,
                     new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                    new_vote_mode=sql.VoteMode.EMAIL,
                     new_vote_resolved=None,
                     new_podling_thread_id="thread",
                 )
@@ -557,69 +594,46 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
 
 
 @pytest.mark.asyncio
-async def test_post_vote_dispatches_trusted_email_and_stale(monkeypatch) -> None:
-    trusted_cast = mock.AsyncMock(return_value=(["dev@project.apache.org"], ""))
-    email_send = mock.AsyncMock(return_value=(["dev@project.apache.org", "private@project.apache.org"], ""))
+async def test_post_vote_dispatches_unified_cast_and_missing_seq(monkeypatch) -> None:
+    cast_mock = mock.AsyncMock(return_value=(["dev@project.apache.org"], "receipt-1@apache.org"))
     flash = mock.AsyncMock()
 
     @contextlib.asynccontextmanager
     async def _write_context(_session):
-        yield SimpleNamespace(
-            as_foundation_committer=lambda: SimpleNamespace(
-                vote=SimpleNamespace(cast_trusted=trusted_cast, send_user_vote=email_send)
-            )
-        )
+        yield SimpleNamespace(as_foundation_committer=lambda: SimpleNamespace(vote=SimpleNamespace(cast=cast_mock)))
 
     monkeypatch.setattr(post_vote.quart, "flash", flash)
     monkeypatch.setattr(post_vote.storage, "write", _write_context)
-    monkeypatch.setattr(post_vote.user, "is_binding_for_release", mock.AsyncMock(return_value=(True, "Project")))
 
     handler = _post_handler()
-    form = SimpleNamespace(decision="+1", comment="", vote_seq=1, vote_mode=sql.VoteMode.TRUSTED)
+    form = SimpleNamespace(decision="+1", comment="", vote_seq=1)
     result = await handler(
-        _route_session(_route_release(sql.VoteMode.TRUSTED)),
+        _route_session(_route_release()),
         "vote",
         safe.ProjectKey("project"),
         safe.VersionKey("1.0.0"),
         form,
     )
     assert result == "redirect"
-    trusted_cast.assert_awaited_once()
-    email_send.assert_not_awaited()
-
-    trusted_cast.reset_mock()
-    email_send.reset_mock()
-    form.vote_mode = sql.VoteMode.EMAIL
-    result = await handler(
-        _route_session(_route_release(sql.VoteMode.EMAIL)),
-        "vote",
-        safe.ProjectKey("project"),
-        safe.VersionKey("1.0.0"),
-        form,
-    )
-    assert result == "redirect"
-    trusted_cast.assert_not_awaited()
-    email_send.assert_awaited_once()
+    cast_mock.assert_awaited_once()
     assert flash.call_args.args == (
-        "Sending your vote to dev@project.apache.org, private@project.apache.org.",
+        "Your vote has been recorded and a receipt is being sent to dev@project.apache.org.",
         "success",
     )
 
-    trusted_cast.reset_mock()
-    email_send.reset_mock()
+    cast_mock.reset_mock()
     flash.reset_mock()
-    form.vote_mode = sql.VoteMode.EMAIL
+    form.vote_seq = None
     result = await handler(
-        _route_session(_route_release(sql.VoteMode.TRUSTED)),
+        _route_session(_route_release()),
         "vote",
         safe.ProjectKey("project"),
         safe.VersionKey("1.0.0"),
         form,
     )
     assert result == "redirect"
-    trusted_cast.assert_not_awaited()
-    email_send.assert_not_awaited()
-    assert flash.call_args.args == ("The vote form is stale, please refresh and try again.", "error")
+    cast_mock.assert_not_awaited()
+    assert flash.call_args.args == ("Vote serial is missing, please refresh and try again.", "error")
 
 
 @pytest.mark.asyncio
@@ -647,6 +661,80 @@ async def test_release_current_vote_task_matches_serial_and_legacy_fallback(sqli
 
 
 @pytest.mark.asyncio
+async def test_resolve_unattended_guard_atomic_tally_and_auto_publish(sqlite_sessionmaker, monkeypatch) -> None:
+    async def _template(_project, kind: str):
+        assert kind == "finish_vote"
+        return vote.construct.ResolvedTemplate("{{PROJECT_NAME}} {{OUTCOME}}\n{{ATR_TALLY}}")
+
+    monkeypatch.setattr(vote.construct, "resolve_template", _template)
+    monkeypatch.setattr(vote.interaction, "vote_resolution_bypass", lambda _r, _u: False)
+
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            current_vote_seq=1,
+        )
+        vote_task = _completed_vote_task(
+            1,
+            datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+            automatic_publish_when_resolved=True,
+        )
+        data.add(vote_task)
+        await data.commit()
+
+        publish_mock = mock.AsyncMock()
+        release_writer = SimpleNamespace(publish_to_svn=publish_mock)
+        cache = SimpleNamespace(
+            get_message_archive_url=mock.AsyncMock(return_value="https://lists.apache.org/thread/thread123")
+        )
+        write_as = SimpleNamespace(
+            release=release_writer,
+            cache=cache,
+            distributions=SimpleNamespace(expect_for_release_no_commit=mock.AsyncMock()),
+            append_to_audit_log=mock.MagicMock(),
+        )
+        writer = _member_writer_with_data(data, write_as)
+
+        monkeypatch.setattr(
+            vote.interaction,
+            "counted_vote_details_and_summary",
+            mock.AsyncMock(
+                return_value=(
+                    [],
+                    interaction.CountedVoteSummary(binding_votes_yes=3, non_binding_votes_abstain=1),
+                )
+            ),
+        )
+        with pytest.raises(storage.AccessError, match="Somebody voted 0 or -1") as exc_info:
+            await writer.resolve(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                "passed",
+                "Chair",
+                unattended=True,
+            )
+        assert exc_info.value.status == 409
+
+        result = await writer.resolve(
+            safe.ProjectKey("project"),
+            safe.VersionKey("1.0.0"),
+            "passed",
+            "Chair",
+            resolution_body=None,
+            unattended=False,
+        )
+        assert result[0].phase == sql.ReleasePhase.RELEASE_PREVIEW
+        assert result[1:] == (None, "Vote marked as passed", None)
+        publish_mock.assert_awaited_once()
+        resolution_task = (
+            await data.execute(sqlmodel.select(sql.Task).where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND))
+        ).scalar_one()
+        assert "Project passed" in resolution_task.task_args["body"]
+        assert "https://lists.apache.org/thread/thread123" in resolution_task.task_args["body"]
+
+
+@pytest.mark.asyncio
 async def test_resolve_transition_rejects_restarted_vote(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE, current_vote_seq=2)
@@ -658,19 +746,17 @@ async def test_resolve_transition_rejects_restarted_vote(sqlite_sessionmaker) ->
                 expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                 expected_podling_thread_id=None,
                 new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
-                new_vote_mode=sql.VoteMode.EMAIL,
                 new_vote_resolved=datetime.datetime.now(datetime.UTC),
                 new_podling_thread_id=None,
             )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.parametrize(
     ("vote_round", "is_member", "is_ipmc_member", "body"),
     [
-        (1, True, True, "+1 (IPMC-binding, PPMC-binding) (chair) Voter"),
-        (1, False, True, "+1 (IPMC-binding) (chair) Voter"),
+        (1, True, True, "+1 (PPMC-binding) (chair) Voter"),
+        (1, False, True, "+1 (non-binding) (chair) Voter"),
         (1, True, False, "+1 (PPMC-binding) (chair) Voter"),
         (1, False, False, "+1 (non-binding) (chair) Voter"),
         (2, False, True, "+1 (binding) (chair) Voter"),
@@ -680,15 +766,15 @@ async def test_resolve_transition_rejects_restarted_vote(sqlite_sessionmaker) ->
     ],
 )
 async def test_vote_email_labels_reflect_membership(
-    sqlite_sessionmaker, monkeypatch, vote_mode, vote_round, is_member, is_ipmc_member, body
+    sqlite_sessionmaker, monkeypatch, vote_round, is_member, is_ipmc_member, body
 ) -> None:
+    monkeypatch.setattr(vote.mail, "message_id_create", lambda: "receipt-label@apache.org")
     async with sqlite_sessionmaker() as data:
         release_model = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             current_vote_seq=1,
             is_podling=vote_round is not None,
-            vote_mode=vote_mode,
         )
         release_model.podling_thread_id = "thread-abc" if (vote_round == 2) else None
         release_model.project.committee.committee_members = ["chair"] if is_member else []
@@ -697,22 +783,13 @@ async def test_vote_email_labels_reflect_membership(
         start_task = _completed_vote_task(1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC))
         data.add(start_task)
         await data.commit()
-        monkeypatch.setattr(vote.interaction, "release_current_vote_task", mock.AsyncMock(return_value=start_task))
 
         writer, _write_as = _foundation_writer_with_data(data)
-        if vote_mode == sql.VoteMode.TRUSTED:
-            result = await writer.cast_trusted(
-                safe.ProjectKey("project"), safe.VersionKey("1.0.0"), sql.VoteChoice.YES, "", "Voter"
-            )
-        else:
-            is_binding, _committee = await user.is_binding_for_release(
-                release_model.project.committee, "chair", vote_round, caller_data=data
-            )
-            result = await writer.send_user_vote(
-                safe.ProjectKey("project"), safe.VersionKey("1.0.0"), "+1", "", "Voter", is_binding
-            )
+        result = await writer.cast(
+            safe.ProjectKey("project"), safe.VersionKey("1.0.0"), sql.VoteChoice.YES, "", "Voter"
+        )
 
-        assert result == (["dev@project.apache.org"], "")
+        assert result == (["dev@project.apache.org"], "receipt-label@apache.org")
         message_task = (
             await data.execute(sqlmodel.select(sql.Task).where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND))
         ).scalar_one()
@@ -726,7 +803,6 @@ async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatc
         release_model = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-            vote_mode=sql.VoteMode.EMAIL,
             voted_revision_number="00001",
         )
         release_model.vote_started = datetime.datetime.now(datetime.UTC)
@@ -737,7 +813,6 @@ async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatc
             expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             expected_podling_thread_id=None,
             new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-            new_vote_mode=None,
             new_vote_resolved=None,
             new_podling_thread_id=None,
         )
@@ -758,10 +833,9 @@ async def test_vote_restart_records_new_revision(sqlite_sessionmaker, monkeypatc
         await data.commit()
         await data.refresh(release_model)
         await data.begin_immediate()
-        release_model, _seq, _mode, _revision = await _release_writer_with_data(data).start_vote_no_commit(
+        release_model, _seq, _revision = await _release_writer_with_data(data).start_vote_no_commit(
             safe.ReleaseKey("project-1.0.0"),
             safe.RevisionNumber("00002"),
-            expected_vote_mode=sql.VoteMode.EMAIL,
             promote=True,
         )
         assert release_model.voted_revision_number == "00002"
@@ -778,10 +852,9 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
         with pytest.raises(RuntimeError, match="task creation failed"):
             try:
                 await data.begin_immediate()
-                _release, vote_seq, _vote_mode, _revision_number = await writer.start_vote_no_commit(
+                _release, vote_seq, _revision_number = await writer.start_vote_no_commit(
                     safe.ReleaseKey("project-1.0.0"),
                     safe.RevisionNumber("00001"),
-                    expected_vote_mode=sql.VoteMode.EMAIL,
                     promote=True,
                 )
                 data.add(_vote_task(vote_seq, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)))
@@ -802,29 +875,22 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("vote_mode", "expedited"),
-    [
-        (sql.VoteMode.EMAIL, False),
-        (sql.VoteMode.TRUSTED, False),
-        (sql.VoteMode.TRUSTED, True),
-    ],
-)
-async def test_vote_start_records_revision(sqlite_sessionmaker, monkeypatch, vote_mode, expedited) -> None:
+@pytest.mark.parametrize("expedited", [False, True])
+async def test_vote_start_records_revision(sqlite_sessionmaker, monkeypatch, expedited: bool) -> None:
     monkeypatch.setattr(release.util, "number_of_release_files", mock.AsyncMock(return_value=1))
     async with sqlite_sessionmaker() as data:
-        release_model = await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)
-        release_model.project.committee.vote_mode = vote_mode
-        release_model.expedited = expedited
+        release_model = await _seed_release(
+            data,
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            expedited=expedited,
+        )
         await data.commit()
         await data.begin_immediate()
-        release_model, _seq, actual_mode, revision = await _release_writer_with_data(data).start_vote_no_commit(
+        release_model, _seq, revision = await _release_writer_with_data(data).start_vote_no_commit(
             safe.ReleaseKey("project-1.0.0"),
             None,
-            expected_vote_mode=vote_mode,
             promote=True,
         )
-        assert actual_mode == vote_mode
         assert release_model.voted_revision_number == str(revision) == "00001"
         await data.commit()
 
@@ -876,10 +942,8 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
         release_model = await _seed_release(
             data,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-            vote_mode=sql.VoteMode.EMAIL,
             voted_revision_number=voted_revision_number,
         )
-        release_model.vote_started = datetime.datetime.now(datetime.UTC)
         await data.commit()
         writer = _member_writer_with_data(
             data,
@@ -893,7 +957,6 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
             expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             expected_podling_thread_id=None,
             new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
-            new_vote_mode=sql.VoteMode.EMAIL,
             new_vote_resolved=datetime.datetime.now(datetime.UTC),
             new_podling_thread_id=None,
             new_vote_thread_url="https://lists.apache.org/thread/vote",
@@ -932,14 +995,21 @@ async def test_voted_revision_survives_pass_announcement_and_archive(
         assert release_model.voted_revision_number == voted_revision_number
 
 
-def _completed_vote_task(vote_seq: int, added: datetime.datetime) -> sql.Task:
-    task = _vote_task(vote_seq, added)
+def _completed_vote_task(
+    vote_seq: int,
+    added: datetime.datetime,
+    *,
+    email_to: str = "dev@project.apache.org",
+    automatic_publish_when_resolved: bool = False,
+) -> sql.Task:
+    task = _vote_task(vote_seq, added, email_to=email_to)
+    task.task_args["automatic_publish_when_resolved"] = automatic_publish_when_resolved
     task.status = sql.TaskStatus.COMPLETED
     task.completed = datetime.datetime(2026, 1, 1, 1, tzinfo=datetime.UTC)
     task.result = results.VoteInitiate(
         kind="vote_initiate",
         message="Vote announcement email sent successfully",
-        email_to="dev@project.apache.org",
+        email_to=email_to,
         vote_end="2026-01-04 00:00:00 UTC",
         subject="[VOTE] Release",
         mid="start-mid@apache.org",
@@ -970,6 +1040,11 @@ def _member_writer_with_data(data: db.Session, write_as: SimpleNamespace) -> vot
     writer._ReleaseManager__committee_key = "project"
     writer._CommitteeParticipant__write = mock.MagicMock()
     writer._ReleaseManager__write = mock.MagicMock()
+    writer._CommitteeMember__data = data
+    writer._CommitteeMember__write_as = write_as
+    writer._CommitteeMember__asf_uid = "chair"
+    writer._CommitteeMember__committee_key = "project"
+    writer._CommitteeMember__write = mock.MagicMock()
     return writer
 
 
@@ -991,11 +1066,10 @@ def _release_writer_with_data(data: db.Session) -> release.CommitteeParticipant:
     return writer
 
 
-def _route_release(vote_mode: sql.VoteMode) -> SimpleNamespace:
+def _route_release() -> SimpleNamespace:
     return SimpleNamespace(
         committee=SimpleNamespace(key="project", is_podling=False),
         current_vote_seq=1,
-        effective_vote_mode=vote_mode,
         expedited=False,
     )
 
@@ -1015,7 +1089,7 @@ async def _seed_release(
     phase: sql.ReleasePhase,
     current_vote_seq: int | None = None,
     is_podling: bool = False,
-    vote_mode: sql.VoteMode | None = None,
+    expedited: bool = False,
     voted_revision_number: str | None = None,
 ) -> sql.Release:
     committee = sql.Committee(
@@ -1033,8 +1107,13 @@ async def _seed_release(
         project_key=project.key,
         version="1.0.0",
         created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        vote_started=(
+            datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+            if (phase == sql.ReleasePhase.RELEASE_CANDIDATE)
+            else None
+        ),
         current_vote_seq=current_vote_seq,
-        vote_mode=vote_mode,
+        expedited=expedited,
         voted_revision_number=voted_revision_number,
     )
     revision = sql.Revision(
@@ -1051,13 +1130,13 @@ async def _seed_release(
     return release
 
 
-def _vote_task(vote_seq: int, added: datetime.datetime) -> sql.Task:
+def _vote_task(vote_seq: int, added: datetime.datetime, *, email_to: str = "dev@project.apache.org") -> sql.Task:
     return sql.Task(
         status=sql.TaskStatus.QUEUED,
         task_type=sql.TaskType.VOTE_INITIATE,
         task_args={
             "release_key": "project-1.0.0",
-            "email_to": "dev@project.apache.org",
+            "email_to": email_to,
             "vote_duration": 72,
             "initiator_id": "chair",
             "initiator_fullname": "Chair",

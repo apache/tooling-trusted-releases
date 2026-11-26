@@ -27,11 +27,6 @@ VERIFY_DISTRIBUTION_BUTTON: Final = "Verify a third-party distribution"
 
 # CAP approval votes
 CAP_NOT_CONFIGURED: Final = "CAP approval is not configured. Please contact an administrator."
-STREAMLINED_VOTING_RULE: Final = (
-    "When a streamlined vote ends, ATR resolves it and publishes the release to SVN automatically if the vote"
-    " passed and every vote is +1. If anyone votes 0 or -1, the release manager resolves the vote and"
-    " publishes the release by hand."
-)
 
 # Link labels
 HOW_TO_FIX_THIS: Final = "How to fix this"

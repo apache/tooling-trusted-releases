@@ -21,7 +21,6 @@ import pydantic
 
 import atr.constants as constants
 import atr.form as form
-import atr.models.sql as sql
 import atr.util as util
 
 type CANCEL_SUBMIT = Literal["cancel_submit"]
@@ -32,10 +31,9 @@ class ResolveFormBase(form.Form):
     result_email_to: str = form.label("To", widget=form.Widget.TEXT, default="", readonly=True)
     email_cc: form.StrList = form.label("Additional recipients", widget=form.Widget.CUSTOM)
     email_bcc: form.StrList = form.label("BCC")
-    vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
     vote_seq: int | None = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
 
-    @pydantic.field_validator("vote_mode", "vote_seq", mode="before")
+    @pydantic.field_validator("vote_seq", mode="before")
     @classmethod
     def empty_hidden_value(cls, value: object) -> object:
         if value == "":
@@ -62,6 +60,7 @@ class CancelSubmitForm(ResolveFormBase):
 class InterpretForm(form.Form):
     asf_eid: str = form.label("Email", widget=form.Widget.HIDDEN, max_length=256)
     choice: Literal["+1", "0", "-1", ""] = form.label("Vote", widget=form.Widget.HIDDEN)
+    vote_seq: form.OptionalInt = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
 
 
 class SecondRoundForm(form.Form):
@@ -91,14 +90,7 @@ class SubmitForm(ResolveFormBase):
     security_override: form.Bool = form.label(
         "Force as the ASF Security Team",
         "Resolve this vote regardless of the vote count and voting period. This action is audited."
-        " Passed releases are published to SVN automatically,"
-        " unless somebody voted 0 or -1 in a non-expedited streamlined vote."
-        " Automatic second round resolution is not applied.",
-    )
-    automatic_resolve_when_finished: form.Bool = form.label(
-        "Automatically resolve the second round vote",
-        widget=form.Widget.CUSTOM,
-        default=False,
+        " Passed releases are published to SVN automatically.",
     )
     notify_when_finished: form.Bool = form.label(
         "Notify me when the second round vote ends",

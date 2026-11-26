@@ -37,7 +37,6 @@ import atr.web as web
 
 class BodyPreviewForm(form.Form):
     vote_duration: form.Int = form.label("Vote duration")
-    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
     rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)
 
 
@@ -60,11 +59,6 @@ async def body_preview(
             data=data,
             with_release_policy=True,
             with_project_release_policy=True,
-        )
-        vote_mode = release.effective_vote_mode
-    if vote_mode != preview_form.vote_mode:
-        return web.TextResponse(
-            "The vote mode has changed since you loaded the form. Please reload and try again.", 409
         )
 
     default_subject_template = await construct.start_vote_subject_default(project_key)
@@ -115,19 +109,8 @@ async def selected(  # noqa: C901
                 version_key=str(version_key),
             )
 
-        vote_mode = release.effective_vote_mode
-        if vote_mode != start_voting_form.vote_mode:
-            return await session.form_error(
-                "vote_mode",
-                "The vote mode has changed since you loaded the form. Please reload and try again.",
-            )
-
         if release.expedited:
             return await _start_expedited(session, release, committee, start_voting_form, project_key, version_key)
-
-        notify_error = await _notify_opt_in_error(session, start_voting_form, vote_mode)
-        if notify_error is not None:
-            return notify_error
 
         publish_error = await _publish_opt_in_error(session, start_voting_form, committee)
         if publish_error is not None:
@@ -200,7 +183,6 @@ async def selected(  # noqa: C901
                     email_cc=start_voting_form.email_cc,
                     email_bcc=start_voting_form.email_bcc,
                     second_round_email_to=second_round_email_to,
-                    expected_vote_mode=start_voting_form.vote_mode,
                     expected_revision=start_voting_form.rendered_revision,
                     notify_when_finished=start_voting_form.notify_when_finished,
                     automatic_publish_when_resolved=start_voting_form.automatic_publish_when_resolved,
@@ -224,19 +206,6 @@ async def selected(  # noqa: C901
             project_key=str(project_key),
             version_key=str(version_key),
         )
-
-
-async def _notify_opt_in_error(
-    session: web.Committer,
-    start_voting_form: shared.voting.StartVotingForm,
-    vote_mode: sql.VoteMode,
-) -> web.WerkzeugResponse | None:
-    if start_voting_form.notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
-        return await session.form_error(
-            "notify_when_finished",
-            "Vote end reminders are only available with streamlined voting.",
-        )
-    return None
 
 
 async def _publish_opt_in_error(
@@ -296,7 +265,6 @@ async def _start_expedited(
                 start_voting_form.body,
                 session.fullname,
                 promote=True,
-                expected_vote_mode=sql.VoteMode.TRUSTED,
                 expected_revision=start_voting_form.rendered_revision,
                 acknowledged_concerns=frozenset(start_voting_form.concerns_noted),
             )

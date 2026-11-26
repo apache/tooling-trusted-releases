@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 import pathlib
 
 import alembic.command as command
@@ -135,6 +136,12 @@ _ROWS = {
     "0151": (
         "INSERT INTO projectsecurityoptions (project_key, github_upload_workflow_paths, github_upload_ref_type,"
         " github_upload_ref_patterns) VALUES ('p', '[]', '', '[]')",
+    ),
+    "0152": (
+        "INSERT INTO voteinterpretation (release_key, vote_seq, asf_eid, vote_round, voter_asf_uid,"
+        " voter_email, voter_fullname, choice, is_binding_at_confirm, email_timestamp, confirmed_by, created)"
+        " VALUES ('p-1', 1, 'eid', NULL, 'u', 'u@apache.org', 'Test User', 'YES', 0,"
+        " '2026-01-01 00:00:00', 'u', '2026-01-01 00:00:00')",
     ),
 }
 
@@ -330,6 +337,79 @@ def test_trusted_default_keeps_committees_with_activity_on_email(
         "started-sibling": "EMAIL",
         "trusted": "TRUSTED",
     }
+
+
+def test_unify_vote_modes_upgrade_and_downgrade_backfill(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0151_2026.11.24_81cdbaf9")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO committee (key, is_podling, committee_members, committers, release_managers, keys_mode,"
+            " mail_addresses, catalog_reviewed, github_oidc_enabled)"
+            " VALUES ('c', 0, '[\"member\"]', '[]', '[]', 'AUTOMATIC', '[]', 0, 0)"
+        )
+        connection.exec_driver_sql(_INSERT_PROJECT.format(key="p", committee="c", status="ACTIVE"))
+        connection.exec_driver_sql(
+            "INSERT INTO release (key, project_key, version, phase, created, package_managers, sboms, cycle_key,"
+            " activity_at, expedited) VALUES ('p-1.0', 'p', '1.0', 'RELEASE_CANDIDATE', 0, '[]', '[]', 'p-default',"
+            " 0, 0), ('p-2.0', 'p', '2.0', 'RELEASE_CANDIDATE', 0, '[]', '[]', 'p-default', 0, 0)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO ballotpaper (release_key, vote_seq, voter_asf_uid, voter_fullname, choice,"
+            " is_binding_at_cast, revision_number_at_cast, receipt_message_id, created)"
+            " VALUES ('p-1.0', 1, 'alice', 'Alice', 'YES', 1, '00001', 'r1@apache.org', '2026-01-01 00:00:00')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO voteinterpretation (release_key, asf_eid, choice, asf_uid, created)"
+            " VALUES ('p-1.0', 'eid-1', 'YES', 'chair', '2026-01-01 00:00:00')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO task (id, status, task_type, task_args, added, asf_uid) VALUES"
+            " (1, 'QUEUED', 'VOTE_AUTO_RESOLVE', '{}', '2026-01-01 00:00:00', 'u'),"
+            " (2, 'QUEUED', 'VOTE_INITIATE', '{\"vote_seq\": 1, \"automatic_resolve_when_finished\": true}',"
+            " '2026-01-01 00:00:00', 'u'),"
+            " (3, 'QUEUED', 'CAP_APPROVAL_RESOLVE', '{\"approval_request_id\": 10}', '2026-01-01 00:00:00', 'u')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO approvalrequest (id, project_key, committee_key, action, cap_question_id, status,"
+            " requested_by, requested_at, closes_at) VALUES"
+            " (10, NULL, 'c', 'EMAIL_VOTING', NULL, 'PENDING', 'u', '2026-01-01 00:00:00', '2026-01-02 00:00:00'),"
+            " (11, 'p', 'c', 'ARCHIVE', 1, 'COMPLETED', 'u', '2026-01-01 00:00:00', '2026-01-02 00:00:00')"
+        )
+
+    command.upgrade(alembic_config, "0152_2026.11.26_6770c14a")
+
+    with engine.connect() as connection:
+        task_rows = connection.exec_driver_sql("SELECT id, task_type, task_args FROM task ORDER BY id").all()
+        approval_ids = [row[0] for row in connection.exec_driver_sql("SELECT id FROM approvalrequest").all()]
+        interp_rows = connection.exec_driver_sql("SELECT * FROM voteinterpretation").all()
+    assert len(task_rows) == 1
+    assert task_rows[0][0] == 2
+    assert json.loads(task_rows[0][2]) == {"vote_seq": 1}
+    assert approval_ids == [11]
+    assert interp_rows == []
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO voteinterpretation (release_key, vote_seq, asf_eid, vote_round, voter_asf_uid,"
+            " voter_email, voter_fullname, choice, is_binding_at_confirm, email_timestamp, confirmed_by, created)"
+            " VALUES ('p-1.0', 1, 'eid-new', NULL, 'bob', 'bob@apache.org', 'Bob', 'YES', 1,"
+            " '2026-01-01 00:00:00', 'chair', '2026-01-01 00:00:00')"
+        )
+
+    command.downgrade(alembic_config, "0151_2026.11.24_81cdbaf9")
+
+    with engine.connect() as connection:
+        modes = dict(
+            tuple(row) for row in connection.exec_driver_sql("SELECT key, vote_mode FROM release ORDER BY key").all()
+        )
+        legacy_interps = connection.exec_driver_sql(
+            "SELECT release_key, asf_eid, asf_uid FROM voteinterpretation"
+        ).all()
+    assert modes == {"p-1.0": "TRUSTED", "p-2.0": None}
+    assert [tuple(row) for row in legacy_interps] == [("p-1.0", "eid-new", "chair")]
 
 
 def test_upgrade_populated_database(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

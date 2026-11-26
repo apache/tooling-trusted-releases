@@ -458,7 +458,7 @@ class PolicyGetResults(schema.Strict):
     # quart_schema.validate_response runs the response dict (produced by
     # model_dump(mode="json")) back through this model. mode="json" serialises
     # StrEnum values to plain strings, but schema.Strict has strict=True, which
-    # rejects strings where a LicenseCheckMode or VoteMode instance is
+    # rejects strings where a LicenseCheckMode instance is
     # expected. Override to allow string -> enum coercion on revalidation. We
     # keep extra="forbid".
     model_config = pydantic.ConfigDict(
@@ -482,7 +482,6 @@ class PolicyGetResults(schema.Strict):
     policy_vote_recipients: RecipientDefaults
     policy_announce_recipients: RecipientDefaults
     policy_min_hours: int
-    policy_vote_mode: sql.VoteMode = schema.example(sql.VoteMode.EMAIL)
     policy_release_checklist: str
     policy_source_artifact_paths: list[str]
     policy_start_vote_subject: str
@@ -526,7 +525,6 @@ class PolicyArgsBase(schema.Strict):
     finish_vote_template_url: str | None = None
     vote_comment_template: str | None = None
     vote_comment_template_url: str | None = None
-    vote_mode: sql.VoteMode | None = None
 
     @pydantic.field_validator("license_check_mode", mode="before")
     @classmethod
@@ -538,22 +536,8 @@ class PolicyArgsBase(schema.Strict):
                 raise ValueError(f"'{v}' is not a valid LicenseCheckMode")
         return v
 
-    @pydantic.field_validator("vote_mode", mode="before")
-    @classmethod
-    def vote_mode_to_enum(cls, v):
-        if isinstance(v, str):
-            try:
-                return sql.VoteMode(v)
-            except ValueError:
-                raise ValueError(f"'{v}' is not a valid VoteMode")
-        return v
-
     @pydantic.model_validator(mode="after")
     def validate_policy_fields(self) -> Self:
-        if self.vote_mode == sql.VoteMode.TRUSTED:
-            raise ValueError(
-                "Streamlined voting (vote mode trusted) is turned on for the whole committee, on its committee page"
-            )
         if self.min_hours is not None:
             validation.validate_policy_min_hours(self.min_hours)
 
@@ -1165,6 +1149,7 @@ class VoteCastArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     choice: sql.VoteChoice = schema.example(sql.VoteChoice.YES)
     comment: str = schema.default_example("", "Looks good to me")
+    vote_seq: int | None = schema.default_example(None, 1)
 
     @pydantic.field_validator("choice", mode="before")
     @classmethod
@@ -1189,11 +1174,37 @@ class VoteCastResults(schema.Strict):
     receipt_email_to: list[str] = schema.example(["dev@example.apache.org"])
 
 
+class VoteConfirmArgs(schema.Strict):
+    project: safe.ProjectKey = schema.example("example")
+    version: safe.VersionKey = schema.example("0.0.1")
+    asf_eid: str = schema.example("hmk1lpwnnxn5zsbp8gwh7115h2qm7jrh")
+    choice: sql.VoteChoice | None = schema.example(sql.VoteChoice.YES)
+    vote_seq: int | None = schema.default_example(None, 1)
+
+    @pydantic.field_validator("choice", mode="before")
+    @classmethod
+    def choice_to_enum(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return sql.VoteChoice(v)
+            except ValueError:
+                raise ValueError(f"'{v}' is not a valid VoteChoice")
+        return v
+
+
+class VoteConfirmResults(schema.Strict):
+    endpoint: Literal["/vote/confirm"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
+
+
 class VoteResolveArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
     resolution: Literal["passed", "failed", "cancelled"] = schema.example("passed")
     early_reason: str = schema.default_example("", "Fix for a publicly known security issue")
+    vote_seq: int | None = schema.default_example(None, 1)
 
 
 class VoteResolveResults(schema.Strict):
@@ -1215,7 +1226,6 @@ class VoteStartArgs(schema.Strict):
     )
     second_round_email_to: str | None = schema.default_example(None, "general@incubator.apache.org")
     notify_when_finished: bool = schema.default_example(False, False)
-    automatic_resolve_when_finished: bool = schema.default_example(False, False)
     automatic_publish_when_resolved: bool = schema.default_example(False, False)
     concerns_noted: list[str] = schema.default_example([], ["atr.tasks.checks.license.headers"])
 
@@ -1232,20 +1242,33 @@ class VoteStartResults(schema.Strict):
     task: sql.Task
 
 
-class TrustedBallotEntry(schema.Strict):
-    voter_asf_uid: str = schema.example("user")
+class BallotEntry(schema.Strict):
+    source: Literal["atr", "email"] = schema.example("atr")
+    voter_asf_uid: str | None = schema.default_example(None, "user")
+    voter_email: str | None = schema.default_example(None, "user@apache.org")
     voter_fullname: str = schema.example("Example User")
     choice: sql.VoteChoice = schema.example(sql.VoteChoice.YES)
     comment: str = schema.default_example("", "Looks good to me")
     is_binding: bool = schema.example(True)
-    is_carried: bool = schema.default_example(False, False)
     vote_round: int | None = schema.default_example(None, 1)
-    revision_number_at_cast: safe.RevisionNumber = schema.example("00005")
-    receipt_message_id: str = schema.example("102ed8a-503db792-79bc789-b8ca87ce@apache.org")
+    revision_number_at_cast: safe.RevisionNumber | None = schema.default_example(None, "00005")
+    receipt_message_id: str | None = schema.default_example(None, "102ed8a-503db792-79bc789-b8ca87ce@apache.org")
+    asf_eid: str | None = schema.default_example(None, "hmk1lpwnnxn5zsbp8gwh7115h2qm7jrh")
+    confirmed_by: str | None = schema.default_example(None, "chair")
     cast_at: datetime.datetime = schema.example(datetime.datetime(2025, 5, 1, 12, 0, tzinfo=datetime.UTC))
 
+    @pydantic.field_validator("choice", mode="before")
+    @classmethod
+    def choice_to_enum(cls, v):
+        return sql.VoteChoice(v) if isinstance(v, str) else v
 
-class TrustedVoteSummary(schema.Strict):
+    @pydantic.field_validator("cast_at", mode="before")
+    @classmethod
+    def parse_cast_at(cls, v):
+        return datetime.datetime.fromisoformat(v) if isinstance(v, str) else v
+
+
+class BallotSummary(schema.Strict):
     binding_votes_yes: int = schema.example(3)
     binding_votes_no: int = schema.example(0)
     binding_votes_abstain: int = schema.example(0)
@@ -1261,12 +1284,11 @@ class VoteTabulateArgs(schema.Strict):
 
 class VoteTabulateResults(schema.Strict):
     endpoint: Literal["/vote/tabulate"] = schema.alias("endpoint")
-    details: tabulate.VoteDetails | None = None
-    vote_mode: sql.VoteMode = schema.example(sql.VoteMode.EMAIL)
     vote_seq: int | None = schema.default_example(None, 1)
-    trusted_ballots: list[TrustedBallotEntry] | None = None
-    trusted_summary: TrustedVoteSummary | None = None
-    trusted_passed: bool | None = None
+    ballots: list[BallotEntry] = schema.factory(list)
+    summary: BallotSummary
+    passed: bool = schema.example(False)
+    details: tabulate.VoteDetails | None = None
 
 
 # This is for *Results classes only
@@ -1319,6 +1341,7 @@ type Results = Annotated[
     | UserInfoResults
     | UsersListResults
     | VoteCastResults
+    | VoteConfirmResults
     | VoteResolveResults
     | VoteStartResults
     | VoteTabulateResults,
@@ -1385,6 +1408,7 @@ validate_tasks_list = validator(TasksListResults)
 validate_user_info = validator(UserInfoResults)
 validate_users_list = validator(UsersListResults)
 validate_vote_cast = validator(VoteCastResults)
+validate_vote_confirm = validator(VoteConfirmResults)
 validate_vote_resolve = validator(VoteResolveResults)
 validate_vote_start = validator(VoteStartResults)
 validate_vote_tabulate = validator(VoteTabulateResults)

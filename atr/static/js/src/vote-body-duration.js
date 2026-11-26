@@ -56,10 +56,6 @@ function createBodyFetcher(previewUrl, csrfToken, bodyTextarea, state) {
 		try {
 			const formData = new FormData();
 			formData.append("vote_duration", duration);
-			const voteModeInput = document.querySelector('input[name="vote_mode"]');
-			if (voteModeInput) {
-				formData.append("vote_mode", voteModeInput.value);
-			}
 			const renderedRevisionInput = document.querySelector(
 				'input[name="rendered_revision"]',
 			);

@@ -119,7 +119,7 @@ async def test_ballot_receipt_message_ids_returns_all_receipts_for_vote(sqlite_s
 
 
 @pytest.mark.asyncio
-async def test_ballots_for_resolution_returns_latest_per_round_and_voter(sqlite_sessionmaker) -> None:
+async def test_ballots_for_resolution_returns_latest_per_voter(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         older = _ballot(
             release_key="project-1.0.0",
@@ -135,14 +135,6 @@ async def test_ballots_for_resolution_returns_latest_per_round_and_voter(sqlite_
             choice=sql.VoteChoice.NO,
             receipt_message_id="newest@apache.org",
         )
-        other_round = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=1,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.ABSTAIN,
-            receipt_message_id="other-round@apache.org",
-        )
-        other_round.vote_round = 2
         other_voter = _ballot(
             release_key="project-1.0.0",
             vote_seq=1,
@@ -157,74 +149,15 @@ async def test_ballots_for_resolution_returns_latest_per_round_and_voter(sqlite_
             choice=sql.VoteChoice.YES,
             receipt_message_id="other-seq@apache.org",
         )
-        data.add_all([older, newest, other_round, other_voter, other_seq])
+        data.add_all([older, newest, other_voter, other_seq])
         await data.commit()
 
         found = await interaction.ballots_for_resolution("project-1.0.0", 1, data)
 
     assert {ballot.receipt_message_id for ballot in found} == {
         "newest@apache.org",
-        "other-round@apache.org",
         "other-voter@apache.org",
     }
-
-
-@pytest.mark.asyncio
-async def test_email_rendering_keeps_hidden_vote_defaults_and_no_trusted_state(
-    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    await _patch_render_dependencies(monkeypatch)
-    latest_ballot_get = mock.AsyncMock()
-    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", latest_ballot_get)
-
-    async with render_app.test_request_context("/vote/project/1.0.0"):
-        page = htm.Block()
-        await vote._render_vote_authenticated(
-            page,
-            _release(sql.VoteMode.EMAIL),
-            _session(),
-            None,
-            "dev@project.apache.org",
-            None,
-        )
-
-    html = str(page.collect())
-    assert "You already cast a vote" not in html
-    assert "receipt will be queued" not in html
-    assert "Your vote will be sent to" in html
-    assert 'name="vote_seq" id="vote_seq" value="1"' in html
-    assert 'name="vote_mode" id="vote_mode" value="email"' in html
-    assert "<textarea" in html
-    assert "checked" not in html
-    latest_ballot_get.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_email_rendering_restores_rejected_decision(
-    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    await _patch_render_dependencies(monkeypatch)
-    form_data = {"csrf_token": "token", "decision": "-1", "comment": "", "vote_seq": "1", "vote_mode": "email"}
-    with pytest.raises(pydantic.ValidationError) as excinfo:
-        form.validate(shared.vote.CastVoteForm, form_data)
-    flash_data = form.flash_error_data(shared.vote.CastVoteForm, excinfo.value.errors(), form_data)
-    monkeypatch.setattr(sessions, "form_error_pop", mock.AsyncMock(return_value=flash_data))
-
-    async with render_app.test_request_context("/vote/project/1.0.0"):
-        page = htm.Block()
-        await vote._render_vote_authenticated(
-            page,
-            _release(sql.VoteMode.EMAIL),
-            _session(),
-            None,
-            "dev@project.apache.org",
-            None,
-        )
-
-    html = str(page.collect())
-    assert 'id="decision_2" value="-1" autocomplete="off" checked' in html
-    assert html.count(" checked") == 1
-    assert "Please give a reason when voting 0 or -1." in html
 
 
 @pytest.mark.asyncio
@@ -316,45 +249,80 @@ def test_message_id_source_archive_url_encodes_message_id_and_listid() -> None:
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_round_two_carryover_shows_carried_card_and_resubmit_label(
+async def test_unified_rendering_restores_rejected_decision(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    carried = _ballot(
-        release_key="myproject-1.0.0",
-        vote_seq=1,
-        voter_asf_uid="voter",
-        choice=sql.VoteChoice.YES,
-        receipt_message_id="r1@apache.org",
-        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
-    )
-    carried.id = 1
-    carried.vote_round = 1
-    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=carried))
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=None))
+    form_data = {"csrf_token": "token", "decision": "-1", "comment": "", "vote_seq": "1"}
+    with pytest.raises(pydantic.ValidationError) as excinfo:
+        form.validate(shared.vote.CastVoteForm, form_data)
+    flash_data = form.flash_error_data(shared.vote.CastVoteForm, excinfo.value.errors(), form_data)
+    monkeypatch.setattr(sessions, "form_error_pop", mock.AsyncMock(return_value=flash_data))
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page,
+            _release(),
+            _session(),
+            None,
+            "dev@project.apache.org",
+            _completed_vote_task(),
+        )
+
+    html = str(page.collect())
+    assert 'id="decision_2" value="-1" autocomplete="off" checked' in html
+    assert html.count(" checked") == 1
+    assert "Please give a reason when voting 0 or -1." in html
+
+
+@pytest.mark.asyncio
+async def test_unified_rendering_podling_round_one_advises_mentors_no_carryover(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
     monkeypatch.setattr(
-        vote.interaction,
-        "previous_round_one_recipient",
-        mock.AsyncMock(return_value="dev@myproject.apache.org"),
+        vote.user,
+        "is_binding_for_release",
+        mock.AsyncMock(side_effect=lambda _committee, _uid, vote_round: (vote_round == 2, "Project")),
     )
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=None))
 
-    podling_release = SimpleNamespace(
-        key="myproject-1.0.0",
-        committee=SimpleNamespace(key="myproject", is_podling=True),
-        current_vote_seq=2,
-        effective_vote_mode=sql.VoteMode.TRUSTED,
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        podling_thread_id="thread-abc",
-        project=SimpleNamespace(
-            key="myproject",
-            is_archived=False,
-            policy_vote_comment_template="Default comment",
-            policy_vote_comment_template_url="",
-            status=sql.ProjectStatus.ACTIVE,
-        ),
-        version="1.0.0",
-    )
+    podling_release = _release(current_vote_seq=1)
+    podling_release.committee.is_podling = True
+    podling_release.podling_thread_id = None
 
-    async with render_app.test_request_context("/vote/myproject/1.0.0"):
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page,
+            podling_release,
+            _session(),
+            None,
+            "dev@project.apache.org",
+            _completed_vote_task(),
+        )
+
+    html = str(page.collect())
+    assert "First-round votes are not carried over automatically to the second round" in html
+    assert "you will need to vote again in the second-round Incubator vote." in html
+    assert "carried" not in html.lower().replace("not carried over", "")
+
+
+@pytest.mark.asyncio
+async def test_unified_rendering_round_two_has_no_carryover_card(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    counted_vote_for_voter = mock.AsyncMock(return_value=None)
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", counted_vote_for_voter)
+
+    podling_release = _release(current_vote_seq=2)
+    podling_release.committee.is_podling = True
+    podling_release.podling_thread_id = "thread-abc"
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
         page = htm.Block()
         await vote._render_vote_authenticated(
             page,
@@ -366,18 +334,18 @@ async def test_trusted_rendering_round_two_carryover_shows_carried_card_and_resu
         )
 
     html = str(page.collect())
-    assert "You already cast a vote (carried from the first round)" in html
-    assert "Resubmit vote" in html
-    assert "first round PPMC ballot is being counted" in html
-    assert "listid=%3Cdev.myproject.apache.org%3E" in html
+    assert "You already cast a vote" not in html
+    assert "Submit vote" in html
+    assert "Resubmit vote" not in html
+    counted_vote_for_voter.assert_awaited_once_with(podling_release, 2, "voter")
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_shows_automatic_publish_location(
+async def test_unified_rendering_shows_automatic_publish_location(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=None))
     task = _completed_vote_task()
     task.task_args = {**task.task_args, "automatic_publish_when_resolved": True, "download_path_suffix": "sub/1.0.0"}
 
@@ -385,7 +353,7 @@ async def test_trusted_rendering_shows_automatic_publish_location(
         page = htm.Block()
         await vote._render_vote_authenticated(
             page,
-            _release(sql.VoteMode.TRUSTED),
+            _release(),
             _session(),
             "https://lists.apache.org/thread/abc",
             "dev@project.apache.org",
@@ -393,23 +361,61 @@ async def test_trusted_rendering_shows_automatic_publish_location(
         )
 
     html = str(page.collect())
-    assert "If this vote passes and every vote is +1, ATR will publish the release to" in html
+    assert "If this vote is resolved as passed, ATR will publish the release to" in html
     assert "/project/sub/1.0.0/</code>" in html
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_with_current_vote_seq_none_does_not_query_ballots(
+async def test_unified_rendering_shows_confirmed_email_status_card(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    latest_ballot_get = mock.AsyncMock()
-    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", latest_ballot_get)
+    confirmed_email = interaction.CountedVoteDetail(
+        asf_eid="reply-eid-123",
+        cast_at=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
+        choice=sql.VoteChoice.YES,
+        confirmed_by="chair",
+        is_binding=True,
+        source="email",
+        status_label="PMC Member (binding)",
+        voter_asf_uid="voter",
+        voter_email="voter@apache.org",
+        voter_fullname="Voter",
+        vote_round=None,
+    )
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=confirmed_email))
 
     async with render_app.test_request_context("/vote/project/1.0.0"):
         page = htm.Block()
         await vote._render_vote_authenticated(
             page,
-            _release(sql.VoteMode.TRUSTED, current_vote_seq=None),
+            _release(),
+            _session(),
+            None,
+            "dev@project.apache.org",
+            _completed_vote_task(),
+        )
+
+    html = str(page.collect())
+    assert "You already cast a vote" in html
+    assert "Confirmed email reply:" in html
+    assert "https://lists.apache.org/thread/reply-eid-123" in html
+    assert "Resubmit vote" in html
+
+
+@pytest.mark.asyncio
+async def test_unified_rendering_with_current_vote_seq_none_does_not_query_ballots(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    counted_vote_for_voter = mock.AsyncMock()
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", counted_vote_for_voter)
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page,
+            _release(current_vote_seq=None),
             _session(),
             None,
             "dev@project.apache.org",
@@ -421,30 +427,32 @@ async def test_trusted_rendering_with_current_vote_seq_none_does_not_query_ballo
     assert 'name="vote_seq" id="vote_seq"' in html
     assert 'name="vote_seq" id="vote_seq" value=' not in html
     assert "<textarea" not in html
-    latest_ballot_get.assert_not_awaited()
+    counted_vote_for_voter.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_with_start_mid_and_existing_ballot_places_recast_note_before_delivery(
+async def test_unified_rendering_with_start_mid_and_existing_ballot_places_recast_note_before_delivery(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    latest_ballot = _ballot(
-        release_key="project-1.0.0",
-        vote_seq=1,
-        voter_asf_uid="voter",
+    existing_vote = interaction.CountedVoteDetail(
+        cast_at=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
         choice=sql.VoteChoice.YES,
+        is_binding=True,
         receipt_message_id="receipt@apache.org",
-        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
+        source="atr",
+        status_label="PMC Member (binding)",
+        voter_asf_uid="voter",
+        voter_fullname="Voter",
+        vote_round=None,
     )
-    latest_ballot.id = 1
-    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", mock.AsyncMock(return_value=latest_ballot))
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=existing_vote))
 
     async with render_app.test_request_context("/vote/project/1.0.0"):
         page = htm.Block()
         await vote._render_vote_authenticated(
             page,
-            _release(sql.VoteMode.TRUSTED),
+            _release(),
             _session(),
             None,
             "dev@project.apache.org",
@@ -467,17 +475,17 @@ async def test_trusted_rendering_with_start_mid_and_existing_ballot_places_recas
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_with_start_mid_enables_form(
+async def test_unified_rendering_with_start_mid_enables_form(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=None))
 
     async with render_app.test_request_context("/vote/project/1.0.0"):
         page = htm.Block()
         await vote._render_vote_authenticated(
             page,
-            _release(sql.VoteMode.TRUSTED),
+            _release(),
             _session(),
             "https://lists.apache.org/thread/abc",
             "dev@project.apache.org",
@@ -492,33 +500,35 @@ async def test_trusted_rendering_with_start_mid_enables_form(
     assert "Resubmit vote" not in html
     assert "<textarea" in html
     assert 'name="vote_seq" id="vote_seq" value="1"' in html
-    assert 'name="vote_mode" id="vote_mode" value="trusted"' in html
+    assert 'name="vote_mode"' not in html
     assert 'type="submit" class="btn btn-primary" disabled' not in html
     assert 'name="decision" id="decision_0" value="+1" autocomplete="off" disabled' not in html
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_without_start_mid_disables_form_but_shows_latest_ballot(
+async def test_unified_rendering_without_start_mid_disables_form_but_shows_counted_vote(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    latest_ballot = _ballot(
-        release_key="project-1.0.0",
-        vote_seq=1,
-        voter_asf_uid="voter",
+    existing_vote = interaction.CountedVoteDetail(
+        cast_at=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
         choice=sql.VoteChoice.YES,
+        is_binding=True,
         receipt_message_id="receipt@apache.org",
-        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
+        source="atr",
+        status_label="PMC Member (binding)",
+        voter_asf_uid="voter",
+        voter_fullname="Voter",
+        vote_round=None,
     )
-    latest_ballot.id = 1
-    latest_ballot_get = mock.AsyncMock(return_value=latest_ballot)
-    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", latest_ballot_get)
+    counted_vote_for_voter = mock.AsyncMock(return_value=existing_vote)
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", counted_vote_for_voter)
 
     async with render_app.test_request_context("/vote/project/1.0.0"):
         page = htm.Block()
         await vote._render_vote_authenticated(
             page,
-            _release(sql.VoteMode.TRUSTED),
+            _release(),
             _session(),
             None,
             "dev@project.apache.org",
@@ -538,17 +548,16 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
     assert "disabled" in html
     assert "<textarea" not in html
     assert 'name="vote_seq" id="vote_seq" value="1"' in html
-    assert 'name="vote_mode" id="vote_mode" value="trusted"' in html
-    latest_ballot_get.assert_awaited_once_with("project-1.0.0", 1, "voter")
+    assert 'name="vote_mode"' not in html
+    counted_vote_for_voter.assert_awaited_once_with(_release(), 1, "voter")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.parametrize(
     ("is_podling", "podling_thread_id", "binding_by_round", "label"),
     [
-        (True, None, {1: True, 2: True}, "IPMC-binding, PPMC-binding"),
-        (True, None, {1: False, 2: True}, "IPMC-binding"),
+        (True, None, {1: True, 2: True}, "PPMC-binding"),
+        (True, None, {1: False, 2: True}, "Non-binding"),
         (True, None, {1: True, 2: False}, "PPMC-binding"),
         (True, None, {1: False, 2: False}, "Non-binding"),
         (True, "thread-abc", {2: True}, "Binding"),
@@ -558,7 +567,6 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
 async def test_vote_decision_labels_reflect_membership(
     render_app: quart.Quart,
     monkeypatch: pytest.MonkeyPatch,
-    vote_mode: sql.VoteMode,
     is_podling: bool,
     podling_thread_id: str | None,
     binding_by_round: dict[int | None, bool],
@@ -570,8 +578,8 @@ async def test_vote_decision_labels_reflect_membership(
         "is_binding_for_release",
         mock.AsyncMock(side_effect=lambda _committee, _uid, vote_round: (binding_by_round[vote_round], "Project")),
     )
-    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=None))
-    release = _release(vote_mode)
+    monkeypatch.setattr(vote.interaction, "counted_vote_for_voter", mock.AsyncMock(return_value=None))
+    release = _release()
     release.committee.is_podling = is_podling
     release.podling_thread_id = podling_thread_id
 
@@ -583,10 +591,10 @@ async def test_vote_decision_labels_reflect_membership(
     assert f"+1 ({label})" in html
     assert f"-1 ({label})" in html
     if is_podling and (podling_thread_id is None):
-        ppmc_word = "PPMC-binding" if binding_by_round[1] else "non-binding"
-        ipmc_word = "IPMC-binding" if binding_by_round[2] else "non-binding"
-        assert f"your vote is <strong>{ppmc_word}</strong> for podling approval." in html
-        assert f"your vote is <strong>{ipmc_word}</strong> for Incubator approval." in html
+        if binding_by_round[2]:
+            assert "First-round votes are not carried over automatically to the second round" in html
+        else:
+            assert "First-round votes are not carried over automatically to the second round" not in html
 
 
 def test_vote_task_warnings_renders_delivery_warnings() -> None:
@@ -683,12 +691,12 @@ async def _patch_render_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(vote.user, "is_binding_for_release", mock.AsyncMock(return_value=(True, "Project")))
 
 
-def _release(vote_mode: sql.VoteMode, current_vote_seq: int | None = 1) -> SimpleNamespace:
+def _release(current_vote_seq: int | None = 1) -> SimpleNamespace:
     return SimpleNamespace(
         key="project-1.0.0",
-        committee=SimpleNamespace(key="project", is_podling=False),
+        committee=SimpleNamespace(key="project", display_name="Project", is_podling=False),
         current_vote_seq=current_vote_seq,
-        effective_vote_mode=vote_mode,
+        expedited=False,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         podling_thread_id=None,
         project=SimpleNamespace(

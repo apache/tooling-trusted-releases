@@ -85,10 +85,10 @@ _IGNORE_GLOBS: Final = ("release_glob", "checker_glob", "primary_rel_path_glob",
 _PHASE_VOTE_FIELDS: Final[dict[sql.ReleasePhase, tuple[tuple[str, ...], tuple[str, ...]]]] = {
     sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT: (
         (),
-        ("vote_mode", "vote_resolved", "podling_thread_id", "voted_revision_number", "vote_thread_url"),
+        ("vote_resolved", "podling_thread_id", "voted_revision_number", "vote_thread_url"),
     ),
-    sql.ReleasePhase.RELEASE_CANDIDATE: (("vote_started", "vote_mode"), ("vote_resolved", "vote_thread_url")),
-    sql.ReleasePhase.RELEASE_PREVIEW: (("vote_started", "vote_resolved", "vote_mode"), ()),
+    sql.ReleasePhase.RELEASE_CANDIDATE: (("vote_started",), ("vote_resolved", "vote_thread_url")),
+    sql.ReleasePhase.RELEASE_PREVIEW: (("vote_started", "vote_resolved"), ()),
 }
 
 _QUARANTINE_STAGING_MINUTES: Final = 5
@@ -99,7 +99,7 @@ _SHA3_256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
 
 _VOTE_FIELD_PREREQUISITES: Final = {
     "current_vote_seq": ("vote_started",),
-    "voted_revision_number": ("current_vote_seq", "vote_started", "vote_mode"),
+    "voted_revision_number": ("current_vote_seq", "vote_started"),
 }
 
 _VOTING_PHASES: Final = frozenset({sql.ReleasePhase.RELEASE_CANDIDATE, sql.ReleasePhase.RELEASE_PREVIEW})

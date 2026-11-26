@@ -376,7 +376,7 @@ async def test_edit_policy_rejects_unknown_template_variables():
         is_active=True,
         committee_key="alpha",
         committee=None,
-        release_policy=SimpleNamespace(vote_mode=None, recipient_defaults={}),
+        release_policy=SimpleNamespace(recipient_defaults={}),
         mark_updated=lambda **_kwargs: None,
     )
     data = _MockData(project=project)

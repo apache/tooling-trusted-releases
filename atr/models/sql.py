@@ -75,8 +75,6 @@ class DistributionPlatformValue:
 class ApprovalAction(enum.StrEnum):
     ARCHIVE = "archive"
     DELETE = "delete"
-    EMAIL_VOTING = "email voting"
-    TRUSTED_VOTING = "trusted voting"
     UNARCHIVE = "unarchive"
 
 
@@ -332,7 +330,6 @@ class TaskType(enum.StrEnum):
     SYNC_KEYS_FROM_SVN = "sync_keys_from_svn"
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
-    VOTE_AUTO_RESOLVE = "vote_auto_resolve"
     VOTE_END_NOTIFY = "vote_end_notify"
     VOTE_INITIATE = "vote_initiate"
     WORKFLOW_STATUS = "workflow_status"
@@ -422,8 +419,6 @@ class TaskType(enum.StrEnum):
                 return "Targz integrity"
             case TaskType.TARGZ_STRUCTURE:
                 return "Targz structure"
-            case TaskType.VOTE_AUTO_RESOLVE:
-                return "Vote auto-resolution"
             case TaskType.VOTE_END_NOTIFY:
                 return "Vote end notification"
             case TaskType.VOTE_INITIATE:
@@ -451,11 +446,6 @@ class VersionMethod(enum.StrEnum):
     SIMPLE = "simple"
     SEMVER = "semver"
     CALVER = "calver"
-
-
-class VoteMode(enum.StrEnum):
-    EMAIL = "email"
-    TRUSTED = "trusted"
 
 
 class VoteChoice(enum.StrEnum):
@@ -687,10 +677,10 @@ def example(value: Any) -> dict[Literal["schema_extra"], dict[str, Any]]:
 # ApprovalRequest:
 class ApprovalRequest(sqlmodel.SQLModel, table=True):
     id: int | None = sqlmodel.Field(default=None, primary_key=True)
-    project_key: str | None = sqlmodel.Field(default=None)
+    project_key: str = sqlmodel.Field()
     committee_key: str = sqlmodel.Field()
     action: ApprovalAction = sqlmodel.Field()
-    cap_question_id: int | None = sqlmodel.Field(default=None, unique=True)
+    cap_question_id: int = sqlmodel.Field(unique=True)
     status: ApprovalStatus = sqlmodel.Field(default=ApprovalStatus.PENDING, index=True)
     outcome: str | None = None
     requested_by: str = sqlmodel.Field()
@@ -1143,7 +1133,6 @@ class Committee(sqlmodel.SQLModel, table=True):
     # True only if this is an incubator podling with a PPMC
     is_podling: bool = sqlmodel.Field(default=False)
     keys_mode: KeysMode = sqlmodel.Field(default=KeysMode.REFLECT)
-    vote_mode: VoteMode | None = sqlmodel.Field(default=None)
     mail_addresses: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
@@ -1218,10 +1207,6 @@ class Committee(sqlmodel.SQLModel, table=True):
         """Get the display name for the committee."""
         name = self.name or self.key.title()
         return f"{name} (Incubating)" if self.is_podling else name
-
-    @property
-    def effective_vote_mode(self) -> VoteMode:
-        return self.vote_mode or VoteMode.EMAIL
 
     @property
     def in_attic(self) -> bool:
@@ -1522,12 +1507,6 @@ Sincerely,
         return to, cc, bcc
 
     @property
-    def policy_vote_mode(self) -> VoteMode:
-        if self.committee is None:
-            return VoteMode.EMAIL
-        return self.committee.effective_vote_mode
-
-    @property
     def policy_min_hours(self) -> int:
         if ((policy := self.release_policy) is None) or (policy.min_hours is None):
             # TODO: Not sure what the default should be
@@ -1821,7 +1800,6 @@ class Release(sqlmodel.SQLModel, table=True):
         cascade_delete=True, sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True}
     )
 
-    vote_mode: VoteMode | None = sqlmodel.Field(default=None, **example(VoteMode.EMAIL))
     voted_revision_number: str | None = sqlmodel.Field(default=None, **example("00001"))
     current_vote_seq: int | None = sqlmodel.Field(default=None, index=True)
     vote_started: datetime.datetime | None = sqlmodel.Field(
@@ -1875,13 +1853,7 @@ class Release(sqlmodel.SQLModel, table=True):
     )
 
     # The combination of key and version must be unique
-    __table_args__ = (
-        sqlmodel.UniqueConstraint("project_key", "version", name="unique_project_version"),
-        sqlalchemy.CheckConstraint(
-            "NOT expedited OR vote_mode IS NULL OR vote_mode = 'TRUSTED'",
-            name="expedited_vote_mode_trusted",
-        ),
-    )
+    __table_args__ = (sqlmodel.UniqueConstraint("project_key", "version", name="unique_project_version"),)
 
     @property
     def committee(self) -> Committee | None:
@@ -1910,16 +1882,6 @@ class Release(sqlmodel.SQLModel, table=True):
             activity.append(self.released)
         now = datetime.datetime.now(datetime.UTC)
         return (now - max(activity)).days
-
-    @property
-    def effective_vote_mode(self) -> VoteMode:
-        if self.expedited:
-            if (self.vote_mode is not None) and (self.vote_mode != VoteMode.TRUSTED):
-                raise RuntimeError(f"Expedited release {self.key} has a non-trusted vote mode: {self.vote_mode.value}")
-            return VoteMode.TRUSTED
-        if (self.phase != ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (self.vote_mode is not None):
-            return self.vote_mode
-        return self.project.policy_vote_mode
 
     @property
     def safe_latest_revision_number(self) -> safe.RevisionNumber:
@@ -2692,13 +2654,34 @@ class User(sqlmodel.SQLModel, table=True):
 
 class VoteInterpretation(sqlmodel.SQLModel, table=True):
     release_key: str = sqlmodel.Field(foreign_key="release.key", primary_key=True, ondelete="CASCADE")
+    vote_seq: int = sqlmodel.Field(primary_key=True)
     asf_eid: str = sqlmodel.Field(primary_key=True)
+    vote_round: int | None = None
+    voter_asf_uid: str | None = sqlmodel.Field(default=None)
+    voter_email: str = sqlmodel.Field()
+    voter_fullname: str = sqlmodel.Field()
     choice: VoteChoice = sqlmodel.Field()
-    asf_uid: str = sqlmodel.Field()
+    is_binding_at_confirm: bool = sqlmodel.Field()
+    email_timestamp: datetime.datetime = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+    confirmed_by: str = sqlmodel.Field()
     created: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
     )
+
+    def model_post_init(self, _context):
+        if isinstance(self.choice, str):
+            self.choice = VoteChoice(self.choice)
+
+        if isinstance(self.email_timestamp, str):
+            self.email_timestamp = datetime.datetime.fromisoformat(self.email_timestamp)
+
+        if isinstance(self.created, str):
+            self.created = datetime.datetime.fromisoformat(self.created)
+
+    __table_args__ = (sqlalchemy.Index("ix_voteinterpretation_release_vote_seq", "release_key", "vote_seq"),)
 
 
 # WorkflowStatus:

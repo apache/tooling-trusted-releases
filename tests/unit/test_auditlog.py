@@ -64,7 +64,7 @@ async def test_write_release_log(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
             wrap(
                 {
                     "datetime": "2026-08-10T12:00:03.000Z",
-                    "action": "atr.storage.writers.vote.FoundationCommitter.cast_trusted",
+                    "action": "atr.storage.writers.vote.FoundationCommitter.cast",
                     "release_key": "proj-1.0",
                     "voter_asf_uid": "sbp",
                 }

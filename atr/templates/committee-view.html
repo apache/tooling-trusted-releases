@@ -104,28 +104,6 @@
 
   {% endif %}
 
-  <div class="card mb-4" id="voting">
-    <div class="card-header bg-light">
-      <h3 class="mb-0">Streamlined voting</h3>
-    </div>
-    <div class="card-body">
-      <p>
-        Streamlined voting is <strong>{{ "on" if committee.effective_vote_mode == "trusted" else "off" }}</strong> for all
-        projects of this committee.
-      </p>
-      <p class="text-muted">
-        With streamlined voting, people vote on the ATR website, and ATR sends a receipt for each vote to the
-        vote thread. {{ strings.STREAMLINED_VOTING_RULE }} Without it, people vote by replying to the vote
-        email. Turning streamlined voting on or off needs a PMC approval vote on CAP.
-      </p>
-      {% if vote_mode_form %}
-        {{ vote_mode_form }}
-      {% elif is_committee_member and vote_mode_error %}
-        <p class="text-muted mb-0">{{ vote_mode_error }}</p>
-      {% endif %}
-    </div>
-  </div>
-
   <div class="card mb-4">
     <div class="card-header bg-light">
       <h3 class="mb-0">Projects</h3>

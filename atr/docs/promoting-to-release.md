@@ -72,10 +72,7 @@ The layout within the release is decided separately:
 Publication to [ASF Distribution Area](https://downloads.apache.org/) happens in the finish phase,
 once the vote has resolved successfully. There are two ways to trigger it:
 
-* Automatically, by selecting "Automatically publish to SVN distribution area when this vote
-  resolves" when starting the vote. This option is offered when a committee member starts a
-  non-expedited vote with email voting. With streamlined voting, ATR always publishes automatically
-  after a passing vote in which every vote is +1.
+* Automatically, by selecting "Automatically publish to SVN distribution area when this vote resolves" when starting the vote. This option is offered when a committee member starts a non-expedited vote, and publishes to the configured SVN location once the final approving vote is resolved as passed.
 * Manually, by pressing the publish button on the finish page for the release.
 
 The publish form on the finish page shows the full path that the files will be published to, beneath

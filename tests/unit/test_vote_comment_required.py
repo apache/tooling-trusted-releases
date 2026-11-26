@@ -33,7 +33,6 @@ def _form_data(decision: str, comment: str) -> dict[str, str]:
         "decision": decision,
         "comment": comment,
         "vote_seq": "1",
-        "vote_mode": "trusted",
     }
 
 

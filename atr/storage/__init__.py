@@ -20,7 +20,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Literal, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -320,6 +320,65 @@ class WriteAsUserService(WriteAs):
         return self.__asf_uid
 
 
+class WriteAsVoteResolver(WriteAs):
+    def __init__(
+        self,
+        write: Write,
+        data: db.Session,
+        committee_key: str,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ):
+        self.__project_key = project_key
+        self.__version_key = version_key
+        warm = WriteAsReleaseManager(write, data, committee_key)
+        self.__vote = writers.vote.ReleaseManager(write, warm, data, committee_key)
+
+    async def resolve(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        vote_result: Literal["passed", "failed", "cancelled"],
+        asf_fullname: str,
+        resolution_body: str | None = None,
+        expected_vote_seq: int | None = None,
+        notify_when_finished: bool = False,
+        additional_cc: list[str] | None = None,
+        additional_bcc: list[str] | None = None,
+        early_reason: str = "",
+        *,
+        unattended: bool = False,
+    ) -> tuple[sql.Release, int | None, str, str | None]:
+        self.__ensure_target(project_key, version_key)
+        return await self.__vote.resolve(
+            project_key,
+            version_key,
+            vote_result,
+            asf_fullname,
+            resolution_body,
+            expected_vote_seq=expected_vote_seq,
+            notify_when_finished=notify_when_finished,
+            additional_cc=additional_cc,
+            additional_bcc=additional_bcc,
+            early_reason=early_reason,
+            unattended=unattended,
+        )
+
+    async def start_second_round(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        asf_fullname: str,
+        expected_vote_seq: int,
+    ) -> sql.Task:
+        self.__ensure_target(project_key, version_key)
+        return await self.__vote.start_second_round(project_key, version_key, asf_fullname, expected_vote_seq)
+
+    def __ensure_target(self, project_key: safe.ProjectKey, version_key: safe.VersionKey) -> None:
+        if (project_key != self.__project_key) or (version_key != self.__version_key):
+            raise AccessError("Not authorized for this release version", status=403)
+
+
 class WriteAsSystemService(WriteAs):
     def __init__(self, write: Write, data: db.Session):
         # Only the fixed service identity is valid here; anything else means
@@ -585,7 +644,8 @@ class Write:
         return write_as_outcome.result_or_raise()
 
     async def as_project_release_manager_outcome(
-        self, project_key: safe.ProjectKey
+        self,
+        project_key: safe.ProjectKey,
     ) -> outcome.Outcome[WriteAsReleaseManager]:
         project = await self.__data.project(str(project_key), _committee=True).demand(
             AccessError(f"Project not found: {project_key}", status=404)
@@ -595,9 +655,10 @@ class Write:
         asf_uid = self.__authorisation.asf_uid
         if asf_uid is None:
             return outcome.Error(AccessError("Not authorized", status=403))
-        is_pmc_member = self.__authorisation.is_member_of(project.committee.key)
-        is_designated_release_manager = user.is_release_manager(project.committee, asf_uid)
-        if (not is_pmc_member) and (not is_designated_release_manager):
+        if not (
+            self.__authorisation.is_member_of(project.committee.key)
+            or user.is_release_manager(project.committee, asf_uid)
+        ):
             return outcome.Error(AccessError(f"Not a release manager for {project.committee.key}", status=403))
         try:
             warm = WriteAsReleaseManager(self, self.__data, project.committee.key)
@@ -624,6 +685,65 @@ class Write:
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(wast)
+
+    async def as_vote_committee_member(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> WriteAsCommitteeMember:
+        write_as_outcome = await self.as_vote_committee_member_outcome(project_key, version_key)
+        return write_as_outcome.result_or_raise()
+
+    async def as_vote_committee_member_outcome(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> outcome.Outcome[WriteAsCommitteeMember]:
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key}", status=404)
+        )
+        if project.committee is None:
+            return outcome.Error(AccessError("No committee found for project - Invalid state", status=500))
+        if self.__authorisation.asf_uid is None:
+            return outcome.Error(AccessError("Not authorized", status=403))
+        voting_committee_key = await self.__voting_committee_key(project.committee, str(project_key), version_key)
+        if not self.__authorisation.is_member_of(voting_committee_key):
+            return outcome.Error(AccessError(f"Not a member of {voting_committee_key}", status=403))
+        try:
+            wacm = WriteAsCommitteeMember(self, self.__data, voting_committee_key)
+        except Exception as e:
+            return outcome.Error(e)
+        return outcome.Result(wacm)
+
+    async def as_vote_resolver(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> WriteAsVoteResolver:
+        write_as_outcome = await self.as_vote_resolver_outcome(project_key, version_key)
+        return write_as_outcome.result_or_raise()
+
+    async def as_vote_resolver_outcome(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> outcome.Outcome[WriteAsVoteResolver]:
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key}", status=404)
+        )
+        if project.committee is None:
+            return outcome.Error(AccessError("No committee found for project - Invalid state", status=500))
+        asf_uid = self.__authorisation.asf_uid
+        if asf_uid is None:
+            return outcome.Error(AccessError("Not authorized", status=403))
+        admitted = await self.__admits_vote_resolver(project.committee, str(project_key), asf_uid, version_key)
+        if not admitted:
+            return outcome.Error(AccessError(f"Not a release manager for {project.committee.key}", status=403))
+        try:
+            wavr = WriteAsVoteResolver(self, self.__data, project.committee.key, project_key, version_key)
+        except Exception as e:
+            return outcome.Error(e)
+        return outcome.Result(wavr)
 
     def ensure_release_writable(self, release: sql.Release) -> None:
         if not release.is_embargoed:
@@ -653,6 +773,35 @@ class Write:
         committees.sort(key=lambda c: c.key)
         # Return even standing committees
         return committees
+
+    async def __admits_vote_resolver(
+        self,
+        committee: sql.Committee,
+        project_key: str,
+        asf_uid: str,
+        version_key: safe.VersionKey,
+    ) -> bool:
+        if self.__authorisation.is_member_of(committee.key) or user.is_release_manager(committee, asf_uid):
+            return True
+        if not committee.is_podling:
+            return False
+        release = await self.__data.release(project_key=project_key, version=str(version_key)).get()
+        if (release is None) or (release.podling_thread_id is None):
+            return False
+        return self.__authorisation.is_member_of("incubator")
+
+    async def __voting_committee_key(
+        self,
+        committee: sql.Committee,
+        project_key: str,
+        version_key: safe.VersionKey,
+    ) -> str:
+        if not committee.is_podling:
+            return committee.key
+        release = await self.__data.release(project_key=project_key, version=str(version_key)).get()
+        if (release is not None) and (release.podling_thread_id is not None):
+            return "incubator"
+        return committee.key
 
 
 # Do not rename this interface
@@ -789,3 +938,23 @@ async def write_as_user_service(asf_uid: str) -> AsyncGenerator[WriteAsUserServi
     async with db.session() as data:
         w = Write(authorisation, data)
         yield WriteAsUserService(asf_uid, w, data)
+
+
+@contextlib.asynccontextmanager
+async def write_as_vote_committee_member(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    asf_uid: principal.UID = principal.ArgumentNone,
+) -> AsyncGenerator[WriteAsCommitteeMember]:
+    async with write(asf_uid) as w:
+        yield await w.as_vote_committee_member(project_key, version_key)
+
+
+@contextlib.asynccontextmanager
+async def write_as_vote_resolver(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    asf_uid: principal.UID = principal.ArgumentNone,
+) -> AsyncGenerator[WriteAsVoteResolver]:
+    async with write(asf_uid) as w:
+        yield await w.as_vote_resolver(project_key, version_key)

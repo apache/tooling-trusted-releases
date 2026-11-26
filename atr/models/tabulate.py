@@ -50,6 +50,10 @@ class VoteEmail(schema.Strict):
     fraction: str | None = schema.default_example(None, "+0.5")
     quotation: str = schema.example("+1 (Binding)")
     updated: bool = schema.example(True)
+    asf_uid: str | None = schema.default_example(None, "user")
+    unixtime: int | None = schema.default_example(None, 1714564800)
+    confirmed: bool = schema.default_example(False, True)
+    confirmed_by: str | None = schema.default_example(None, "chair")
 
     @pydantic.field_validator("status", mode="before")
     @classmethod
@@ -80,5 +84,3 @@ class VoteDetails(schema.Strict):
         }
     )
     summary: dict[str, int] = schema.example({"user": 1})
-    passed: bool = schema.example(True)
-    outcome: str = schema.example("The vote passed.")

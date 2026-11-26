@@ -87,6 +87,9 @@ async def category_and_release(
 
     # This keeps the member and release manager checks separate because the categories below need both
     is_pmc_member = user.is_committee_member(release.committee, session.uid)
+    if _is_podling_round_two(release):
+        is_ipmc_member, _incubator = await user.is_binding_for_release(release.committee, session.uid, 2)
+        is_pmc_member = is_pmc_member or is_ipmc_member
     is_release_manager = (not release.expedited) and user.is_release_manager(release.committee, session.uid)
 
     if is_pmc_member and is_release_manager:
@@ -220,7 +223,6 @@ async def _append_cast_vote_form(
 ) -> None:
     defaults: dict[str, object] = {
         "vote_seq": release.current_vote_seq,
-        "vote_mode": release.effective_vote_mode,
     }
     if (skip is None) or ("comment" not in skip):
         page.p[
@@ -425,27 +427,26 @@ def _render_binding_status_round_one(
     page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool
 ) -> str:
     if is_ppmc_member:
-        ppmc_status = [f"As {ppmc_membership}, your vote is ", htpy.strong["PPMC-binding"], " for podling approval. "]
+        ppmc_status: list[str | htm.Element] = [
+            f"As {ppmc_membership}, your vote is ",
+            htpy.strong["PPMC-binding"],
+            " in this first-round podling vote.",
+        ]
     else:
         ppmc_status = [
             f"You are not {ppmc_membership}, so your vote is ",
             htpy.strong["non-binding"],
-            " for podling approval. ",
+            " in this first-round podling vote.",
         ]
     if is_ipmc_member:
-        ipmc_status = [
-            "As an Incubator PMC member, your vote is ",
-            htpy.strong["IPMC-binding"],
-            " for Incubator approval.",
-        ]
-    else:
-        ipmc_status = [
-            "You are not an Incubator PMC member, so your vote is ",
-            htpy.strong["non-binding"],
-            " for Incubator approval.",
-        ]
-    page.p[ppmc_status, ipmc_status]
-    return user.round_one_binding_label(is_ppmc_member, is_ipmc_member)
+        ppmc_status.extend(
+            [
+                " First-round votes are not carried over automatically to the second round, "
+                "so as an Incubator PMC member you will need to vote again in the second-round Incubator vote.",
+            ]
+        )
+    page.p[ppmc_status]
+    return "PPMC-binding" if is_ppmc_member else "Non-binding"
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
@@ -530,9 +531,7 @@ def _render_publish_location(page: htm.Block, release: sql.Release, latest_vote_
         return
     suffix = latest_vote_task.task_args.get("download_path_suffix")
     location = util.publish_location(release.committee, safe.RelPath(suffix) if isinstance(suffix, str) else None)
-    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
-        condition = "passes and every vote is +1"
-    elif release.committee.is_podling and (release.podling_thread_id is None):
+    if release.committee.is_podling and (release.podling_thread_id is None):
         condition = "and the Incubator PMC vote both pass"
     else:
         condition = "is resolved as passed"
@@ -698,41 +697,39 @@ async def _render_section_vote(
         await _render_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
 
 
-async def _render_trusted_vote_authenticated(
+async def _render_vote_authenticated(
     page: htm.Block,
     release: sql.Release,
-    session: web.Committer,
+    session: web.Committer | None,
     archive_url: str | None,
     vote_recipient: str,
     latest_vote_task: sql.Task | None,
 ) -> None:
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
+    if session is None:
+        raise ValueError("Session required for authenticated vote")
 
-    latest_ballot = None
+    counted_vote = None
     if release.current_vote_seq is not None:
-        latest_ballot = await interaction.effective_latest_ballot_for_voter(
+        counted_vote = await interaction.counted_vote_for_voter(
             release,
             release.current_vote_seq,
             session.uid,
         )
 
-    vote_round = interaction.trusted_vote_round(release)
+    vote_round = interaction.vote_round_for_release(release)
     potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
 
-    if latest_ballot is not None:
-        is_carried = (latest_ballot.vote_round == 1) and (vote_round == 2)
-        receipt_recipient: str | None = vote_recipient
-        if is_carried and (release.current_vote_seq is not None):
-            receipt_recipient = await interaction.previous_round_one_recipient(release, release.current_vote_seq)
-        page.append(_trusted_vote_status(latest_ballot, receipt_recipient, is_carried=is_carried))
+    if counted_vote is not None:
+        page.append(_vote_status_card(counted_vote, vote_recipient, expedited=release.expedited))
         page.p[
             "Submitting again records a new ballot. New ballots during the voting period always replace old ballots."
         ]
 
     task_mid = interaction.task_mid_get(latest_vote_task) if (latest_vote_task is not None) else None
     casting_enabled = (release.current_vote_seq is not None) and (task_mid is not None)
-    submit_label = "Resubmit vote" if (latest_ballot is not None) else "Submit vote"
+    submit_label = "Resubmit vote" if (counted_vote is not None) else "Submit vote"
 
     if casting_enabled:
         _render_vote_delivery(
@@ -740,8 +737,7 @@ async def _render_trusted_vote_authenticated(
             archive_url,
             release,
             vote_recipient,
-            trusted_vote=True,
-            recast=latest_ballot is not None,
+            recast=counted_vote is not None,
         )
         _render_publish_location(page, release, latest_vote_task)
         await _append_cast_vote_form(page, release, potency, submit_label=submit_label)
@@ -759,41 +755,16 @@ async def _render_trusted_vote_authenticated(
     )
 
 
-async def _render_vote_authenticated(
-    page: htm.Block,
-    release: sql.Release,
-    session: web.Committer | None,
-    archive_url: str | None,
-    vote_recipient: str,
-    latest_vote_task: sql.Task | None,
-) -> None:
-    if release.committee is None:
-        raise ValueError(errors.RELEASE_NO_COMMITTEE)
-    if session is None:
-        raise ValueError("Session required for authenticated vote")
-
-    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
-        await _render_trusted_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
-        return
-
-    vote_round = interaction.trusted_vote_round(release)
-    potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
-    _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
-    _render_publish_location(page, release, latest_vote_task)
-    await _append_cast_vote_form(page, release, potency)
-
-
 def _render_vote_delivery(
     page: htm.Block,
     archive_url: str | None,
     release: sql.Release,
     vote_recipient: str,
     *,
-    trusted_vote: bool,
     recast: bool = False,
 ) -> None:
-    if trusted_vote and archive_url:
-        prefix = "A new submission will be" if recast else "Your vote will be"
+    prefix = "A new submission will be" if recast else "Your vote will be"
+    if archive_url:
         page.p[
             prefix,
             " recorded by ATR and a receipt will be queued for ",
@@ -802,19 +773,8 @@ def _render_vote_delivery(
             htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"],
             ").",
         ]
-    elif trusted_vote:
-        prefix = "A new submission will be" if recast else "Your vote will be"
-        page.p[prefix, " recorded by ATR and a receipt will be queued for ", htpy.code[vote_recipient], "."]
-    elif archive_url:
-        page.p[
-            "Your vote will be sent to ",
-            htpy.code[vote_recipient],
-            " (",
-            htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"],
-            ").",
-        ]
     else:
-        page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
+        page.p[prefix, " recorded by ATR and a receipt will be queued for ", htpy.code[vote_recipient], "."]
     if banner := render.archived_project_banner(release.project, errors.RELEASE_ACTIONS_DISABLED):
         page.append(banner)
 
@@ -911,41 +871,6 @@ def _trusted_casting_disabled_notice(archive_url: str | None, vote_recipient: st
     return htm.div(".alert.alert-info.mb-3", role="alert")[children]
 
 
-def _trusted_vote_status(
-    latest_ballot: sql.BallotPaper,
-    vote_recipient: str | None,
-    *,
-    is_carried: bool = False,
-) -> htm.Element:
-    header = "You already cast a vote (carried from the first round)" if is_carried else "You already cast a vote"
-    body = htm.Block(htm.div, classes=".card-body")
-    body.p(".mb-2")["Choice: ", htpy.strong[latest_ballot.choice.value]]
-    body.p(".mb-2")["Recorded: ", resolve.format_utc(latest_ballot.created)]
-    receipt_class = ".mb-2" if is_carried else ".mb-0"
-    if vote_recipient is None:
-        body.p(receipt_class)["Receipt message ID: ", htpy.code[latest_ballot.receipt_message_id]]
-    else:
-        receipt_archive_url = shared.vote.message_id_source_archive_url(
-            latest_ballot.receipt_message_id, vote_recipient
-        )
-        body.p(receipt_class)[
-            "Receipt message ID: ",
-            htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[
-                htpy.code[latest_ballot.receipt_message_id]
-            ],
-        ]
-    if is_carried:
-        body.div(".alert.alert-info.mb-0", role="alert")[
-            "Your first round PPMC ballot is being counted as a binding Incubator vote in this round ",
-            "because you are on the Incubator PMC. Submitting a new ballot below will replace your ",
-            "carried vote for this round.",
-        ]
-    return htm.div(".card.mb-3")[
-        htm.div(".card-header.bg-light")[header],
-        body.collect(),
-    ]
-
-
 def _vote_committee_name(release: sql.Release) -> str:
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
@@ -1005,6 +930,40 @@ def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> 
     if _is_podling_round_two(release):
         return util.INCUBATOR_GENERAL_ADDRESS
     return f"dev@{release.committee.key}.apache.org"
+
+
+def _vote_status_card(
+    counted_vote: interaction.CountedVoteDetail,
+    vote_recipient: str | None,
+    *,
+    expedited: bool = False,
+) -> htm.Element:
+    body = htm.Block(htm.div, classes=".card-body")
+    body.p(".mb-2")["Choice: ", htpy.strong[counted_vote.choice.value]]
+    body.p(".mb-2")["Recorded: ", resolve.format_utc(counted_vote.cast_at)]
+    if (counted_vote.source == "email") and counted_vote.asf_eid:
+        email_url = f"https://lists.apache.org/thread/{counted_vote.asf_eid}"
+        body.p(".mb-0")[
+            "Confirmed email reply: ",
+            htpy.a(href=email_url, target="_blank", rel="noopener")[htpy.code[counted_vote.asf_eid]],
+        ]
+    elif counted_vote.receipt_message_id:
+        if (vote_recipient is None) or expedited:
+            body.p(".mb-0")["Receipt message ID: ", htpy.code[counted_vote.receipt_message_id]]
+        else:
+            receipt_archive_url = shared.vote.message_id_source_archive_url(
+                counted_vote.receipt_message_id, vote_recipient
+            )
+            body.p(".mb-0")[
+                "Receipt message ID: ",
+                htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[
+                    htpy.code[counted_vote.receipt_message_id]
+                ],
+            ]
+    return htm.div(".card.mb-3")[
+        htm.div(".card-header.bg-light")["You already cast a vote"],
+        body.collect(),
+    ]
 
 
 def _voting_committee_membership(binding_committee: str, vote_round: int | None) -> str:

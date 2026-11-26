@@ -21,7 +21,6 @@ from typing import Literal, Self
 import pydantic
 
 import atr.form as form
-import atr.models.sql as sql
 
 
 def message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
@@ -43,7 +42,6 @@ class CastVoteForm(form.Form):
         max_length=50_000,
     )
     vote_seq: form.OptionalInt = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
-    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
 
     @pydantic.model_validator(mode="after")
     def _validate_comment(self) -> Self:

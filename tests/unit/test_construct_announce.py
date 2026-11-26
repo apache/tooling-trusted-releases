@@ -200,7 +200,6 @@ async def test_start_vote_subject_and_body_renders_defaults(
         committee=committee,
         project=project,
         commit_hash=commit_hash,
-        effective_vote_mode=sql.VoteMode.TRUSTED,
     )
     revision = SimpleNamespace(number="1", tag=None)
 
@@ -257,7 +256,6 @@ async def test_start_vote_body_renders_commit_token(monkeypatch, commit_hash: st
         committee=committee,
         project=project,
         commit_hash=commit_hash,
-        effective_vote_mode=sql.VoteMode.TRUSTED,
     )
     revision = SimpleNamespace(number="1", tag=None)
 
@@ -301,19 +299,11 @@ async def test_start_vote_body_renders_first_round_paragraph_only_where_template
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("vote_mode", "instructions"),
-    [
-        (sql.VoteMode.EMAIL, "You can vote on ATR at the URL above, or manually by replying to this email."),
-        (sql.VoteMode.TRUSTED, "Please vote on ATR at the URL above. Replies to this email are not counted."),
-    ],
-)
-async def test_start_vote_body_tells_voters_how_to_vote_in_each_mode(
-    monkeypatch, vote_mode: sql.VoteMode, instructions: str
-) -> None:
+async def test_start_vote_body_tells_voters_how_to_vote(monkeypatch) -> None:
     template = sql.Project(key="x").policy_start_vote_default
+    instructions = "You can vote on ATR at the URL above, or manually by replying to this email."
 
-    body = await _second_round_start_vote_body(monkeypatch, template, vote_mode)
+    body = await _second_round_start_vote_body(monkeypatch, template)
 
     assert f"\n\n{instructions}\n\nThe vote is open for 72 hours." in body
 
@@ -336,9 +326,7 @@ def _mock_session_factory(data: MockDBSession):
     return _session
 
 
-async def _second_round_start_vote_body(
-    monkeypatch, template: str, vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED
-) -> str:
+async def _second_round_start_vote_body(monkeypatch, template: str) -> str:
     committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
@@ -347,9 +335,7 @@ async def _second_round_start_vote_body(
         homepage=None,
         repositories=[],
     )
-    release = SimpleNamespace(
-        key="myproject-1.0.0", committee=committee, project=project, commit_hash=None, effective_vote_mode=vote_mode
-    )
+    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=None)
     revision = SimpleNamespace(number="1", tag=None)
 
     monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")

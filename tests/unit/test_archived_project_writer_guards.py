@@ -518,29 +518,55 @@ async def test_sbom_generate_revision_blocks_retired() -> None:
 
 @pytest.mark.asyncio
 async def test_vote_resolve_release_blocks_retired_after_merge() -> None:
+    stale_release = SimpleNamespace(
+        key=sql.release_key("project", "1.0.0"),
+        project=_active_project(),
+        project_key="project",
+        version="1.0.0",
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        committee=SimpleNamespace(key="project", is_podling=False),
+        current_vote_seq=1,
+        podling_thread_id=None,
+        expedited=True,
+        vote_started=datetime.datetime.now(datetime.UTC),
+        vote_resolved=None,
+    )
+    retired_release = _retired_release()
+
     data = mock.MagicMock()
-    merged = _retired_release()
-    data.merge = mock.AsyncMock(return_value=merged)
+    expired = {"called": False}
+
+    def _on_expire_all() -> None:
+        expired["called"] = True
+
+    def _release_query(**_kwargs: object) -> mock.MagicMock:
+        if expired["called"]:
+            return _query_returning(retired_release)
+        return _query_returning(stale_release)
+
+    data.release = mock.MagicMock(side_effect=_release_query)
+    data.execute = mock.AsyncMock(return_value=mock.MagicMock(scalar_one_or_none=mock.MagicMock(return_value=None)))
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.expire_all = mock.MagicMock(side_effect=_on_expire_all)
+
     writer = object.__new__(vote.CommitteeMember)
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
     writer._ReleaseManager__write = mock.MagicMock()
 
-    stub_release = SimpleNamespace(
-        project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True, key="project")
-    )
     with pytest.raises(storage.AccessError, match="archived"):
-        await writer._ReleaseManager__resolve_release(
+        await writer.resolve(
             safe.ProjectKey("project"),
-            stub_release,
-            None,
-            "passed",
-            SimpleNamespace(),
+            safe.VersionKey("1.0.0"),
+            "cancelled",
             "Chair",
-            "body",
+            "Cancelled",
         )
-    data.merge.assert_awaited_once_with(stub_release)
+    data.begin_immediate.assert_awaited_once()
+    data.expire_all.assert_called_once()
+    assert data.rollback.await_count == 2
 
 
 @pytest.mark.asyncio

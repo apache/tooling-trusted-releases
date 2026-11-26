@@ -27,7 +27,6 @@ import atr.mail as mail
 import atr.models.args as args
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.tasks as tasks
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -217,91 +216,10 @@ class CommitteeMember(ReleaseManager):
         )
         return True
 
-    async def vote_mode_request_abandon(self, approval_id: int, error: str) -> None:
-        await self.__data.begin_immediate()
-        try:
-            approval = await self.__pending_vote_mode_request(approval_id)
-            approval.status = sql.ApprovalStatus.FAILED
-            approval.error = error
-            await self.__data.commit()
-        except Exception:
-            await self.__data.rollback()
-            raise
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            committee_key=self.__committee_key,
-            approval_request_id=approval_id,
-            approval_status=sql.ApprovalStatus.FAILED.value,
-            error=error,
-        )
-
-    async def vote_mode_request_record(self, approval_id: int, cap_question_id: int) -> None:
-        await self.__data.begin_immediate()
-        try:
-            approval = await self.__pending_vote_mode_request(approval_id)
-            approval.cap_question_id = cap_question_id
-            await self.__data.commit()
-        except Exception:
-            await self.__data.rollback()
-            raise
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            committee_key=self.__committee_key,
-            approval_request_id=approval_id,
-            cap_question_id=cap_question_id,
-        )
-
-    async def vote_mode_request_reserve(self, action: sql.ApprovalAction, closes_at: datetime.datetime) -> int:
-        await self.__data.begin_immediate()
-        try:
-            committee = await self.__load_committee()
-            if action != interaction.committee_vote_mode_request_action(committee):
-                raise storage.AccessError("The committee's voting changed, please refresh and try again", status=409)
-            if (error := await interaction.committee_vote_mode_request_error(committee, self.__data)) is not None:
-                raise storage.AccessError(error, status=409)
-            approval = sql.ApprovalRequest(
-                committee_key=self.__committee_key,
-                action=action,
-                requested_by=self.__asf_uid,
-                closes_at=closes_at,
-            )
-            self.__data.add(approval)
-            await self.__data.flush()
-            approval_id = util.unwrap(approval.id)
-            await tasks.cap_approval_resolve(
-                approval_id,
-                schedule=closes_at + constants.CAP_RESOLVE_INITIAL_DELAY,
-                caller_data=self.__data,
-            )
-            await self.__data.commit()
-        except Exception:
-            await self.__data.rollback()
-            raise
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            committee_key=self.__committee_key,
-            approval_request_id=approval_id,
-            approval_action=action.value,
-            closes_at=closes_at.isoformat(),
-        )
-        return approval_id
-
     async def __load_committee(self) -> sql.Committee:
         return await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
         )
-
-    async def __pending_vote_mode_request(self, approval_id: int) -> sql.ApprovalRequest:
-        approval = await self.__data.approval_request(
-            id=approval_id,
-            committee_key=self.__committee_key,
-            project_key=None,
-            cap_question_id=None,
-            status=sql.ApprovalStatus.PENDING,
-        ).get()
-        if approval is None:
-            raise storage.AccessError(f"Approval request {approval_id} is no longer waiting for a CAP vote", status=409)
-        return approval
 
 
 class FoundationAdmin(CommitteeMember):

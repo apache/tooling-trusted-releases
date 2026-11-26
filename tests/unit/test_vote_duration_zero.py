@@ -43,7 +43,6 @@ _VOTING_BASE = {
     "subject": "[VOTE] Release Apache Test 1.0",
     "subject_template_hash": "abc",
     "body": "Please vote.",
-    "vote_mode": "email",
     "rendered_revision": "00001",
 }
 

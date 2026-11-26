@@ -48,10 +48,7 @@ _TEMPLATE_LABELS: Final[dict[TemplateKind, str]] = {
     "start_vote": "vote email template",
     "vote_comment": "vote comment template",
 }
-_VOTE_INSTRUCTIONS: Final[dict[sql.VoteMode, str]] = {
-    sql.VoteMode.EMAIL: "You can vote on ATR at the URL above, or manually by replying to this email.",
-    sql.VoteMode.TRUSTED: "Please vote on ATR at the URL above. Replies to this email are not counted.",
-}
+_VOTE_INSTRUCTIONS: Final[str] = "You can vote on ATR at the URL above, or manually by replying to this email."
 
 
 class _AnnounceSubjectValues(TypedDict):
@@ -572,7 +569,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "REVISION": revision_number,
         "TAG": revision_tag,
         "VERSION": str(options.version_key),
-        "VOTE_INSTRUCTIONS": _VOTE_INSTRUCTIONS[release.effective_vote_mode],
+        "VOTE_INSTRUCTIONS": _VOTE_INSTRUCTIONS,
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }

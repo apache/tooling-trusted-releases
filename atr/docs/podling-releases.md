@@ -64,12 +64,12 @@ Whose vote counts differs between the rounds, and ATR labels votes to match:
 A PPMC member who is not also a member of the Incubator PMC therefore has a formal vote in the first
 round, but a non-binding vote in the second.
 
-Some options on the vote form behave differently for a podling:
+Some options and rules behave differently for a podling:
 
-* If you ask ATR to publish the release automatically when the vote resolves, that choice is carried
-  over to the second round, and publication happens once the second round passes.
-* Podlings cannot use [streamlined voting](project-configuration#vote), because the second round is
-  the Incubator PMC's vote. The release manager resolves both rounds.
+* If you ask ATR to publish the release automatically when the vote resolves, that choice is carried over to the second round, and publication happens once the second round passes.
+* First-round PPMC ballots and confirmed email votes are **not** carried over to the second round. Incubator PMC members who voted in the first round (such as podling mentors) must cast or confirm their vote again in the second-round Incubator vote.
+* Confirming mailing-list replies on the resolve page (or via `POST /api/vote/confirm`) requires PPMC membership in the first round and Incubator PMC membership in the second round.
+* PPMC members and designated release managers can resolve both rounds, and Incubator PMC members can also resolve the second round.
 
 See [Vote phase](vote-phase) and [Staging and voting](staging-and-voting) for everything that is
 common to all votes.

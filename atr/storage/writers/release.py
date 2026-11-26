@@ -1019,11 +1019,10 @@ class CommitteeParticipant(FoundationCommitter):
         release_key: safe.ReleaseKey,
         expected_revision: safe.RevisionNumber | None,
         *,
-        expected_vote_mode: sql.VoteMode | None = None,
         promote: bool,
         expected_podling_thread_id: str | None = None,
         acknowledged_concerns: frozenset[str] = frozenset(),
-    ) -> tuple[sql.Release, int, sql.VoteMode, safe.RevisionNumber]:
+    ) -> tuple[sql.Release, int, safe.RevisionNumber]:
         release_for_pre_checks = await self.__data.release(
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
         ).demand(storage.AccessError("Release candidate draft not found", status=404))
@@ -1035,16 +1034,6 @@ class CommitteeParticipant(FoundationCommitter):
         if (expected_revision is not None) and (revision_number != expected_revision):
             raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
         revision_for_cas = expected_revision if (expected_revision is not None) else revision_number
-        if promote:
-            if release_for_pre_checks.project.committee is not None:
-                await self.__data.refresh(release_for_pre_checks.project.committee, ["vote_mode"])
-            vote_mode = release_for_pre_checks.effective_vote_mode
-        else:
-            vote_mode = release_for_pre_checks.vote_mode
-            if vote_mode is None:
-                raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
-        if (expected_vote_mode is not None) and (vote_mode != expected_vote_mode):
-            raise storage.AccessError("This release's vote mode does not allow that action", status=409)
 
         # Check for ongoing tasks
         if promote:
@@ -1110,7 +1099,6 @@ class CommitteeParticipant(FoundationCommitter):
             values |= {"vote_started": now, "vote_resolved": None, "current_vote_seq": vote_seq}
         if promote:
             values["phase"] = sql.ReleasePhase.RELEASE_CANDIDATE
-            values["vote_mode"] = vote_mode
             values["voted_revision_number"] = str(revision_for_cas)
         stmt = sqlmodel.update(sql.Release).where(
             via(sql.Release.key) == release_for_pre_checks.key,
@@ -1138,7 +1126,7 @@ class CommitteeParticipant(FoundationCommitter):
         if result.rowcount != 1:
             raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
         await self.__data.refresh(release_for_pre_checks, attribute_names=list(values))
-        return release_for_pre_checks, vote_seq, vote_mode, revision_number
+        return release_for_pre_checks, vote_seq, revision_number
 
     async def __required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
         # Avoid a filesystem walk when the DB has no concern rows at all

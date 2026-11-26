@@ -16,7 +16,6 @@
 # under the License.
 
 import datetime
-import unittest.mock as mock
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
@@ -25,7 +24,6 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
-import atr.api
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.models.sql as sql
@@ -47,166 +45,227 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
 
 
 @pytest.mark.asyncio
-async def test_api_vote_tabulate_trusted_surfaces_is_carried_for_carried_ballot(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    detail = interaction.TrustedBallotDetail(
-        cast_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
-        choice=sql.VoteChoice.YES,
-        comment="",
-        is_binding=True,
-        is_carried=True,
-        receipt_message_id="r1@apache.org",
-        revision_number_at_cast="00001",
-        status_label="Binding",
-        voter_asf_uid="ipmc",
-        voter_fullname="IPMC Member",
-        vote_round=1,
-    )
-    summary = interaction.TrustedVoteSummary(binding_votes_yes=1)
-    monkeypatch.setattr(atr.api.interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
-    monkeypatch.setattr(
-        atr.api.interaction,
-        "trusted_ballot_details_from_ballots",
-        mock.AsyncMock(return_value=([detail], summary)),
-    )
+async def test_counted_vote_details_deduplicates_and_applies_precedence(sqlite_sessionmaker) -> None:
+    t1 = datetime.datetime(2026, 1, 1, 10, 0, tzinfo=datetime.UTC)
+    t2 = datetime.datetime(2026, 1, 1, 11, 0, tzinfo=datetime.UTC)
+    t3 = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 
-    release = SimpleNamespace(
-        key="myproject-1.0.0",
-        committee=SimpleNamespace(key="myproject", is_podling=True),
-        current_vote_seq=2,
-        podling_thread_id="thread-abc",
-    )
+    async with sqlite_sessionmaker() as data:
+        data.add_all(
+            [
+                # Intra-source ATR: latest BallotPaper id wins even if created differs
+                _ballot(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    voter_asf_uid="alice",
+                    choice=sql.VoteChoice.NO,
+                    receipt_message_id="r-alice-1@apache.org",
+                    created=t2,
+                ),
+                _ballot(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    voter_asf_uid="alice",
+                    choice=sql.VoteChoice.YES,
+                    comment="Verified checksums",
+                    receipt_message_id="r-alice-2@apache.org",
+                    created=t1,
+                ),
+                # Cross-source email newer than ATR ballot -> email wins
+                _ballot(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    voter_asf_uid="bob",
+                    choice=sql.VoteChoice.NO,
+                    receipt_message_id="r-bob@apache.org",
+                    created=t1,
+                ),
+                _interpretation(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    asf_eid="eid-bob-old",
+                    voter_asf_uid="bob",
+                    voter_email="bob@apache.org",
+                    choice=sql.VoteChoice.ABSTAIN,
+                    is_binding_at_confirm=True,
+                    email_timestamp=t2,
+                    created=t1,
+                ),
+                _interpretation(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    asf_eid="eid-bob-new",
+                    voter_asf_uid="bob",
+                    voter_email="bob@apache.org",
+                    choice=sql.VoteChoice.YES,
+                    is_binding_at_confirm=True,
+                    email_timestamp=t2,
+                    created=t3,
+                ),
+                # Cross-source exact timestamp tie -> ATR ballot wins
+                _ballot(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    voter_asf_uid="carol",
+                    choice=sql.VoteChoice.ABSTAIN,
+                    receipt_message_id="r-carol@apache.org",
+                    created=t2,
+                ),
+                _interpretation(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    asf_eid="eid-carol",
+                    voter_asf_uid="carol",
+                    voter_email="carol@apache.org",
+                    choice=sql.VoteChoice.YES,
+                    is_binding_at_confirm=True,
+                    email_timestamp=t2,
+                    created=t3,
+                ),
+                # Unmapped personal email deduplicated case-insensitively by email:<lower>
+                _interpretation(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    asf_eid="eid-ext-1",
+                    voter_asf_uid=None,
+                    voter_email="User@Example.org",
+                    choice=sql.VoteChoice.YES,
+                    is_binding_at_confirm=False,
+                    email_timestamp=t1,
+                    created=t1,
+                ),
+                _interpretation(
+                    release_key="project-1.0.0",
+                    vote_seq=1,
+                    vote_round=None,
+                    asf_eid="eid-ext-2",
+                    voter_asf_uid=None,
+                    voter_email="user@example.org",
+                    choice=sql.VoteChoice.NO,
+                    is_binding_at_confirm=False,
+                    email_timestamp=t3,
+                    created=t3,
+                ),
+            ]
+        )
+        await data.commit()
 
-    entries, _summary, _passed = await atr.api._vote_tabulate_trusted(release, is_trusted=True)
+        release = SimpleNamespace(key="project-1.0.0")
+        details, summary = await interaction.counted_vote_details_and_summary(release, 1, data)
+        only_summary = await interaction.counted_vote_summary(release, 1, data)
+        bob_vote = await interaction.counted_vote_for_voter(release, 1, "bob", data)
+        missing_vote = await interaction.counted_vote_for_voter(release, 1, "nobody", data)
 
-    assert entries is not None
-    assert len(entries) == 1
-    entry = entries[0]
-    assert entry.is_carried is True
-    assert entry.vote_round == 1
-    assert entry.receipt_message_id == "r1@apache.org"
+    assert summary == only_summary
+    assert summary.binding_votes == 3
+    assert summary.binding_votes_yes == 2
+    assert summary.binding_votes_abstain == 1
+    assert summary.binding_votes_no == 0
+    assert summary.non_binding_votes == 1
+    assert summary.non_binding_votes_no == 1
+
+    assert [(d.voter_asf_uid or d.voter_email, d.source, d.choice, d.status_label) for d in details] == [
+        ("alice", "atr", sql.VoteChoice.YES, "PMC Member (binding)"),
+        ("bob", "email", sql.VoteChoice.YES, "PMC Member (binding)"),
+        ("carol", "atr", sql.VoteChoice.ABSTAIN, "PMC Member (binding)"),
+        ("user@example.org", "email", sql.VoteChoice.NO, "Contributor (non-binding)"),
+    ]
+    assert details[0].comment == "Verified checksums"
+    assert details[0].receipt_message_id == "r-alice-2@apache.org"
+    assert details[1].asf_eid == "eid-bob-new"
+    assert details[1].confirmed_by == "chair"
+    assert bob_vote == details[1]
+    assert missing_vote is None
 
 
 @pytest.mark.asyncio
-async def test_effective_trusted_ballots_carries_ipmc_round_one_ballot(sqlite_sessionmaker) -> None:
+async def test_counted_vote_details_isolates_vote_seq_and_excludes_podling_carryover(sqlite_sessionmaker) -> None:
+    t1 = datetime.datetime(2026, 1, 1, 10, 0, tzinfo=datetime.UTC)
+    t2 = datetime.datetime(2026, 1, 2, 10, 0, tzinfo=datetime.UTC)
+
     async with sqlite_sessionmaker() as data:
-        incubator = sql.Committee(
-            key="incubator",
-            name="Incubator",
-            is_podling=False,
-            committee_members=["ipmc"],
+        data.add_all(
+            [
+                # Round 1 (vote_seq=1) votes must NOT leak into Round 2 (vote_seq=2)
+                _ballot(
+                    release_key="podling-1.0.0",
+                    vote_seq=1,
+                    vote_round=1,
+                    voter_asf_uid="mentor",
+                    choice=sql.VoteChoice.YES,
+                    receipt_message_id="r-round1@apache.org",
+                    created=t1,
+                ),
+                _interpretation(
+                    release_key="podling-1.0.0",
+                    vote_seq=1,
+                    vote_round=1,
+                    asf_eid="eid-round1",
+                    voter_asf_uid="ppmc-email",
+                    voter_email="ppmc@apache.org",
+                    choice=sql.VoteChoice.YES,
+                    is_binding_at_confirm=True,
+                    email_timestamp=t1,
+                    created=t1,
+                ),
+                # Other release at same vote_seq=2 must NOT leak either
+                _ballot(
+                    release_key="other-1.0.0",
+                    vote_seq=2,
+                    vote_round=2,
+                    voter_asf_uid="other",
+                    choice=sql.VoteChoice.NO,
+                    receipt_message_id="r-other@apache.org",
+                    created=t1,
+                ),
+                # Round 2 (vote_seq=2) votes
+                _ballot(
+                    release_key="podling-1.0.0",
+                    vote_seq=2,
+                    vote_round=2,
+                    voter_asf_uid="ipmc",
+                    choice=sql.VoteChoice.YES,
+                    receipt_message_id="r-round2-ipmc@apache.org",
+                    created=t2,
+                ),
+                _ballot(
+                    release_key="podling-1.0.0",
+                    vote_seq=2,
+                    vote_round=2,
+                    voter_asf_uid="committer",
+                    choice=sql.VoteChoice.YES,
+                    is_binding_at_cast=False,
+                    receipt_message_id="r-round2-committer@apache.org",
+                    created=t2,
+                ),
+            ]
         )
-        data.add(incubator)
         await data.commit()
 
-        round_one = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=1,
-            vote_round=1,
-            voter_asf_uid="ipmc",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r1@apache.org",
-        )
-        data.add(round_one)
-        await data.commit()
+        release = SimpleNamespace(key="podling-1.0.0")
+        round_one_details, round_one_summary = await interaction.counted_vote_details_and_summary(release, 1, data)
+        round_two_details, round_two_summary = await interaction.counted_vote_details_and_summary(release, 2, data)
 
-        release = SimpleNamespace(
-            key="project-1.0.0",
-            committee=SimpleNamespace(is_podling=True, key="myproject"),
-            podling_thread_id="thread-abc",
-        )
-        result = await interaction.effective_trusted_ballots(release, 2, data)
-        details, summary = await interaction.trusted_ballot_details_from_ballots(release, result, 2, data)
+    assert [(d.voter_asf_uid, d.status_label) for d in round_one_details] == [
+        ("mentor", "PPMC Member (binding)"),
+        ("ppmc-email", "PPMC Member (binding)"),
+    ]
+    assert round_one_summary.binding_votes == 2
 
-    assert [b.receipt_message_id for b in result] == ["r1@apache.org"]
-    assert result[0].vote_round == 1
-    assert details[0].is_carried is True
-    assert details[0].is_binding is True
-    assert details[0].status_label == "Binding"
-    assert summary.binding_votes_yes == 1
-    assert summary.non_binding_votes_yes == 0
-
-
-@pytest.mark.asyncio
-async def test_previous_round_one_vote_seq_returns_most_recent_after_retry(sqlite_sessionmaker) -> None:
-    async with sqlite_sessionmaker() as data:
-        first_round_one = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=1,
-            vote_round=1,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r1a@apache.org",
-        )
-        retry_round_one = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=3,
-            vote_round=1,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r1b@apache.org",
-        )
-        retry_round_two = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=4,
-            vote_round=2,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r2b@apache.org",
-        )
-        data.add_all([first_round_one, retry_round_one, retry_round_two])
-        await data.commit()
-
-        found = await interaction.previous_round_one_vote_seq("project-1.0.0", 4, data)
-
-    assert found == 3
-
-
-@pytest.mark.asyncio
-async def test_previous_round_one_vote_seq_returns_none_when_no_round_one_ballots(sqlite_sessionmaker) -> None:
-    async with sqlite_sessionmaker() as data:
-        ballot = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=1,
-            vote_round=None,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r1@apache.org",
-        )
-        data.add(ballot)
-        await data.commit()
-
-        found = await interaction.previous_round_one_vote_seq("project-1.0.0", 2, data)
-
-    assert found is None
-
-
-@pytest.mark.asyncio
-async def test_previous_round_one_vote_seq_returns_round_one_seq_for_typical_round_two(sqlite_sessionmaker) -> None:
-    async with sqlite_sessionmaker() as data:
-        round_one = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=1,
-            vote_round=1,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r1@apache.org",
-        )
-        round_two = _ballot(
-            release_key="project-1.0.0",
-            vote_seq=2,
-            vote_round=2,
-            voter_asf_uid="voter",
-            choice=sql.VoteChoice.YES,
-            receipt_message_id="r2@apache.org",
-        )
-        data.add_all([round_one, round_two])
-        await data.commit()
-
-        found = await interaction.previous_round_one_vote_seq("project-1.0.0", 2, data)
-
-    assert found == 1
+    assert [(d.voter_asf_uid, d.status_label, d.vote_round) for d in round_two_details] == [
+        ("committer", "ASF Committer (non-binding)", 2),
+        ("ipmc", "IPMC Member (binding)", 2),
+    ]
+    assert round_two_summary.binding_votes == 1
+    assert round_two_summary.non_binding_votes == 1
 
 
 def _ballot(
@@ -217,6 +276,8 @@ def _ballot(
     voter_asf_uid: str,
     choice: sql.VoteChoice,
     receipt_message_id: str,
+    comment: str = "",
+    is_binding_at_cast: bool = True,
     created: datetime.datetime | None = None,
 ) -> sql.BallotPaper:
     return sql.BallotPaper(
@@ -224,11 +285,41 @@ def _ballot(
         vote_seq=vote_seq,
         vote_round=vote_round,
         voter_asf_uid=voter_asf_uid,
-        voter_fullname="Voter",
+        voter_fullname=voter_asf_uid.title(),
         choice=choice,
-        comment="",
-        is_binding_at_cast=True,
+        comment=comment,
+        is_binding_at_cast=is_binding_at_cast,
         revision_number_at_cast="00001",
         receipt_message_id=receipt_message_id,
         created=created or datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+    )
+
+
+def _interpretation(
+    *,
+    release_key: str,
+    vote_seq: int,
+    vote_round: int | None,
+    asf_eid: str,
+    voter_asf_uid: str | None,
+    voter_email: str,
+    choice: sql.VoteChoice,
+    is_binding_at_confirm: bool,
+    email_timestamp: datetime.datetime,
+    created: datetime.datetime,
+    confirmed_by: str = "chair",
+) -> sql.VoteInterpretation:
+    return sql.VoteInterpretation(
+        release_key=release_key,
+        vote_seq=vote_seq,
+        asf_eid=asf_eid,
+        vote_round=vote_round,
+        voter_asf_uid=voter_asf_uid,
+        voter_email=voter_email,
+        voter_fullname=voter_asf_uid.title() if voter_asf_uid else "Contributor",
+        choice=choice,
+        is_binding_at_confirm=is_binding_at_confirm,
+        email_timestamp=email_timestamp,
+        confirmed_by=confirmed_by,
+        created=created,
     )

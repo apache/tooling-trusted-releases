@@ -33,7 +33,6 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared.voting as shared_voting
-import atr.storage as storage
 import atr.storage.writers.vote as vote_writer
 import atr.tasks.vote as task_vote
 
@@ -164,7 +163,7 @@ async def test_end_notify_skips_when_phase_not_candidate(sqlite_sessionmaker, mo
 
 
 @pytest.mark.asyncio
-async def test_end_notify_skips_when_release_not_trusted(sqlite_sessionmaker, monkeypatch) -> None:
+async def test_end_notify_skips_when_expedited(sqlite_sessionmaker, monkeypatch) -> None:
     async with sqlite_sessionmaker() as data:
         release = await _seed_release(
             data,
@@ -172,7 +171,7 @@ async def test_end_notify_skips_when_release_not_trusted(sqlite_sessionmaker, mo
             current_vote_seq=1,
             vote_resolved=None,
         )
-        release.vote_mode = sql.VoteMode.EMAIL
+        release.expedited = True
         await data.commit()
 
     monkeypatch.setattr(task_vote.db, "session", _session_factory(sqlite_sessionmaker))
@@ -189,7 +188,7 @@ async def test_end_notify_skips_when_release_not_trusted(sqlite_sessionmaker, mo
     )
 
     assert result.sent is False
-    assert result.skip_reason == "not_trusted_mode"
+    assert result.skip_reason == "expedited_release"
     mail_send.assert_not_awaited()
 
 
@@ -345,8 +344,8 @@ async def test_initiate_skips_schedule_when_duration_zero(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_initiate_skips_schedule_when_release_not_trusted(monkeypatch) -> None:
-    release = _initiate_release_namespace(vote_mode=sql.VoteMode.EMAIL)
+async def test_initiate_skips_schedule_when_expedited(monkeypatch) -> None:
+    release = _initiate_release_namespace(expedited=True)
     _patch_initiate_dependencies(monkeypatch, release)
     schedule_mock = mock.AsyncMock()
     monkeypatch.setattr(task_vote, "_schedule_end_notify", schedule_mock)
@@ -505,7 +504,6 @@ def test_start_voting_form_accepts_notify_opt_in() -> None:
             "subject_template_hash": "hash",
             "body": "body",
             "notify_when_finished": "on",
-            "vote_mode": sql.VoteMode.TRUSTED,
             "rendered_revision": "00001",
         }
     )
@@ -513,7 +511,7 @@ def test_start_voting_form_accepts_notify_opt_in() -> None:
 
 
 @pytest.mark.asyncio
-async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
+async def test_writer_start_allows_notify_for_non_expedited() -> None:
     data = mock.MagicMock()
     data.begin_immediate = mock.AsyncMock()
     data.commit = mock.AsyncMock()
@@ -532,9 +530,7 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     )
     data.release = mock.MagicMock(return_value=SimpleNamespace(demand=mock.AsyncMock(return_value=release_for_start)))
     release_writer = SimpleNamespace(
-        start_vote_no_commit=mock.AsyncMock(
-            return_value=(release_for_start, 1, sql.VoteMode.EMAIL, safe.RevisionNumber("00001"))
-        ),
+        start_vote_no_commit=mock.AsyncMock(return_value=(release_for_start, 1, safe.RevisionNumber("00001"))),
     )
     write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
     writer = object.__new__(vote_writer.ReleaseManager)
@@ -543,26 +539,26 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     writer._ReleaseManager__asf_uid = "chair"
     writer._ReleaseManager__committee_key = "project"
 
-    with pytest.raises(storage.AccessError, match="streamlined voting"):
-        await writer.start(
-            "dev@project.apache.org",
-            safe.ProjectKey("project"),
-            safe.VersionKey("1.0.0"),
-            72,
-            "[VOTE] Release",
-            "Please vote",
-            "Project Chair",
-            permitted_recipients=["dev@project.apache.org"],
-            notify_when_finished=True,
-        )
+    task = await writer.start(
+        "dev@project.apache.org",
+        safe.ProjectKey("project"),
+        safe.VersionKey("1.0.0"),
+        72,
+        "[VOTE] Release",
+        "Please vote",
+        "Project Chair",
+        permitted_recipients=["dev@project.apache.org"],
+        notify_when_finished=True,
+    )
 
-    data.rollback.assert_awaited_once()
-    data.commit.assert_not_awaited()
+    assert task.task_args["notify_when_finished"] is True
+    data.commit.assert_awaited_once()
+    data.rollback.assert_not_awaited()
 
 
 def _initiate_release_namespace(
-    vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED,
     *,
+    expedited: bool = False,
     committee_key: str = "project",
 ) -> SimpleNamespace:
     return SimpleNamespace(
@@ -576,7 +572,7 @@ def _initiate_release_namespace(
         safe_latest_revision_number=SimpleNamespace(__str__=lambda self: "00001"),
         committee=SimpleNamespace(is_podling=False, key=committee_key),
         podling_thread_id=None,
-        effective_vote_mode=vote_mode,
+        expedited=expedited,
     )
 
 
@@ -632,7 +628,6 @@ async def _seed_release(
         version="1.0.0",
         created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
         current_vote_seq=current_vote_seq,
-        vote_mode=sql.VoteMode.TRUSTED,
         vote_resolved=vote_resolved,
     )
     revision = sql.Revision(

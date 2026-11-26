@@ -386,7 +386,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         is_archived: Opt[bool] = NOT_SET,
         archived: Opt[datetime.datetime | None] = NOT_SET,
         keys_mode: Opt[sql.KeysMode] = NOT_SET,
-        vote_mode: Opt[sql.VoteMode | None] = NOT_SET,
         mail_addresses: Opt[list[str]] = NOT_SET,
         catalog_reviewed: Opt[bool] = NOT_SET,
         github_oidc_enabled: Opt[bool] = NOT_SET,
@@ -423,8 +422,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.archived == archived)
         if is_defined(keys_mode):
             query = query.where(sql.Committee.keys_mode == keys_mode)
-        if is_defined(vote_mode):
-            query = query.where(sql.Committee.vote_mode == vote_mode)
         if is_defined(mail_addresses):
             query = query.where(sql.Committee.mail_addresses == mail_addresses)
         if is_defined(catalog_reviewed):
@@ -1388,21 +1385,27 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     def vote_interpretation(
         self,
         release_key: Opt[str] = NOT_SET,
+        vote_seq: Opt[int] = NOT_SET,
         asf_eid: Opt[str] = NOT_SET,
         choice: Opt[sql.VoteChoice] = NOT_SET,
-        asf_uid: Opt[str] = NOT_SET,
+        voter_asf_uid: Opt[str | None] = NOT_SET,
+        confirmed_by: Opt[str] = NOT_SET,
         created: Opt[datetime.datetime] = NOT_SET,
     ) -> Query[sql.VoteInterpretation]:
         query = sqlmodel.select(sql.VoteInterpretation)
 
         if is_defined(release_key):
             query = query.where(sql.VoteInterpretation.release_key == release_key)
+        if is_defined(vote_seq):
+            query = query.where(sql.VoteInterpretation.vote_seq == vote_seq)
         if is_defined(asf_eid):
             query = query.where(sql.VoteInterpretation.asf_eid == asf_eid)
         if is_defined(choice):
             query = query.where(sql.VoteInterpretation.choice == choice)
-        if is_defined(asf_uid):
-            query = query.where(sql.VoteInterpretation.asf_uid == asf_uid)
+        if is_defined(voter_asf_uid):
+            query = query.where(sql.VoteInterpretation.voter_asf_uid == voter_asf_uid)
+        if is_defined(confirmed_by):
+            query = query.where(sql.VoteInterpretation.confirmed_by == confirmed_by)
         if is_defined(created):
             query = query.where(sql.VoteInterpretation.created == created)
 

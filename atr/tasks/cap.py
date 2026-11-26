@@ -41,10 +41,6 @@ async def resolve(task_args: args.CapApprovalResolveArgs, *, task_id: int | None
         return result
     if row.status != sql.ApprovalStatus.PENDING:
         return result
-    if row.cap_question_id is None:
-        error = "ATR did not record a CAP question for this request"
-        await _record_outcome(task_args.approval_request_id, sql.ApprovalStatus.FAILED, None, None, error=error)
-        return result
 
     try:
         resolution = await _resolve_question(row.cap_question_id)
@@ -66,15 +62,6 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
     if vote_outcome == "approved":
         if not await _record_outcome(request_id, sql.ApprovalStatus.APPROVED, vote_outcome, permalink):
             return
-        if row.project_key is None:
-            await notify.user(
-                row.requested_by,
-                f"The CAP approval vote to {_describe_request(row)} passed, and ATR has made the change.",
-                sql.NotificationLevel.INFO,
-                link=f"/committees/{row.committee_key}",
-                link_text="View the committee",
-            )
-            return
         await notify.user(
             row.requested_by,
             f"The CAP approval vote to {_describe_request(row)} passed. You can now complete this in ATR.",
@@ -92,9 +79,6 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
 
 
 def _describe_request(row: sql.ApprovalRequest) -> str:
-    if row.project_key is None:
-        direction = "on" if (row.action == sql.ApprovalAction.TRUSTED_VOTING) else "off"
-        return f"turn streamlined voting {direction} for the {row.committee_key} committee"
     return f"{row.action.value} project {row.project_key}"
 
 

@@ -50,14 +50,24 @@ def authorisation(
 def committee(
     key: str = "alpha",
     *,
+    is_podling: bool = False,
     release_managers: list[str] | None = None,
     committers: list[str] | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         key=key,
+        is_podling=is_podling,
         release_managers=release_managers or [],
         committers=committers or [],
     )
+
+
+class ReleaseQuery:
+    def __init__(self, release_value: object | None) -> None:
+        self.release_value = release_value
+
+    async def get(self) -> object | None:
+        return self.release_value
 
 
 def project(committee_obj: object) -> SimpleNamespace:
@@ -183,7 +193,71 @@ async def test_security_team_outcome_succeeds_for_security_team_owner() -> None:
     assert isinstance(result, outcome.Result)
 
 
-def write(auth: object, project_value: object | None) -> storage.Write:
+@pytest.mark.asyncio
+async def test_vote_committee_member_outcome_admits_active_round_committee() -> None:
+    round_one_rel = SimpleNamespace(podling_thread_id=None)
+    round_two_rel = SimpleNamespace(podling_thread_id="thread-1")
+    podling_comm = committee("podling", is_podling=True)
+    proj = project(podling_comm)
+
+    ppmc_auth = authorisation("ppmc", member_of=frozenset({"podling"}))
+    ipmc_auth = authorisation("ipmc", member_of=frozenset({"incubator"}))
+
+    r1_ppmc = await write(ppmc_auth, proj, round_one_rel).as_vote_committee_member_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+    r1_ipmc = await write(ipmc_auth, proj, round_one_rel).as_vote_committee_member_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+    r2_ppmc = await write(ppmc_auth, proj, round_two_rel).as_vote_committee_member_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+    r2_ipmc = await write(ipmc_auth, proj, round_two_rel).as_vote_committee_member_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+
+    assert isinstance(r1_ppmc, outcome.Result)
+    assert isinstance(r1_ipmc, outcome.Error)
+    assert isinstance(r2_ppmc, outcome.Error)
+    assert isinstance(r2_ipmc, outcome.Result)
+
+
+@pytest.mark.asyncio
+async def test_vote_resolver_outcome_admits_ipmc_only_in_podling_round_two() -> None:
+    podling_comm = committee("podling", is_podling=True, release_managers=["rm"], committers=["rm"])
+    tlp_comm = committee("alpha", is_podling=False)
+    round_one_rel = SimpleNamespace(podling_thread_id=None)
+    round_two_rel = SimpleNamespace(podling_thread_id="thread-1")
+    ipmc_auth = authorisation("ipmc", member_of=frozenset({"incubator"}))
+    rm_auth = authorisation("rm")
+
+    r1_ipmc = await write(ipmc_auth, project(podling_comm), round_one_rel).as_vote_resolver_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+    tlp_ipmc = await write(ipmc_auth, project(tlp_comm), round_two_rel).as_vote_resolver_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+    r2_ipmc = await write(ipmc_auth, project(podling_comm), round_two_rel).as_vote_resolver_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+    r2_rm = await write(rm_auth, project(podling_comm), round_two_rel).as_vote_resolver_outcome(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0")
+    )
+
+    assert isinstance(r1_ipmc, outcome.Error)
+    assert isinstance(tlp_ipmc, outcome.Error)
+    assert isinstance(r2_ipmc, outcome.Result)
+    assert isinstance(r2_rm, outcome.Result)
+
+    resolver = r2_ipmc.result_or_raise()
+    assert not hasattr(resolver, "policy")
+    assert not hasattr(resolver, "ssh")
+    with pytest.raises(storage.AccessError, match="Not authorized for this release version"):
+        await resolver.resolve(safe.ProjectKey("other"), safe.VersionKey("1.0.0"), "passed", "IPMC")
+
+
+def write(auth: object, project_value: object | None, release_value: object | None = None) -> storage.Write:
     data = mock.MagicMock()
     data.project = mock.MagicMock(return_value=ProjectQuery(project_value))
+    data.release = mock.MagicMock(return_value=ReleaseQuery(release_value))
     return storage.Write(auth, data)

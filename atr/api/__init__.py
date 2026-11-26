@@ -74,7 +74,6 @@ import atr.util as util
 type DictResponse = tuple[dict[str, Any], int]
 
 ROUTES_MODULE: Final[Literal[True]] = True
-_EMAIL_VOTE_RESOLVE_PROJECTS: Final[frozenset[str]] = frozenset({"solr-mcp"})
 # Per committer per project. A project JWT lasts 5 minutes, so a long upload needs 12 an hour
 _TRUSTED_PUBLISHER_EXCHANGE_HOURLY: Final[int] = 30
 # Per address, before the token is verified. Loose, as GitHub runners share addresses between projects
@@ -1022,7 +1021,6 @@ async def policy_get(
             to=announce_to or None, cc=announce_cc, bcc=announce_bcc
         ),
         policy_min_hours=project.policy_min_hours,
-        policy_vote_mode=project.policy_vote_mode,
         policy_release_checklist=project.policy_release_checklist,
         policy_source_artifact_paths=project.policy_source_artifact_paths,
         policy_start_vote_subject=project.policy_start_vote_subject,
@@ -1388,18 +1386,16 @@ async def publisher_vote_resolve(
         ctx.asf_uid,
         interaction.TrustedProjectPhase.VOTE,
     )
+    fullname = await _ldap_fullname(asf_uid)
     try:
-        async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
-            release = await _vote_resolve_release(project.safe_key, data.version, asf_uid)
-            # TODO: Get fullname and use instead of asf_uid
-            # TODO: Add resolution templating to atr.construct
-            _release, _voting_round, _success_message, _error_message = await warm.vote.resolve(
+        async with storage.write_as_vote_resolver(project.safe_key, data.version, asf_uid) as wavr:
+            await _vote_resolve_release(project.safe_key, data.version, asf_uid)
+            _release, _voting_round, _success_message, _error_message = await wavr.resolve(
                 project.safe_key,
                 data.version,
                 data.resolution,
-                asf_uid,
-                f"The vote {data.resolution}.",
-                expected_vote_mode=release.effective_vote_mode,
+                fullname,
+                None,
                 unattended=True,
             )
     except storage.AccessError as e:
@@ -2225,7 +2221,7 @@ async def vote_cast(
     """
     URL: POST /vote/cast
 
-    Cast a Trusted Vote ballot.
+    Cast a vote ballot on ATR.
     """
     asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
@@ -2238,24 +2234,62 @@ async def vote_cast(
     try:
         async with storage.write(asf_uid) as write:
             wafc = write.as_foundation_committer()
-            email_to, error_message = await wafc.vote.cast_trusted(
+            email_to, _receipt_message_id = await wafc.vote.cast(
                 data.project,
                 data.version,
                 data.choice,
                 data.comment,
                 fullname,
+                expected_vote_seq=data.vote_seq,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
-
-    if error_message:
-        raise exceptions.Conflict(error_message)
 
     return models.api.VoteCastResults(
         endpoint="/vote/cast",
         success=True,
         receipt_email_to=email_to,
     ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.VoteConfirmResults, 200),
+    rate_limit=(60, datetime.timedelta(hours=1)),
+)
+async def vote_confirm(
+    _vote_confirm: Literal["vote/confirm"],
+    data: models.api.VoteConfirmArgs,
+) -> DictResponse:
+    """
+    URL: POST /vote/confirm
+
+    Confirm or unconfirm a heuristic mailing-list email vote.
+    """
+    asf_uid = _jwt_asf_uid()
+    async with db.session() as db_data:
+        release_key = sql.release_key(data.project, data.version)
+        release = await db_data.release(project_key=str(data.project), version=str(data.version), _committee=True).get()
+    if (release is not None) and user.embargo_denies(release, asf_uid, is_member=False):
+        raise exceptions.NotFound(f"Release {release_key} not found")
+
+    try:
+        async with storage.write_as_vote_committee_member(data.project, data.version, asf_uid) as wacm:
+            await wacm.vote.confirm_email_vote(
+                data.project, data.version, data.asf_eid, data.choice, expected_vote_seq=data.vote_seq
+            )
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+    except interaction.InteractionError as e:
+        if "not found" in str(e).lower():
+            raise exceptions.NotFound(str(e)) from e
+        raise exceptions.BadRequest(str(e)) from e
+    except util.FetchError as e:
+        raise exceptions.BadGateway(str(e)) from e
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e)) from e
+
+    return models.api.VoteConfirmResults(endpoint="/vote/confirm", success=True).model_dump(mode="json"), 200
 
 
 @api.typed(
@@ -2275,29 +2309,21 @@ async def vote_resolve(
     A vote can be resolved as passed, failed, or cancelled.
     """
     asf_uid = _jwt_asf_uid()
-    # try:
+    fullname = await _ldap_fullname(asf_uid)
     try:
-        async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
-            release, resolution_body, fullname = await _vote_resolve_release_and_body(warm, data, asf_uid)
-            # TODO: Get fullname and use instead of asf_uid
-            # TODO: Add resolution templating to atr.construct
-            _release, _voting_round, _success_message, _error_message = await warm.vote.resolve(
+        async with storage.write_as_vote_resolver(data.project, data.version, asf_uid) as wavr:
+            await _vote_resolve_release(data.project, data.version, asf_uid)
+            _release, _voting_round, _success_message, _error_message = await wavr.resolve(
                 data.project,
                 data.version,
                 data.resolution,
                 fullname,
-                resolution_body,
-                expected_vote_seq=release.current_vote_seq,
-                expected_vote_mode=release.effective_vote_mode,
+                None,
+                expected_vote_seq=data.vote_seq,
                 early_reason=data.early_reason,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
-    # except Exception as e:
-    #     import atr.log as log
-    #     import traceback
-    #     log.info(traceback.format_exc())
-    #     raise exceptions.BadRequest(str(e))
 
     return models.api.VoteResolveResults(
         endpoint="/vote/resolve",
@@ -2331,6 +2357,8 @@ async def vote_start(
                 _committee=True,
                 _project_release_policy=True,
             ).demand(storage.AccessError(f"Release not found: {release_key}", status=404))
+            if user.embargo_denies(release, asf_uid, is_member=False):
+                raise storage.AccessError(f"Release not found: {release_key}", status=404)
             if release.latest_revision_number is None:
                 raise exceptions.BadRequest("Release has no revisions yet")
             committee = release.committee
@@ -2375,19 +2403,12 @@ async def vote_start(
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
                 second_round_email_to=data.second_round_email_to,
-                expected_vote_mode=release.effective_vote_mode,
                 expected_revision=scanned_revision,
                 notify_when_finished=data.notify_when_finished,
-                automatic_resolve_when_finished=data.automatic_resolve_when_finished,
                 automatic_publish_when_resolved=data.automatic_publish_when_resolved,
                 download_path_suffix=construct.effective_download_path_suffix(release),
                 acknowledged_concerns=frozenset(data.concerns_noted),
             )
-    # except Exception as e:
-    #     import traceback
-    #     import atr.log as log
-    #     log.info(traceback.format_exc())
-    #     raise exceptions.BadRequest(str(e))
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
 
@@ -2419,21 +2440,20 @@ async def vote_tabulate(
             _committee=True,
         ).demand(exceptions.NotFound(f"Release {release_key} not found"))
 
-    if user.embargo_denies(release, _jwt_asf_uid(), is_member=False):
+    asf_uid = _jwt_asf_uid()
+    if user.embargo_denies(release, asf_uid, is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
 
-    is_trusted = (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None)
-    trusted_ballots, trusted_summary, trusted_passed = await _vote_tabulate_trusted(release, is_trusted)
-    details = await _vote_tabulate_email_details(release, is_trusted)
+    ballots, summary, passed = await _vote_tabulate_ballots(release)
+    details = await _vote_tabulate_email_details(release, asf_uid)
 
     return models.api.VoteTabulateResults(
         endpoint="/vote/tabulate",
-        details=details,
-        vote_mode=release.effective_vote_mode,
         vote_seq=release.current_vote_seq,
-        trusted_ballots=trusted_ballots,
-        trusted_summary=trusted_summary,
-        trusted_passed=trusted_passed,
+        ballots=ballots,
+        summary=summary,
+        passed=passed,
+        details=details,
     ).model_dump(mode="json"), 200
 
 
@@ -2812,77 +2832,11 @@ async def _vote_resolve_release(
             version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project_release_policy=True,
+            _committee=True,
         ).get()
     if (release is None) or user.embargo_denies(release, asf_uid, is_member=False):
         raise storage.AccessError("Release not found", status=404)
-    if (
-        (release.effective_vote_mode != sql.VoteMode.TRUSTED)
-        and (str(project_key) not in _EMAIL_VOTE_RESOLVE_PROJECTS)
-        and (not (config.is_test_mode() and (str(project_key) == "test-client")))
-    ):
-        raise storage.AccessError(
-            "Resolving votes through the API is only available with streamlined voting (vote mode trusted)", status=403
-        )
     return release
-
-
-async def _vote_resolve_release_and_body(
-    warm: storage.WriteAsReleaseManager, data: models.api.VoteResolveArgs, asf_uid: str
-) -> tuple[sql.Release, str, str]:
-    release = await _vote_resolve_release(data.project, data.version, asf_uid)
-    if release.committee is None:
-        raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)
-    fullname = await _ldap_fullname(asf_uid)
-    template = await construct.resolve_template(release.project, "finish_vote")
-    body = construct.finish_vote_body(
-        template.body,
-        {
-            "ATR_TALLY": await _vote_resolve_tally(warm, release),
-            "COMMITTEE": "Incubator" if release.podling_thread_id else release.committee.display_name,
-            "MAJOR_VERSION": construct.major_version(release.version),
-            "OUTCOME": "was cancelled" if (data.resolution == "cancelled") else data.resolution,
-            "PROJECT_NAME": release.project.short_display_name,
-            "VERSION": release.version,
-            "YOUR_ASF_ID": asf_uid,
-            "YOUR_FULL_NAME": fullname,
-        },
-    )
-    return release, body, fullname
-
-
-async def _vote_resolve_tally(warm: storage.WriteAsReleaseManager, release: sql.Release) -> str:
-    vote_round = interaction.trusted_vote_round(release)
-    binding_label, non_binding_label = user.binding_terminology(vote_round)
-    thread_id = None
-    latest_vote_task = await interaction.release_current_vote_task(release)
-    if (latest_vote_task is not None) and (not release.expedited):
-        archive_url = await warm.cache.get_message_archive_url(
-            interaction.task_mid_get(latest_vote_task), interaction.task_recipient_get(latest_vote_task)
-        )
-        thread_id = archive_url.split("/")[-1] if archive_url else None
-    if (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None):
-        ballots = await interaction.effective_trusted_ballots(release, release.current_vote_seq)
-        summary = await interaction.trusted_ballot_summary(release, ballots)
-        return tabulate.trusted_tally_block(
-            summary, binding_label, non_binding_label, thread_id=thread_id, podling_thread_id=release.podling_thread_id
-        )
-    if thread_id is None:
-        return ""
-    try:
-        committee = await tabulate.vote_committee(thread_id, release)
-        details = await tabulate.vote_details(committee, thread_id, release)
-    except (util.FetchError, ValueError) as e:
-        log.warning(f"Email tabulation unavailable for {release.key}: {e}")
-        return ""
-    return tabulate.email_tally_block(
-        details.votes,
-        details.summary,
-        thread_id,
-        binding_label,
-        non_binding_label,
-        release.podling_thread_id,
-        binding_member_label=user.binding_member_label(vote_round),
-    )
 
 
 async def _vote_start_implicit_revision(
@@ -2940,77 +2894,69 @@ async def _vote_start_subject_and_body(
     return subject, body, fullname
 
 
+async def _vote_tabulate_ballots(
+    release: sql.Release,
+) -> tuple[list[models.api.BallotEntry], models.api.BallotSummary, bool]:
+    if release.committee is None:
+        raise exceptions.InternalServerError(errors.RELEASE_NO_COMMITTEE)
+    vote_seq = release.current_vote_seq
+    if vote_seq is None:
+        empty = interaction.CountedVoteSummary()
+        return [], _vote_tabulate_summary(empty), False
+    counted_details, summary = await interaction.counted_vote_details_and_summary(release, vote_seq)
+    entries = [
+        models.api.BallotEntry(
+            source=detail.source,
+            voter_asf_uid=detail.voter_asf_uid,
+            voter_email=detail.voter_email,
+            voter_fullname=detail.voter_fullname,
+            choice=detail.choice,
+            comment=detail.comment,
+            is_binding=detail.is_binding,
+            vote_round=detail.vote_round,
+            revision_number_at_cast=detail.revision_number_at_cast,
+            receipt_message_id=detail.receipt_message_id,
+            asf_eid=detail.asf_eid,
+            confirmed_by=detail.confirmed_by,
+            cast_at=detail.cast_at,
+        )
+        for detail in counted_details
+    ]
+    passed = tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no)
+    return entries, _vote_tabulate_summary(summary), passed
+
+
 async def _vote_tabulate_email_details(
     release: sql.Release,
-    is_trusted: bool,
+    asf_uid: str,
 ) -> models.tabulate.VoteDetails | None:
+    if release.expedited:
+        return None
     latest_vote_task = await interaction.release_current_vote_task(release)
     if latest_vote_task is None:
-        if is_trusted:
-            return None
-        raise exceptions.NotFound("No vote task found")
+        return None
     task_mid = interaction.task_mid_get(latest_vote_task)
     task_recipient = interaction.task_recipient_get(latest_vote_task)
-    async with storage.write() as write:
+    async with storage.write(asf_uid) as write:
         wagp = write.as_general_public()
         archive_url = await wagp.cache.get_message_archive_url(task_mid, task_recipient)
     if archive_url is None:
-        if is_trusted:
-            return None
-        raise exceptions.NotFound("No archive URL found")
+        return None
 
     thread_id = archive_url.split("/")[-1]
     excluded_message_ids = None
-    if is_trusted and (release.current_vote_seq is not None):
+    if release.current_vote_seq is not None:
         excluded_message_ids = await interaction.ballot_receipt_message_ids(release.key, release.current_vote_seq)
     try:
         committee = await tabulate.vote_committee(thread_id, release)
         return await tabulate.vote_details(committee, thread_id, release, excluded_message_ids=excluded_message_ids)
     except (util.FetchError, ValueError) as e:
-        if is_trusted:
-            log.warning(f"Email tabulation unavailable for {release.key}: {e}")
-            return None
-        raise
+        log.warning(f"Email tabulation unavailable for {release.key}: {e}")
+        return None
 
 
-async def _vote_tabulate_trusted(
-    release: sql.Release,
-    is_trusted: bool,
-) -> tuple[list[models.api.TrustedBallotEntry] | None, models.api.TrustedVoteSummary | None, bool | None]:
-    if not is_trusted:
-        return None, None, None
-    if release.committee is None:
-        raise exceptions.InternalServerError(errors.RELEASE_NO_COMMITTEE)
-    vote_seq = release.current_vote_seq
-    if vote_seq is None:
-        return None, None, None
-    vote_round = interaction.trusted_vote_round(release)
-    ballots = await interaction.effective_trusted_ballots(release, vote_seq)
-    trusted_ballot_details, summary = await interaction.trusted_ballot_details_from_ballots(
-        release, ballots, vote_round
-    )
-    entries: list[models.api.TrustedBallotEntry] = []
-    for detail in trusted_ballot_details:
-        entries.append(
-            models.api.TrustedBallotEntry(
-                voter_asf_uid=detail.voter_asf_uid,
-                voter_fullname=detail.voter_fullname,
-                choice=detail.choice,
-                comment=detail.comment,
-                is_binding=detail.is_binding,
-                is_carried=detail.is_carried,
-                vote_round=detail.vote_round,
-                revision_number_at_cast=detail.revision_number_at_cast,
-                receipt_message_id=detail.receipt_message_id,
-                cast_at=detail.cast_at,
-            )
-        )
-    passed = tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no)
-    return entries, _vote_tabulate_trusted_summary(summary), passed
-
-
-def _vote_tabulate_trusted_summary(summary: interaction.TrustedVoteSummary) -> models.api.TrustedVoteSummary:
-    return models.api.TrustedVoteSummary(
+def _vote_tabulate_summary(summary: interaction.CountedVoteSummary) -> models.api.BallotSummary:
+    return models.api.BallotSummary(
         binding_votes_yes=summary.binding_votes_yes,
         binding_votes_no=summary.binding_votes_no,
         binding_votes_abstain=summary.binding_votes_abstain,

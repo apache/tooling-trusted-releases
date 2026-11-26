@@ -35,7 +35,6 @@ DRAFT = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
 CANDIDATE = sql.ReleasePhase.RELEASE_CANDIDATE
 PREVIEW = sql.ReleasePhase.RELEASE_PREVIEW
 RELEASE = sql.ReleasePhase.RELEASE
-EMAIL = sql.VoteMode.EMAIL
 SHAPE = "vote or announce recipients with to, cc, and bcc"
 
 
@@ -99,7 +98,7 @@ async def test_everything_audits_cross_record_consistency(sqlite_sessionmaker) -
         )
         data.add(sql.Project(key="proj", name="Apache Proj", committee_key="proj", release_policy=policy))
         data.add(sql.Project(key="gone", name="Apache Gone", committee_key="proj", status=sql.ProjectStatus.RETIRED))
-        voting = {"vote_started": CREATED, "vote_mode": EMAIL, "voted_revision_number": "00001"}
+        voting = {"vote_started": CREATED, "voted_revision_number": "00001"}
         data.add(release(CANDIDATE, "1.0", current_vote_seq=1, **voting))
         data.add(release(PREVIEW, "2.0", current_vote_seq=3, vote_resolved=CREATED, **voting))
         data.add(release(DRAFT, "1.0", "gone"))
@@ -368,30 +367,28 @@ def test_release_project_active_without_project() -> None:
         pytest.param(DRAFT, {"vote_started": CREATED, "current_vote_seq": 2}, [], id="failed-vote-draft"),
         pytest.param(
             DRAFT,
-            {"vote_mode": EMAIL, "podling_thread_id": "thread"},
-            [f"{name} to be unset in release_candidate_draft" for name in ("vote_mode", "podling_thread_id")],
+            {"vote_resolved": CREATED, "podling_thread_id": "thread"},
+            [f"{name} to be unset in release_candidate_draft" for name in ("vote_resolved", "podling_thread_id")],
             id="draft-with-vote-state",
         ),
-        pytest.param(CANDIDATE, {"vote_started": CREATED, "vote_mode": EMAIL}, [], id="legacy-candidate"),
-        pytest.param(
-            CANDIDATE, {"vote_started": CREATED}, ["vote_mode to be set in release_candidate"], id="candidate-no-mode"
-        ),
+        pytest.param(CANDIDATE, {"vote_started": CREATED}, [], id="legacy-candidate"),
+        pytest.param(CANDIDATE, {}, ["vote_started to be set in release_candidate"], id="candidate-no-started"),
         pytest.param(
             CANDIDATE,
-            {"vote_started": CREATED, "vote_mode": EMAIL, "voted_revision_number": "00001"},
+            {"vote_started": CREATED, "voted_revision_number": "00001"},
             ["current_vote_seq to be set with voted_revision_number"],
             id="voted-without-serial",
         ),
-        pytest.param(PREVIEW, {"vote_started": CREATED, "vote_mode": EMAIL}, [], id="legacy-preview"),
+        pytest.param(PREVIEW, {"vote_started": CREATED}, [], id="legacy-preview"),
         pytest.param(
             PREVIEW,
             {},
-            [f"{name} to be set in release_preview" for name in ("vote_started", "vote_mode")],
+            ["vote_started to be set in release_preview"],
             id="legacy-preview-unstarted",
         ),
         pytest.param(
             PREVIEW,
-            {"vote_started": CREATED, "vote_mode": EMAIL, "current_vote_seq": 0},
+            {"vote_started": CREATED, "current_vote_seq": 0},
             ["vote_resolved to be set in release_preview"],
             id="numbered-preview-unresolved",
         ),

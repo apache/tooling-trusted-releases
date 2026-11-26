@@ -56,7 +56,6 @@ PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
 )
 
 _ATR_DEV_VOTE_RESOLUTION_BYPASS_HOST: Final[str] = "tooling-vm-ec2-de.apache.org"
-_NO_EXPECTED_VOTE_ROUND: Final[object] = object()
 _TOOLING_COMMITTEE_KEY: Final[str] = "tooling"
 
 
@@ -105,7 +104,7 @@ class TrustedProjectPhase(enum.Enum):
 
 
 @dataclasses.dataclass
-class TrustedVoteSummary:
+class CountedVoteSummary:
     binding_votes_yes: int = 0
     binding_votes_no: int = 0
     binding_votes_abstain: int = 0
@@ -123,16 +122,19 @@ class TrustedVoteSummary:
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class TrustedBallotDetail:
+class CountedVoteDetail:
+    asf_eid: str | None = None
     cast_at: datetime.datetime
     choice: sql.VoteChoice
-    comment: str
+    comment: str = ""
+    confirmed_by: str | None = None
     is_binding: bool
-    is_carried: bool = False
-    receipt_message_id: str
-    revision_number_at_cast: safe.RevisionNumber
+    receipt_message_id: str | None = None
+    revision_number_at_cast: safe.RevisionNumber | None = None
+    source: Literal["atr", "email"]
     status_label: str
-    voter_asf_uid: str
+    voter_asf_uid: str | None
+    voter_email: str | None = None
     voter_fullname: str
     vote_round: int | None
 
@@ -298,7 +300,7 @@ async def ballots_for_resolution(
     via = sql.validate_instrumented_attribute
     async with db.ensure_session(caller_data) as data:
         row_number = sqlalchemy.func.row_number().over(
-            partition_by=(via(sql.BallotPaper.vote_round), via(sql.BallotPaper.voter_asf_uid)),
+            partition_by=via(sql.BallotPaper.voter_asf_uid),
             order_by=via(sql.BallotPaper.id).desc(),
         )
         latest_ids = (
@@ -311,7 +313,7 @@ async def ballots_for_resolution(
             sqlmodel.select(sql.BallotPaper)
             .join(latest_ids, via(sql.BallotPaper.id) == latest_ids.c.ballot_id)
             .where(latest_ids.c.row_number == 1)
-            .order_by(via(sql.BallotPaper.vote_round).asc(), via(sql.BallotPaper.voter_asf_uid).asc())
+            .order_by(via(sql.BallotPaper.voter_asf_uid).asc())
         )
         result = await data.execute(query)
         return list(result.scalars().all())
@@ -480,29 +482,6 @@ async def compose_project_for_payload(
     return asf_uid, project
 
 
-def committee_vote_mode_request_action(committee: sql.Committee) -> sql.ApprovalAction:
-    if committee.effective_vote_mode == sql.VoteMode.TRUSTED:
-        return sql.ApprovalAction.EMAIL_VOTING
-    return sql.ApprovalAction.TRUSTED_VOTING
-
-
-async def committee_vote_mode_request_error(committee: sql.Committee, data: db.Session) -> str | None:
-    if util.committee_is_standing(committee.key):
-        return "Streamlined voting isn't available for this committee, because it doesn't make releases."
-    if committee.is_podling and (committee.effective_vote_mode == sql.VoteMode.EMAIL):
-        return "Streamlined voting can't be turned on for a podling."
-    pending = await data.approval_request(
-        committee_key=committee.key,
-        project_key=None,
-        status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
-    ).get()
-    if pending is None:
-        return None
-    direction = "on" if (pending.action == sql.ApprovalAction.TRUSTED_VOTING) else "off"
-    closes = pending.closes_at.strftime("%Y-%m-%d %H:%M UTC")
-    return f"The CAP vote to turn streamlined voting {direction} closes {closes}."
-
-
 async def count_checks_for_revision_by_status(
     status: sql.CheckResultStatus,
     release: sql.Release,
@@ -527,72 +506,57 @@ async def count_checks_for_revision_by_status(
         return result.scalar_one()
 
 
-async def effective_latest_ballot_for_voter(
+async def counted_vote_details_and_summary(
+    release: sql.Release,
+    vote_seq: int,
+    caller_data: db.Session | None = None,
+) -> tuple[list[CountedVoteDetail], CountedVoteSummary]:
+    """Return deduplicated official ballots (ATR BallotPaper + confirmed VoteInterpretation) and summary."""
+    async with db.ensure_session(caller_data) as data:
+        ballots = await ballots_for_resolution(release.key, vote_seq, data)
+        interpretations = await vote_interpretations(release.key, vote_seq, data)
+
+        remaining_ballots = {f"uid:{ballot.voter_asf_uid}": ballot for ballot in ballots}
+        details = []
+        for key, interp in _latest_interpretations(interpretations).items():
+            ballot = remaining_ballots.pop(key, None)
+            if (ballot is None) or (_ensure_utc(interp.email_timestamp) > _ensure_utc(ballot.created)):
+                details.append(_counted_email_detail(interp))
+            else:
+                details.append(_counted_ballot_detail(ballot))
+        details.extend(_counted_ballot_detail(ballot) for ballot in remaining_ballots.values())
+
+    details.sort(
+        key=lambda detail: (detail.cast_at, detail.voter_asf_uid or detail.voter_email or "", detail.asf_eid or "")
+    )
+    summary = CountedVoteSummary()
+    for detail in details:
+        _counted_summary_add(summary, detail.choice, detail.is_binding)
+    return details, summary
+
+
+async def counted_vote_for_voter(
     release: sql.Release,
     vote_seq: int,
     voter_asf_uid: str,
     caller_data: db.Session | None = None,
-) -> sql.BallotPaper | None:
-    if caller_data is None:
-        current_ballot = await latest_ballot_for_voter(release.key, vote_seq, voter_asf_uid)
-    else:
-        current_ballot = await latest_ballot_for_voter(release.key, vote_seq, voter_asf_uid, caller_data)
-    if current_ballot is not None:
-        return current_ballot
-    if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
-        return None
-    r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
-    if r1_seq is None:
-        return None
-    if caller_data is None:
-        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid)
-    else:
-        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid, caller_data)
-    if r1_ballot is None:
-        return None
-    is_binding, _binding_committee = await user.is_binding_for_release(
-        release.committee,
-        voter_asf_uid,
-        2,
-        caller_data=caller_data,
-    )
-    if not is_binding:
-        return None
-    return r1_ballot
+) -> CountedVoteDetail | None:
+    """Return the unified counted vote for voter_asf_uid in (release.key, vote_seq), if any."""
+    details, _summary = await counted_vote_details_and_summary(release, vote_seq, caller_data)
+    for detail in details:
+        if detail.voter_asf_uid == voter_asf_uid:
+            return detail
+    return None
 
 
-async def effective_trusted_ballots(
+async def counted_vote_summary(
     release: sql.Release,
     vote_seq: int,
     caller_data: db.Session | None = None,
-) -> list[sql.BallotPaper]:
-    if caller_data is None:
-        current_ballots = await ballots_for_resolution(release.key, vote_seq)
-    else:
-        current_ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
-    if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
-        return current_ballots
-    r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
-    if r1_seq is None:
-        return current_ballots
-    if caller_data is None:
-        r1_ballots = await ballots_for_resolution(release.key, r1_seq)
-    else:
-        r1_ballots = await ballots_for_resolution(release.key, r1_seq, caller_data)
-    current_voted_uids = {b.voter_asf_uid for b in current_ballots}
-    carried: list[sql.BallotPaper] = []
-    for ballot in r1_ballots:
-        if ballot.voter_asf_uid in current_voted_uids:
-            continue
-        is_binding, _binding_committee = await user.is_binding_for_release(
-            release.committee,
-            ballot.voter_asf_uid,
-            2,
-            caller_data=caller_data,
-        )
-        if is_binding:
-            carried.append(ballot)
-    return current_ballots + carried
+) -> CountedVoteSummary:
+    """Return the official binding and non-binding summary for (release.key, vote_seq)."""
+    _details, summary = await counted_vote_details_and_summary(release, vote_seq, caller_data)
+    return summary
 
 
 async def has_blocker_checks(
@@ -736,55 +700,6 @@ async def pending_quarantine_count(release_key: str, caller_data: db.Session | N
 async def previews(project: sql.Project) -> list[sql.Release]:
     """Get the preview releases for the project."""
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_PREVIEW)
-
-
-async def previous_round_one_recipient(
-    release: sql.Release,
-    current_vote_seq: int,
-    caller_data: db.Session | None = None,
-) -> str | None:
-    if (release.committee is None) or (not release.committee.is_podling):
-        return None
-    if trusted_vote_round(release) != 2:
-        return None
-    r1_seq = await previous_round_one_vote_seq(release.key, current_vote_seq, caller_data)
-    if r1_seq is None:
-        return None
-    via = sql.validate_instrumented_attribute
-    async with db.ensure_session(caller_data) as data:
-        query = (
-            sqlmodel.select(sql.Task)
-            .where(sql.Task.project_key == release.project_key)
-            .where(sql.Task.version_key == release.version)
-            .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
-            .where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.vote_seq") == r1_seq)
-            .order_by(via(sql.Task.added).desc())
-            .limit(1)
-        )
-        task = (await data.execute(query)).scalar_one_or_none()
-    if task is None:
-        return None
-    email_to = task.task_args.get("email_to")
-    if isinstance(email_to, str) and email_to:
-        return email_to
-    return None
-
-
-async def previous_round_one_vote_seq(
-    release_key: str,
-    current_vote_seq: int,
-    caller_data: db.Session | None = None,
-) -> int | None:
-    # This works because there must be a round one vote to get to round two
-    # We get the latest round one before the current round for the same release
-    async with db.ensure_session(caller_data) as data:
-        query = (
-            sqlmodel.select(sqlalchemy.func.max(sql.BallotPaper.vote_seq))
-            .where(sql.BallotPaper.release_key == release_key)
-            .where(sql.BallotPaper.vote_round == 1)
-            .where(sql.BallotPaper.vote_seq < current_vote_seq)
-        )
-        return (await data.execute(query)).scalar_one_or_none()
 
 
 async def prior_release_for_archive(
@@ -1262,11 +1177,13 @@ def task_mid_get(latest_vote_task: sql.Task) -> str | None:
 
 def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
     result = latest_vote_task.result
-    if not isinstance(result, results.VoteInitiate):
-        return None
-    if not result.email_to:
-        return None
-    return result.email_to
+    if isinstance(result, results.VoteInitiate) and result.email_to:
+        return result.email_to
+    if isinstance(latest_vote_task.task_args, dict):
+        email_to = latest_vote_task.task_args.get("email_to")
+        if isinstance(email_to, str) and email_to:
+            return email_to
+    return None
 
 
 async def tasks_ongoing(
@@ -1325,51 +1242,6 @@ async def tasks_ongoing_revision(
         return task_count, latest_revision
 
 
-async def trusted_ballot_details(
-    release: sql.Release,
-    vote_seq: int,
-    expected_vote_round: int | None,
-    caller_data: db.Session | None = None,
-) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
-    if caller_data is None:
-        ballots = await ballots_for_resolution(release.key, vote_seq)
-    else:
-        ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
-    return await trusted_ballot_details_from_ballots(
-        release,
-        ballots,
-        expected_vote_round,
-        caller_data=caller_data,
-    )
-
-
-async def trusted_ballot_details_from_ballots(
-    release: sql.Release,
-    ballots: Sequence[sql.BallotPaper],
-    expected_vote_round: int | None,
-    caller_data: db.Session | None = None,
-) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
-    return await _trusted_ballot_details_from_ballots(
-        release,
-        ballots,
-        expected_vote_round=expected_vote_round,
-        caller_data=caller_data,
-    )
-
-
-async def trusted_ballot_summary(
-    release: sql.Release,
-    ballots: Sequence[sql.BallotPaper],
-    caller_data: db.Session | None = None,
-) -> TrustedVoteSummary:
-    _details, summary = await _trusted_ballot_details_from_ballots(
-        release,
-        ballots,
-        caller_data=caller_data,
-    )
-    return summary
-
-
 async def trusted_jwt(
     publisher: str, jwt: str, phase: TrustedProjectPhase
 ) -> tuple[github.TrustedPublisherPayload, str, sql.Project]:
@@ -1419,12 +1291,6 @@ async def trusted_release_for_payload(
     if payload_asf_uid is not None:
         raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
     return await _trusted_dist_lookup(asserted_asf_uid, phase, project_key, version_key)
-
-
-def trusted_vote_round(release: sql.Release) -> int | None:
-    if (release.committee is not None) and release.committee.is_podling:
-        return 1 if (release.podling_thread_id is None) else 2
-    return None
 
 
 async def trusted_workflow_run(
@@ -1548,9 +1414,15 @@ def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:
         return None
 
 
-async def vote_interpretations(release_key: str) -> Sequence[sql.VoteInterpretation]:
-    async with db.session() as data:
-        return await data.vote_interpretation(release_key=release_key).all()
+async def vote_interpretations(
+    release_key: str,
+    vote_seq: int | None = None,
+    caller_data: db.Session | None = None,
+) -> Sequence[sql.VoteInterpretation]:
+    async with db.ensure_session(caller_data) as data:
+        if vote_seq is None:
+            return await data.vote_interpretation(release_key=release_key).all()
+        return await data.vote_interpretation(release_key=release_key, vote_seq=vote_seq).all()
 
 
 def vote_pass_fail_allowed(latest_vote_task: sql.Task | None) -> bool:
@@ -1568,6 +1440,12 @@ def vote_resolution_bypass(release: sql.Release, asf_uid: str | None) -> bool:
     return (not config.is_production_mode()) or (
         (release.project_key == "tooling-presentations") and conf.PRESENTATIONS_VOTE_RESOLUTION_BYPASS
     )
+
+
+def vote_round_for_release(release: sql.Release) -> int | None:
+    if (release.committee is not None) and release.committee.is_podling:
+        return 1 if (release.podling_thread_id is None) else 2
+    return None
 
 
 async def wait_for_task(
@@ -1702,6 +1580,90 @@ def _content_in_progress() -> sqlalchemy.Subquery:
     )
 
 
+def _counted_ballot_detail(ballot: sql.BallotPaper) -> CountedVoteDetail:
+    return CountedVoteDetail(
+        cast_at=_ensure_utc(ballot.created),
+        choice=ballot.choice,
+        comment=ballot.comment,
+        is_binding=ballot.is_binding_at_cast,
+        receipt_message_id=ballot.receipt_message_id,
+        revision_number_at_cast=safe.RevisionNumber(ballot.revision_number_at_cast)
+        if ballot.revision_number_at_cast
+        else None,
+        source="atr",
+        status_label=_counted_status_label(ballot.is_binding_at_cast, ballot.vote_round, ballot.voter_asf_uid),
+        voter_asf_uid=ballot.voter_asf_uid,
+        voter_fullname=ballot.voter_fullname,
+        vote_round=ballot.vote_round,
+    )
+
+
+def _counted_email_detail(interp: sql.VoteInterpretation) -> CountedVoteDetail:
+    uid = interp.voter_asf_uid or None
+    return CountedVoteDetail(
+        asf_eid=interp.asf_eid,
+        cast_at=_ensure_utc(interp.email_timestamp),
+        choice=interp.choice,
+        confirmed_by=interp.confirmed_by,
+        is_binding=interp.is_binding_at_confirm,
+        source="email",
+        status_label=_counted_status_label(interp.is_binding_at_confirm, interp.vote_round, uid),
+        voter_asf_uid=uid,
+        voter_email=interp.voter_email,
+        voter_fullname=interp.voter_fullname,
+        vote_round=interp.vote_round,
+    )
+
+
+def _counted_status_label(is_binding: bool, vote_round: int | None, uid: str | None) -> str:
+    if not is_binding:
+        return "ASF Committer (non-binding)" if uid is not None else "Contributor (non-binding)"
+    if vote_round == 2:
+        return "IPMC Member (binding)"
+    if vote_round == 1:
+        return "PPMC Member (binding)"
+    return "PMC Member (binding)"
+
+
+def _counted_summary_add(summary: CountedVoteSummary, choice: sql.VoteChoice, is_binding: bool) -> None:
+    match choice:
+        case sql.VoteChoice.YES:
+            if is_binding:
+                summary.binding_votes_yes += 1
+            else:
+                summary.non_binding_votes_yes += 1
+        case sql.VoteChoice.ABSTAIN:
+            if is_binding:
+                summary.binding_votes_abstain += 1
+            else:
+                summary.non_binding_votes_abstain += 1
+        case sql.VoteChoice.NO:
+            if is_binding:
+                summary.binding_votes_no += 1
+            else:
+                summary.non_binding_votes_no += 1
+
+
+def _ensure_utc(timestamp: datetime.datetime) -> datetime.datetime:
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=datetime.UTC)
+    return timestamp.astimezone(datetime.UTC)
+
+
+def _interpretation_order(interp: sql.VoteInterpretation) -> tuple[datetime.datetime, datetime.datetime, str]:
+    return _ensure_utc(interp.email_timestamp), _ensure_utc(interp.created), interp.asf_eid
+
+
+def _latest_interpretations(rows: Sequence[sql.VoteInterpretation]) -> dict[str, sql.VoteInterpretation]:
+    latest: dict[str, sql.VoteInterpretation] = {}
+    for interp in rows:
+        key = f"uid:{interp.voter_asf_uid}" if interp.voter_asf_uid else f"email:{interp.voter_email.lower()}"
+        previous = latest.get(key)
+        if (previous is None) or (_interpretation_order(interp) > _interpretation_order(previous)):
+            latest[key] = interp
+    return latest
+
+
 def _svn_publish_result(task: sql.Task) -> results.SvnPublish | None:
     result = task.result
     if isinstance(result, results.SvnPublish):
@@ -1716,66 +1678,6 @@ def _svn_publish_result(task: sql.Task) -> results.SvnPublish | None:
         if isinstance(parsed, results.SvnPublish):
             return parsed
     return None
-
-
-def _unarchive_eligibility_error(project: sql.Project) -> str | None:
-    if project.status != sql.ProjectStatus.DORMANT:
-        return f"Project '{project.key}' is not dormant, so it can't be restored."
-    return None
-
-
-async def _trusted_ballot_details_from_ballots(
-    release: sql.Release,
-    ballots: Sequence[sql.BallotPaper],
-    *,
-    expected_vote_round: int | object | None = _NO_EXPECTED_VOTE_ROUND,
-    caller_data: db.Session | None = None,
-) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
-    if release.committee is None:
-        raise ValueError(errors.RELEASE_NO_COMMITTEE)
-    active_round = trusted_vote_round(release)
-    details: list[TrustedBallotDetail] = []
-    summary = TrustedVoteSummary()
-    for ballot in ballots:
-        is_carried = (ballot.vote_round == 1) and (active_round == 2)
-        round_mismatch = (
-            (expected_vote_round is not _NO_EXPECTED_VOTE_ROUND)
-            and (ballot.vote_round != expected_vote_round)
-            and (not is_carried)
-        )
-        if round_mismatch:
-            raise ValueError("Trusted ballot vote round does not match the active vote round")
-        if caller_data is None:
-            is_binding, _binding_committee = await user.is_binding_for_release(
-                release.committee,
-                ballot.voter_asf_uid,
-                active_round,
-            )
-        else:
-            is_binding, _binding_committee = await user.is_binding_for_release(
-                release.committee,
-                ballot.voter_asf_uid,
-                active_round,
-                caller_data=caller_data,
-            )
-        _trusted_summary_add(summary, ballot.choice, is_binding)
-        binding_label, non_binding_label = user.binding_terminology(active_round)
-        details.append(
-            TrustedBallotDetail(
-                cast_at=ballot.created,
-                choice=ballot.choice,
-                comment=ballot.comment,
-                is_binding=is_binding,
-                is_carried=is_carried,
-                receipt_message_id=ballot.receipt_message_id,
-                revision_number_at_cast=ballot.safe_revision_number_at_cast,
-                status_label=binding_label if is_binding else non_binding_label,
-                voter_asf_uid=ballot.voter_asf_uid,
-                voter_fullname=ballot.voter_fullname,
-                vote_round=ballot.vote_round,
-            )
-        )
-    return details, summary
 
 
 async def _trusted_dist_lookup(
@@ -1899,23 +1801,10 @@ async def _trusted_project_upload_matches(
     return matches
 
 
-def _trusted_summary_add(summary: TrustedVoteSummary, choice: sql.VoteChoice, is_binding: bool) -> None:
-    match choice:
-        case sql.VoteChoice.YES:
-            if is_binding:
-                summary.binding_votes_yes += 1
-            else:
-                summary.non_binding_votes_yes += 1
-        case sql.VoteChoice.ABSTAIN:
-            if is_binding:
-                summary.binding_votes_abstain += 1
-            else:
-                summary.non_binding_votes_abstain += 1
-        case sql.VoteChoice.NO:
-            if is_binding:
-                summary.binding_votes_no += 1
-            else:
-                summary.non_binding_votes_no += 1
+def _unarchive_eligibility_error(project: sql.Project) -> str | None:
+    if project.status != sql.ProjectStatus.DORMANT:
+        return f"Project '{project.key}' is not dormant, so it can't be restored."
+    return None
 
 
 async def _upload_restrictions_check(project: sql.Project, payload: github.TrustedPublisherPayload) -> None:

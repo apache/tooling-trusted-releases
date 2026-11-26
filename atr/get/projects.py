@@ -461,8 +461,6 @@ def _approval_link(project: sql.Project, action: sql.ApprovalAction) -> htm.Elem
             route, classes = archive, ".btn.btn-sm.btn-outline-secondary"
         case sql.ApprovalAction.DELETE:
             route, classes = delete, ".btn.btn-sm.btn-outline-danger"
-        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
-            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             route, classes = unarchive, ".btn.btn-sm.btn-outline-secondary"
     return htm.a(classes, href=util.as_url(route, project_key=str(project.key)))[f"Request {_approval_noun(action)}"]
@@ -474,8 +472,6 @@ def _approval_notice(action: sql.ApprovalAction) -> str:
             effect = ", which deletes any draft releases and marks the project dormant"
         case sql.ApprovalAction.DELETE:
             effect = ""
-        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
-            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             effect = ", which makes the project active again. Its archived releases stay archived"
     return (
@@ -490,8 +486,6 @@ def _approval_noun(action: sql.ApprovalAction) -> str:
             return "archival"
         case sql.ApprovalAction.DELETE:
             return "deletion"
-        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
-            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             return "unarchival"
 
@@ -1743,14 +1737,6 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
         documentation="Email template for vote resolution messages.",
     )
     with card.block(htm.div, classes=".card-body") as card_body:
-        if project.policy_vote_mode == sql.VoteMode.TRUSTED:
-            card_body.p[
-                "Streamlined voting is ",
-                htm.strong["on"],
-                ". This is set for all of the committee's projects on the ",
-                htm.a(href=util.as_url(committees.view, name=str(project.committee_key)) + "#voting")["committee page"],
-                ".",
-            ]
         await form.render_block(
             card_body,
             model_cls=shared.projects.VotePolicyForm,
@@ -1796,8 +1782,6 @@ async def _request_approval_page(
             post_route = post.projects.archive
         case sql.ApprovalAction.DELETE:
             post_route = post.projects.delete
-        case sql.ApprovalAction.EMAIL_VOTING | sql.ApprovalAction.TRUSTED_VOTING:
-            raise ValueError(f"{action.value} is not a project action")
         case sql.ApprovalAction.UNARCHIVE:
             post_route = post.projects.unarchive
     project_path = util.as_url(view, project_key=str(project_key))

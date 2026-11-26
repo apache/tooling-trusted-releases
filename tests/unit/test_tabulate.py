@@ -16,7 +16,7 @@
 # under the License.
 
 import contextlib
-import time
+import datetime
 import unittest.mock as mock
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -28,6 +28,7 @@ import atr.models.sql as sql
 import atr.models.tabulate as models_tabulate
 import atr.tabulate as tabulate
 import atr.user as user
+import atr.util as util
 
 
 @pytest.mark.parametrize(
@@ -43,16 +44,166 @@ def test_binding_vote_passes(binding_plus_one: int, binding_minus_one: int, expe
     assert tabulate.binding_vote_passes(binding_plus_one, binding_minus_one) is expected
 
 
-def test_trusted_tally_block_uses_ppmc_binding_label() -> None:
-    summary = interaction.TrustedVoteSummary(binding_votes_yes=3, non_binding_votes_no=1)
+@pytest.mark.asyncio
+async def test_email_for_confirmation_clamps_future_date_without_received(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict, source
+        yield (
+            "doc-future",
+            {
+                "from_raw": "Personal <personal@example.org>",
+                "list_raw": "dev.project.apache.org",
+                "cc": "",
+                "epoch": "4102444800",
+                "subject": "Re: [VOTE] Release project 1.0.0",
+                "body": "+1\n",
+                "message-id": "<future@example.org>",
+                "mid": "archive-future",
+                "date": "Fri, 01 Jan 2099 00:00:00 +0000",
+                "received": [],
+                "received_spf": [],
+            },
+        )
 
-    tally = tabulate.trusted_tally_block(summary, *user.binding_terminology(1))
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
 
-    assert tally.splitlines() == [
-        "There were 3 PPMC-binding votes.",
-        "PPMC-binding votes: +1: 3, 0: 0, -1: 0.",
-        "Non-binding votes: +1: 0, 0: 0, -1: 1.",
-    ]
+    before = datetime.datetime.now(datetime.UTC)
+    result = await tabulate.email_for_confirmation("0123456789abcdef0123456789abcdef", "archive-future")
+    after = datetime.datetime.now(datetime.UTC)
+
+    assert before <= result.email_timestamp <= after
+    assert result.voter_asf_uid is None
+    assert result.voter_email == "personal@example.org"
+    assert result.voter_fullname == "Personal"
+
+
+@pytest.mark.asyncio
+async def test_email_for_confirmation_rejects_root_receipt_and_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread_id = "0123456789abcdef0123456789abcdef"
+
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict, source
+        root = _vote_message(
+            from_raw="RM <rm@apache.org>",
+            message_id="<root@apache.org>",
+            archive_mid=thread_id,
+            epoch="1",
+        )
+        root["subject"] = "[VOTE] Release project 1.0.0"
+        yield ("doc-root", root)
+        yield (
+            "doc-receipt",
+            _vote_message(
+                from_raw="Voter <voter@apache.org>",
+                message_id="<receipt-1@apache.org>",
+                archive_mid="archive-receipt",
+                epoch="2",
+            ),
+        )
+
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+
+    with pytest.raises(interaction.InteractionError, match="opening vote message"):
+        await tabulate.email_for_confirmation(thread_id, thread_id)
+
+    with pytest.raises(interaction.InteractionError, match="receipt"):
+        await tabulate.email_for_confirmation(
+            thread_id,
+            "archive-receipt",
+            excluded_message_ids={" <receipt-1@apache.org> "},
+        )
+
+    with pytest.raises(interaction.InteractionError, match="not found"):
+        await tabulate.email_for_confirmation(thread_id, "archive-missing")
+
+
+@pytest.mark.asyncio
+async def test_email_for_confirmation_unmapped_sender_and_fullname_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict, source
+        yield (
+            "doc-1",
+            {
+                "from_raw": "<contrib@example.org>",
+                "list_raw": "dev.project.apache.org",
+                "cc": "",
+                "epoch": "1767225600",
+                "subject": "Re: [VOTE] Release project 1.0.0",
+                "body": "+1\n",
+                "message-id": "<contrib@example.org>",
+                "mid": "archive-contrib",
+                "date": "Thu, 01 Jan 2026 00:00:00 +0000",
+                "received": [],
+                "received_spf": [],
+            },
+        )
+
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+
+    result = await tabulate.email_for_confirmation("0123456789abcdef0123456789abcdef", "archive-contrib")
+
+    assert result.voter_asf_uid is None
+    assert result.voter_email == "contrib@example.org"
+    assert result.voter_fullname == "contrib"
+    assert result.email_timestamp == datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.UTC)
+
+
+@pytest.mark.asyncio
+async def test_email_for_confirmation_uses_topmost_received_header_from_raw_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_email = (
+        b"From: Alice <alice@apache.org>\r\n"
+        b"Subject: Re: [VOTE] Release project 1.0.0\r\n"
+        b"Message-ID: <reply-1@apache.org>\r\n"
+        b"Date: Wed, 01 Jan 2099 12:00:00 +0000\r\n"
+        b"Received: from mx.apache.org by lists.apache.org with ESMTPS; Thu, 01 Jan 2026 10:30:00 +0200\r\n"
+        b"Received: from client.local by mx.apache.org with SMTP; Thu, 01 Jan 2026 07:00:00 +0000\r\n"
+        b"\r\n"
+        b"+1\r\n"
+    )
+    parsed_msg = util._thread_message_from_source("archive-reply-1", raw_email)
+
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        assert strict is True
+        assert source is True
+        yield ("archive-reply-1", parsed_msg)
+
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+
+    result = await tabulate.email_for_confirmation("0123456789abcdef0123456789abcdef", "archive-reply-1")
+
+    assert result.asf_eid == "archive-reply-1"
+    assert result.voter_asf_uid == "alice"
+    assert result.voter_email == "alice@apache.org"
+    assert result.voter_fullname == "Alice"
+    assert result.email_timestamp == datetime.datetime(2026, 1, 1, 8, 30, tzinfo=datetime.UTC)
 
 
 @pytest.mark.parametrize("line", ["+0.5", "-0.5", "+.5", "+0.9 from me", "so here is my +0.5 :)", "+1.5"])
@@ -150,105 +301,51 @@ async def test_vote_committee_returns_project_committee_for_podling_round_one(
     assert result is committee
 
 
-def test_vote_outcome_applies_the_default_minimum_to_a_saved_policy_without_one() -> None:
-    release = SimpleNamespace(project=sql.Project(key="x", release_policy=sql.ReleasePolicy()))
-
-    _passed, outcome = tabulate.vote_outcome(release, int(time.time()), {})
-
-    assert "still open" in outcome
-
-
-def test_vote_outcome_format_fails_when_binding_minus_one_equals_plus_one() -> None:
-    """_vote_outcome_format returns (False, ...) when binding -1 >= binding +1."""
-    passed, _outcome = tabulate._vote_outcome_format(None, 3, 3)
-
-    assert passed is False
-
-
-def test_vote_outcome_format_fails_when_fewer_than_three_binding_plus_one() -> None:
-    """_vote_outcome_format returns (False, ...) for fewer than 3 binding +1."""
-    passed, _outcome = tabulate._vote_outcome_format(None, 2, 0)
-
-    assert passed is False
-
-
-def test_vote_outcome_format_passes_with_three_binding_plus_one() -> None:
-    """_vote_outcome_format returns (True, ...) for 3 binding +1 and 0 binding -1."""
-    passed, _outcome = tabulate._vote_outcome_format(None, 3, 0)
-
-    assert passed is True
-
-
-def test_vote_resolution_body_votes_formats_plural_binding_summary() -> None:
-    summary = {
-        "binding_votes": 9,
-        "binding_votes_yes": 8,
-        "binding_votes_no": 0,
-        "binding_votes_abstain": 1,
-    }
-
-    body_lines = list(tabulate._vote_resolution_body_votes({}, summary, binding_member_label="PMC member"))
-
-    assert body_lines[2] == "Of these binding votes, 8 were +1, 0 were -1, and 1 was 0."
-
-
-def test_vote_resolution_body_votes_formats_singular_binding_summary() -> None:
-    summary = {
-        "binding_votes": 9,
-        "binding_votes_yes": 8,
-        "binding_votes_no": 1,
-        "binding_votes_abstain": 0,
-    }
-
-    body_lines = list(tabulate._vote_resolution_body_votes({}, summary, binding_member_label="PMC member"))
-
-    assert body_lines[2] == "Of these binding votes, 8 were +1, 1 was -1, and 0 were 0."
-
-
-def test_vote_resolution_body_votes_uses_ppmc_binding_label() -> None:
-    summary = {
-        "binding_votes": 1,
-        "binding_votes_yes": 1,
-        "binding_votes_no": 0,
-        "binding_votes_abstain": 0,
-    }
-    vote_email = models_tabulate.VoteEmail(
-        name="PPMC Member",
-        asf_uid_or_email="ppmc",
-        from_email="ppmc@apache.org",
-        status=models_tabulate.VoteStatus.BINDING,
-        asf_eid="ppmc-eid",
-        iso_datetime="2026-01-01T00:00:00Z",
-        vote=models_tabulate.Vote.YES,
-        quotation="+1",
-        updated=False,
-    )
-
-    body_lines = list(
-        tabulate._vote_resolution_body_votes(
-            {"ppmc": vote_email},
-            summary,
-            *user.binding_terminology(1),
-            binding_member_label=user.binding_member_label(1),
-        )
-    )
-
-    assert body_lines == [
-        "The PPMC-binding votes were cast as follows:",
-        "",
-        "+1 ppmc (PPMC-binding)",
-        "",
-        "There was 1 PPMC-binding vote.",
-        "",
-        "Of these PPMC-binding votes, 1 was +1, 0 were -1, and 0 were 0.",
-        "",
-    ]
-
-
 def test_vote_result_subject_formats_result_before_vote() -> None:
     release = SimpleNamespace(project=SimpleNamespace(display_name="Project"), version="1.0.0")
 
     assert tabulate.vote_result_subject(release, "passed") == "[RESULT] [VOTE] Release Project 1.0.0 PASSED"
+
+
+def test_vote_tally_block_includes_provenance_and_uses_ppmc_binding_label() -> None:
+    summary = interaction.CountedVoteSummary(binding_votes_yes=3, non_binding_votes_no=1)
+    ballots = [
+        interaction.CountedVoteDetail(
+            cast_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+            choice=sql.VoteChoice.YES,
+            is_binding=True,
+            receipt_message_id="r1@apache.org",
+            source="atr",
+            status_label="PPMC Member (binding)",
+            voter_asf_uid="ppmc",
+            voter_fullname="PPMC Voter",
+            vote_round=1,
+        ),
+        interaction.CountedVoteDetail(
+            asf_eid="eid-1",
+            cast_at=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC),
+            choice=sql.VoteChoice.NO,
+            confirmed_by="ppmc",
+            is_binding=False,
+            source="email",
+            status_label="Contributor (non-binding)",
+            voter_asf_uid=None,
+            voter_email="contrib@example.org",
+            voter_fullname="Contributor",
+            vote_round=1,
+        ),
+    ]
+
+    tally = tabulate.vote_tally_block(summary, *user.binding_terminology(1), ballots=ballots)
+
+    assert tally.splitlines() == [
+        "+1 ppmc (PPMC-binding)",
+        "-1 contrib@example.org (non-binding, email confirmed)",
+        "",
+        "There were 3 PPMC-binding votes.",
+        "PPMC-binding votes: +1: 3, 0: 0, -1: 0.",
+        "Non-binding votes: +1: 0, 0: 0, -1: 1.",
+    ]
 
 
 @pytest.mark.asyncio
@@ -256,6 +353,7 @@ async def test_votes_applies_interpretation_to_its_email_only(monkeypatch: pytes
     async def _thread_messages(
         _thread_id: str, *, strict: bool = False, source: bool = False
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict, source
         for voter in ("one", "two"):
             message = _vote_message(
                 from_raw=f"Voter <{voter}@apache.org>",
@@ -279,7 +377,9 @@ async def test_votes_applies_interpretation_to_its_email_only(monkeypatch: pytes
     )
 
     assert tabulated_votes["one"].vote == models_tabulate.Vote.YES
+    assert tabulated_votes["one"].confirmed is True
     assert tabulated_votes["two"].vote == models_tabulate.Vote.UNKNOWN
+    assert tabulated_votes["two"].confirmed is False
 
 
 @pytest.mark.asyncio
@@ -287,6 +387,7 @@ async def test_votes_does_not_treat_a_fractional_pmc_vote_as_binding(monkeypatch
     async def _thread_messages(
         _thread_id: str, *, strict: bool = False, source: bool = False
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict, source
         for voter in ("one", "two", "three"):
             message = _vote_message(
                 from_raw=f"Voter <{voter}@apache.org>",
@@ -303,39 +404,43 @@ async def test_votes_does_not_treat_a_fractional_pmc_vote_as_binding(monkeypatch
     )
     monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
     committee = sql.Committee(key="example", committee_members=["one", "two"], committers=["one", "two", "three"])
+    interp_two = sql.VoteInterpretation(
+        release_key="example-1.0.0",
+        vote_seq=1,
+        asf_eid="archive-two",
+        voter_asf_uid="two",
+        voter_email="two@apache.org",
+        voter_fullname="Voter",
+        choice=sql.VoteChoice.YES,
+        is_binding_at_confirm=True,
+        email_timestamp=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        confirmed_by="one",
+    )
 
     _start_unixtime, tabulated_votes = await tabulate.votes(
         committee,
         "0123456789abcdef0123456789abcdef",
-        interpretations={"archive-two": sql.VoteChoice.YES},
+        interpretations={"archive-two": interp_two},
     )
 
     assert tabulated_votes["one"].vote == models_tabulate.Vote.ABSTAIN
     assert tabulated_votes["one"].fraction == "+0.5"
-    assert tabulated_votes["two"].fraction is None
-    assert tabulated_votes["three"].fraction == "+0.5"
     assert tabulated_votes["one"].status == models_tabulate.VoteStatus.FRACTIONAL
-    # The release manager's reading of an email stands as a binding vote
+    assert tabulated_votes["one"].confirmed is False
+    # Confirming an interpretation stands as a binding vote with confirmed metadata
+    assert tabulated_votes["two"].fraction is None
     assert tabulated_votes["two"].vote == models_tabulate.Vote.YES
     assert tabulated_votes["two"].status == models_tabulate.VoteStatus.BINDING
+    assert tabulated_votes["two"].confirmed is True
+    assert tabulated_votes["two"].confirmed_by == "one"
+    assert tabulated_votes["two"].asf_uid == "two"
+    assert tabulated_votes["two"].unixtime == 1
+    assert tabulated_votes["three"].fraction == "+0.5"
     assert tabulated_votes["three"].status == models_tabulate.VoteStatus.COMMITTER
 
     summary = tabulate.vote_summary(tabulated_votes)
     assert summary["binding_votes"] == 1
     assert summary["non_binding_votes_abstain"] == 2
-    body = list(tabulate._vote_resolution_body_votes(tabulated_votes, summary, binding_member_label="PMC member"))
-    assert body[body.index("The contributor and non-binding votes were cast as follows:") + 2 :] == [
-        "+0.5 one (PMC member, non-binding)",
-        "",
-    ]
-    podling_tally = tabulate.email_tally_block(
-        tabulated_votes,
-        summary,
-        "0123456789abcdef0123456789abcdef",
-        *user.binding_terminology(1),
-        binding_member_label=user.binding_member_label(1),
-    )
-    assert "+0.5 one (PPMC member, non-binding)" in podling_tally.splitlines()
 
 
 @pytest.mark.asyncio
@@ -393,6 +498,79 @@ async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytes
     assert "receipt-voter" not in tabulated_votes
     assert tabulated_votes["other-voter"].vote == models_tabulate.Vote.YES
     assert tabulated_votes["mid-only-voter"].asf_eid == "receipt-mid@apache.org"
+
+
+@pytest.mark.asyncio
+async def test_votes_overlays_confirmed_reply_without_heuristic_vote_and_skips_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread_id = "0123456789abcdef0123456789abcdef"
+
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False, source: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict, source
+        root = _vote_message(
+            from_raw="Release Manager <rm@apache.org>",
+            message_id="<root@apache.org>",
+            archive_mid=thread_id,
+            epoch="100",
+        )
+        root["subject"] = "[VOTE] Release project 1.0.0"
+        root["body"] = "+1\n"
+        yield ("doc-root", root)
+
+        reply = _vote_message(
+            from_raw="Alice <alice@apache.org>",
+            message_id="<reply@apache.org>",
+            archive_mid="archive-alice",
+            epoch="200",
+        )
+        reply["body"] = "LGTM, ship it!"
+        yield ("doc-alice", reply)
+
+        result_msg = _vote_message(
+            from_raw="Release Manager <rm@apache.org>",
+            message_id="<result@apache.org>",
+            archive_mid="archive-result",
+            epoch="300",
+        )
+        result_msg["subject"] = "[RESULT] [VOTE] Release project 1.0.0 PASSED"
+        result_msg["body"] = "+1\n"
+        yield ("doc-result", result_msg)
+
+    monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
+    monkeypatch.setattr(
+        tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=tabulate.cache.EmailUidLookup({}))
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+    committee = sql.Committee(key="example", committee_members=["alice"], committers=["alice", "rm"])
+    interp = sql.VoteInterpretation(
+        release_key="example-1.0.0",
+        vote_seq=1,
+        asf_eid="archive-alice",
+        voter_asf_uid="alice",
+        voter_email="alice@apache.org",
+        voter_fullname="Alice",
+        choice=sql.VoteChoice.YES,
+        is_binding_at_confirm=True,
+        email_timestamp=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        confirmed_by="rm",
+    )
+
+    start_unixtime, tabulated_votes = await tabulate.votes(
+        committee,
+        thread_id,
+        interpretations={"archive-alice": interp},
+    )
+
+    assert start_unixtime == 100
+    assert list(tabulated_votes) == ["alice"]
+    assert tabulated_votes["alice"].vote == models_tabulate.Vote.YES
+    assert tabulated_votes["alice"].confirmed is True
+    assert tabulated_votes["alice"].confirmed_by == "rm"
+    assert tabulated_votes["alice"].asf_uid == "alice"
+    assert tabulated_votes["alice"].unixtime == 200
 
 
 def _make_release(*, committee: SimpleNamespace, podling_thread_id: str | None) -> SimpleNamespace:

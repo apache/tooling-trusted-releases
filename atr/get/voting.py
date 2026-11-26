@@ -38,7 +38,6 @@ import atr.render as render
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
-import atr.strings as strings
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -85,7 +84,6 @@ async def selected(
         if (min_hours == 0) and config.is_production_mode():
             min_hours = 72
 
-        vote_mode = release.effective_vote_mode
         default_subject_template = await construct.start_vote_subject_default(project_key)
         template_warning = None
         if release.expedited:
@@ -126,7 +124,6 @@ async def selected(
             default_body=default_body,
             template_warning=template_warning,
             min_hours=min_hours,
-            vote_mode=vote_mode,
             asf_uid=session.uid,
             concern_groups=concern_groups,
             submitted_concerns=submitted_concerns,
@@ -207,7 +204,6 @@ async def _render_page(  # noqa: C901
     default_body: str,
     template_warning: str | None,
     min_hours: int,
-    vote_mode: sql.VoteMode,
     asf_uid: str,
     concern_groups: list[util.ConcernGroup],
     submitted_concerns: list[str],
@@ -249,11 +245,6 @@ async def _render_page(  # noqa: C901
 
     if template_warning is not None:
         page.div(".alert.alert-warning.mb-4", role="alert")[template_warning]
-
-    if (vote_mode == sql.VoteMode.TRUSTED) and (not expedited) and (podling_vote_round is None):
-        page.div(".p-3.mb-4.bg-info-subtle.border.border-info.rounded")[
-            htm.strong["Streamlined voting. "], strings.STREAMLINED_VOTING_RULE
-        ]
 
     if expedited:
         private_address = f"private@{release.committee.key}.apache.org"
@@ -357,30 +348,25 @@ async def _render_page(  # noqa: C901
         else:
             skip.append("second_round_email_to")
 
-        if vote_mode == sql.VoteMode.TRUSTED:
-            if podling_vote_round == 1:
-                vote_label = "first round vote"
-            elif podling_vote_round == 2:
-                vote_label = "second round vote"
-            else:
-                vote_label = "vote"
-            custom["notify_when_finished"] = htm.div[
-                htpy.input(
-                    type="checkbox",
-                    name="notify_when_finished",
-                    id="notify_when_finished",
-                    value="on",
-                    class_="form-check-input",
-                ),
-                htm.div(".form-text.text-muted.mt-1")[
-                    f"If enabled, ATR will email {asf_uid}@apache.org when it resolves the {vote_label} itself. "
-                    f"It always emails you if the {vote_label} ends and you need to resolve it.",
-                ],
-            ]
-            skip.append("automatic_publish_when_resolved")
+        if podling_vote_round == 1:
+            vote_label = "first round vote"
+        elif podling_vote_round == 2:
+            vote_label = "second round vote"
         else:
-            skip.append("notify_when_finished")
-            _add_automatic_publish_fields(custom, skip, publish_eligible)
+            vote_label = "vote"
+        custom["notify_when_finished"] = htm.div[
+            htpy.input(
+                type="checkbox",
+                name="notify_when_finished",
+                id="notify_when_finished",
+                value="on",
+                class_="form-check-input",
+            ),
+            htm.div(".form-text.text-muted.mt-1")[
+                f"If enabled, ATR will send a reminder email to {asf_uid}@apache.org when the {vote_label} ends.",
+            ],
+        ]
+        _add_automatic_publish_fields(custom, skip, publish_eligible)
 
     download_suffix_default = str(default_download_path_suffix) if (default_download_path_suffix is not None) else ""
     publish_location, publish_mismatch = await construct.publish_location_for_release(
@@ -392,7 +378,6 @@ async def _render_page(  # noqa: C901
         cancel_url=cancel_url,
         defaults={
             "vote_duration": min_hours,
-            "vote_mode": vote_mode,
             "subject_template_hash": subject_template_hash,
             "body": default_body,
             "rendered_revision": revision_number,
