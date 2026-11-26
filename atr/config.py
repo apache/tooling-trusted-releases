@@ -187,6 +187,8 @@ class AppConfig:
     MAX_CONTENT_LENGTH: int = _ENVIRONMENT_CONFIG("MAX_CONTENT_LENGTH", default=512 * _MB, cast=int)
     # Maximum duration to receive upload request bodies
     UPLOAD_BODY_TIMEOUT: int = _ENVIRONMENT_CONFIG("UPLOAD_BODY_TIMEOUT", default=3600, cast=int)
+    # Maximum duration to send download response bodies
+    DOWNLOAD_RESPONSE_TIMEOUT: int = _ENVIRONMENT_CONFIG("DOWNLOAD_RESPONSE_TIMEOUT", default=3600, cast=int)
     # Maximum size limit for archive extraction
     MAX_EXTRACT_SIZE: int = _ENVIRONMENT_CONFIG("MAX_EXTRACT_SIZE", default=2 * _GB, cast=int)
     # Chunk size for reading files during extraction
