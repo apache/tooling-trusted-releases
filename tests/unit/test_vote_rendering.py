@@ -712,6 +712,7 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
     [
         (True, None, {1: True, 2: True}, "PPMC-binding"),
         (True, None, {1: False, 2: True}, "Non-binding"),
+        (True, None, {1: True, 2: False}, "PPMC-binding"),
         (True, "thread-abc", {2: True}, "Binding"),
         (False, None, {None: False}, "Non-binding"),
     ],
@@ -746,6 +747,7 @@ async def test_vote_decision_labels_reflect_membership(
     if is_podling and (podling_thread_id is None):
         ppmc_word = "PPMC-binding" if binding_by_round[1] else "non-binding"
         assert f"your vote is <strong>{ppmc_word}</strong> for podling approval." in html
+        assert ("you also need to vote in the IPMC vote" in html) is binding_by_round[2]
 
 
 def test_vote_task_warnings_renders_delivery_warnings() -> None:

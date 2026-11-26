@@ -438,7 +438,8 @@ async def _render_binding_status(
     committee_membership = _voting_committee_membership(binding_committee, vote_round)
     article = "an" if committee_membership[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
     if vote_round == 1:
-        return _render_binding_status_round_one(page, f"{article} {committee_membership}", is_binding)
+        is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2)
+        return _render_binding_status_round_one(page, f"{article} {committee_membership}", is_binding, is_ipmc_member)
     binding_word, non_binding_word = user.binding_terminology(vote_round)
     if is_binding:
         page.p[
@@ -456,12 +457,19 @@ async def _render_binding_status(
     return binding_word if is_binding else non_binding_word
 
 
-def _render_binding_status_round_one(page: htm.Block, ppmc_membership: str, is_ppmc_member: bool) -> str:
+def _render_binding_status_round_one(
+    page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool
+) -> str:
     if is_ppmc_member:
         page.p[f"As {ppmc_membership}, your vote is ", htpy.strong["PPMC-binding"], " for podling approval."]
-        return "PPMC-binding"
-    page.p[f"You are not {ppmc_membership}, so your vote is ", htpy.strong["non-binding"], " for podling approval."]
-    return "Non-binding"
+    else:
+        page.p[f"You are not {ppmc_membership}, so your vote is ", htpy.strong["non-binding"], " for podling approval."]
+    if is_ipmc_member:
+        page.p[
+            "A vote here counts only in the PPMC vote, so as an Incubator PMC member you also need to vote in the "
+            "IPMC vote."
+        ]
+    return "PPMC-binding" if is_ppmc_member else "Non-binding"
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
