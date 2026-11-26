@@ -240,13 +240,15 @@ async def _download_or_list(
         return quart.redirect(util.as_url(root.index))
 
     # Send the file with original filename
-    return await quart.send_file(
+    response = await quart.send_file(
         # audit_guidance using octet-stream for all files is intentional so files are downloaded and not rendered
         full_path,
         as_attachment=True,
         attachment_filename=validated_path.name,
         mimetype="application/octet-stream",
     )
+    response.timeout = config.get().DOWNLOAD_RESPONSE_TIMEOUT
+    return response
 
 
 async def _generate_file_url_list(release: sql.Release) -> str:
