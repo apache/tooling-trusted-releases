@@ -46,7 +46,7 @@ def ensure_cycle_match(page: Page, cycle_match: str) -> None:
     page.locator("#version_method_semver").check()
     field.fill(cycle_match)
     page.locator("#version_method_simple").check()
-    page.get_by_role("button", name="Save").click()
+    page.get_by_role("button", name="Save", exact=True).click()
     page.wait_for_load_state()
 
 
@@ -60,7 +60,7 @@ def ensure_policy_auto_archive(page: Page, enabled: bool) -> None:
         checkbox.check()
     else:
         checkbox.uncheck()
-    page.get_by_role("button", name="Save").click()
+    page.get_by_role("button", name="Save", exact=True).click()
     page.wait_for_load_state()
 
 

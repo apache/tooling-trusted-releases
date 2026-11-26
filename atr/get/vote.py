@@ -131,7 +131,8 @@ async def render_options_page(
     if session is not None:
         _render_vote_task_warnings(page, latest_vote_task)
     _render_section_download(page, release, session, user_category)
-    _render_section_checks(page, release, file_totals)
+    has_checklist = bool((await interaction.release_settings(release)).policy_release_checklist)
+    _render_section_checks(page, release, file_totals, has_checklist=has_checklist)
     await _render_section_vote(
         page, release, session, user_category, archive_url, latest_vote_task, early_task, overlap_rounds
     )
@@ -235,7 +236,7 @@ async def _append_cast_vote_form(
             "Fractional votes such as +0.5 are not binding, and count as 0. "
             "To cast one, vote 0 and give the fraction in your comment."
         ]
-        comment_template = await construct.resolve_template(release.project, "vote_comment")
+        comment_template = await construct.resolve_template(release, "vote_comment")
         defaults["comment"] = comment_template.body
         if comment_template.warning is not None:
             page.div(".alert.alert-warning", role="alert")[comment_template.warning]
@@ -639,7 +640,9 @@ def _render_publish_location(page: htm.Block, release: sql.Release, latest_vote_
     page.p["If this vote ", condition, ", ATR will publish the release to ", htm.code[location], "."]
 
 
-def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: checks.FileStats) -> None:
+def _render_section_checks(
+    page: htm.Block, release: sql.Release, file_totals: checks.FileStats, *, has_checklist: bool
+) -> None:
     import atr.get.checks as checks
 
     page.h2("#checks")["2. Review file checks"]
@@ -710,7 +713,7 @@ def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: c
     summary.append(body.collect())
     page.append(summary.collect())
 
-    if release.project.policy_release_checklist:
+    if has_checklist:
         _render_checklist_card(page, release)
 
 

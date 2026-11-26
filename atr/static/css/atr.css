@@ -946,6 +946,10 @@ td.atr-checkbox-col {
     line-height: 2.25;
 }
 
+.atr-text-small {
+    font-size: 0.875rem;
+}
+
 .atr-text-strike {
     text-decoration: line-through;
 }

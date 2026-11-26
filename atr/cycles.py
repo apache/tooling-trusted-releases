@@ -40,6 +40,25 @@ if TYPE_CHECKING:
     import atr.db as db
 
 DEFAULT_CYCLE: Final[str] = "default"
+_CYCLE_TEXT_MAX: Final[int] = 64
+
+
+class ReleaseSettings(sql.PolicySettings):
+    """The release settings of one cycle of a project: the project's, with the cycle's overrides in place."""
+
+    def __init__(self, project: sql.Project, overrides: sql.CycleOverrides | None) -> None:
+        self.committee = project.committee
+        self.release_policy = project.release_policy
+        if overrides is not None:
+            self.release_policy = overrides.applied_to(project.release_policy)
+
+
+def can_override(cycle: str) -> bool:
+    """Whether a cycle of this text can have release settings of its own."""
+    # Versions with no cycle of their own are in the default cycle, and use the project's settings
+    if (not cycle) or (cycle == DEFAULT_CYCLE):
+        return False
+    return (cycle == cycle.strip()) and (len(cycle) <= _CYCLE_TEXT_MAX) and cycle.isprintable()
 
 
 def cycle_name_for_version(project: sql.Project, version: str) -> str:
@@ -69,9 +88,27 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
     return cycle
 
 
+def cycle_text(project: sql.Project, version: str) -> str:
+    """The cycle a version is in, as text for a template. Empty for the catch-all cycle."""
+    try:
+        cycle_name = cycle_name_for_version(project, version)
+    except ValueError:
+        return ""
+    return "" if (cycle_name == DEFAULT_CYCLE) else cycle_name
+
+
 def display_name(cycle_name: str) -> str:
     """Heading for a cycle. The default one is the catch-all, not a lifecycle."""
     return "No lifecycle information" if cycle_name == DEFAULT_CYCLE else f"Version {cycle_name}"
+
+
+def download_page_for_version(project: sql.Project, version: str) -> str:
+    """The project's download page for a release of this version, with the version variables filled in."""
+    page = validation.download_page_variables_unescaped(project.download_page or "")
+    if "{{" not in page:
+        return page
+    page = page.replace("{{CYCLE}}", cycle_text(project, version))
+    return page.replace("{{MAJOR_VERSION}}", major_version(version)).replace("{{VERSION}}", version)
 
 
 async def ensure_project_cycle(data: db.Session, project: sql.Project, version: str) -> str:
@@ -160,6 +197,10 @@ def latest_release_in_cycle(
     return ranked[0][1]
 
 
+def major_version(version: str) -> str:
+    return version.partition(".")[0]
+
+
 def newest_first(project_cycles: Iterable[sql.ProjectCycle]) -> list[sql.ProjectCycle]:
     """Order a project's cycles for display, newest first, with the default cycle last.
 
@@ -167,6 +208,22 @@ def newest_first(project_cycles: Iterable[sql.ProjectCycle]) -> list[sql.Project
     and not as text, which is the order the database hands them back in.
     """
     return sorted(project_cycles, key=_cycle_order_key, reverse=True)
+
+
+def planned_cycle(project: sql.Project, entered: str) -> str:
+    """The cycle that typed text is for, which is empty if the project's version scheme allows no such cycle."""
+    # The cycle match takes a version, so a cycle is tried as the start of one. A whole version works too
+    for version in (entered, f"{entered}.0", f"{entered}.0.0"):
+        if project.version_pattern:
+            if validation.compile_project_pattern(project.version_pattern).fullmatch(version) is None:
+                continue
+        try:
+            cycle = cycle_name_for_version(project, version)
+        except ValueError:
+            continue
+        if can_override(cycle) and ((version == entered) or (cycle == entered)):
+            return cycle
+    return ""
 
 
 def prior_release_in_cycle(
@@ -197,6 +254,11 @@ def prior_release_in_cycle(
             return _prior_release_semver(version, same_cycle)
         case sql.VersionMethod.CALVER:
             return _prior_release_calver(project, version, same_cycle)
+
+
+def release_cycle(release: sql.Release) -> str:
+    """The name of the cycle a release is in."""
+    return release.cycle_key.removeprefix(f"{release.project_key}-") or DEFAULT_CYCLE
 
 
 def semver_parse(version_str: str) -> semver.VersionInfo | None:

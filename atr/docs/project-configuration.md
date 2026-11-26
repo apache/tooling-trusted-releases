@@ -11,31 +11,38 @@
 * [Overview](#overview)
 * [Metadata](#metadata)
 * [Security](#security)
-* [Lifecycle](#lifecycle)
+* [Version scheme](#version-scheme)
 * [Compose](#compose)
 * [Vote](#vote)
 * [Finish](#finish)
 * [Third-party distribution](#third-party-distribution)
+* [Settings for one cycle](#settings-for-one-cycle)
 * [Configuring a project with .asf.yaml](#configuring-a-project-with-asfyaml)
 
 ## Overview
 
 Each project in ATR has a project page, which you can reach from the "About this project" link on
-your [home page](/). The page is divided into tabs, and the settings on each tab are described in
-the sections below. The first tab, Releases, lists the project's releases and is not a settings tab,
-though it is where you set [cycle dates](#cycle-dates).
+your [home page](/). The page has three tabs, and the settings on them are described in the sections
+below:
 
-Who can change a setting depends on the tab:
+* **Releases** lists the project's releases, grouped by cycle. It is not a settings tab.
+* **Project** has the settings that describe the project as a whole: Metadata, Security, and Version
+  scheme.
+* **Release settings** has the settings a release uses as it is composed, voted on and finished:
+  Compose, Vote, Finish, and Third-party distribution. A project with more than one cycle can give a
+  cycle its own Compose, Vote and Finish settings, as described under
+  [Settings for one cycle](#settings-for-one-cycle).
 
-* Members of the project's committee, and its release managers, can edit the Metadata and Security
-  tabs, and the release policy tabs: Lifecycle, Compose, Vote, Finish, and Third-party
-  distribution.
+Who can change a setting depends on where it is:
+
+* Members of the project's committee, and its release managers, can edit everything under Project
+  and Release settings.
 * Only members of the committee can change a project's categories and programming languages, or use
   **Export .asf.yaml**.
 * Everybody else sees the same settings, but cannot change them.
 
-The release policy tabs are shown only for an active project, and a retired project cannot be edited
-at all.
+Version scheme and the Release settings tab are shown only for an active project, and a retired
+project cannot be edited at all.
 
 You can also manage most of these settings from your repository, as described under
 [Configuring a project with .asf.yaml](#configuring-a-project-with-asfyaml).
@@ -48,7 +55,10 @@ announcement emails.
 * **Project name.** The display name, in title case. ATR adds the "Apache" prefix for you. Required.
 * **Project description** and **Short description.** The description is required.
 * **Homepage.** The project website. Required.
-* **Download page.** The project's official download page. Required.
+* **Download page.** The project's official download page. Required. Where the page differs by
+  release, the URL can include `{{VERSION}}`, `{{MAJOR_VERSION}}` or `{{CYCLE}}`, and ATR fills them
+  in for each release. An example is `https://example.apache.org/download-{{MAJOR_VERSION}}.html`.
+  `{{CYCLE}}` can be used once the project has a cycle match.
 * **Repositories.** The project's source repositories, one per line. At least one is required.
   A GitHub Actions workflow can upload to the project only from a repository on this list, when the
   PMC allows [uploads from GitHub Actions](github-actions-uploads). The tab shows which entries ATR
@@ -56,7 +66,7 @@ announcement emails.
 * **Lifecycle page.** The page describing the project's release support and lifecycle plans.
 * **Bug database.** The project's issue tracker.
 * **Mailing lists page.** The page on the project website that lists its mailing lists.
-* **Standards.** Any standards that the project implements, one per line.
+* **Relevant standards.** URLs of standards relevant to the project, one per line.
 
 The tab also shows the project key and its committee, which cannot be changed here, and lets
 committee members add and remove the project's **Categories** and **Programming languages**.
@@ -72,12 +82,12 @@ The Security tab records how security matters for the project are handled:
 * **Threat model.** The URL of the project's published, human readable threat model.
 * **Threat model source.** The URL of the threat model's plain text source document.
 
-## Lifecycle
+## Version scheme
 
-The Lifecycle tab sets the project's ***version scheme***, which tells ATR how the project numbers
-its releases and how those releases group into ***cycles***. A cycle is a line of releases that is
-maintained together, such as all `2.x` releases. Projects that maintain several release lines at
-once have several active cycles.
+The Version scheme settings, under Project, tell ATR how the project numbers its releases and how
+those releases group into ***cycles***. A cycle is a line of releases that is maintained together,
+such as all `2.x` releases. Projects that maintain several release lines at once have several active
+cycles.
 
 * **Version method.** One of:
   * *Simple*, where ATR does not interpret version numbers, and orders releases by their release
@@ -167,6 +177,8 @@ refuses to send rather than fall back.
 
 The templates and the checklist can include variables, written in the form `{{VERSION}}`, which ATR
 replaces when it uses the text. Each template field on the tab lists the variables available to it.
+`{{CYCLE}}` is the cycle that the version is in, such as `10.1`, and is empty for a project with a
+single cycle.
 
 ## Finish
 
@@ -182,7 +194,7 @@ The Finish tab sets the defaults for publishing and announcing a release:
   [Choosing the published layout](promoting-to-release#choosing-the-published-layout).
 * **Allow auto-archive.** Lets a new release archive the previous release in the same cycle when it
   is announced. A project has a single cycle unless it has a **Cycle match**, or a **Cycle format**
-  with a part in parentheses, on the [Lifecycle](#lifecycle) tab. If you support more than one line
+  with a part in parentheses, under [Version scheme](#version-scheme). If you support more than one line
   at a time, set up cycles before enabling this, or a release in one line might archive a release in
   another. See
   [Archiving the prior release automatically](archiving-and-lifecycle#archiving-the-prior-release-automatically).
@@ -216,6 +228,36 @@ list, ATR offers to add them. It leaves out a package whose version differs from
 
 Changing the list affects releases whose votes pass afterwards. A release that is already in the
 finish phase keeps the list it started with.
+
+## Settings for one cycle
+
+A project that maintains several release lines can need different settings for each, such as a vote
+email that says what a line supports. When the project has a **Cycle match**, or a **Cycle format**
+with a part in parentheses, the Release settings tab has a **Per-cycle settings** link. It opens an
+**Applies to** list, which is already open for a project with settings for a cycle:
+
+* **Default settings** shows the settings that every cycle uses.
+* Choosing a cycle shows the Compose, Vote and Finish settings as releases in that cycle use them.
+  A setting with a value for the cycle is marked, such as **Set for 10.1**.
+
+To give a cycle its own value for a setting, choose the cycle, change the setting, and save. ATR
+keeps only the settings that differ from the defaults, so a later change to a default still reaches
+every cycle without its own value for it. Saving a setting with the same value as the default goes
+back to the default, and so does **Clear** beside the badge. Third-party distribution applies to
+every cycle.
+
+The list offers each cycle that a release is in. Versions that the pattern does not place have no
+cycle, and use the default settings. To give a cycle settings before its first release, enter the
+cycle under **Add settings for cycle**. ATR checks that the project's version scheme allows a cycle
+of that text, and opens the cycle if it already has releases or settings.
+
+A cycle's settings belong to the text of the cycle, such as `10.1`, and not to the pattern. If you
+change the pattern so that no release is in a cycle of that text, the settings stay and apply to
+nothing. ATR warns you when you save the version scheme, and marks the cycle on the Releases tab and
+in the **Applies to** list. From there you can move the settings to another cycle or remove them.
+
+Settings for one cycle can also be set in `.asf.yaml`, as described under
+[Configuring a project with .asf.yaml](#configuring-a-project-with-asfyaml).
 
 ## Configuring a project with .asf.yaml
 
@@ -275,6 +317,38 @@ The platforms are `maven`, `pypi`, `npm`, `npm_scoped`, `docker_hub` and `artifa
 `owner_namespace` out for `pypi` and `npm`, and `version` out when the package has the release's
 version. A list in the file replaces the whole list in ATR.
 
+[Settings for one cycle](#settings-for-one-cycle) go in a `cycles` block, under the cycle they are
+for. A cycle takes the same keys as `policy`, apart from those that apply to every cycle:
+
+```yaml
+project:
+  cycles:
+    "10.1":
+      min_hours: 120
+      start_vote_template: |
+        The proposed {{PROJECT_NAME}} {{VERSION}} release is ready for a vote.
+    "9.0":
+      vote_recipients:
+        to: dev@example.apache.org
+```
+
+A `cycles` block is always complete, whichever sync mode the file uses. A cycle it leaves out loses
+its settings, and a key left out of a cycle uses the project's value. A cycle has to be one that a
+release is in, or one that the version scheme allows. Without a `cycles` block, the settings that
+cycles have in ATR are left as they are, unless the sync mode is `full`, which clears them.
+
+A cycle can have a blank value where the project has one. Give a list as `[]`, recipients as `{}`,
+and text as `""`:
+
+```yaml
+project:
+  cycles:
+    "10.1":
+      source_excludes_rat: []
+      vote_recipients: {}
+      start_vote_template: ""
+```
+
 By default, synchronization only updates the fields present in the file. A field you remove from
 `.asf.yaml` keeps its value in ATR, including one set earlier by hand. To make the file the whole
 configuration, set `atr_sync_mode: full` under `features`:
@@ -288,9 +362,9 @@ project:
 
 With `full`, every field that `.asf.yaml` can set but the file leaves out is reset to the ATR
 default on each push. In either mode, giving a list as empty, such as `repositories: []`, clears
-it. The project name is never reset. The default mode is `merge`. A project created by a full push starts from the defaults
-too, rather than from a parent project's settings, since anything the file leaves out is a default.
-The export page can produce the file in either mode.
+it. The project name is never reset. The default mode is `merge`. A project created by a full push
+starts from the defaults too, rather than from a parent project's settings, since anything the file
+leaves out is a default. The export page can produce the file in either mode.
 
 While the most recent update to a project came from `.asf.yaml`, ATR shows a notice on the project
 page to anyone who can edit it, and repeats it when they save a change there. The notice clears once

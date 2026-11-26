@@ -155,8 +155,8 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
     is_source = await recorder.primary_path_is_source()
     if is_source:
-        project = await recorder.project()
-        if project.policy_license_check_mode == sql.LicenseCheckMode.RAT:
+        settings = await recorder.settings()
+        if settings.policy_license_check_mode == sql.LicenseCheckMode.RAT:
             return None
 
     is_podling = args.extra_args.get("is_podling", False)
@@ -194,8 +194,8 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     is_source = await recorder.primary_path_is_source()
     if is_source:
-        project = await recorder.project()
-        if project.policy_license_check_mode == sql.LicenseCheckMode.RAT:
+        settings = await recorder.settings()
+        if settings.policy_license_check_mode == sql.LicenseCheckMode.RAT:
             return None
 
     # if await recorder.check_cache(artifact_abs_path):
@@ -211,12 +211,12 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     log.info(f"Checking license headers for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
-    project = await recorder.project()
+    settings = await recorder.settings()
 
     ignore_lines: list[str] = []
     excludes_source: str
     if is_source:
-        ignore_lines = project.policy_source_excludes_lightweight
+        ignore_lines = settings.policy_source_excludes_lightweight
         excludes_source = "policy" if ignore_lines else "none"
     else:
         excludes_source = "none"

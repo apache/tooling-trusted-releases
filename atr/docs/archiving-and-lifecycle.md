@@ -54,16 +54,17 @@ and type `ARCHIVE` to confirm.
 
 If the release is the latest in its cycle, the card warns you that the cycle will have no current
 release in the downloads area once it is archived. A release is the latest in its cycle according to
-the project's version scheme, described under [Lifecycle](project-configuration#lifecycle).
+the project's version scheme, described under [Version scheme](project-configuration#version-scheme).
 
 ## Archiving the prior release automatically
 
 Most releases supersede the one before them, so ATR can archive the prior release for you when the
 new one is announced:
 
-1. If the project supports more than one line at a time, set up cycles on the project's
-   [Lifecycle](project-configuration#lifecycle) tab: choose semver and fill in **Cycle match**, or
-   choose calver and fill in **Cycle format** with the cycle part in parentheses.
+1. If the project supports more than one line at a time, set up cycles in the project's
+   [Version scheme](project-configuration#version-scheme) settings: choose semver and fill in
+   **Cycle match**, or choose calver and fill in **Cycle format** with the cycle part in
+   parentheses.
 2. Enable "Allow auto-archive" on the project's [Finish](project-configuration#finish) tab.
 3. When you start a release, select "Auto archive prior release".
 4. When you announce the release, the announcement form shows the version that will be archived, and

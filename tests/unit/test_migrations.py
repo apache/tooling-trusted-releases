@@ -136,6 +136,9 @@ _ROWS = {
         "INSERT INTO projectsecurityoptions (project_key, github_upload_workflow_paths, github_upload_ref_type,"
         " github_upload_ref_patterns) VALUES ('p', '[]', '', '[]')",
     ),
+    "0153": (
+        "INSERT INTO cycleoverrides (project_key, cycle, settings, update_type) VALUES ('p', '1', '{}', 'MANUAL')",
+    ),
 }
 
 _INSERT_COMMITTEE = (

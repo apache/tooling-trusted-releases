@@ -94,11 +94,13 @@ async def location_preview(
     if project.committee is None:
         return quart.jsonify(location=None, previous_version=None, previous_location=None)
     at_policy = query.mode == "policy"
+    settings = await interaction.version_settings(project.key, query.version)
     location = construct.publish_location_preview(
         project,
         project.committee,
         query.version,
         query.suffix,
+        settings,
         at_start=(query.mode == "start"),
         at_policy=at_policy,
     )
@@ -165,6 +167,11 @@ async def selected(
         project = await data.project(
             key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True, _release_policy=True
         ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        overrides = await data.cycle_overrides(project_key=str(project_key)).all()
+    # The version isn't known yet, so auto-archive is offered if the project or any of its cycles allows it
+    can_auto_archive = project.policy_auto_archive_prior_release or any(
+        row.settings.get("auto_archive_prior_release") for row in overrides
+    )
 
     if shared.start.missing_release_metadata(project):
         return await session.redirect(metadata, project_key=str(project_key))
@@ -178,7 +185,7 @@ async def selected(
         and (not project.committee.is_podling)
     )
     guidance = await interaction.first_release_guidance(project.key, session.uid)
-    content = await _render_page(project, releases, can_create_expedited, guidance)
+    content = await _render_page(project, releases, can_create_expedited, guidance, can_auto_archive)
     javascripts = ["publish-location-preview"]
     if project.cycle_match:
         javascripts.append("start-cycle-preview")
@@ -199,7 +206,7 @@ def _cycle_preview(project: sql.Project) -> htm.Element | None:
             "#start-cycle-preview-text", data_preview_url=util.as_url(cycle_preview, project_key=str(project.key))
         )["Enter a version to see which cycle it lands in."],
         " ",
-        htm.a(href=lifecycle_url)["Lifecycle settings"],
+        htm.a(href=lifecycle_url)["Version scheme settings"],
         ".",
     ]
 
@@ -273,6 +280,7 @@ async def _render_page(
     releases: list[sql.Release],
     can_create_expedited: bool,
     guidance: Literal["project", "user"] | None,
+    can_auto_archive: bool,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -291,7 +299,7 @@ async def _render_page(
     skip = []
     # A project that allows auto-archive almost always wants it, so we tick the box
     # and leave the release manager to untick it here or when announcing
-    if project.policy_auto_archive_prior_release:
+    if can_auto_archive:
         defaults["auto_archive_prior"] = True
     else:
         skip.append("auto_archive_prior")

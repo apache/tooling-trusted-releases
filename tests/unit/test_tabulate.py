@@ -151,9 +151,9 @@ async def test_vote_committee_returns_project_committee_for_podling_round_one(
 
 
 def test_vote_outcome_applies_the_default_minimum_to_a_saved_policy_without_one() -> None:
-    release = SimpleNamespace(project=sql.Project(key="x", release_policy=sql.ReleasePolicy()))
+    project = sql.Project(key="x", release_policy=sql.ReleasePolicy())
 
-    _passed, outcome = tabulate.vote_outcome(release, int(time.time()), {})
+    _passed, outcome = tabulate.vote_outcome(project.policy_min_hours, int(time.time()), {})
 
     assert "still open" in outcome
 

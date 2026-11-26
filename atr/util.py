@@ -1481,14 +1481,14 @@ def paths_to_inodes(directory: os.PathLike) -> dict[str, int]:
 
 
 def permitted_announce_recipients(
-    asf_uid: str, committee: sql.Committee | None = None, *, project: sql.Project | None = None
+    asf_uid: str, committee: sql.Committee | None = None, *, settings: sql.PolicySettings | None = None
 ) -> list[str]:
     if config.get().ATR_STATUS == "ALPHA":
         return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
     recipients = ["announce@apache.org"]
     if committee is not None:
         recipients.extend([*committee.mail_addresses, f"private@{committee.key}.apache.org"])
-    _add_policy_recipients(recipients, project, sql.RecipientAction.ANNOUNCE)
+    _add_policy_recipients(recipients, settings, sql.RecipientAction.ANNOUNCE)
     return recipients
 
 
@@ -1502,9 +1502,9 @@ def permitted_archive_roots(basename_from_filename: str) -> list[str]:
 
 
 def permitted_podling_first_round_recipients(
-    asf_uid: str, committee_key: str, *, is_podling: bool, project: sql.Project | None = None
+    asf_uid: str, committee_key: str, *, is_podling: bool, settings: sql.PolicySettings | None = None
 ) -> list[str]:
-    recipients = permitted_voting_recipients(asf_uid, committee_key, project=project)
+    recipients = permitted_voting_recipients(asf_uid, committee_key, settings=settings)
     if not is_podling:
         return recipients
     return [recipient for recipient in recipients if (recipient != f"private@{committee_key}.apache.org")]
@@ -1518,7 +1518,9 @@ def permitted_podling_second_round_recipients(asf_uid: str) -> list[str]:
     return recipients
 
 
-def permitted_voting_recipients(asf_uid: str, committee_key: str, *, project: sql.Project | None = None) -> list[str]:
+def permitted_voting_recipients(
+    asf_uid: str, committee_key: str, *, settings: sql.PolicySettings | None = None
+) -> list[str]:
     recipients = [
         f"dev@{committee_key}.apache.org",
         f"private@{committee_key}.apache.org",
@@ -1526,7 +1528,7 @@ def permitted_voting_recipients(asf_uid: str, committee_key: str, *, project: sq
     if config.get().ATR_STATUS == "ALPHA":
         recipients.append(USER_TESTS_ADDRESS)
         recipients.append(f"{asf_uid}@apache.org")
-    _add_policy_recipients(recipients, project, sql.RecipientAction.VOTE)
+    _add_policy_recipients(recipients, settings, sql.RecipientAction.VOTE)
     return recipients
 
 
@@ -2026,13 +2028,15 @@ async def write_session(user_session: sql.UserSession) -> None:
     quart.g._user_session = user_session
 
 
-def _add_policy_recipients(recipients: list[str], project: sql.Project | None, action: sql.RecipientAction) -> None:
-    # Append any recipients a project has configured in policy (eg via
-    # .asf.yaml) that aren't already permitted, so a saved list is offered as a
-    # choice and accepted when the email is sent.
-    if project is None:
+def _add_policy_recipients(
+    recipients: list[str], settings: sql.PolicySettings | None, action: sql.RecipientAction
+) -> None:
+    # Append any recipients configured for the release's cycle (eg via .asf.yaml)
+    # that aren't already permitted, so a saved list is offered as a choice and
+    # accepted when the email is sent
+    if settings is None:
         return
-    to, cc, bcc = project.policy_recipients(action)
+    to, cc, bcc = settings.policy_recipients(action)
     for address in (to, *cc, *bcc):
         if address and (address not in recipients):
             recipients.append(address)

@@ -30,6 +30,7 @@ def test_registries_include_every_key_referencing_table() -> None:
     assert sql.CheckResultIgnore in project_models
     assert sql.ExpectedDistribution in project_models
     assert sql.ProjectSecurityOptions in project_models
+    assert sql.CycleOverrides in project_models
     assert sql.Distribution in release_models
     assert sql.BallotPaper in release_models
     assert sql.Revision in release_models

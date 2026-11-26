@@ -2094,7 +2094,7 @@ class FoundationAdmin(FoundationCommitter):
         # Where ATR published: the release's own suffix if it locked one, else the project policy
         # default (an empty suffix is the committee root on purpose). Resolved the same way publish
         # resolves it, so we look where the files actually went rather than at a raw null.
-        effective_suffix = construct.effective_download_path_suffix(release)
+        effective_suffix = await construct.effective_download_path_suffix(release)
         release_dir = str(paths.committee_dist_relpath(committee, effective_suffix))
         root_url = publish_url.rstrip("/")
         pairs, exact, alternatives = await self.__removal_wanted(task_args, release_dir)

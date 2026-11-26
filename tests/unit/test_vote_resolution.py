@@ -1727,6 +1727,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
             is_active=True,
             display_name="Project",
             short_display_name="Project",
+            cycle_match=None,
             release_policy=None,
             policy_finish_vote_template="{{ATR_TALLY}}",
             policy_finish_vote_template_url="",

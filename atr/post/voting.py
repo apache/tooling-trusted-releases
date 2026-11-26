@@ -67,8 +67,8 @@ async def body_preview(
             "The vote mode has changed since you loaded the form. Please reload and try again.", 409
         )
 
-    default_subject_template = await construct.start_vote_subject_default(project_key)
-    default_body_template = (await construct.resolve_template(release.project, "start_vote")).body
+    default_subject_template = await construct.start_vote_subject_default(project_key, version_key)
+    default_body_template = (await construct.resolve_template(release, "start_vote")).body
 
     options = construct.StartVoteOptions(
         asfuid=session.uid,
@@ -137,7 +137,7 @@ async def selected(  # noqa: C901
             session.uid,
             committee.key,
             is_podling=committee.is_podling,
-            project=release.project,
+            settings=await interaction.release_settings(release),
         )
         all_addrs = [start_voting_form.email_to, *start_voting_form.email_cc, *start_voting_form.email_bcc]
         for addr in all_addrs:
@@ -157,7 +157,7 @@ async def selected(  # noqa: C901
                 )
             second_round_email_to = start_voting_form.second_round_email_to
 
-        subject_template = await construct.start_vote_subject_default(project_key)
+        subject_template = await construct.start_vote_subject_default(project_key, version_key)
         current_hash = construct.template_hash(subject_template)
         if current_hash != start_voting_form.subject_template_hash:
             return await session.form_error(
@@ -262,7 +262,7 @@ async def _start_expedited(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
-    subject_template = await construct.start_vote_subject_default(project_key)
+    subject_template = await construct.start_vote_subject_default(project_key, version_key)
     if construct.template_hash(subject_template) != start_voting_form.subject_template_hash:
         return await session.form_error(
             "subject_template_hash",

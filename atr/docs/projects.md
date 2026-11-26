@@ -74,8 +74,8 @@ projects*.
 * Each project has [***Metadata***](project-configuration#metadata), which includes descriptions and
   various URLs; a download page URL is required.
 * There are [***Security***](project-configuration#security) settings for each project.
-* The project has a [***Lifecycle***](project-configuration#lifecycle) which can follow several
-  version schemas and allow multiple active branches.
+* The project has a [***Version scheme***](project-configuration#version-scheme) which can follow
+  several version schemas and allow multiple active branches.
 * There are project [***Compose***](project-configuration#compose),
   [***Vote***](project-configuration#vote), and [***Finish***](project-configuration#finish)
   policies.

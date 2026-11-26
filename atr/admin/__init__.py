@@ -105,6 +105,7 @@ _BROWSABLE_MODELS: Final[tuple[type[sqlmodel.SQLModel], ...]] = (
     sql.CheckResult,
     sql.CheckResultIgnore,
     sql.Committee,
+    sql.CycleOverrides,
     sql.Distribution,
     sql.DistRule,
     sql.ExpectedDistribution,

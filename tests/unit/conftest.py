@@ -21,7 +21,9 @@ from typing import NamedTuple
 import pytest
 
 import atr.cache as cache
+import atr.db.interaction as interaction
 import atr.models.github as github
+import atr.models.sql as sql
 
 
 class EmailUidCacheSnapshot(NamedTuple):
@@ -107,3 +109,13 @@ def prevent_real_email_uid_cache_writes():
         "Unit test changed the real email-to-UID cache file. "
         f"path={_REAL_EMAIL_UID_CACHE_PATH}, before={before}, after={after}"
     )
+
+
+@pytest.fixture(autouse=True)
+def release_settings_without_cycle_overrides(monkeypatch: pytest.MonkeyPatch):
+    # Most tests build a release by hand and have no database for its cycle's overrides to be in, so
+    # a release reads its project's settings. Tests of the overrides restore the real function
+    async def release_settings(release: sql.Release, caller_data: object = None) -> sql.PolicySettings:
+        return release.project
+
+    monkeypatch.setattr(interaction, "release_settings", release_settings)

@@ -609,6 +609,26 @@ async def test_upsert_config_leaves_expected_alone_unless_given(sqlite_sessionma
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("sync_mode", "given"), [("merge", None), ("full", {})])
+async def test_upsert_config_removes_cycle_settings_only_in_full_mode(sqlite_sessionmaker, sync_mode, given) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        writer = _config_writer(data)
+
+        await writer.upsert_config(
+            api.ProjectConfigArgs(project_key="project", committee_key="project", sync_mode=sync_mode),
+            sql.UpdateType.ASFYAML,
+        )
+
+        # No cycles block: merge mode leaves the cycle settings alone, and full mode gives none
+        sync = writer._FoundationAdmin__write_as.policy.cycle_overrides_sync_no_commit
+        if given is None:
+            sync.assert_not_awaited()
+        else:
+            sync.assert_awaited_once_with(_PROJECT, given, asf_uid="system", update_type=sql.UpdateType.ASFYAML)
+
+
+@pytest.mark.asyncio
 async def test_upsert_config_replaces_expected(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         await _seed_release(data)
@@ -637,7 +657,9 @@ def _config_writer(data: db.Session) -> project_writer.FoundationAdmin:
     writer._FoundationAdmin__asf_uid = "system"
     writer._FoundationAdmin__write_as = types.SimpleNamespace(
         distributions=_admin(data),
-        policy=types.SimpleNamespace(edit_no_commit=mock.AsyncMock()),
+        policy=types.SimpleNamespace(
+            edit_no_commit=mock.AsyncMock(), cycle_overrides_sync_no_commit=mock.AsyncMock(return_value=[])
+        ),
         append_to_audit_log=mock.MagicMock(),
     )
     return writer

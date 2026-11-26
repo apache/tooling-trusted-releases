@@ -57,7 +57,7 @@ async def test_denied_credential_redirects(
     monkeypatch.setattr(projects.storage, "write", _denying_write)
     session = mock.Mock(is_admin=False)
     session.redirect = mock.AsyncMock(return_value="redirected")
-    form = mock.Mock(project_key=safe.ProjectKey("httpd-foo"), category_to_add="Web")
+    form = mock.Mock(project_key=safe.ProjectKey("httpd-foo"), category_to_add="Web", cycle="")
     assert await handler(session, form) == "redirected"
     assert message in session.redirect.await_args.kwargs["error"]
 
@@ -70,7 +70,7 @@ async def test_admin_uses_committee_admin(
     monkeypatch.setattr(projects.storage, "write", lambda _session: contextlib.nullcontext(write))
     session = mock.Mock(is_admin=True)
     session.redirect = mock.AsyncMock(return_value="redirected")
-    form = mock.Mock(project_key=safe.ProjectKey("httpd-foo"), category_to_add="Web")
+    form = mock.Mock(project_key=safe.ProjectKey("httpd-foo"), category_to_add="Web", cycle="")
     assert await handler(session, form) == "redirected"
     write.as_project_committee_admin.assert_awaited_once_with(safe.ProjectKey("httpd-foo"))
     assert "success" in session.redirect.await_args.kwargs

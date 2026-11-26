@@ -16,7 +16,6 @@
 # under the License.
 
 import contextlib
-import unittest.mock as mock
 from types import SimpleNamespace
 
 import pytest
@@ -56,6 +55,8 @@ async def test_announce_release_subject_and_body_does_not_expand_injected_tag(mo
     committee = SimpleNamespace(key="myproject", is_podling=False, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
+        cycle_match=None,
+        policy_release_checklist="",
         name="MyProject",
         key="myproject",
         committee_key="myproject",
@@ -96,6 +97,8 @@ async def test_announce_release_subject_and_body_uses_podling_canonical_download
     committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject (podling)")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
+        cycle_match=None,
+        policy_release_checklist="",
         name="MyProject",
         key="myproject",
         committee_key="myproject",
@@ -139,6 +142,8 @@ async def test_announce_release_subject_and_body_uses_top_level_canonical_downlo
     committee = SimpleNamespace(key="myproject", is_podling=False, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
+        cycle_match=None,
+        policy_release_checklist="",
         name="MyProject",
         key="myproject",
         committee_key="myproject",
@@ -190,6 +195,8 @@ async def test_start_vote_subject_and_body_renders_defaults(
     committee = SimpleNamespace(key="myproject", is_podling=is_podling, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
+        cycle_match=None,
+        policy_release_checklist="",
         key="myproject",
         bug_database=None,
         homepage=None,
@@ -204,14 +211,10 @@ async def test_start_vote_subject_and_body_renders_defaults(
     )
     revision = SimpleNamespace(number="1", tag=None)
 
-    async def no_release_policy(_data, _project_key):
-        return None
-
     monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")
     monkeypatch.setattr(construct.config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
-    monkeypatch.setattr(construct.db, "get_project_release_policy", no_release_policy)
     monkeypatch.setattr(construct.util, "as_url", lambda _route, **kw: f"/example/{kw.get('revision_number', '')}")
 
     _subject, body = await construct.start_vote_subject_and_body(
@@ -247,6 +250,8 @@ async def test_start_vote_body_renders_commit_token(monkeypatch, commit_hash: st
     committee = SimpleNamespace(key="myproject", is_podling=False, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
+        cycle_match=None,
+        policy_release_checklist="",
         key="myproject",
         bug_database=None,
         homepage=None,
@@ -261,14 +266,10 @@ async def test_start_vote_body_renders_commit_token(monkeypatch, commit_hash: st
     )
     revision = SimpleNamespace(number="1", tag=None)
 
-    async def no_release_policy(_data, _project_key):
-        return None
-
     monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")
     monkeypatch.setattr(construct.config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
-    monkeypatch.setattr(construct.db, "get_project_release_policy", no_release_policy)
     monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")
 
     _subject, body = await construct.start_vote_subject_and_body(
@@ -342,6 +343,8 @@ async def _second_round_start_vote_body(
     committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
+        cycle_match=None,
+        policy_release_checklist="",
         key="myproject",
         bug_database=None,
         homepage=None,
@@ -356,7 +359,6 @@ async def _second_round_start_vote_body(
     monkeypatch.setattr(construct.config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
-    monkeypatch.setattr(construct.db, "get_project_release_policy", mock.AsyncMock(return_value=None))
     monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")
 
     _subject, body = await construct.start_vote_subject_and_body(

@@ -121,6 +121,8 @@ class ReleaseManager(CommitteeParticipant):
         project.short_description = form.short_description.strip() or None
         project.homepage = str(form.homepage) if form.homepage else None
         project.lifecycle_page = str(form.lifecycle_page) if form.lifecycle_page else None
+        if error := validation.download_page_cycle_error(form.download_page, project.cycle_match):
+            raise storage.AccessError(error, status=400)
         project.download_page = str(form.download_page) if form.download_page else None
         project.bug_database = str(form.bug_database) if form.bug_database else None
         project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
@@ -666,6 +668,16 @@ class FoundationAdmin(FoundationCommitter):
                     **policy_args.model_dump(exclude_unset=True),
                 )
                 await self.__write_as.policy.edit_no_commit(args.project_key, policy_update)
+            # A file with a cycles key gives every cycle's settings, in merge mode too. Without one
+            # they are left alone, except in full mode, where a file with none means no cycle has any
+            cycle_args = args.cycles
+            if (cycle_args is None) and (args.sync_mode == "full"):
+                cycle_args = {}
+            cycles_changed: list[str] = []
+            if cycle_args is not None:
+                cycles_changed = await self.__write_as.policy.cycle_overrides_sync_no_commit(
+                    args.project_key, cycle_args, asf_uid=self.__asf_uid, update_type=update_type
+                )
             # Only replaced if the file has a distributions key, in full mode too
             if args.distributions is not None:
                 await self.__write_as.distributions.expected_replace_no_commit(args.project_key, args.distributions)
@@ -692,6 +704,7 @@ class FoundationAdmin(FoundationCommitter):
             committee_key=str(args.committee_key),
             project_key=str(args.project_key),
             created=created,
+            **({"cycles_changed": ", ".join(cycles_changed)} if cycles_changed else {}),
             **repositories_change,
         )
         return created
@@ -760,6 +773,8 @@ class FoundationAdmin(FoundationCommitter):
             _apply_version_scheme(project, args, provided)
             await cycles.reassign_release_cycles(self.__data, project)
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, project.key)
+        if error := validation.download_page_cycle_error(project.download_page, project.cycle_match):
+            raise ValueError(error)
 
 
 def _apply_version_scheme(project: sql.Project, args: api.ProjectConfigProjectArgs, provided: set[str]) -> None:

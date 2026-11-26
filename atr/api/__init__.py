@@ -40,6 +40,7 @@ import atr.cle as cle
 import atr.config as config
 import atr.constants as constants
 import atr.construct as construct
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
@@ -2348,14 +2349,14 @@ async def vote_start(
             asf_uid,
             committee_key,
             is_podling=is_podling,
-            project=release.project,
+            settings=await interaction.release_settings(release),
         )
         if data.email_to not in permitted_recipients:
             raise exceptions.Forbidden("Invalid mailing list choice")
         util.validate_email_recipients(data)
         vote_duration = data.vote_duration
         if vote_duration is None:
-            vote_duration = release.project.policy_min_hours
+            vote_duration = (await interaction.release_settings(release)).policy_min_hours
         util.validate_vote_duration(vote_duration)
 
         subject, body, fullname = await _vote_start_subject_and_body(
@@ -2380,7 +2381,7 @@ async def vote_start(
                 notify_when_finished=data.notify_when_finished,
                 automatic_resolve_when_finished=data.automatic_resolve_when_finished,
                 automatic_publish_when_resolved=data.automatic_publish_when_resolved,
-                download_path_suffix=construct.effective_download_path_suffix(release),
+                download_path_suffix=await construct.effective_download_path_suffix(release),
                 acknowledged_concerns=frozenset(data.concerns_noted),
             )
     # except Exception as e:
@@ -2716,7 +2717,7 @@ async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: 
         version_key=data.version,
         revision_number=revision_number,
     )
-    template = await construct.resolve_template(release.project, "announce_release")
+    template = await construct.resolve_template(release, "announce_release")
     _, body = await construct.announce_release_subject_and_body("", template.body, options)
     return body, fullname
 
@@ -2833,12 +2834,13 @@ async def _vote_resolve_release_and_body(
     if release.committee is None:
         raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)
     fullname = await _ldap_fullname(asf_uid)
-    template = await construct.resolve_template(release.project, "finish_vote")
+    template = await construct.resolve_template(release, "finish_vote")
     body = construct.finish_vote_body(
         template.body,
         {
             "ATR_TALLY": await _vote_resolve_tally(warm, release),
             "COMMITTEE": "Incubator" if release.podling_thread_id else release.committee.display_name,
+            "CYCLE": cycles.cycle_text(release.project, release.version),
             "MAJOR_VERSION": construct.major_version(release.version),
             "OUTCOME": "was cancelled" if (data.resolution == "cancelled") else data.resolution,
             "PROJECT_NAME": release.project.short_display_name,
@@ -2918,12 +2920,12 @@ async def _vote_start_subject_and_body(
     subject_template = ""
     body_template = ""
     if data.subject is None:
-        subject_template = release.project.policy_start_vote_subject
+        subject_template = (await interaction.release_settings(release)).policy_start_vote_subject
     if data.body is None:
         if release.expedited:
             body_template = construct.START_VOTE_EXPEDITED_DEFAULT
         else:
-            body_template = (await construct.resolve_template(release.project, "start_vote")).body
+            body_template = (await construct.resolve_template(release, "start_vote")).body
     options = construct.StartVoteOptions(
         asfuid=asf_uid,
         fullname=fullname,

@@ -144,7 +144,9 @@ async def test_config_sync_puts_the_change_in_its_audit_entry(
         await data.commit()
         write_as = SimpleNamespace(
             append_to_audit_log=mock.MagicMock(),
-            policy=SimpleNamespace(edit_no_commit=mock.AsyncMock()),
+            policy=SimpleNamespace(
+                edit_no_commit=mock.AsyncMock(), cycle_overrides_sync_no_commit=mock.AsyncMock(return_value=[])
+            ),
         )
         writer = object.__new__(project_writer.FoundationAdmin)
         writer._FoundationAdmin__data = data

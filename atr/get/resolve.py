@@ -24,6 +24,7 @@ import htpy
 import atr.blueprints.get as get
 import atr.constants as constants
 import atr.construct as construct
+import atr.cycles as cycles
 import atr.db.interaction as interaction
 import atr.form
 import atr.htm as htm
@@ -217,12 +218,13 @@ async def selected(  # noqa: C901
         )
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
-    resolved_template = await construct.resolve_template(release.project, "finish_vote")
+    resolved_template = await construct.resolve_template(release, "finish_vote")
     email_body = construct.finish_vote_body(
         resolved_template.body,
         {
             "ATR_TALLY": atr_tally,
             "COMMITTEE": committee_name,
+            "CYCLE": cycles.cycle_text(release.project, release.version),
             "MAJOR_VERSION": construct.major_version(release.version),
             "OUTCOME": outcome,
             "PROJECT_NAME": release.project.short_display_name,
@@ -327,7 +329,9 @@ async def selected(  # noqa: C901
         ]
     else:
         permitted_recipients = (
-            util.permitted_voting_recipients(session.uid, release.committee.key, project=release.project)
+            util.permitted_voting_recipients(
+                session.uid, release.committee.key, settings=await interaction.release_settings(release)
+            )
             if (release.committee is not None)
             else []
         )

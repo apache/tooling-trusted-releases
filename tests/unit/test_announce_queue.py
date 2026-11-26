@@ -187,6 +187,7 @@ def _writer(
     release = types.SimpleNamespace(
         expedited=expedited,
         safe_latest_revision_number=safe.RevisionNumber(latest),
+        safe_version_key=_VERSION,
         project=types.SimpleNamespace(committee_key="example", committee=mock.MagicMock()),
     )
     data = mock.MagicMock(commit=mock.AsyncMock(), flush=mock.AsyncMock(), rollback=mock.AsyncMock())

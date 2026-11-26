@@ -25,6 +25,8 @@ import quart
 import atr.blueprints.post as post
 import atr.config as config
 import atr.construct as construct
+import atr.cycles as cycles
+import atr.db.interaction as interaction
 import atr.errors as errors
 import atr.form as form
 import atr.get as get
@@ -65,9 +67,9 @@ async def queue(
     )
     if release.project.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
-    if response := await _validate_recipients(session, announce_form, release.project):
+    if response := await _validate_recipients(session, announce_form, release):
         return response
-    if response := await _validate_subject_template_hash(session, project_key, announce_form):
+    if response := await _validate_subject_template_hash(session, project_key, version_key, announce_form):
         return response
     if response := await _validate_download_page(session, release, announce_form):
         return response
@@ -150,7 +152,7 @@ async def selected(
 
     if release.project.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
-    if response := await _validate_recipients(session, announce_form, release.project):
+    if response := await _validate_recipients(session, announce_form, release):
         return response
 
     if announce_form.revision_number != preview_revision_number:
@@ -164,7 +166,7 @@ async def selected(
 
     if response := await _validate_distributions(session, release, project_key, version_key):
         return response
-    if response := await _validate_subject_template_hash(session, project_key, announce_form):
+    if response := await _validate_subject_template_hash(session, project_key, version_key, announce_form):
         return response
     if response := await _validate_download_page(session, release, announce_form):
         return response
@@ -259,7 +261,7 @@ async def _validate_download_page(
     announce_form: shared.announce.AnnounceForm,
 ) -> web.WerkzeugResponse | None:
     download_page = str(announce_form.download_page) if (announce_form.download_page is not None) else None
-    stored = release.project.download_page
+    stored = cycles.download_page_for_version(release.project, release.version)
     if stored:
         if (download_page is not None) and (util.normalized_url(download_page) != util.normalized_url(stored)):
             await quart.flash(_DOWNLOAD_PAGE_KEPT.format(url=stored), "warning")
@@ -274,9 +276,11 @@ async def _validate_download_page(
 async def _validate_recipients(
     session: web.Committer,
     announce_form: shared.announce.AnnounceForm,
-    project: sql.Project,
+    release: sql.Release,
 ) -> web.WerkzeugResponse | None:
-    permitted = util.permitted_announce_recipients(session.uid, committee=project.committee, project=project)
+    permitted = util.permitted_announce_recipients(
+        session.uid, committee=release.project.committee, settings=await interaction.release_settings(release)
+    )
     addresses = [announce_form.email_to, *announce_form.email_cc, *announce_form.email_bcc]
     for addr in addresses:
         if addr not in permitted:
@@ -290,9 +294,10 @@ async def _validate_recipients(
 async def _validate_subject_template_hash(
     session: web.Committer,
     project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     announce_form: shared.announce.AnnounceForm,
 ) -> web.WerkzeugResponse | None:
-    subject_template = await construct.announce_release_subject_default(project_key)
+    subject_template = await construct.announce_release_subject_default(project_key, version_key)
     if construct.template_hash(subject_template) == announce_form.subject_template_hash:
         return None
     return await session.form_error(
