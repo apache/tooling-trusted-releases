@@ -537,68 +537,10 @@ async def test_podling_first_round_signed_out_rendering_links_each_vote_thread(
 
 
 @pytest.mark.asyncio
-async def test_trusted_rendering_round_two_carryover_shows_carried_card_and_resubmit_label(
-    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    await _patch_render_dependencies(monkeypatch)
-    carried = _ballot(
-        release_key="myproject-1.0.0",
-        vote_seq=1,
-        voter_asf_uid="voter",
-        choice=sql.VoteChoice.YES,
-        receipt_message_id="r1@apache.org",
-        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
-    )
-    carried.id = 1
-    carried.vote_round = 1
-    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=carried))
-    monkeypatch.setattr(
-        vote.interaction,
-        "previous_round_one_recipient",
-        mock.AsyncMock(return_value="dev@myproject.apache.org"),
-    )
-
-    podling_release = SimpleNamespace(
-        key="myproject-1.0.0",
-        committee=SimpleNamespace(key="myproject", is_podling=True),
-        current_vote_seq=2,
-        effective_vote_mode=sql.VoteMode.TRUSTED,
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        podling_thread_id="thread-abc",
-        project=SimpleNamespace(
-            key="myproject",
-            is_archived=False,
-            policy_vote_comment_template="Default comment",
-            policy_vote_comment_template_url="",
-            status=sql.ProjectStatus.ACTIVE,
-        ),
-        version="1.0.0",
-    )
-
-    async with render_app.test_request_context("/vote/myproject/1.0.0"):
-        page = htm.Block()
-        await vote._render_vote_authenticated(
-            page,
-            podling_release,
-            _session(),
-            None,
-            "general@incubator.apache.org",
-            _completed_vote_task(),
-        )
-
-    html = str(page.collect())
-    assert "You already cast a vote (carried from the first round)" in html
-    assert "Resubmit vote" in html
-    assert "first round PPMC ballot is being counted" in html
-    assert "listid=%3Cdev.myproject.apache.org%3E" in html
-
-
-@pytest.mark.asyncio
 async def test_trusted_rendering_shows_automatic_publish_location(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=None))
     task = _completed_vote_task()
     task.task_args = {**task.task_args, "automatic_publish_when_resolved": True, "download_path_suffix": "sub/1.0.0"}
 
@@ -768,10 +710,8 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
 @pytest.mark.parametrize(
     ("is_podling", "podling_thread_id", "binding_by_round", "label"),
     [
-        (True, None, {1: True, 2: True}, "PPMC-binding, IPMC-binding"),
-        (True, None, {1: False, 2: True}, "IPMC-binding"),
-        (True, None, {1: True, 2: False}, "PPMC-binding"),
-        (True, None, {1: False, 2: False}, "Non-binding"),
+        (True, None, {1: True, 2: True}, "PPMC-binding"),
+        (True, None, {1: False, 2: True}, "Non-binding"),
         (True, "thread-abc", {2: True}, "Binding"),
         (False, None, {None: False}, "Non-binding"),
     ],
@@ -791,7 +731,6 @@ async def test_vote_decision_labels_reflect_membership(
         "is_binding_for_release",
         mock.AsyncMock(side_effect=lambda _committee, _uid, vote_round: (binding_by_round[vote_round], "Project")),
     )
-    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=None))
     release = _release(vote_mode)
     release.committee.is_podling = is_podling
     release.podling_thread_id = podling_thread_id
@@ -801,18 +740,12 @@ async def test_vote_decision_labels_reflect_membership(
         await vote._render_vote_authenticated(page, release, _session(), None, "dev@project.apache.org", None)
 
     html = str(page.collect())
-    round_one = is_podling and (podling_thread_id is None)
-    if round_one and (vote_mode == sql.VoteMode.EMAIL):
-        label = "PPMC-binding" if binding_by_round[1] else "Non-binding"
     assert f"+1 ({label})" in html
     assert f"-1 ({label})" in html
-    if round_one:
+    assert "Incubator approval" not in html
+    if is_podling and (podling_thread_id is None):
         ppmc_word = "PPMC-binding" if binding_by_round[1] else "non-binding"
-        ipmc_word = "IPMC-binding" if binding_by_round[2] else "non-binding"
         assert f"your vote is <strong>{ppmc_word}</strong> for podling approval." in html
-        assert (f"your vote is <strong>{ipmc_word}</strong> for Incubator approval." in html) is (
-            vote_mode == sql.VoteMode.TRUSTED
-        )
 
 
 def test_vote_task_warnings_renders_delivery_warnings() -> None:

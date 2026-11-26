@@ -128,7 +128,6 @@ class TrustedBallotDetail:
     choice: sql.VoteChoice
     comment: str
     is_binding: bool
-    is_carried: bool = False
     receipt_message_id: str
     revision_number_at_cast: safe.RevisionNumber
     status_label: str
@@ -529,80 +528,6 @@ async def count_checks_for_revision_by_status(
         return result.scalar_one()
 
 
-async def effective_latest_ballot_for_voter(
-    release: sql.Release,
-    vote_seq: int,
-    voter_asf_uid: str,
-    caller_data: db.Session | None = None,
-) -> sql.BallotPaper | None:
-    if caller_data is None:
-        current_ballot = await latest_ballot_for_voter(
-            release.key, vote_seq, voter_asf_uid, vote_mode=sql.VoteMode.TRUSTED
-        )
-    else:
-        current_ballot = await latest_ballot_for_voter(
-            release.key, vote_seq, voter_asf_uid, caller_data, vote_mode=sql.VoteMode.TRUSTED
-        )
-    if current_ballot is not None:
-        return current_ballot
-    if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
-        return None
-    r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
-    if r1_seq is None:
-        return None
-    if caller_data is None:
-        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid, vote_mode=sql.VoteMode.TRUSTED)
-    else:
-        r1_ballot = await latest_ballot_for_voter(
-            release.key, r1_seq, voter_asf_uid, caller_data, vote_mode=sql.VoteMode.TRUSTED
-        )
-    if r1_ballot is None:
-        return None
-    is_binding, _binding_committee = await user.is_binding_for_release(
-        release.committee,
-        voter_asf_uid,
-        2,
-        caller_data=caller_data,
-    )
-    if not is_binding:
-        return None
-    return r1_ballot
-
-
-async def effective_trusted_ballots(
-    release: sql.Release,
-    vote_seq: int,
-    caller_data: db.Session | None = None,
-) -> list[sql.BallotPaper]:
-    if caller_data is None:
-        current_ballots = await ballots_for_resolution(release.key, vote_seq)
-    else:
-        current_ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
-    if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
-        return current_ballots
-    r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
-    if r1_seq is None:
-        return current_ballots
-    if caller_data is None:
-        r1_ballots = await ballots_for_resolution(release.key, r1_seq)
-    else:
-        r1_ballots = await ballots_for_resolution(release.key, r1_seq, caller_data)
-    current_voted_uids = {b.voter_asf_uid for b in current_ballots}
-    carried: list[sql.BallotPaper] = []
-    for ballot in r1_ballots:
-        if ballot.voter_asf_uid in current_voted_uids:
-            continue
-        is_binding, _binding_committee = await user.is_binding_for_release(
-            release.committee,
-            ballot.voter_asf_uid,
-            2,
-            caller_data=caller_data,
-        )
-        if is_binding:
-            carried.append(ballot)
-    return current_ballots + carried
-
-
 async def has_blocker_checks(
     release: sql.Release, revision_number: safe.RevisionNumber, caller_data: db.Session | None = None
 ) -> bool:
@@ -763,56 +688,6 @@ async def pending_quarantine_count(release_key: str, caller_data: db.Session | N
 async def previews(project: sql.Project) -> list[sql.Release]:
     """Get the preview releases for the project."""
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_PREVIEW)
-
-
-async def previous_round_one_recipient(
-    release: sql.Release,
-    current_vote_seq: int,
-    caller_data: db.Session | None = None,
-) -> str | None:
-    if (release.committee is None) or (not release.committee.is_podling):
-        return None
-    if trusted_vote_round(release) != 2:
-        return None
-    r1_seq = await previous_round_one_vote_seq(release.key, current_vote_seq, caller_data)
-    if r1_seq is None:
-        return None
-    via = sql.validate_instrumented_attribute
-    async with db.ensure_session(caller_data) as data:
-        query = (
-            sqlmodel.select(sql.Task)
-            .where(sql.Task.project_key == release.project_key)
-            .where(sql.Task.version_key == release.version)
-            .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
-            .where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.vote_seq") == r1_seq)
-            .order_by(via(sql.Task.added).desc())
-            .limit(1)
-        )
-        task = (await data.execute(query)).scalar_one_or_none()
-    if task is None:
-        return None
-    email_to = task.task_args.get("email_to")
-    if isinstance(email_to, str) and email_to:
-        return email_to
-    return None
-
-
-async def previous_round_one_vote_seq(
-    release_key: str,
-    current_vote_seq: int,
-    caller_data: db.Session | None = None,
-) -> int | None:
-    # This works because there must be a round one vote to get to round two
-    # We get the latest round one before the current round for the same release
-    async with db.ensure_session(caller_data) as data:
-        query = (
-            sqlmodel.select(sqlalchemy.func.max(sql.BallotPaper.vote_seq))
-            .where(sql.BallotPaper.release_key == release_key)
-            .where(sql.BallotPaper.vote_mode == sql.VoteMode.TRUSTED)
-            .where(sql.BallotPaper.vote_round == 1)
-            .where(sql.BallotPaper.vote_seq < current_vote_seq)
-        )
-        return (await data.execute(query)).scalar_one_or_none()
 
 
 async def prior_release_for_archive(
@@ -1771,11 +1646,8 @@ async def _trusted_ballot_details_from_ballots(
     details: list[TrustedBallotDetail] = []
     summary = TrustedVoteSummary()
     for ballot in ballots:
-        is_carried = (ballot.vote_round == 1) and (active_round == 2)
-        round_mismatch = (
-            (expected_vote_round is not _NO_EXPECTED_VOTE_ROUND)
-            and (ballot.vote_round != expected_vote_round)
-            and (not is_carried)
+        round_mismatch = (expected_vote_round is not _NO_EXPECTED_VOTE_ROUND) and (
+            ballot.vote_round != expected_vote_round
         )
         if round_mismatch:
             raise ValueError("Trusted ballot vote round does not match the active vote round")
@@ -1800,7 +1672,6 @@ async def _trusted_ballot_details_from_ballots(
                 choice=ballot.choice,
                 comment=ballot.comment,
                 is_binding=is_binding,
-                is_carried=is_carried,
                 receipt_message_id=ballot.receipt_message_id,
                 revision_number_at_cast=ballot.safe_revision_number_at_cast,
                 status_label=binding_label if is_binding else non_binding_label,

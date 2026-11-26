@@ -58,7 +58,6 @@ class TrustedBallotRow:
     cast_at: str
     choice: str
     is_binding: bool
-    is_carried: bool = False
     receipt_message_id: str
     receipt_url: str | None
     status_label: str
@@ -166,16 +165,13 @@ async def selected(  # noqa: C901
     trusted_passed = False
     vote_recipient = interaction.task_recipient_get(latest_vote_task) if (latest_vote_task is not None) else None
     if is_trusted_mode and (vote_seq is not None):
-        ballots = await interaction.effective_trusted_ballots(release, vote_seq)
+        ballots = await interaction.ballots_for_resolution(release.key, vote_seq)
         trusted_ballot_details, trusted_summary = await interaction.trusted_ballot_details_from_ballots(
             release,
             ballots,
             vote_round,
         )
-        round_one_recipient = await interaction.previous_round_one_recipient(release, vote_seq)
-        trusted_ballot_rows = _trusted_ballot_rows(
-            trusted_ballot_details, vote_recipient, round_one_recipient, expedited=release.expedited
-        )
+        trusted_ballot_rows = _trusted_ballot_rows(trusted_ballot_details, vote_recipient, expedited=release.expedited)
         trusted_passed = tabulate.binding_vote_passes(
             trusted_summary.binding_votes_yes, trusted_summary.binding_votes_no
         )
@@ -543,21 +539,18 @@ def _tabulation_error(error: util.FetchError | ValueError) -> str:
 def _trusted_ballot_rows(
     trusted_ballot_details: list[interaction.TrustedBallotDetail],
     vote_recipient: str | None,
-    round_one_recipient: str | None = None,
     expedited: bool = False,
 ) -> list[TrustedBallotRow]:
     rows: list[TrustedBallotRow] = []
     for detail in trusted_ballot_details:
         receipt_url = None
-        recipient_for_url = round_one_recipient if detail.is_carried else vote_recipient
-        if (recipient_for_url is not None) and (not expedited):
-            receipt_url = shared.vote.message_id_source_archive_url(detail.receipt_message_id, recipient_for_url)
+        if (vote_recipient is not None) and (not expedited):
+            receipt_url = shared.vote.message_id_source_archive_url(detail.receipt_message_id, vote_recipient)
         rows.append(
             TrustedBallotRow(
                 cast_at=format_utc(detail.cast_at),
                 choice=detail.choice.value,
                 is_binding=detail.is_binding,
-                is_carried=detail.is_carried,
                 receipt_message_id=detail.receipt_message_id,
                 receipt_url=receipt_url,
                 status_label=detail.status_label,

@@ -432,16 +432,13 @@ async def _overlap_vote_rounds(
 
 
 async def _render_binding_status(
-    page: htm.Block, committee: sql.Committee, asf_uid: str, vote_round: int | None, *, ipmc_carry_over: bool = True
+    page: htm.Block, committee: sql.Committee, asf_uid: str, vote_round: int | None
 ) -> str:
     is_binding, binding_committee = await user.is_binding_for_release(committee, asf_uid, vote_round)
     committee_membership = _voting_committee_membership(binding_committee, vote_round)
     article = "an" if committee_membership[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
     if vote_round == 1:
-        is_ipmc_member = None
-        if ipmc_carry_over:
-            is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2)
-        return _render_binding_status_round_one(page, f"{article} {committee_membership}", is_binding, is_ipmc_member)
+        return _render_binding_status_round_one(page, f"{article} {committee_membership}", is_binding)
     binding_word, non_binding_word = user.binding_terminology(vote_round)
     if is_binding:
         page.p[
@@ -459,33 +456,12 @@ async def _render_binding_status(
     return binding_word if is_binding else non_binding_word
 
 
-def _render_binding_status_round_one(
-    page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool | None
-) -> str:
+def _render_binding_status_round_one(page: htm.Block, ppmc_membership: str, is_ppmc_member: bool) -> str:
     if is_ppmc_member:
-        ppmc_status = [f"As {ppmc_membership}, your vote is ", htpy.strong["PPMC-binding"], " for podling approval. "]
-    else:
-        ppmc_status = [
-            f"You are not {ppmc_membership}, so your vote is ",
-            htpy.strong["non-binding"],
-            " for podling approval. ",
-        ]
-    if is_ipmc_member is None:
-        ipmc_status = []
-    elif is_ipmc_member:
-        ipmc_status = [
-            "As an Incubator PMC member, your vote is ",
-            htpy.strong["IPMC-binding"],
-            " for Incubator approval.",
-        ]
-    else:
-        ipmc_status = [
-            "You are not an Incubator PMC member, so your vote is ",
-            htpy.strong["non-binding"],
-            " for Incubator approval.",
-        ]
-    page.p[ppmc_status, ipmc_status]
-    return user.round_one_binding_label(is_ppmc_member, bool(is_ipmc_member))
+        page.p[f"As {ppmc_membership}, your vote is ", htpy.strong["PPMC-binding"], " for podling approval."]
+        return "PPMC-binding"
+    page.p[f"You are not {ppmc_membership}, so your vote is ", htpy.strong["non-binding"], " for podling approval."]
+    return "Non-binding"
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
@@ -866,21 +842,15 @@ async def _render_trusted_vote_authenticated(
 
     latest_ballot = None
     if release.current_vote_seq is not None:
-        latest_ballot = await interaction.effective_latest_ballot_for_voter(
-            release,
-            release.current_vote_seq,
-            session.uid,
+        latest_ballot = await interaction.latest_ballot_for_voter(
+            release.key, release.current_vote_seq, session.uid, vote_mode=sql.VoteMode.TRUSTED
         )
 
     vote_round = interaction.trusted_vote_round(release)
     potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
 
     if latest_ballot is not None:
-        is_carried = (latest_ballot.vote_round == 1) and (vote_round == 2)
-        receipt_recipient: str | None = vote_recipient
-        if is_carried and (release.current_vote_seq is not None):
-            receipt_recipient = await interaction.previous_round_one_recipient(release, release.current_vote_seq)
-        page.append(_trusted_vote_status(latest_ballot, receipt_recipient, is_carried=is_carried))
+        page.append(_trusted_vote_status(latest_ballot, vote_recipient))
         page.p[
             "Submitting again records a new ballot. New ballots during the voting period always replace old ballots."
         ]
@@ -934,7 +904,7 @@ async def _render_vote_authenticated(
         return
 
     vote_round = interaction.trusted_vote_round(release)
-    potency = await _render_binding_status(page, release.committee, session.uid, vote_round, ipmc_carry_over=False)
+    potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
     submit_label = await _render_email_vote_status(page, release, session.uid, release.current_vote_seq, vote_recipient)
     _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
     _render_publish_location(page, release, latest_vote_task)
@@ -1071,37 +1041,24 @@ def _trusted_casting_disabled_notice(archive_url: str | None, vote_recipient: st
     return htm.div(".alert.alert-info.mb-3", role="alert")[children]
 
 
-def _trusted_vote_status(
-    latest_ballot: sql.BallotPaper,
-    vote_recipient: str | None,
-    *,
-    is_carried: bool = False,
-) -> htm.Element:
-    header = "You already cast a vote (carried from the first round)" if is_carried else "You already cast a vote"
+def _trusted_vote_status(latest_ballot: sql.BallotPaper, vote_recipient: str | None) -> htm.Element:
     body = htm.Block(htm.div, classes=".card-body")
     body.p(".mb-2")["Choice: ", htpy.strong[latest_ballot.choice.value]]
     body.p(".mb-2")["Recorded: ", resolve.format_utc(latest_ballot.created)]
-    receipt_class = ".mb-2" if is_carried else ".mb-0"
     if vote_recipient is None:
-        body.p(receipt_class)["Receipt message ID: ", htpy.code[latest_ballot.receipt_message_id]]
+        body.p(".mb-0")["Receipt message ID: ", htpy.code[latest_ballot.receipt_message_id]]
     else:
         receipt_archive_url = shared.vote.message_id_source_archive_url(
             latest_ballot.receipt_message_id, vote_recipient
         )
-        body.p(receipt_class)[
+        body.p(".mb-0")[
             "Receipt message ID: ",
             htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[
                 htpy.code[latest_ballot.receipt_message_id]
             ],
         ]
-    if is_carried:
-        body.div(".alert.alert-info.mb-0", role="alert")[
-            "Your first round PPMC ballot is being counted as a binding Incubator vote in this round ",
-            "because you are on the Incubator PMC. Submitting a new ballot below will replace your ",
-            "carried vote for this round.",
-        ]
     return htm.div(".card.mb-3")[
-        htm.div(".card-header.bg-light")[header],
+        htm.div(".card-header.bg-light")["You already cast a vote"],
         body.collect(),
     ]
 

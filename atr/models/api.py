@@ -1238,7 +1238,6 @@ class TrustedBallotEntry(schema.Strict):
     choice: sql.VoteChoice = schema.example(sql.VoteChoice.YES)
     comment: str = schema.default_example("", "Looks good to me")
     is_binding: bool = schema.example(True)
-    is_carried: bool = schema.default_example(False, False)
     vote_round: int | None = schema.default_example(None, 1)
     revision_number_at_cast: safe.RevisionNumber = schema.example("00005")
     receipt_message_id: str = schema.example("102ed8a-503db792-79bc789-b8ca87ce@apache.org")

@@ -85,7 +85,7 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
 
         vote_seq = task_args.vote_seq
 
-        ballots = await interaction.effective_trusted_ballots(release, vote_seq, data)
+        ballots = await interaction.ballots_for_resolution(release.key, vote_seq, data)
         summary = await interaction.trusted_ballot_summary(release, ballots, data)
         passed = tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no)
         vote_result = "passed" if passed else "failed"

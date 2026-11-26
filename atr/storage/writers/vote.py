@@ -117,7 +117,7 @@ class FoundationCommitter(GeneralPublic):
                 vote_round,
                 caller_data=self.__data,
             )
-            potency_label = await _vote_potency_label(release, self.__asf_uid, is_binding, self.__data)
+            potency_label = _vote_potency_label(release, is_binding)
 
             start_task = await interaction.release_current_vote_task(release, self.__data)
             if start_task is None:
@@ -269,9 +269,7 @@ class FoundationCommitter(GeneralPublic):
             fullname=fullname,
             is_binding=is_binding,
             comment=comment,
-            potency_label=await _vote_potency_label(
-                release, self.__asf_uid, is_binding, self.__data, second_round=early_second_round
-            ),
+            potency_label=_vote_potency_label(release, is_binding, second_round=early_second_round),
         )
         in_reply_to = vote_thread_mid
 
@@ -1099,7 +1097,7 @@ class ReleaseManager(CommitteeParticipant):
                     release.committee, voting_round, vote_result, vote_end, early_reason
                 )
 
-            ballots = await interaction.effective_trusted_ballots(release, vote_seq, self.__data)
+            ballots = await interaction.ballots_for_resolution(release.key, vote_seq, self.__data)
             summary = await interaction.trusted_ballot_summary(release, ballots, self.__data)
             all_yes = tabulate.all_ballots_yes(summary)
             if unattended and (not release.expedited) and (vote_result == "passed") and (not all_yes):
@@ -1653,15 +1651,10 @@ def _first_round_pass_message(second_round_task: sql.Task, adopted: bool) -> str
     return f"First round vote marked as passed, and second round vote started (sent to {email_to})"
 
 
-async def _vote_potency_label(
-    release: sql.Release, asf_uid: str, is_binding: bool, data: db.Session, *, second_round: bool = False
-) -> str | None:
+def _vote_potency_label(release: sql.Release, is_binding: bool, *, second_round: bool = False) -> str | None:
     committee = release.committee
     if (not second_round) and (committee is not None) and committee.is_podling and (release.podling_thread_id is None):
-        is_ipmc_member = False
-        if release.effective_vote_mode == sql.VoteMode.TRUSTED:
-            is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2, caller_data=data)
-        return user.binding_label_inline(user.round_one_binding_label(is_binding, is_ipmc_member))
+        return "PPMC-binding" if is_binding else "non-binding"
     if is_binding:
         return "binding"
     return None

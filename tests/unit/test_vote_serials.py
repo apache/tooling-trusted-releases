@@ -984,8 +984,8 @@ async def test_send_user_vote_replies_to_an_early_second_round(sqlite_sessionmak
 @pytest.mark.parametrize(
     ("vote_round", "is_member", "is_ipmc_member", "body"),
     [
-        (1, True, True, "+1 (PPMC-binding, IPMC-binding) (chair) Voter"),
-        (1, False, True, "+1 (IPMC-binding) (chair) Voter"),
+        (1, True, True, "+1 (PPMC-binding) (chair) Voter"),
+        (1, False, True, "+1 (non-binding) (chair) Voter"),
         (1, True, False, "+1 (PPMC-binding) (chair) Voter"),
         (1, False, False, "+1 (non-binding) (chair) Voter"),
         (2, False, True, "+1 (binding) (chair) Voter"),
@@ -1028,8 +1028,6 @@ async def test_vote_email_labels_reflect_membership(
         message_task = (
             await data.execute(sqlmodel.select(sql.Task).where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND))
         ).scalar_one()
-        if (vote_mode == sql.VoteMode.EMAIL) and (vote_round == 1):
-            body = "+1 (PPMC-binding) (chair) Voter" if is_member else "+1 (non-binding) (chair) Voter"
         assert message_task.task_args["body"] == body
 
 

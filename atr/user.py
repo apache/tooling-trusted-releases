@@ -191,11 +191,6 @@ async def projects(uid: str, committee_only: bool = False, super_project: bool =
     return list(projects)
 
 
-def round_one_binding_label(is_ppmc_member: bool, is_ipmc_member: bool) -> str:
-    labels = (["PPMC-binding"] if is_ppmc_member else []) + (["IPMC-binding"] if is_ipmc_member else [])
-    return ", ".join(labels) or "Non-binding"
-
-
 @functools.cache
 def _get_additional_admin_users() -> frozenset[str]:
     additional = config.get().ADMIN_USERS_ADDITIONAL

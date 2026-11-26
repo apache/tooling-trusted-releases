@@ -45,6 +45,7 @@ async def test_auto_resolve_leaves_vote_for_release_manager(
     monkeypatch.setattr(vote, "_send_auto_resolve_outcome_notify", notify)
 
     release = SimpleNamespace(
+        key="project-1.0.0",
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         vote_resolved=None,
         effective_vote_mode=sql.VoteMode.TRUSTED,
@@ -87,7 +88,7 @@ async def test_auto_resolve_leaves_vote_for_release_manager(
     )
     monkeypatch.setattr(
         vote.interaction,
-        "effective_trusted_ballots",
+        "ballots_for_resolution",
         mock.AsyncMock(return_value=[]),
     )
     summary = SimpleNamespace(

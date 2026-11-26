@@ -327,7 +327,7 @@ async def test_passed_vote_retains_revision_for_publication(
         download_path_suffix="project-1.0.0",
     )
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
-    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction,
         "trusted_ballot_summary",
@@ -372,7 +372,7 @@ async def test_unattended_pass_refused_unless_every_vote_is_yes(monkeypatch) -> 
     data.release.return_value.demand = mock.AsyncMock(return_value=release)
     vote_task = _latest_vote_task_with_end(-24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
-    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     summary = interaction.TrustedVoteSummary(binding_votes_yes=3, non_binding_votes_no=1)
     monkeypatch.setattr(interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=summary))
 
@@ -451,7 +451,7 @@ async def test_podling_round_one_pass_passes_thread_to_second_round_body(
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
     monkeypatch.setattr(interaction, "release_early_second_round_task", mock.AsyncMock(return_value=None))
     monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
-    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction,
         "trusted_ballot_summary",
@@ -1462,67 +1462,6 @@ async def test_trusted_resolve_page_uses_cancel_form_before_vote_end(
     assert form_render.call_args.kwargs["submit_label"] == "Cancel vote"
 
 
-@pytest.mark.asyncio
-async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeypatch: pytest.MonkeyPatch) -> None:
-    data = _mock_data()
-    write_as = _mock_write_as()
-    writer = _writer_with_mocks(data, write_as)
-    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
-
-    release = _candidate_release(podling_thread_id="thread-abc")
-    release.vote_mode = sql.VoteMode.TRUSTED
-    release.effective_vote_mode = sql.VoteMode.TRUSTED
-    release.current_vote_seq = 2
-    release.safe_latest_revision_number = safe.RevisionNumber("00001")
-    release.committee = SimpleNamespace(key="myproject", display_name="MyProject", is_podling=True)
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=release)
-    data.release = mock.MagicMock(return_value=query)
-
-    past_task = _latest_vote_task_with_end(-24)
-    past_task.task_args.update(
-        automatic_publish_when_resolved=True,
-        automatic_publish_asf_uid="initiator",
-        download_path_suffix="project-1.0.0",
-    )
-    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
-    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
-    effective_ballots = mock.AsyncMock(return_value=[mock.MagicMock(), mock.MagicMock(), mock.MagicMock()])
-    monkeypatch.setattr(interaction, "effective_trusted_ballots", effective_ballots)
-    monkeypatch.setattr(
-        interaction,
-        "trusted_ballot_summary",
-        mock.AsyncMock(return_value=interaction.TrustedVoteSummary(binding_votes_yes=3)),
-    )
-    monkeypatch.setattr(
-        vote.util,
-        "email_mid_from_thread_id",
-        mock.AsyncMock(return_value=("general@incubator.apache.org", "msg-id@apache.org")),
-    )
-
-    _release, _round, success, _error = await writer.resolve(
-        _project_key(),
-        _version_key(),
-        "passed",
-        "Chair",
-        "The vote has passed.",
-        expected_vote_seq=2,
-        expected_vote_mode=sql.VoteMode.TRUSTED,
-    )
-
-    assert success == "Vote marked as passed"
-    effective_ballots.assert_awaited()
-    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
-
-    write_as.release.publish_to_svn.assert_awaited_once_with(
-        _project_key(),
-        release.safe_version_key,
-        safe.RevisionNumber("00001"),
-        safe.RelPath("project-1.0.0"),
-        publisher_asf_uid="initiator",
-    )
-
-
 def test_vote_end_get_returns_datetime_for_valid_task() -> None:
     """vote_end_get returns a UTC datetime for a valid VoteInitiate task."""
     task = _latest_vote_task()
@@ -1675,7 +1614,7 @@ async def test_vote_resolve_api_sends_tally(
     monkeypatch.setattr(
         atr.api.interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
     )
-    monkeypatch.setattr(atr.api.interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(atr.api.interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(atr.api.interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=trusted_summary))
     monkeypatch.setattr(atr.api.tabulate, "vote_committee", mock.AsyncMock(return_value=release.committee))
     monkeypatch.setattr(atr.api.tabulate, "vote_details", vote_details)
@@ -2053,7 +1992,7 @@ def _security_override_writer(
         vote_task.task_args["automatic_publish_when_resolved"] = automatic_publish
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
     monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
-    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
     )

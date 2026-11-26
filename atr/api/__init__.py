@@ -2861,7 +2861,7 @@ async def _vote_resolve_tally(warm: storage.WriteAsReleaseManager, release: sql.
         )
         thread_id = archive_url.split("/")[-1] if archive_url else None
     if (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None):
-        ballots = await interaction.effective_trusted_ballots(release, release.current_vote_seq)
+        ballots = await interaction.ballots_for_resolution(release.key, release.current_vote_seq)
         summary = await interaction.trusted_ballot_summary(release, ballots)
         return tabulate.trusted_tally_block(
             summary, binding_label, non_binding_label, thread_id=thread_id, podling_thread_id=release.podling_thread_id
@@ -2985,7 +2985,7 @@ async def _vote_tabulate_trusted(
     if vote_seq is None:
         return None, None, None
     vote_round = interaction.trusted_vote_round(release)
-    ballots = await interaction.effective_trusted_ballots(release, vote_seq)
+    ballots = await interaction.ballots_for_resolution(release.key, vote_seq)
     trusted_ballot_details, summary = await interaction.trusted_ballot_details_from_ballots(
         release, ballots, vote_round
     )
@@ -2998,7 +2998,6 @@ async def _vote_tabulate_trusted(
                 choice=detail.choice,
                 comment=detail.comment,
                 is_binding=detail.is_binding,
-                is_carried=detail.is_carried,
                 vote_round=detail.vote_round,
                 revision_number_at_cast=detail.revision_number_at_cast,
                 receipt_message_id=detail.receipt_message_id,
