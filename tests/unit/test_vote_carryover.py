@@ -223,6 +223,7 @@ def _ballot(
         release_key=release_key,
         vote_seq=vote_seq,
         vote_round=vote_round,
+        vote_mode=sql.VoteMode.TRUSTED,
         voter_asf_uid=voter_asf_uid,
         voter_fullname="Voter",
         choice=choice,

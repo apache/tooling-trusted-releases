@@ -25,7 +25,6 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
-import atr.user as user
 import atr.web as web
 
 
@@ -83,19 +82,15 @@ async def selected_post(
         await quart.flash(success_message, "success")
         return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
-    if release.current_vote_seq != cast_vote_form.vote_seq:
-        await quart.flash("The vote form is stale, please refresh and try again.", "error")
-        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
-
-    vote_round = None
-    if release.committee.is_podling:
-        vote_round = 2 if (release.podling_thread_id is not None) else 1
-    is_binding, _binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
-
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
         email_to, error_message = await wafc.vote.send_user_vote(
-            project_key, version_key, vote, comment, session.fullname, is_binding
+            project_key,
+            version_key,
+            vote,
+            comment,
+            session.fullname,
+            expected_vote_seq=cast_vote_form.vote_seq,
         )
 
     if error_message:

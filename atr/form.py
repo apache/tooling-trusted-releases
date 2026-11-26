@@ -307,6 +307,7 @@ async def render(  # noqa: C901
     flash_error_data: dict[str, Any] | None = None,
     enum_filter_include: dict[str, list[Any]] | None = None,
     readonly: bool = False,
+    id_prefix: str = "",
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -348,6 +349,7 @@ async def render(  # noqa: C901
             wider_widgets,
             enum_filter_include=enum_filter_include,
             note=(notes.get(field_name) if notes else None),
+            id_prefix=id_prefix,
         )
         if hidden_field:
             hidden_fields.append(hidden_field)
@@ -946,6 +948,7 @@ def _render_row(  # noqa: C901
     wider_widgets: bool,
     enum_filter_include: dict[str, list[Any]] | None = None,
     note: htm.Element | None = None,
+    id_prefix: str = "",
 ) -> tuple[htm.VoidElement | None, htm.Element | None]:
     widget_type = _get_widget_type(field_info)
     has_flash_error = field_name in flash_error_data
@@ -964,7 +967,7 @@ def _render_row(  # noqa: C901
         return htpy.input(type="hidden", name=DISCRIMINATOR_NAME, value=default_value), None
 
     if widget_type == Widget.HIDDEN:
-        attrs = {"type": "hidden", "name": field_name, "id": field_name}
+        attrs = {"type": "hidden", "name": field_name, "id": f"{id_prefix}{field_name}"}
         if field_value is not None:
             if isinstance(field_value, enum.Enum):
                 attrs["value"] = field_value.value
@@ -992,7 +995,7 @@ def _render_row(  # noqa: C901
         # visually-hidden note beside it instead
         label_content.append(htm.span(".text-danger.ms-1", aria_hidden="true")["*"])
         label_content.append(htm.span(".visually-hidden")[" (required)"])
-    label_elem = htpy.label(for_=field_name, class_=label_classes_with_error)[label_content]
+    label_elem = htpy.label(for_=f"{id_prefix}{field_name}", class_=label_classes_with_error)[label_content]
 
     widget_elem = _render_widget(
         field_name=field_name,
@@ -1004,6 +1007,7 @@ def _render_row(  # noqa: C901
         custom=custom,
         defaults=defaults,
         enum_filter_include=enum_filter_include,
+        id_prefix=id_prefix,
     )
 
     row_div = htm.div(f".mb-3.pb-3.row{'.border-bottom' if border else ''}")
@@ -1042,7 +1046,9 @@ def _render_widget(  # noqa: C901
     custom: dict[str, htm.Element | htm.VoidElement] | None,
     defaults: dict[str, Any] | None,
     enum_filter_include: dict[str, list[Any]] | None = None,
+    id_prefix: str = "",
 ) -> htm.Element | htm.VoidElement:
+    element_id = f"{id_prefix}{field_name}"
     widget_type = _get_widget_type(field_info)
     widget_classes = _get_widget_classes(widget_type, field_errors)
     field_filter = enum_filter_include.get(field_name) if enum_filter_include else None
@@ -1050,7 +1056,7 @@ def _render_widget(  # noqa: C901
     extra = field_info.json_schema_extra
     is_readonly = bool(extra.get("readonly", False)) if isinstance(extra, dict) else False
 
-    base_attrs: dict[str, str] = {"name": field_name, "id": field_name, "class_": widget_classes}
+    base_attrs: dict[str, str] = {"name": field_name, "id": element_id, "class_": widget_classes}
     if is_readonly:
         base_attrs["readonly"] = ""
         base_attrs["class_"] = f"{widget_classes} bg-light"
@@ -1086,7 +1092,7 @@ def _render_widget(  # noqa: C901
 
             checkboxes = []
             for val, label in choices:
-                checkbox_id = f"{field_name}_{val}"
+                checkbox_id = f"{element_id}_{val}"
                 checkbox_attrs: dict[str, str] = {
                     **base_attrs,
                     "type": "checkbox",
@@ -1100,7 +1106,7 @@ def _render_widget(  # noqa: C901
                 checkbox_label = htpy.label(for_=checkbox_id, class_="form-check-label")[label]
                 checkboxes.append(htpy.div(class_="form-check")[checkbox_input, checkbox_label])
             elements.extend(checkboxes)
-            widget = htm.div(id=field_name)[checkboxes]
+            widget = htm.div(id=element_id)[checkboxes]
 
         case Widget.CUSTOM:
             if custom and (field_name in custom):
@@ -1131,7 +1137,7 @@ def _render_widget(  # noqa: C901
             widget = htpy.input(type="file", **attrs)
 
         case Widget.HIDDEN:
-            attrs = {"type": "hidden", "name": field_name, "id": field_name}
+            attrs = {"type": "hidden", "name": field_name, "id": element_id}
             if field_value is not None:
                 attrs["value"] = str(field_value)
             widget = htpy.input(**attrs)
@@ -1152,7 +1158,7 @@ def _render_widget(  # noqa: C901
 
             radios = []
             for val, label in choices:
-                radio_id = f"{field_name}_{val}"
+                radio_id = f"{element_id}_{val}"
                 radio_attrs: dict[str, str] = {
                     **base_attrs,
                     "type": "radio",
@@ -1168,7 +1174,7 @@ def _render_widget(  # noqa: C901
                 radio_label = htpy.label(for_=radio_id, class_="form-check-label")[label]
                 radios.append(htpy.div(class_="form-check")[radio_input, radio_label])
             elements.extend(radios)
-            widget = htm.div(id=field_name)[radios]
+            widget = htm.div(id=element_id)[radios]
 
         case Widget.SELECT:
             # Check for dynamic choices from defaults or field_value
@@ -1197,7 +1203,7 @@ def _render_widget(  # noqa: C901
             # Display-only - no input element, value comes from defaults and is
             # never submitted back. Pydantic still needs a sensible default so
             # POST validation doesn't reject the form when this field is absent.
-            widget = htpy.div(id=field_name, class_=widget_classes)[str(field_value) if field_value else ""]
+            widget = htpy.div(id=element_id, class_=widget_classes)[str(field_value) if field_value else ""]
 
         case Widget.TEXT:
             attrs = {**base_attrs, "type": "text"}

@@ -2088,6 +2088,7 @@ class BallotPaper(sqlmodel.SQLModel, table=True):
 
     vote_seq: int
     vote_round: int | None = None
+    vote_mode: VoteMode
     voter_asf_uid: str
     voter_fullname: str
     choice: VoteChoice

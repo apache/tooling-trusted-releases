@@ -119,6 +119,7 @@ async def test_everything_audits_cross_record_consistency(sqlite_sessionmaker) -
             sql.BallotPaper(
                 release_key="proj-4.0",
                 vote_seq=9,
+                vote_mode=sql.VoteMode.TRUSTED,
                 voter_asf_uid="alice",
                 voter_fullname="Alice",
                 choice=sql.VoteChoice.YES,

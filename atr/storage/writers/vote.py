@@ -153,6 +153,7 @@ class FoundationCommitter(GeneralPublic):
                 .where(sql.BallotPaper.release_key == release.key)
                 .where(sql.BallotPaper.vote_seq == release.current_vote_seq)
                 .where(sql.BallotPaper.voter_asf_uid == self.__asf_uid)
+                .where(sql.BallotPaper.vote_mode == sql.VoteMode.TRUSTED)
                 .order_by(sql.validate_instrumented_attribute(sql.BallotPaper.id).desc())
                 .limit(1)
             )
@@ -181,6 +182,7 @@ class FoundationCommitter(GeneralPublic):
                 release_key=release.key,
                 vote_seq=release.current_vote_seq,
                 vote_round=vote_round,
+                vote_mode=sql.VoteMode.TRUSTED,
                 voter_asf_uid=self.__asf_uid,
                 voter_fullname=fullname,
                 choice=choice,
@@ -216,7 +218,8 @@ class FoundationCommitter(GeneralPublic):
         vote: str,
         comment: str,
         fullname: str,
-        is_binding: bool = False,
+        *,
+        expected_vote_seq: int | None,
     ) -> tuple[list[str], str]:
         release = await self.__data.release(
             project_key=str(project_key),
@@ -229,6 +232,19 @@ class FoundationCommitter(GeneralPublic):
         latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
             return [], "No vote task found."
+        early_second_round = latest_vote_task.task_args.get("vote_seq") != expected_vote_seq
+        if early_second_round:
+            latest_vote_task = await self.__early_second_round_task(release, expected_vote_seq)
+        if latest_vote_task is None:
+            return [], "The vote form is stale, please refresh and try again."
+        if release.committee is None:
+            return [], "The committee for this release was not found."
+        vote_round = None
+        if release.committee.is_podling:
+            vote_round = 2 if (early_second_round or (release.podling_thread_id is not None)) else 1
+        is_binding, _binding_committee = await user.is_binding_for_release(
+            release.committee, self.__asf_uid, vote_round, caller_data=self.__data
+        )
         vote_thread_mid = interaction.task_mid_get(latest_vote_task)
         if vote_thread_mid is None:
             return [], "No vote thread found."
@@ -253,10 +269,13 @@ class FoundationCommitter(GeneralPublic):
             fullname=fullname,
             is_binding=is_binding,
             comment=comment,
-            potency_label=await _vote_potency_label(release, self.__asf_uid, is_binding, self.__data),
+            potency_label=await _vote_potency_label(
+                release, self.__asf_uid, is_binding, self.__data, second_round=early_second_round
+            ),
         )
         in_reply_to = vote_thread_mid
 
+        message_id = mail.message_id_create()
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.MESSAGE_SEND,
@@ -268,6 +287,7 @@ class FoundationCommitter(GeneralPublic):
                 in_reply_to=in_reply_to,
                 email_cc=email_cc,
                 email_bcc=email_bcc,
+                message_id=message_id,
                 footer_category=mail.MailFooterCategory.USER,
             ).as_task_args(),
             asf_uid=self.__asf_uid,
@@ -275,10 +295,35 @@ class FoundationCommitter(GeneralPublic):
             version_key=release.version,
         )
         self.__data.add(task)
+        if expected_vote_seq is not None:
+            self.__data.add(
+                sql.BallotPaper(
+                    release_key=release.key,
+                    vote_seq=expected_vote_seq,
+                    vote_round=vote_round,
+                    vote_mode=sql.VoteMode.EMAIL,
+                    voter_asf_uid=self.__asf_uid,
+                    voter_fullname=fullname,
+                    choice=sql.VoteChoice(vote),
+                    comment=comment,
+                    is_binding_at_cast=is_binding,
+                    revision_number_at_cast=str(release.safe_latest_revision_number),
+                    receipt_message_id=message_id,
+                )
+            )
         await self.__data.flush()
         await self.__data.commit()
 
         return [email_to], ""
+
+    async def __early_second_round_task(self, release: sql.Release, vote_seq: int | None) -> sql.Task | None:
+        committee = release.committee
+        if (committee is None) or (not committee.is_podling) or (release.podling_thread_id is not None):
+            return None
+        early_task = await interaction.release_early_second_round_task(release, self.__data)
+        if (early_task is None) or (early_task.task_args.get("vote_seq") != vote_seq):
+            return None
+        return early_task
 
 
 class FoundationAdmin(FoundationCommitter):
@@ -555,6 +600,8 @@ class ReleaseManager(CommitteeParticipant):
         ).demand(storage.AccessError("Release not found", status=404))
         if (release.committee is None) or (not release.committee.is_podling) or (release.podling_thread_id is not None):
             raise storage.AccessError("Only a podling first round vote can start a second round vote", status=409)
+        if release.effective_vote_mode != sql.VoteMode.EMAIL:
+            raise storage.AccessError("A second round vote can only be started early for an email vote", status=409)
         if release.current_vote_seq != expected_vote_seq:
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
         latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
@@ -568,7 +615,11 @@ class ReleaseManager(CommitteeParticipant):
             if await interaction.release_early_second_round_task(release, self.__data) is not None:
                 raise storage.AccessError("The second round vote has already been started", status=409)
             task = await self.__queue_second_round(
-                release, latest_vote_task, asf_fullname, archive_url.split("/")[-1], body_template
+                release,
+                latest_vote_task,
+                asf_fullname,
+                archive_url.split("/")[-1],
+                body_template,
             )
             await self.__data.commit()
         except Exception:
@@ -770,7 +821,7 @@ class ReleaseManager(CommitteeParticipant):
                 thread_id = archive_url.split("/")[-1]
                 await self.__data.commit()
                 await self.__data.begin_immediate()
-                second_round_task = await self.__pass_first_round(
+                second_round_task, adopted = await self.__pass_first_round(
                     release,
                     latest_vote_task,
                     asf_fullname,
@@ -788,10 +839,7 @@ class ReleaseManager(CommitteeParticipant):
             except Exception:
                 await self.__data.rollback()
                 raise
-            success_message = (
-                f"First round vote marked as passed, and second round vote started"
-                f" (sent to {second_round_task.task_args['email_to']})"
-            )
+            success_message = _first_round_pass_message(second_round_task, adopted)
         elif vote_result == "passed":
             vote_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
             await self._resolve_transition(
@@ -821,19 +869,7 @@ class ReleaseManager(CommitteeParticipant):
                 )
                 extra_destination = (round_one_email_address, round_one_message_id)
         else:
-            # The vote_resolved property refers to when the vote succeeded only
-            await self._resolve_transition(
-                release,
-                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                expected_podling_thread_id=release.podling_thread_id,
-                new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-                new_vote_mode=None,
-                new_vote_resolved=None,
-                new_podling_thread_id=None,
-            )
-            await self.__data.commit()
-            await self.__data.refresh(release)
-            success_message = f"Vote marked as {vote_result}"
+            success_message = await self.__resolve_unsuccessful(release, voting_round, vote_result, latest_vote_task)
 
         error_message = await self.__send_resolution(
             release,
@@ -877,6 +913,40 @@ class ReleaseManager(CommitteeParticipant):
                 security_override=security_override,
             )
         return release, voting_round, success_message, error_message
+
+    async def __resolve_unsuccessful(
+        self,
+        release: sql.Release,
+        voting_round: int | None,
+        vote_result: Literal["passed", "failed", "cancelled"],
+        latest_vote_task: sql.Task,
+    ) -> str:
+        first_round_thread_url = None
+        if voting_round == 1:
+            first_round_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
+        await self.__data.commit()
+        await self.__data.begin_immediate()
+        try:
+            early_second_round_thread = await self.__early_second_round_thread(release, voting_round)
+            # The vote_resolved property refers to when the vote succeeded only
+            await self._resolve_transition(
+                release,
+                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                expected_podling_thread_id=release.podling_thread_id,
+                new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                new_vote_mode=None,
+                new_vote_resolved=None,
+                new_podling_thread_id=None,
+            )
+            success_message = self.__cancel_early_second_round(
+                release, early_second_round_thread, first_round_thread_url, vote_result
+            )
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        await self.__data.refresh(release)
+        return success_message
 
     def __queue_send(
         self,
@@ -1053,7 +1123,7 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError("No vote task found, unable to start the Incubator vote.", status=404)
                 if podling_round_one_thread_id is None:
                     raise storage.AccessError("No archive URL found for podling vote", status=404)
-                second_round_task = await self.__pass_first_round(
+                second_round_task, adopted = await self.__pass_first_round(
                     release,
                     latest_vote_task,
                     asf_fullname,
@@ -1068,10 +1138,7 @@ class ReleaseManager(CommitteeParticipant):
                 second_round_vote_mode = release.effective_vote_mode
                 await self.__data.commit()
                 await self.__data.refresh(release)
-                success_message = (
-                    f"First round vote marked as passed, and second round vote started"
-                    f" (sent to {second_round_task.task_args['email_to']})"
-                )
+                success_message = _first_round_pass_message(second_round_task, adopted)
             elif vote_result == "passed":
                 vote_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
                 await self._resolve_transition(
@@ -1262,6 +1329,31 @@ class ReleaseManager(CommitteeParticipant):
         )
         await self.__data.execute(auto_resolve_stmt)
 
+    def __cancel_early_second_round(
+        self,
+        release: sql.Release,
+        early_second_round_thread: tuple[str, str] | None,
+        first_round_thread_url: str | None,
+        vote_result: Literal["passed", "failed", "cancelled"],
+    ) -> str:
+        if early_second_round_thread is None:
+            return f"Vote marked as {vote_result}"
+        email_to, in_reply_to = early_second_round_thread
+        outcome = "failed" if (vote_result == "failed") else "was cancelled"
+        body = f"The PPMC vote on this release candidate {outcome}, so this Incubator PMC vote is cancelled.\n"
+        if first_round_thread_url is not None:
+            body += f"\nThe PPMC vote thread is archived at:\n\n  {first_round_thread_url}\n"
+        self.__data.add(
+            self.__queue_send(
+                release,
+                email_to=email_to,
+                subject=tabulate.vote_result_subject(release, "cancelled"),
+                body=body,
+                in_reply_to=in_reply_to,
+            )
+        )
+        return f"First round vote {outcome}. The second round vote already running on {email_to} was cancelled too"
+
     async def __early_completion_reason(
         self,
         committee: sql.Committee,
@@ -1291,6 +1383,21 @@ class ReleaseManager(CommitteeParticipant):
         if not is_binding:
             raise storage.AccessError("Only binding voters can complete this vote early", status=403)
         return reason
+
+    async def __early_second_round_thread(
+        self, release: sql.Release, voting_round: int | None
+    ) -> tuple[str, str] | None:
+        if voting_round != 1:
+            return None
+        early_task = await interaction.release_early_second_round_task(release, self.__data)
+        if early_task is None:
+            return None
+        early_mid = interaction.task_mid_get(early_task)
+        if early_mid is None:
+            raise storage.AccessError(
+                "The second round vote email is still being sent, please try again in a minute", status=409
+            )
+        return early_task.task_args["email_to"], early_mid
 
     async def __email_vote_passes(self, release: sql.Release, vote_task: sql.Task) -> bool:
         archive_url = await self.__resolved_vote_thread_url(vote_task)
@@ -1355,8 +1462,12 @@ class ReleaseManager(CommitteeParticipant):
         *,
         automatic_resolve_when_finished: bool,
         notify_when_finished: bool,
-    ) -> sql.Task:
+    ) -> tuple[sql.Task, bool]:
         early_second_round_task = await interaction.release_early_second_round_task(release, self.__data)
+        if (early_second_round_task is not None) and (early_second_round_task.status != sql.TaskStatus.COMPLETED):
+            raise storage.AccessError(
+                "The second round vote email is still being sent, please try again in a minute", status=409
+            )
         await self._resolve_transition(
             release,
             expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -1370,17 +1481,23 @@ class ReleaseManager(CommitteeParticipant):
             ),
         )
         await self.__data.refresh(release)
-        if early_second_round_task is not None:
-            return early_second_round_task
-        return await self.__queue_second_round(
-            release,
-            latest_vote_task,
-            asf_fullname,
-            thread_id,
-            second_round_body_template,
-            automatic_resolve_when_finished=automatic_resolve_when_finished,
-            notify_when_finished=notify_when_finished,
-        )
+        if early_second_round_task is None:
+            task = await self.__queue_second_round(
+                release,
+                latest_vote_task,
+                asf_fullname,
+                thread_id,
+                second_round_body_template,
+                automatic_resolve_when_finished=automatic_resolve_when_finished,
+                notify_when_finished=notify_when_finished,
+            )
+            return task, False
+        if isinstance(self, SecurityTeam):
+            early_second_round_task.task_args = {
+                **early_second_round_task.task_args,
+                "automatic_publish_when_resolved": False,
+            }
+        return early_second_round_task, True
 
     async def __queue_second_round(
         self,
@@ -1529,10 +1646,21 @@ def _extend_unique(addresses: list[str], additions: list[str] | None, seen: set[
     return result
 
 
-async def _vote_potency_label(release: sql.Release, asf_uid: str, is_binding: bool, data: db.Session) -> str | None:
+def _first_round_pass_message(second_round_task: sql.Task, adopted: bool) -> str:
+    email_to = second_round_task.task_args["email_to"]
+    if adopted:
+        return f"First round vote marked as passed. The second round vote already running on {email_to} is now current"
+    return f"First round vote marked as passed, and second round vote started (sent to {email_to})"
+
+
+async def _vote_potency_label(
+    release: sql.Release, asf_uid: str, is_binding: bool, data: db.Session, *, second_round: bool = False
+) -> str | None:
     committee = release.committee
-    if (committee is not None) and committee.is_podling and (release.podling_thread_id is None):
-        is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2, caller_data=data)
+    if (not second_round) and (committee is not None) and committee.is_podling and (release.podling_thread_id is None):
+        is_ipmc_member = False
+        if release.effective_vote_mode == sql.VoteMode.TRUSTED:
+            is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2, caller_data=data)
         return user.binding_label_inline(user.round_one_binding_label(is_binding, is_ipmc_member))
     if is_binding:
         return "binding"

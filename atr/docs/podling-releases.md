@@ -46,23 +46,23 @@ these:
 * **Moving to the second round.** When you resolve the first round as passed, ATR does not move the
   release on to the finish phase. Instead it starts the second round straight away, unless you already started it, sending a new
   vote email to the Incubator list. The second round is held on the same revision, with the same
-  duration, using your project's vote email template. The default template links to the first round vote thread, and a custom template can do the same by including the `{{FIRST_ROUND_THREAD}}` variable. You can start the second round early from the resolve page while the first round is still open, but you must still resolve the first round first.
+  duration, using your project's vote email template. The default template links to the first round vote thread, and a custom template can do the same by including the `{{FIRST_ROUND_THREAD}}` variable. You can start the second round early from the resolve page while the first round is still open, but you must still resolve the first round first. While both rounds are open, the ATR vote page shows a separate form for each round, so you can vote, or change your vote, in either round on its own; your vote in a round is binding only if you are a member of that round's committee. Incubator PMC members who are not on the PPMC get only the second round form. Once the first round passes, the second round is the only vote on the page, so anyone can still vote in it or change their vote there.
 * **Second round.** The vote is held by the Incubator PMC. When you resolve it as passed, the
   release moves on to the finish phase, and ATR sends the result to the second round thread and
   also, as a reply, to the first round thread.
 
-If either round fails or is canceled, the candidate returns to the compose phase. A later vote on
+If either round fails or is canceled, the candidate returns to the compose phase. If the first round fails or is canceled while the second round is already running, ATR also replies to the second round thread that its vote is canceled. A later vote on
 the revised candidate starts again from the first round.
 
 Whose vote counts differs between the rounds, and ATR labels votes to match:
 
 | Round  | Held by           | Votes that count                                   | Other votes   |
 |--------|-------------------|----------------------------------------------------|---------------|
-| First  | The PPMC          | "Formal" votes, from members of the PPMC           | "Informal"    |
+| First  | The PPMC          | "PPMC-binding" votes, from members of the PPMC     | "Non-binding" |
 | Second | The Incubator PMC | "Binding" votes, from members of the Incubator PMC | "Non-binding" |
 
-A PPMC member who is not also a member of the Incubator PMC therefore has a formal vote in the first
-round, but a non-binding vote in the second.
+A PPMC member who is not also a member of the Incubator PMC therefore has a PPMC-binding vote in the first
+round, but a non-binding vote in the second. A vote in the first round counts only in the first round, even from a member of the Incubator PMC, so members of both committees vote in each round.
 
 Some options on the vote form behave differently for a podling:
 

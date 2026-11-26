@@ -192,7 +192,7 @@ async def projects(uid: str, committee_only: bool = False, super_project: bool =
 
 
 def round_one_binding_label(is_ppmc_member: bool, is_ipmc_member: bool) -> str:
-    labels = (["IPMC-binding"] if is_ipmc_member else []) + (["PPMC-binding"] if is_ppmc_member else [])
+    labels = (["PPMC-binding"] if is_ppmc_member else []) + (["IPMC-binding"] if is_ipmc_member else [])
     return ", ".join(labels) or "Non-binding"
 
 

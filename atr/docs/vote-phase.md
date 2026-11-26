@@ -45,7 +45,7 @@ Both the Release Manager and the wider PMC have a part to play in this phase:
 
 ATR keeps the candidate and its artifacts staged for the whole of the vote. With streamlined voting,
 ATR records each vote itself, and replies to the vote thread are not counted. With email voting,
-ATR tallies the votes from the vote thread on the mailing list. That tally is there to help, but the
+ATR tallies the votes from the vote thread on the mailing list. A vote cast on the vote page is sent as a reply to that thread, and the page then shows your latest such vote; voting again sends another reply, and your latest reply is the one that counts. ATR keeps this record only to show you what you sent, apart from streamlined votes, and never counts it in place of the thread. That tally is there to help, but the
 Release Manager must check it against the thread before relying on it. When the vote is complete the
 Release Manager resolves it: a passing vote moves the candidate on to the finish phase, and a failed
 or canceled vote returns it to compose so that it can be revised. When starting an email vote, the

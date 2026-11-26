@@ -258,6 +258,23 @@ def test_distribution_status_follows_pending(tmp_path: pathlib.Path, monkeypatch
     assert dict(tuple(row) for row in pending) == {"confirmed": 0, "waiting": 1}
 
 
+def test_existing_ballots_become_streamlined_ballots(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
+    command.upgrade(alembic_config, "0151_2026.11.24_81cdbaf9")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO ballotpaper (release_key, vote_seq, voter_asf_uid, voter_fullname, choice, comment,"
+            " is_binding_at_cast, revision_number_at_cast, receipt_message_id, created)"
+            " VALUES ('project-1.0.0', 1, 'alice', 'Alice', 'YES', '', 1, '00001', 'receipt', '2026-01-01 00:00:00')"
+        )
+
+    command.upgrade(alembic_config, "0152_2026.11.26_6770c14a")
+
+    with engine.connect() as connection:
+        modes = connection.exec_driver_sql("SELECT vote_mode FROM ballotpaper").scalars().all()
+    assert modes == ["TRUSTED"]
+
+
 def test_full_sync_projects_return_to_email_votes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     alembic_config, engine = _alembic_setup(tmp_path, monkeypatch)
     command.upgrade(alembic_config, "0147_2026.11.13_bb0b30bf")

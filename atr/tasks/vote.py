@@ -319,7 +319,7 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
         if task_args.vote_seq is None:
             if release.current_vote_seq is not None:
                 raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
-        elif (release.current_vote_seq is None) or (release.current_vote_seq > task_args.vote_seq):
+        elif not _vote_seq_is_current_or_early(release, task_args.vote_seq):
             raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
@@ -594,3 +594,16 @@ async def _thread_id_for_vote_task(task_mid: str | None, task_recipient: str | N
     if archive_url is None:
         return None
     return archive_url.split("/")[-1]
+
+
+def _vote_seq_is_current_or_early(release: sql.Release, vote_seq: int) -> bool:
+    if release.current_vote_seq == vote_seq:
+        return True
+    committee = release.committee
+    return (
+        (committee is not None)
+        and committee.is_podling
+        and (release.podling_thread_id is None)
+        and (release.current_vote_seq is not None)
+        and (vote_seq > release.current_vote_seq)
+    )

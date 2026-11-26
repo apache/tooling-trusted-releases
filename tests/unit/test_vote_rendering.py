@@ -174,7 +174,7 @@ async def test_email_rendering_keeps_hidden_vote_defaults_and_no_trusted_state(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _patch_render_dependencies(monkeypatch)
-    latest_ballot_get = mock.AsyncMock()
+    latest_ballot_get = mock.AsyncMock(return_value=None)
     monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", latest_ballot_get)
 
     async with render_app.test_request_context("/vote/project/1.0.0"):
@@ -196,7 +196,7 @@ async def test_email_rendering_keeps_hidden_vote_defaults_and_no_trusted_state(
     assert 'name="vote_mode" id="vote_mode" value="email"' in html
     assert "<textarea" in html
     assert "checked" not in html
-    latest_ballot_get.assert_not_awaited()
+    latest_ballot_get.assert_awaited_once_with("project-1.0.0", 1, "voter", vote_mode=sql.VoteMode.EMAIL)
 
 
 @pytest.mark.asyncio
@@ -268,7 +268,9 @@ async def test_latest_ballot_for_voter_returns_newest_matching_ballot(sqlite_ses
         data.add_all([older, newest, other_seq, other_voter, other_release])
         await data.commit()
 
-        found = await interaction.latest_ballot_for_voter("project-1.0.0", 1, "voter", data)
+        found = await interaction.latest_ballot_for_voter(
+            "project-1.0.0", 1, "voter", data, vote_mode=sql.VoteMode.TRUSTED
+        )
 
     assert found is not None
     assert found.receipt_message_id == "newest@apache.org"
@@ -297,7 +299,9 @@ async def test_latest_ballot_for_voter_uses_highest_id_not_timestamp(sqlite_sess
         data.add_all([newest_timestamp, highest_id])
         await data.commit()
 
-        found = await interaction.latest_ballot_for_voter("project-1.0.0", 1, "voter", data)
+        found = await interaction.latest_ballot_for_voter(
+            "project-1.0.0", 1, "voter", data, vote_mode=sql.VoteMode.TRUSTED
+        )
 
     assert found is not None
     assert found.receipt_message_id == "highest-id@apache.org"
@@ -313,6 +317,223 @@ def test_message_id_source_archive_url_encodes_message_id_and_listid() -> None:
         url == "https://lists.apache.org/api/source.lua?"
         "id=%3CCAA9ykM%2BbMPNk%3DBOF@apache.org%3E&listid=%3Cuser-tests.tooling.apache.org%3E"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("is_ppmc_binding", "is_ipmc_binding", "expected", "unexpected"),
+    [
+        (
+            True,
+            True,
+            [
+                "3. Cast your PPMC vote",
+                "4. Cast your IPMC vote",
+                "<code>dev@project.apache.org</code>",
+                "<code>general@incubator.apache.org</code>",
+                'id="ppmc_vote_seq" value="1"',
+                'id="ipmc_vote_seq" value="2"',
+                'for="ppmc_comment"',
+                'for="ipmc_comment"',
+            ],
+            ['id="vote_seq"', 'id="comment"', "IPMC-binding"],
+        ),
+        (
+            True,
+            False,
+            [
+                "3. Cast your PPMC vote",
+                "4. Cast your IPMC vote",
+                "You are not a Committee PMC member. Your vote will be recorded as <strong>non-binding</strong>",
+                'id="ppmc_vote_seq" value="1"',
+                'id="ipmc_vote_seq" value="2"',
+            ],
+            ['id="vote_seq"'],
+        ),
+        (
+            False,
+            True,
+            ["3. Cast your IPMC vote", "<code>general@incubator.apache.org</code>", 'id="vote_seq" value="2"'],
+            ["<code>dev@project.apache.org</code>", "4. Cast your IPMC vote"],
+        ),
+        (
+            False,
+            False,
+            [
+                "3. Cast your PPMC vote",
+                "4. Cast your IPMC vote",
+                "your vote is <strong>non-binding</strong> for podling approval",
+                "Your vote will be recorded as <strong>non-binding</strong>",
+                'id="ppmc_vote_seq" value="1"',
+                'id="ipmc_vote_seq" value="2"',
+            ],
+            ['id="vote_seq"'],
+        ),
+    ],
+)
+async def test_podling_first_round_rendering_offers_the_votes_the_voter_is_binding_in(
+    render_app: quart.Quart,
+    monkeypatch: pytest.MonkeyPatch,
+    is_ppmc_binding: bool,
+    is_ipmc_binding: bool,
+    expected: list[str],
+    unexpected: list[str],
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    _patch_binding(monkeypatch, is_ppmc_binding, is_ipmc_binding)
+    monkeypatch.setattr(vote, "_get_archive_url", mock.AsyncMock(return_value=None))
+    early_task = _completed_vote_task(email_to="general@incubator.apache.org", vote_seq=2)
+    release = _release(sql.VoteMode.EMAIL)
+    release.committee.is_podling = True
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        overlap_rounds = await vote._overlap_vote_rounds(release, _session(), early_task)
+        page = htm.Block()
+        await vote._render_section_vote(
+            page, release, _session(), vote.UserCategory.PMC_MEMBER, None, None, early_task, overlap_rounds
+        )
+
+    html = str(page.collect())
+    for fragment in expected:
+        assert fragment in html
+    for fragment in unexpected:
+        assert fragment not in html
+
+
+@pytest.mark.asyncio
+async def test_podling_first_round_rendering_restores_a_rejected_ipmc_ballot_only_in_the_ipmc_form(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    _patch_binding(monkeypatch, True, True)
+    saved = {"!vote_seq": {"original": "2"}, "!decision": {"original": "-1"}}
+    monkeypatch.setattr(sessions, "form_error_pop", mock.AsyncMock(return_value=saved))
+    monkeypatch.setattr(vote, "_get_archive_url", mock.AsyncMock(return_value=None))
+    early_task = _completed_vote_task(email_to="general@incubator.apache.org", vote_seq=2)
+    release = _release(sql.VoteMode.EMAIL)
+    release.committee.is_podling = True
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_section_vote(
+            page, release, _session(), vote.UserCategory.PMC_MEMBER, None, None, early_task, [1, 2]
+        )
+
+    ppmc, ipmc = str(page.collect()).split("4. Cast your IPMC vote")
+    assert 'autocomplete="off" checked' not in ppmc
+    assert 'id="ipmc_decision_2" value="-1" autocomplete="off" checked' in ipmc
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("send_status", "warnings", "expected"),
+    [
+        (
+            sql.TaskStatus.COMPLETED,
+            [],
+            ["You already voted through ATR", "Sent: ", "View your reply in the list archive"],
+        ),
+        (
+            sql.TaskStatus.COMPLETED,
+            ["failed to send to private@project.apache.org: 550 rejected"],
+            ["You already voted through ATR", "Sent: ", "View your reply in the list archive"],
+        ),
+        (
+            sql.TaskStatus.COMPLETED,
+            ["failed to send to dev@project.apache.org: 550 rejected"],
+            ["Your last vote through ATR was not sent", "so this vote does not count"],
+        ),
+        (sql.TaskStatus.QUEUED, [], ["You already voted through ATR", "Being sent, since "]),
+        (sql.TaskStatus.FAILED, [], ["Your last vote through ATR was not sent", "so this vote does not count"]),
+    ],
+)
+async def test_email_rendering_shows_the_voters_email_ballot(
+    render_app: quart.Quart,
+    monkeypatch: pytest.MonkeyPatch,
+    send_status: sql.TaskStatus,
+    warnings: list[str],
+    expected: list[str],
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    ballot = _ballot(
+        release_key="project-1.0.0",
+        vote_seq=1,
+        voter_asf_uid="voter",
+        choice=sql.VoteChoice.NO,
+        receipt_message_id="reply@apache.org",
+        vote_mode=sql.VoteMode.EMAIL,
+    )
+    latest_ballot_for_voter = mock.AsyncMock(return_value=ballot)
+    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", latest_ballot_for_voter)
+    send_result = results.MessageSend(kind="message_send", mid="reply@apache.org", mail_send_warnings=warnings)
+    send_task = SimpleNamespace(
+        status=send_status,
+        task_args={"email_to": "dev@project.apache.org"},
+        result=send_result if (send_status == sql.TaskStatus.COMPLETED) else None,
+    )
+    message_send_task = mock.AsyncMock(return_value=send_task)
+    monkeypatch.setattr(vote.interaction, "message_send_task", message_send_task)
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page, _release(sql.VoteMode.EMAIL), _session(), None, "dev@project.apache.org", None
+        )
+
+    html = str(page.collect())
+    assert latest_ballot_for_voter.call_args.kwargs == {"vote_mode": sql.VoteMode.EMAIL}
+    assert message_send_task.call_args.args == ("project", "1.0.0", "reply@apache.org")
+    assert "Choice: <strong>-1</strong>" in html
+    assert "Vote again" in html
+    assert "You already cast a vote" not in html
+    for fragment in expected:
+        assert fragment in html
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("current_vote_seq", "restored"), [(1, True), (2, False)])
+async def test_cast_vote_form_restores_a_rejected_ballot_only_for_the_same_vote(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch, current_vote_seq: int, restored: bool
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    saved = {"!vote_seq": {"original": "1"}, "!decision": {"original": "-1"}}
+    monkeypatch.setattr(sessions, "form_error_pop", mock.AsyncMock(return_value=saved))
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._append_cast_vote_form(page, _release(sql.VoteMode.EMAIL, current_vote_seq), "Binding")
+
+    html = str(page.collect())
+    assert ('value="-1" autocomplete="off" checked' in html) is restored
+    assert f'id="vote_seq" value="{current_vote_seq}"' in html
+
+
+@pytest.mark.asyncio
+async def test_podling_first_round_signed_out_rendering_links_each_vote_thread(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    monkeypatch.setattr(vote, "_get_archive_url", mock.AsyncMock(return_value="https://lists.example.invalid/ipmc"))
+    early_task = _completed_vote_task(email_to="general@incubator.apache.org", vote_seq=2)
+    release = _release(sql.VoteMode.EMAIL)
+    release.committee.is_podling = True
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_section_vote(
+            page,
+            release,
+            None,
+            vote.UserCategory.UNAUTHENTICATED,
+            "https://lists.example.invalid/ppmc",
+            None,
+            early_task,
+            [],
+        )
+
+    html = str(page.collect())
+    assert 'href="https://lists.example.invalid/ppmc"' in html
+    assert 'href="https://lists.example.invalid/ipmc"' in html
 
 
 @pytest.mark.asyncio
@@ -539,7 +760,7 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
     assert "<textarea" not in html
     assert 'name="vote_seq" id="vote_seq" value="1"' in html
     assert 'name="vote_mode" id="vote_mode" value="trusted"' in html
-    latest_ballot_get.assert_awaited_once_with("project-1.0.0", 1, "voter")
+    latest_ballot_get.assert_awaited_once_with("project-1.0.0", 1, "voter", vote_mode=sql.VoteMode.TRUSTED)
 
 
 @pytest.mark.asyncio
@@ -547,7 +768,7 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
 @pytest.mark.parametrize(
     ("is_podling", "podling_thread_id", "binding_by_round", "label"),
     [
-        (True, None, {1: True, 2: True}, "IPMC-binding, PPMC-binding"),
+        (True, None, {1: True, 2: True}, "PPMC-binding, IPMC-binding"),
         (True, None, {1: False, 2: True}, "IPMC-binding"),
         (True, None, {1: True, 2: False}, "PPMC-binding"),
         (True, None, {1: False, 2: False}, "Non-binding"),
@@ -580,13 +801,18 @@ async def test_vote_decision_labels_reflect_membership(
         await vote._render_vote_authenticated(page, release, _session(), None, "dev@project.apache.org", None)
 
     html = str(page.collect())
+    round_one = is_podling and (podling_thread_id is None)
+    if round_one and (vote_mode == sql.VoteMode.EMAIL):
+        label = "PPMC-binding" if binding_by_round[1] else "Non-binding"
     assert f"+1 ({label})" in html
     assert f"-1 ({label})" in html
-    if is_podling and (podling_thread_id is None):
+    if round_one:
         ppmc_word = "PPMC-binding" if binding_by_round[1] else "non-binding"
         ipmc_word = "IPMC-binding" if binding_by_round[2] else "non-binding"
         assert f"your vote is <strong>{ppmc_word}</strong> for podling approval." in html
-        assert f"your vote is <strong>{ipmc_word}</strong> for Incubator approval." in html
+        assert (f"your vote is <strong>{ipmc_word}</strong> for Incubator approval." in html) is (
+            vote_mode == sql.VoteMode.TRUSTED
+        )
 
 
 def test_vote_task_warnings_renders_delivery_warnings() -> None:
@@ -629,11 +855,13 @@ def _ballot(
     choice: sql.VoteChoice,
     receipt_message_id: str,
     created: datetime.datetime | None = None,
+    vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED,
 ) -> sql.BallotPaper:
     return sql.BallotPaper(
         release_key=release_key,
         vote_seq=vote_seq,
         vote_round=None,
+        vote_mode=vote_mode,
         voter_asf_uid=voter_asf_uid,
         voter_fullname="Voter",
         choice=choice,
@@ -645,24 +873,24 @@ def _ballot(
     )
 
 
-def _completed_vote_task() -> sql.Task:
+def _completed_vote_task(email_to: str = "dev@project.apache.org", vote_seq: int = 1) -> sql.Task:
     return sql.Task(
         status=sql.TaskStatus.COMPLETED,
         task_type=sql.TaskType.VOTE_INITIATE,
         task_args={
             "release_key": "project-1.0.0",
-            "email_to": "dev@project.apache.org",
+            "email_to": email_to,
             "vote_duration": 72,
             "initiator_id": "chair",
             "initiator_fullname": "Chair",
             "subject": "[VOTE] Release",
             "body": "Please vote",
-            "vote_seq": 1,
+            "vote_seq": vote_seq,
         },
         result=results.VoteInitiate(
             kind="vote_initiate",
             message="Vote announcement email sent successfully",
-            email_to="dev@project.apache.org",
+            email_to=email_to,
             vote_end="2026-01-04 00:00:00 UTC",
             subject="[VOTE] Release",
             mid="start-mid@apache.org",
@@ -674,12 +902,20 @@ def _completed_vote_task() -> sql.Task:
     )
 
 
+def _patch_binding(monkeypatch: pytest.MonkeyPatch, is_ppmc_binding: bool, is_ipmc_binding: bool) -> None:
+    async def is_binding_for_release(_committee, _asf_uid, vote_round, **_kwargs):
+        return (is_ppmc_binding if (vote_round == 1) else is_ipmc_binding), "Committee"
+
+    monkeypatch.setattr(vote.user, "is_binding_for_release", is_binding_for_release)
+
+
 async def _patch_render_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     async def no_form_errors(_path: str) -> dict[str, object]:
         return {}
 
     monkeypatch.setattr(sessions, "form_error_pop", no_form_errors)
     monkeypatch.setattr(vote.util, "as_url", lambda _endpoint, **_kwargs: "/vote/project/1.0.0")
+    monkeypatch.setattr(vote.interaction, "latest_ballot_for_voter", mock.AsyncMock(return_value=None))
     monkeypatch.setattr(vote.user, "is_binding_for_release", mock.AsyncMock(return_value=(True, "Project")))
 
 

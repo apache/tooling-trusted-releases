@@ -283,6 +283,7 @@ async def ballot_receipt_message_ids(
             sqlmodel.select(sql.BallotPaper.receipt_message_id)
             .where(sql.BallotPaper.release_key == release_key)
             .where(sql.BallotPaper.vote_seq == vote_seq)
+            .where(sql.BallotPaper.vote_mode == sql.VoteMode.TRUSTED)
             .where(via(sql.BallotPaper.receipt_message_id).is_not(None))
             .where(sql.BallotPaper.receipt_message_id != "")
         )
@@ -305,6 +306,7 @@ async def ballots_for_resolution(
             sqlmodel.select(via(sql.BallotPaper.id).label("ballot_id"), row_number.label("row_number"))
             .where(sql.BallotPaper.release_key == release_key)
             .where(sql.BallotPaper.vote_seq == vote_seq)
+            .where(sql.BallotPaper.vote_mode == sql.VoteMode.TRUSTED)
             .subquery()
         )
         query = (
@@ -534,9 +536,13 @@ async def effective_latest_ballot_for_voter(
     caller_data: db.Session | None = None,
 ) -> sql.BallotPaper | None:
     if caller_data is None:
-        current_ballot = await latest_ballot_for_voter(release.key, vote_seq, voter_asf_uid)
+        current_ballot = await latest_ballot_for_voter(
+            release.key, vote_seq, voter_asf_uid, vote_mode=sql.VoteMode.TRUSTED
+        )
     else:
-        current_ballot = await latest_ballot_for_voter(release.key, vote_seq, voter_asf_uid, caller_data)
+        current_ballot = await latest_ballot_for_voter(
+            release.key, vote_seq, voter_asf_uid, caller_data, vote_mode=sql.VoteMode.TRUSTED
+        )
     if current_ballot is not None:
         return current_ballot
     if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
@@ -545,9 +551,11 @@ async def effective_latest_ballot_for_voter(
     if r1_seq is None:
         return None
     if caller_data is None:
-        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid)
+        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid, vote_mode=sql.VoteMode.TRUSTED)
     else:
-        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid, caller_data)
+        r1_ballot = await latest_ballot_for_voter(
+            release.key, r1_seq, voter_asf_uid, caller_data, vote_mode=sql.VoteMode.TRUSTED
+        )
     if r1_ballot is None:
         return None
     is_binding, _binding_committee = await user.is_binding_for_release(
@@ -609,6 +617,8 @@ async def latest_ballot_for_voter(
     vote_seq: int,
     voter_asf_uid: str,
     caller_data: db.Session | None = None,
+    *,
+    vote_mode: sql.VoteMode,
 ) -> sql.BallotPaper | None:
     via = sql.validate_instrumented_attribute
     async with db.ensure_session(caller_data) as data:
@@ -617,6 +627,7 @@ async def latest_ballot_for_voter(
             .where(sql.BallotPaper.release_key == release_key)
             .where(sql.BallotPaper.vote_seq == vote_seq)
             .where(sql.BallotPaper.voter_asf_uid == voter_asf_uid)
+            .where(sql.BallotPaper.vote_mode == vote_mode)
             .order_by(via(sql.BallotPaper.id).desc())
             .limit(1)
         )
@@ -721,6 +732,22 @@ async def member_note_count(
         return result.scalar_one()
 
 
+async def message_send_task(
+    project_key: str, version_key: str, message_id: str, caller_data: db.Session | None = None
+) -> sql.Task | None:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == project_key)
+            .where(sql.Task.version_key == version_key)
+            .where(sql.Task.task_type == sql.TaskType.MESSAGE_SEND)
+            .where(sqlalchemy.func.json_extract(via(sql.Task.task_args), "$.message_id") == message_id)
+            .limit(1)
+        )
+        return (await data.execute(query)).scalar_one_or_none()
+
+
 async def pending_quarantine_count(release_key: str, caller_data: db.Session | None = None) -> int:
     via = sql.validate_instrumented_attribute
     async with db.ensure_session(caller_data) as data:
@@ -781,6 +808,7 @@ async def previous_round_one_vote_seq(
         query = (
             sqlmodel.select(sqlalchemy.func.max(sql.BallotPaper.vote_seq))
             .where(sql.BallotPaper.release_key == release_key)
+            .where(sql.BallotPaper.vote_mode == sql.VoteMode.TRUSTED)
             .where(sql.BallotPaper.vote_round == 1)
             .where(sql.BallotPaper.vote_seq < current_vote_seq)
         )
@@ -1002,14 +1030,20 @@ async def release_early_second_round_task(
     if release.current_vote_seq is None:
         return None
     via = sql.validate_instrumented_attribute
+    current_vote_unchanged = (
+        sqlmodel.select(sql.Release.key)
+        .where(sql.Release.key == release.key, sql.Release.current_vote_seq == release.current_vote_seq)
+        .exists()
+    )
     async with db.ensure_session(caller_data) as data:
         query = (
             sqlmodel.select(sql.Task)
             .where(sql.Task.project_key == release.project_key)
             .where(sql.Task.version_key == release.version)
             .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
-            .where(sql.Task.status != sql.TaskStatus.FAILED)
+            .where(via(sql.Task.status).not_in([sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN]))
             .where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.vote_seq") > release.current_vote_seq)
+            .where(current_vote_unchanged)
             .order_by(via(sql.Task.added).desc())
             .limit(1)
         )

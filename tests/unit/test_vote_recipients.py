@@ -214,13 +214,19 @@ async def test_worker_accepts_incubator_address_for_podling_round_two(
 
 
 @pytest.mark.asyncio
-async def test_worker_rejects_stale_vote_seq(monkeypatch: pytest.MonkeyPatch) -> None:
-    release = _make_release(is_podling=False, podling_thread_id=None, current_vote_seq=2)
+@pytest.mark.parametrize(
+    ("is_podling", "podling_thread_id", "vote_seq"),
+    [(False, None, 1), (False, None, 3), (True, "abc123", 3)],
+)
+async def test_worker_rejects_stale_vote_seq(
+    monkeypatch: pytest.MonkeyPatch, is_podling: bool, podling_thread_id: str | None, vote_seq: int
+) -> None:
+    release = _make_release(is_podling=is_podling, podling_thread_id=podling_thread_id, current_vote_seq=2)
     _patch_db_and_interaction(monkeypatch, release)
     _patch_storage_write(monkeypatch)
 
     task_args = _make_initiate_args(email_to="dev@project.apache.org")
-    task_args.vote_seq = 1
+    task_args.vote_seq = vote_seq
 
     with pytest.raises(atr.tasks.vote.VoteInitiationError, match="stale"):
         await atr.tasks.vote._initiate_core_logic(task_args)

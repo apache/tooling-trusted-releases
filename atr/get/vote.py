@@ -121,17 +121,23 @@ async def render_options_page(
 
     file_totals = await checks.get_file_totals(release, session)
     archive_url = await _get_archive_url(release, session, latest_vote_task)
+    early_task = await _early_second_round_task(release)
+    overlap_rounds = await _overlap_vote_rounds(release, session, early_task)
 
     page = htm.Block()
     workflow_upload_note = await _workflow_upload_note(release, signed_in=session is not None)
-    _render_header(page, release, show_resolve_section, latest_vote_task, workflow_upload_note)
+    _render_header(
+        page, release, show_resolve_section, latest_vote_task, workflow_upload_note, early_task, overlap_rounds
+    )
     if session is not None:
         _render_vote_task_warnings(page, latest_vote_task)
     _render_section_download(page, release, session, user_category)
     _render_section_checks(page, release, file_totals)
-    await _render_section_vote(page, release, session, user_category, archive_url, latest_vote_task)
+    await _render_section_vote(
+        page, release, session, user_category, archive_url, latest_vote_task, early_task, overlap_rounds
+    )
     if show_resolve_section:
-        _render_section_resolve(page, release, user_category)
+        _render_section_resolve(page, release, user_category, 5 if (len(overlap_rounds) == 2) else 4)
 
     return await template.blank(
         f"Vote on {release.project.short_display_name} {release.version}",
@@ -217,9 +223,12 @@ async def _append_cast_vote_form(
     submit_label: str = "Submit vote",
     pre_submit: htm.Element | None = None,
     skip: list[str] | None = None,
+    vote_seq: int | None = None,
+    id_prefix: str = "",
+    flash_error_data: dict[str, Any] | None = None,
 ) -> None:
     defaults: dict[str, object] = {
-        "vote_seq": release.current_vote_seq,
+        "vote_seq": release.current_vote_seq if (vote_seq is None) else vote_seq,
         "vote_mode": release.effective_vote_mode,
     }
     if (skip is None) or ("comment" not in skip):
@@ -238,11 +247,16 @@ async def _append_cast_vote_form(
         version_key=release.version,
     )
     # The decision buttons are a custom widget, so a rejected submission has to be put back by hand
-    flash_error_data = await form.flash_error_data_pop()
+    if flash_error_data is None:
+        flash_error_data = await form.flash_error_data_pop()
+    saved_vote_seq = flash_error_data.get("!vote_seq") or flash_error_data.get("vote_seq")
+    if (saved_vote_seq is not None) and (saved_vote_seq["original"] != str(defaults["vote_seq"])):
+        flash_error_data = {}
     vote_widget = _vote_decision_widget(
         potency,
         disabled=submit_disabled,
         selected=_flashed_decision(flash_error_data),
+        id_prefix=id_prefix,
     )
     cast_vote_form = await form.render(
         model_cls=shared.vote.CastVoteForm,
@@ -255,6 +269,7 @@ async def _append_cast_vote_form(
         pre_submit=pre_submit,
         skip=skip,
         flash_error_data=flash_error_data,
+        id_prefix=id_prefix,
     )
     page.append(cast_vote_form)
 
@@ -349,14 +364,14 @@ def _flashed_decision(flash_error_data: dict[str, Any]) -> str | None:
     return original if isinstance(original, str) else None
 
 
-def _format_vote_end(vote_end: datetime.datetime) -> str:
+def _format_vote_end(vote_end: datetime.datetime, vote: str = "vote") -> str:
     now = datetime.datetime.now(datetime.UTC)
     timestamp = vote_end.strftime("%a %Y-%m-%d at %H:%M UTC")
 
     remaining = vote_end - now
     total_seconds = int(remaining.total_seconds())
     if total_seconds <= 0:
-        return f"The vote ended on {timestamp}."
+        return f"The {vote} ended on {timestamp}."
 
     days = total_seconds // 86400
     hours = (total_seconds % 86400) // 3600
@@ -369,7 +384,16 @@ def _format_vote_end(vote_end: datetime.datetime) -> str:
         parts.append(f"{hours}h")
     parts.append(f"{minutes}m")
 
-    return f"The vote ends in {' '.join(parts)}, on {timestamp}."
+    return f"The {vote} ends in {' '.join(parts)}, on {timestamp}."
+
+
+async def _early_second_round_task(release: sql.Release) -> sql.Task | None:
+    if (release.committee is None) or (not release.committee.is_podling) or (release.podling_thread_id is not None):
+        return None
+    early_task = await interaction.release_early_second_round_task(release)
+    if (early_task is None) or (interaction.task_mid_get(early_task) is None):
+        return None
+    return early_task
 
 
 async def _get_archive_url(
@@ -395,14 +419,28 @@ def _is_podling_round_two(release: sql.Release) -> bool:
     return (committee is not None) and committee.is_podling and (release.podling_thread_id is not None)
 
 
+async def _overlap_vote_rounds(
+    release: sql.Release, session: web.Committer | None, early_task: sql.Task | None
+) -> list[int]:
+    if (early_task is None) or (session is None) or (release.committee is None):
+        return []
+    is_ppmc_binding, _podling = await user.is_binding_for_release(release.committee, session.uid, 1)
+    is_ipmc_binding, _incubator = await user.is_binding_for_release(release.committee, session.uid, 2)
+    if is_ipmc_binding and (not is_ppmc_binding):
+        return [2]
+    return [1, 2]
+
+
 async def _render_binding_status(
-    page: htm.Block, committee: sql.Committee, asf_uid: str, vote_round: int | None
+    page: htm.Block, committee: sql.Committee, asf_uid: str, vote_round: int | None, *, ipmc_carry_over: bool = True
 ) -> str:
     is_binding, binding_committee = await user.is_binding_for_release(committee, asf_uid, vote_round)
     committee_membership = _voting_committee_membership(binding_committee, vote_round)
     article = "an" if committee_membership[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
     if vote_round == 1:
-        is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2)
+        is_ipmc_member = None
+        if ipmc_carry_over:
+            is_ipmc_member, _incubator = await user.is_binding_for_release(committee, asf_uid, 2)
         return _render_binding_status_round_one(page, f"{article} {committee_membership}", is_binding, is_ipmc_member)
     binding_word, non_binding_word = user.binding_terminology(vote_round)
     if is_binding:
@@ -422,7 +460,7 @@ async def _render_binding_status(
 
 
 def _render_binding_status_round_one(
-    page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool
+    page: htm.Block, ppmc_membership: str, is_ppmc_member: bool, is_ipmc_member: bool | None
 ) -> str:
     if is_ppmc_member:
         ppmc_status = [f"As {ppmc_membership}, your vote is ", htpy.strong["PPMC-binding"], " for podling approval. "]
@@ -432,7 +470,9 @@ def _render_binding_status_round_one(
             htpy.strong["non-binding"],
             " for podling approval. ",
         ]
-    if is_ipmc_member:
+    if is_ipmc_member is None:
+        ipmc_status = []
+    elif is_ipmc_member:
         ipmc_status = [
             "As an Incubator PMC member, your vote is ",
             htpy.strong["IPMC-binding"],
@@ -445,7 +485,7 @@ def _render_binding_status_round_one(
             " for Incubator approval.",
         ]
     page.p[ppmc_status, ipmc_status]
-    return user.round_one_binding_label(is_ppmc_member, is_ipmc_member)
+    return user.round_one_binding_label(is_ppmc_member, bool(is_ipmc_member))
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
@@ -469,12 +509,81 @@ def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
     page.append(card.collect())
 
 
+async def _render_early_second_round_vote(
+    page: htm.Block,
+    release: sql.Release,
+    session: web.Committer,
+    early_task: sql.Task,
+    flash_error_data: dict[str, Any] | None = None,
+    id_prefix: str = "",
+) -> None:
+    if release.committee is None:
+        raise ValueError(errors.RELEASE_NO_COMMITTEE)
+    potency = await _render_binding_status(page, release.committee, session.uid, 2)
+    vote_recipient = _vote_recipient(release, early_task)
+    submit_label = await _render_email_vote_status(
+        page, release, session.uid, early_task.task_args["vote_seq"], vote_recipient
+    )
+    archive_url = await _get_archive_url(release, session, early_task)
+    _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
+    await _append_cast_vote_form(
+        page,
+        release,
+        potency,
+        submit_label=submit_label,
+        vote_seq=early_task.task_args["vote_seq"],
+        id_prefix=id_prefix,
+        flash_error_data=flash_error_data,
+    )
+
+
+async def _render_email_vote_status(
+    page: htm.Block, release: sql.Release, asf_uid: str, vote_seq: int | None, vote_recipient: str
+) -> str:
+    if vote_seq is None:
+        return "Submit vote"
+    ballot = await interaction.latest_ballot_for_voter(release.key, vote_seq, asf_uid, vote_mode=sql.VoteMode.EMAIL)
+    if ballot is None:
+        return "Submit vote"
+    send_task = await interaction.message_send_task(release.project.key, release.version, ballot.receipt_message_id)
+    send_status = send_task.status if (send_task is not None) else None
+    body = htm.Block(htm.div, classes=".card-body")
+    body.p(".mb-2")["Choice: ", htpy.strong[ballot.choice.value]]
+    if _reply_failed(send_task):
+        header = "Your last vote through ATR was not sent"
+        body.p(".mb-0.text-danger")["The email to the list failed, so this vote does not count. Please vote again."]
+    elif send_status == sql.TaskStatus.COMPLETED:
+        header = "You already voted through ATR"
+        reply_url = shared.vote.message_id_source_archive_url(ballot.receipt_message_id, vote_recipient)
+        body.p(".mb-2")["Sent: ", resolve.format_utc(ballot.created)]
+        body.p(".mb-0")[htpy.a(href=reply_url, target="_blank", rel="noopener")["View your reply in the list archive"]]
+    else:
+        header = "You already voted through ATR"
+        body.p(".mb-0")["Being sent, since ", resolve.format_utc(ballot.created)]
+    page.div(".card.mb-3")[htm.div(".card-header.bg-light")[header], body.collect()]
+    page.p["Voting again sends a new reply to the vote thread, and your latest reply is the one that counts."]
+    return "Vote again"
+
+
+def _reply_failed(send_task: sql.Task | None) -> bool:
+    if send_task is None:
+        return False
+    if send_task.status in (sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN):
+        return True
+    if not isinstance(send_task.result, results.MessageSend):
+        return False
+    list_failure = f"failed to send to {send_task.task_args['email_to'].lower()}:"
+    return any(warning.lower().startswith(list_failure) for warning in send_task.result.mail_send_warnings)
+
+
 def _render_header(
     page: htm.Block,
     release: sql.Release,
     show_resolve_section: bool,
     latest_vote_task: sql.Task | None,
     workflow_upload_note: htm.Element | None,
+    early_task: sql.Task | None,
+    overlap_rounds: list[int],
 ) -> None:
     render.html_nav(
         page,
@@ -497,12 +606,14 @@ def _render_header(
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     voting_committee_name = _vote_committee_name(release)
+    committees = [htm.strong[voting_committee_name], " committee is"]
+    if early_task is not None:
+        committees = [htm.strong[voting_committee_name], " and ", htm.strong["Incubator"], " committees are"]
     commit_link = render.commit_link(release)
     page.p[
         "The ",
-        htm.strong[voting_committee_name],
-        " committee is currently voting on the release candidate for"
-        f" {release.project.display_name} {release.version}.",
+        committees,
+        f" currently voting on the release candidate for {release.project.display_name} {release.version}.",
         [" This release was cut from SHA ", commit_link, "."] if (commit_link is not None) else "",
     ]
     if workflow_upload_note is not None:
@@ -510,14 +621,20 @@ def _render_header(
 
     vote_end = interaction.vote_end_get(latest_vote_task)
     if vote_end is not None:
-        page.p[_format_vote_end(vote_end)]
+        page.p[_format_vote_end(vote_end, "vote" if (early_task is None) else "PPMC vote")]
+    if (early_task is not None) and ((ipmc_vote_end := interaction.vote_end_get(early_task)) is not None):
+        page.p[_format_vote_end(ipmc_vote_end, "IPMC vote")]
 
     page.p["To participate in this vote, please select your next step:"]
 
     steps = htm.Block(htpy.ol, classes=".atr-steps")
     steps.li[htpy.a(".atr-step-link", href="#download")["Download the release files"]]
     steps.li[htpy.a(".atr-step-link", href="#checks")["Review file checks"]]
-    steps.li[htpy.a(".atr-step-link", href="#vote")["Cast your vote"]]
+    if len(overlap_rounds) == 2:
+        steps.li[htpy.a(".atr-step-link", href="#vote")["Cast your PPMC vote"]]
+        steps.li[htpy.a(".atr-step-link", href="#ipmc-vote")["Cast your IPMC vote"]]
+    else:
+        steps.li[htpy.a(".atr-step-link", href="#vote")["Cast your vote"]]
     if show_resolve_section:
         steps.li[htpy.a(".atr-step-link", href="#resolve")["Resolve the vote (release managers only)"]]
     page.append(steps.collect())
@@ -649,8 +766,8 @@ def _render_section_download(
         ]
 
 
-def _render_section_resolve(page: htm.Block, release: sql.Release, user_category: UserCategory) -> None:
-    page.h2("#resolve")["4. Resolve the vote (release managers only)"]
+def _render_section_resolve(page: htm.Block, release: sql.Release, user_category: UserCategory, number: int) -> None:
+    page.h2("#resolve")[f"{number}. Resolve the vote (release managers only)"]
 
     if user_category == UserCategory.UNAUTHENTICATED:
         page.p["If you are the release manager, log in to access vote tallying and resolution tools."]
@@ -685,17 +802,55 @@ async def _render_section_vote(
     user_category: UserCategory,
     archive_url: str | None,
     latest_vote_task: sql.Task | None,
+    early_task: sql.Task | None,
+    overlap_rounds: list[int],
 ) -> None:
-    page.h2("#vote")["3. Cast your vote"]
-
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
 
     vote_recipient = _vote_recipient(release, latest_vote_task)
+    if (early_task is not None) and (session is not None) and overlap_rounds:
+        await _render_section_vote_both_open(
+            page, release, session, archive_url, vote_recipient, latest_vote_task, early_task, overlap_rounds
+        )
+        return
+
+    page.h2("#vote")["3. Cast your vote"]
     if user_category == UserCategory.UNAUTHENTICATED:
         _render_vote_unauthenticated(page, release, archive_url, vote_recipient)
+        if early_task is not None:
+            early_archive_url = await _get_archive_url(release, session, early_task)
+            page.p[
+                "The IPMC vote is also open, on ",
+                htpy.code[_vote_recipient(release, early_task)],
+                _view_thread(early_archive_url),
+                ".",
+            ]
     else:
         await _render_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
+
+
+async def _render_section_vote_both_open(
+    page: htm.Block,
+    release: sql.Release,
+    session: web.Committer,
+    archive_url: str | None,
+    vote_recipient: str,
+    latest_vote_task: sql.Task | None,
+    early_task: sql.Task,
+    overlap_rounds: list[int],
+) -> None:
+    if overlap_rounds == [2]:
+        page.h2("#vote")["3. Cast your IPMC vote"]
+        await _render_early_second_round_vote(page, release, session, early_task)
+        return
+    page.h2("#vote")["3. Cast your PPMC vote"]
+    flash_error_data = await form.flash_error_data_pop()
+    await _render_vote_authenticated(
+        page, release, session, archive_url, vote_recipient, latest_vote_task, flash_error_data, "ppmc_"
+    )
+    page.h2("#ipmc-vote")["4. Cast your IPMC vote"]
+    await _render_early_second_round_vote(page, release, session, early_task, flash_error_data, "ipmc_")
 
 
 async def _render_trusted_vote_authenticated(
@@ -766,6 +921,8 @@ async def _render_vote_authenticated(
     archive_url: str | None,
     vote_recipient: str,
     latest_vote_task: sql.Task | None,
+    flash_error_data: dict[str, Any] | None = None,
+    id_prefix: str = "",
 ) -> None:
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
@@ -777,10 +934,13 @@ async def _render_vote_authenticated(
         return
 
     vote_round = interaction.trusted_vote_round(release)
-    potency = await _render_binding_status(page, release.committee, session.uid, vote_round)
+    potency = await _render_binding_status(page, release.committee, session.uid, vote_round, ipmc_carry_over=False)
+    submit_label = await _render_email_vote_status(page, release, session.uid, release.current_vote_seq, vote_recipient)
     _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
     _render_publish_location(page, release, latest_vote_task)
-    await _append_cast_vote_form(page, release, potency)
+    await _append_cast_vote_form(
+        page, release, potency, submit_label=submit_label, id_prefix=id_prefix, flash_error_data=flash_error_data
+    )
 
 
 def _render_vote_delivery(
@@ -946,6 +1106,12 @@ def _trusted_vote_status(
     ]
 
 
+def _view_thread(archive_url: str | None) -> list[str | htm.Element]:
+    if archive_url is None:
+        return []
+    return [" (", htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"], ")"]
+
+
 def _vote_committee_name(release: sql.Release) -> str:
     if release.committee is None:
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
@@ -954,42 +1120,44 @@ def _vote_committee_name(release: sql.Release) -> str:
     return release.committee.display_name
 
 
-def _vote_decision_widget(potency: str, *, disabled: bool = False, selected: str | None = None) -> htm.Element:
+def _vote_decision_widget(
+    potency: str, *, disabled: bool = False, selected: str | None = None, id_prefix: str = ""
+) -> htm.Element:
     input_attrs = {"disabled": True} if disabled else {}
-    return htpy.div(id="decision", class_="btn-group", role="group")[
+    return htpy.div(id=f"{id_prefix}decision", class_="btn-group", role="group")[
         htpy.input(
             type="radio",
             class_="btn-check",
             name="decision",
-            id="decision_0",
+            id=f"{id_prefix}decision_0",
             value="+1",
             autocomplete="off",
             checked=selected == "+1",
             **input_attrs,
         ),
-        htpy.label(class_="btn btn-outline-success", for_="decision_0")[f"+1 ({potency})"],
+        htpy.label(class_="btn btn-outline-success", for_=f"{id_prefix}decision_0")[f"+1 ({potency})"],
         htpy.input(
             type="radio",
             class_="btn-check",
             name="decision",
-            id="decision_1",
+            id=f"{id_prefix}decision_1",
             value="0",
             autocomplete="off",
             checked=selected == "0",
             **input_attrs,
         ),
-        htpy.label(class_="btn btn-outline-secondary", for_="decision_1")["0"],
+        htpy.label(class_="btn btn-outline-secondary", for_=f"{id_prefix}decision_1")["0"],
         htpy.input(
             type="radio",
             class_="btn-check",
             name="decision",
-            id="decision_2",
+            id=f"{id_prefix}decision_2",
             value="-1",
             autocomplete="off",
             checked=selected == "-1",
             **input_attrs,
         ),
-        htpy.label(class_="btn btn-outline-danger", for_="decision_2")[f"-1 ({potency})"],
+        htpy.label(class_="btn btn-outline-danger", for_=f"{id_prefix}decision_2")[f"-1 ({potency})"],
     ]
 
 

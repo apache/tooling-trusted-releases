@@ -277,16 +277,19 @@ async def selected(  # noqa: C901
     else:
         form_cls = shared.resolve.SubmitForm
 
+    is_podling_first_round = (
+        (release.committee is not None) and release.committee.is_podling and (release.podling_thread_id is None)
+    )
     second_round_startable = (
-        (release.committee is not None)
-        and release.committee.is_podling
-        and (release.podling_thread_id is None)
+        is_podling_first_round
+        and (not is_trusted_mode)
         and (release.current_vote_seq is not None)
+        and (archive_url is not None)
         and (await interaction.release_early_second_round_task(release) is None)
     )
     custom: dict[str, htm.Element | htm.VoidElement] = {}
     skip: list[str] = []
-    if (form_cls is shared.resolve.SubmitForm) and is_trusted_mode and second_round_startable:
+    if (form_cls is shared.resolve.SubmitForm) and is_trusted_mode and is_podling_first_round:
         defaults["automatic_resolve_when_finished"] = True
         custom["automatic_resolve_when_finished"] = htm.div[
             htpy.input(
