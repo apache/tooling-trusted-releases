@@ -97,7 +97,7 @@ The remaining project fields are present only where ATR has a value for them, an
 | `description` | string | A full description of the project |
 | `shortdesc` | string | A one-line description |
 | `homepage` | string | The URL of the project's website |
-| `download-page` | string | The URL of the project's download page |
+| `download-page` | string | The URL of the project's download page. Where the page differs by release, the newest release's |
 | `bug-database` | string | The URL of the project's issue tracker |
 | `mailing-list` | string | The URL of the project's mailing list page |
 | `repository` | list | The URLs of the project's source repositories |

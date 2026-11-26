@@ -63,7 +63,7 @@ async def test_resolve_falls_back_to_default_with_warning() -> None:
     with (
         mock.patch.object(email_templates, "fetch", side_effect=email_templates.EmailTemplateError("boom")),
     ):
-        resolved = await construct.resolve_template(project, "start_vote")
+        resolved = await construct.resolve_template(_release(project), "start_vote")
     assert resolved.body == "default body"
     assert resolved.warning is not None
     assert "boom" in resolved.warning
@@ -76,7 +76,7 @@ async def test_resolve_uses_fetched_template() -> None:
     with (
         mock.patch.object(email_templates, "fetch", mock.AsyncMock(return_value="fetched body")),
     ):
-        resolved = await construct.resolve_template(project, "start_vote")
+        resolved = await construct.resolve_template(_release(project), "start_vote")
     assert resolved.body == "fetched body"
     assert resolved.warning is None
 
@@ -88,7 +88,7 @@ async def test_resolve_without_url_uses_policy_template() -> None:
     with (
         mock.patch.object(email_templates, "fetch", fetch),
     ):
-        resolved = await construct.resolve_template(project, "start_vote")
+        resolved = await construct.resolve_template(_release(project), "start_vote")
     assert resolved.body == "inline body"
     assert resolved.warning is None
     fetch.assert_not_called()
@@ -101,6 +101,10 @@ def _mock_session(response: mock.Mock) -> mock.MagicMock:
     session_cm.__aenter__ = mock.AsyncMock(return_value=session)
     session_cm.__aexit__ = mock.AsyncMock(return_value=False)
     return session_cm
+
+
+def _release(project: types.SimpleNamespace) -> types.SimpleNamespace:
+    return types.SimpleNamespace(project=project, project_key=project.key)
 
 
 def _project(**overrides: str) -> types.SimpleNamespace:

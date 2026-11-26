@@ -20,6 +20,7 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.cycles as cycles
 import atr.db as db
 import atr.errors as errors
 import atr.form as form
@@ -74,7 +75,7 @@ async def selected(
 
 
 async def _download_page_check(release: sql.Release) -> htm.Element:
-    page_url = release.project.download_page
+    page_url = cycles.download_page_for_version(release.project, release.version)
     if not page_url:
         metadata_url = util.as_url(get.projects.view, project_key=release.project.key) + "?tab=metadata"
         return htm.div(".alert.alert-warning", role="alert")[

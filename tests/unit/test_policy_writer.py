@@ -181,6 +181,17 @@ async def test_edit_version_scheme_moves_unmatched_releases_to_default():
     assert releases[1].cycle_key == "example-default"
 
 
+async def test_edit_version_scheme_keeps_the_cycle_match_a_download_page_needs():
+    project = _project(cycle_match=r"(\d+)")
+    project.download_page = "https://example.apache.org/download-{{CYCLE}}.html"
+    writer = _make_committee_member(_MockData(project=project))
+
+    with pytest.raises(ValueError, match="while the project has a cycle match"):
+        await writer.edit_version_scheme(_version_scheme_form(cycle_match=""))
+
+    assert project.cycle_match == r"(\d+)"
+
+
 async def test_edit_version_scheme_normalises_empty_strings_to_none():
     project = _project(
         version_pattern=r"^\d+$",
@@ -508,6 +519,7 @@ def _project(
         version_pattern=version_pattern,
         cycle_match=cycle_match,
         branch_template=branch_template,
+        download_page="https://example.apache.org/download",
         mark_updated=lambda **_kwargs: None,
         release_policy=SimpleNamespace(require_version_in_filenames=False),
     )
@@ -552,15 +564,11 @@ def _version_scheme_form(
 @pytest.mark.asyncio
 async def test_policy_update_stores_stripped_template_url():
     release_policy = SimpleNamespace(start_vote_template_url="")
-    project = SimpleNamespace()
     update = api.PolicyUpdateArgs(
         project=safe.ProjectKey("example"),
         start_vote_template_url="  https://apache.org/vote.txt \n",
     )
 
-    with mock.patch.object(
-        policy_writer, "_get_or_create_policy", mock.AsyncMock(return_value=(project, release_policy))
-    ):
-        await policy_writer._apply_policy_update_no_commit(mock.Mock(), safe.ProjectKey("example"), update)
+    policy_writer._apply_policy_update(release_policy, update)
 
     assert release_policy.start_vote_template_url == "https://apache.org/vote.txt"

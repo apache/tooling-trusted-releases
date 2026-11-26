@@ -18,6 +18,7 @@
 import urllib.parse as parse
 from typing import Any, Final
 
+import pydantic
 import re2
 
 from . import safe
@@ -34,6 +35,10 @@ REPOSITORY_URI_SCHEMES: Final[frozenset[str]] = frozenset(
     {"http", "https", "git", "git+ssh", "git+https", "ssh", "svn"}
 )
 STANDARD_URI_SCHEMES: Final[frozenset[str]] = frozenset({"http", "https"})
+
+# The variables a download page URL can include, for a project whose download page differs by
+# version or cycle. Each takes a release's own value
+DOWNLOAD_PAGE_VARIABLES: Final[tuple[str, ...]] = ("CYCLE", "MAJOR_VERSION", "VERSION")
 
 # Non-apache.org hosts we'll fetch a project's .rat-excludes or email templates from. apache.org and its
 # subdomains are allowed by suffix in validate_fetch_url, so only extra hosts need listing here
@@ -64,6 +69,37 @@ def compile_project_pattern(pattern: str, captures: bool = False):
         return re2.compile(pattern, options=_pattern_options(captures=captures))
     except re2.error as exc:
         raise ValueError(_pattern_error(exc)) from exc
+
+
+def download_page_cycle_error(download_page: str | None, cycle_match: str | None) -> str | None:
+    if download_page and ("{{CYCLE}}" in download_page) and (not cycle_match):
+        return "The download page can only include {{CYCLE}} while the project has a cycle match"
+    return None
+
+
+def download_page_template(value: str) -> str:
+    """Check a download page URL, which can include version variables, and return it as it is stored."""
+    template = download_page_variables_unescaped(value.strip())
+    sample = template
+    for name in DOWNLOAD_PAGE_VARIABLES:
+        sample = sample.replace(f"{{{{{name}}}}}", "1")
+    if ("{{" in sample) or ("}}" in sample):
+        allowed = ", ".join(f"{{{{{name}}}}}" for name in DOWNLOAD_PAGE_VARIABLES)
+        raise ValueError(f"The only variables a download page URL can include are {allowed}")
+    try:
+        url = pydantic.TypeAdapter(pydantic.HttpUrl).validate_python(sample)
+    except pydantic.ValidationError as e:
+        raise ValueError("A valid URL is required.") from e
+    # A URL with no variables is stored as pydantic normalises it
+    return str(url) if (sample == template) else template
+
+
+def download_page_variables_unescaped(value: str) -> str:
+    """Put back the braces of a version variable that a URL library has percent-escaped."""
+    for name in DOWNLOAD_PAGE_VARIABLES:
+        for escaped in (f"%7B%7B{name}%7D%7D", f"%7b%7b{name}%7d%7d"):
+            value = value.replace(escaped, f"{{{{{name}}}}}")
+    return value
 
 
 def pagination_args_validate(query_args: Any) -> None:

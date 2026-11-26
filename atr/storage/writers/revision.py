@@ -231,7 +231,8 @@ async def _commit_new_revision(
     # (Additionally, on macOS a 555 directory cannot be renamed within the same parent)
     await asyncio.to_thread(util.chmod_directories, new_revision_dir.path, 0o555)
 
-    policy = release.release_policy or release.project.release_policy
+    # What the checks on this revision see is the policy for the release's cycle
+    policy = release.release_policy or (await interaction.release_settings(release)).release_policy
     policy_dict = policy.model_dump() if policy else None
 
     archives_base = paths.get_archives_dir() / str(project_key) / str(version_key)

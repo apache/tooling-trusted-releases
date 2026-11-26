@@ -36,7 +36,9 @@ import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.classify as classify
 import atr.config as config
+import atr.cycles as cycles
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.errors as errors
 import atr.hashes as hashes
 import atr.log as log
@@ -210,6 +212,10 @@ class Recorder:
             return await data.project(key=name_str, _release_policy=True).demand(
                 RuntimeError(f"Project {name_str} not found")
             )
+
+    async def settings(self) -> cycles.ReleaseSettings:
+        """The release settings for the version being checked."""
+        return await interaction.version_settings(str(self.project_key), str(self.version_key))
 
     async def primary_path_is_binary(self) -> bool:
         if self.primary_rel_path is None:
@@ -402,7 +408,7 @@ async def resolve_cache_key(  # noqa: C901
             file_hash = attestable.path_hash(attestable_data, file) if file else None
     else:
         # TODO: Is this fallback valid / necessary? Or should we bail out if there's no attestable data?
-        policy = release.release_policy or release.project.release_policy
+        policy = release.release_policy or (await interaction.release_settings(release)).release_policy
     if not ignore_path:
         if file:
             revision_seq = int(str(revision))
@@ -555,7 +561,7 @@ async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None)
 
 
 async def _resolve_rat_excludes_hash(release: sql.Release, rel_path: str | None = None) -> str:
-    policy = release.release_policy or release.project.release_policy
+    policy = release.release_policy or (await interaction.release_settings(release)).release_policy
     url = (policy.rat_excludes_url if (policy is not None) else "").strip()
     if not url:
         return ""

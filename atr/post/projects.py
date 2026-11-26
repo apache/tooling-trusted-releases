@@ -394,6 +394,20 @@ async def _process_add_language(
     )
 
 
+async def _process_clear_cycle_override(
+    session: web.Committer, clear_form: shared.projects.ClearCycleOverrideForm
+) -> web.WerkzeugResponse:
+    project_key = clear_form.project_key
+    tab = _tab_from_request()
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            await warm.policy.cycle_overrides_clear(project_key, clear_form.cycle, clear_form.field, clear_form.action)
+        except storage.AccessError as e:
+            return await _settings_redirect(session, project_key, tab, clear_form.cycle, error=str(e))
+    return await _settings_redirect(session, project_key, tab, clear_form.cycle, success="Setting cleared.")
+
+
 async def _process_compose_form(
     session: web.Committer, compose_form: shared.projects.ComposePolicyForm
 ) -> web.WerkzeugResponse:
@@ -402,20 +416,17 @@ async def _process_compose_form(
     async with storage.write(session) as write:
         try:
             warm = await _write_as_release_manager(write, session, project_key)
-            await warm.policy.edit_compose(compose_form)
+            if compose_form.cycle:
+                await warm.policy.cycle_overrides_edit(compose_form)
+            else:
+                await warm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
-            return await session.redirect(
-                get.projects.view,
-                project_key=project_key,
-                tab="compose",
-                error=f"Error editing compose policy: {e}",
+            return await _settings_redirect(
+                session, project_key, "compose", compose_form.cycle, error=f"Error editing compose policy: {e}"
             )
 
-    return await session.redirect(
-        get.projects.view,
-        project_key=project_key,
-        tab="compose",
-        success="Compose options saved successfully.",
+    return await _settings_redirect(
+        session, project_key, "compose", compose_form.cycle, success="Compose options saved successfully."
     )
 
 
@@ -488,6 +499,14 @@ async def _process_edit_version_scheme_form(
                 get.projects.view, project_key=str(project_key), tab="lifecycle", error=str(e)
             )
 
+    unmatched = await interaction.cycle_overrides_unmatched(str(project_key))
+    if unmatched:
+        cycles = ", ".join(overrides.cycle for overrides in unmatched)
+        await quart.flash(
+            f"No release is in a cycle that these settings are for, so they apply to nothing: {cycles}."
+            " Move or remove them under Release settings.",
+            "warning",
+        )
     return await session.redirect(
         get.projects.view, project_key=str(project_key), tab="lifecycle", success="Version scheme saved."
     )
@@ -501,20 +520,33 @@ async def _process_finish_form(
     async with storage.write(session) as write:
         try:
             warm = await _write_as_release_manager(write, session, project_key)
-            await warm.policy.edit_finish(finish_form)
+            if finish_form.cycle:
+                await warm.policy.cycle_overrides_edit(finish_form)
+            else:
+                await warm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
-            return await session.redirect(
-                get.projects.view,
-                project_key=project_key,
-                tab="finish",
-                error=f"Error editing finish policy: {e}",
+            return await _settings_redirect(
+                session, project_key, "finish", finish_form.cycle, error=f"Error editing finish policy: {e}"
             )
 
-    return await session.redirect(
-        get.projects.view,
-        project_key=project_key,
-        tab="finish",
-        success="Finish options saved successfully.",
+    return await _settings_redirect(
+        session, project_key, "finish", finish_form.cycle, success="Finish options saved successfully."
+    )
+
+
+async def _process_move_cycle_overrides(
+    session: web.Committer, move_form: shared.projects.MoveCycleOverridesForm
+) -> web.WerkzeugResponse:
+    project_key = move_form.project_key
+    tab = _tab_from_request()
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            await warm.policy.cycle_overrides_move(project_key, move_form.cycle, move_form.target)
+        except storage.AccessError as e:
+            return await _settings_redirect(session, project_key, tab, move_form.cycle, error=str(e))
+    return await _settings_redirect(
+        session, project_key, tab, move_form.target, success=f"Settings moved to {move_form.target}."
     )
 
 
@@ -549,6 +581,20 @@ async def _process_remove_category(
         tab="metadata",
         error=f"Category '{category_to_remove}' does not exist.",
     )
+
+
+async def _process_remove_cycle_overrides(
+    session: web.Committer, remove_form: shared.projects.RemoveCycleOverridesForm
+) -> web.WerkzeugResponse:
+    project_key = remove_form.project_key
+    tab = _tab_from_request()
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            await warm.policy.cycle_overrides_remove(project_key, remove_form.cycle)
+        except storage.AccessError as e:
+            return await _settings_redirect(session, project_key, tab, remove_form.cycle, error=str(e))
+    return await _settings_redirect(session, project_key, tab, "", success=f"Settings for {remove_form.cycle} removed.")
 
 
 async def _process_remove_expected_distribution(
@@ -655,20 +701,17 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
     async with storage.write(session) as write:
         try:
             warm = await _write_as_release_manager(write, session, project_key)
-            await warm.policy.edit_vote(vote_form)
+            if vote_form.cycle:
+                await warm.policy.cycle_overrides_edit(vote_form)
+            else:
+                await warm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
-            return await session.redirect(
-                get.projects.view,
-                project_key=project_key,
-                tab="vote",
-                error=f"Error editing vote policy: {e}",
+            return await _settings_redirect(
+                session, project_key, "vote", vote_form.cycle, error=f"Error editing vote policy: {e}"
             )
 
-    return await session.redirect(
-        get.projects.view,
-        project_key=project_key,
-        tab="vote",
-        success="Vote options saved successfully.",
+    return await _settings_redirect(
+        session, project_key, "vote", vote_form.cycle, success="Vote options saved successfully."
     )
 
 
@@ -722,10 +765,32 @@ async def _request_approval_retry(explanation: str, error: str) -> web.WerkzeugR
     return quart.redirect(quart.request.path)
 
 
+async def _settings_redirect(
+    session: web.Committer,
+    project_key: safe.ProjectKey,
+    tab: str,
+    cycle: str,
+    *,
+    success: str | None = None,
+    error: str | None = None,
+) -> web.WerkzeugResponse:
+    # Back to the release settings tab, for the cycle that was being edited if there was one
+    query = {"tab": tab, "cycle": cycle} if cycle else {"tab": tab}
+    return await session.redirect(
+        get.projects.view, success=success, error=error, project_key=str(project_key), **query
+    )
+
+
 def _sql_platform(platform: object) -> sql.DistributionPlatform:
     if not isinstance(platform, shared.distribution.DistributionPlatform):
         raise ValueError("Unknown distribution platform")
     return platform.to_sql()
+
+
+def _tab_from_request() -> str:
+    # The override controls sit on the release settings tabs, and go back to the one they were used on
+    tab = quart.request.args.get("tab", "")
+    return tab if (tab in {"compose", "finish", "vote"}) else "compose"
 
 
 async def _write_as_committee_member(
@@ -748,14 +813,17 @@ _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.We
     shared.projects.AddCategoryForm: _process_add_category,
     shared.projects.AddExpectedDistributionsForm: _process_add_expected_distributions,
     shared.projects.AddLanguageForm: _process_add_language,
+    shared.projects.ClearCycleOverrideForm: _process_clear_cycle_override,
     shared.projects.ComposePolicyForm: _process_compose_form,
     shared.projects.EditCycleDatesForm: _process_edit_cycle_dates_form,
     shared.projects.EditMetadataForm: _process_edit_metadata_form,
     shared.projects.EditVersionSchemeForm: _process_edit_version_scheme_form,
     shared.projects.FinishPolicyForm: _process_finish_form,
+    shared.projects.MoveCycleOverridesForm: _process_move_cycle_overrides,
     shared.projects.SecurityForm: _process_security_form,
     shared.projects.SeedExpectedDistributionsForm: _process_seed_expected_distributions,
     shared.projects.RemoveCategoryForm: _process_remove_category,
+    shared.projects.RemoveCycleOverridesForm: _process_remove_cycle_overrides,
     shared.projects.RemoveExpectedDistributionForm: _process_remove_expected_distribution,
     shared.projects.RemoveLanguageForm: _process_remove_language,
     shared.projects.VotePolicyForm: _process_vote_form,

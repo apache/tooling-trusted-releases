@@ -33,6 +33,7 @@ PROJECT_KEY_REFS: Final[list[tuple[type[sqlmodel.SQLModel], str]]] = [
     (sql.CheckResultIgnore, "project_key"),
     (sql.ExpectedDistribution, "project_key"),
     (sql.ProjectSecurityOptions, "project_key"),
+    (sql.CycleOverrides, "project_key"),
 ]
 
 # Tables whose column holds a release key, "{project_key}-{version}". Task.version_key holds

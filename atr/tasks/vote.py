@@ -19,6 +19,7 @@ import datetime
 from typing import Final, Literal
 
 import atr.construct as construct
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
@@ -146,12 +147,13 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
         podling_thread_id=release.podling_thread_id,
     )
     # There is no one to warn here, so a template URL that fails falls back to the default and is logged
-    resolved_template = await construct.resolve_template(release.project, "finish_vote")
+    resolved_template = await construct.resolve_template(release, "finish_vote")
     resolution_body = construct.finish_vote_body(
         resolved_template.body,
         {
             "ATR_TALLY": atr_tally,
             "COMMITTEE": committee_name,
+            "CYCLE": cycles.cycle_text(release.project, release.version),
             "MAJOR_VERSION": construct.major_version(release.version),
             "OUTCOME": "passed" if passed else "failed",
             "PROJECT_NAME": release.project.short_display_name,
@@ -366,7 +368,7 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
             task_args.initiator_id,
             release.committee.key,
             is_podling=release.committee.is_podling,
-            project=release.project,
+            settings=await interaction.release_settings(release),
         )
         for addr in all_addrs:
             if addr not in permitted_recipients:

@@ -41,6 +41,8 @@ def preview(monkeypatch):
     app.register_blueprint(start.get._BLUEPRINT)
     data = mock.Mock()
     data.project.return_value.demand = mock.AsyncMock()
+    data.cycle_overrides.return_value.get = mock.AsyncMock(return_value=None)
+    data.release.return_value.get = mock.AsyncMock(return_value=None)
     session = mock.Mock()
     session.prevent_confusing_ui_display = mock.AsyncMock()
     monkeypatch.setattr(start.db, "session", lambda: contextlib.nullcontext(data))
@@ -67,7 +69,7 @@ def _location(
     if project.committee is None:
         raise ValueError("The test project has no committee")
     return construct.publish_location_preview(
-        project, project.committee, version, entered, at_start=at_start, at_policy=at_policy
+        project, project.committee, version, entered, project, at_start=at_start, at_policy=at_policy
     )
 
 

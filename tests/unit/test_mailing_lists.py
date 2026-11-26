@@ -51,12 +51,12 @@ def test_announce_recipients_keep_fixed_and_project_choices(monkeypatch):
     project.release_policy = sql.ReleasePolicy(recipient_defaults={"announce": {"to": to, "cc": [cc], "bcc": [bcc]}})
     monkeypatch.setattr(util.config, "get", lambda: types.SimpleNamespace(ATR_STATUS="BETA"))
     expected = ["announce@apache.org", "users@maven.apache.org", "private@maven.apache.org", to, cc, bcc]
-    assert util.permitted_announce_recipients("alice", committee, project=project) == expected
-    html = str(projects._recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE, readonly=False))
+    assert util.permitted_announce_recipients("alice", committee, settings=project) == expected
+    html = str(projects._recipient_grid_widget(project, project, sql.RecipientAction.ANNOUNCE, readonly=False))
     for address in expected:
         assert address in html
     monkeypatch.setattr(util.config, "get", lambda: types.SimpleNamespace(ATR_STATUS="ALPHA"))
-    assert util.permitted_announce_recipients("alice", committee, project=project) == [
+    assert util.permitted_announce_recipients("alice", committee, settings=project) == [
         util.USER_TESTS_ADDRESS,
         "alice@apache.org",
     ]

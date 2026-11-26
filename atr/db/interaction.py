@@ -528,6 +528,19 @@ async def count_checks_for_revision_by_status(
         return result.scalar_one()
 
 
+async def cycle_overrides_unmatched(
+    project_key: str, caller_data: db.Session | None = None
+) -> list[sql.CycleOverrides]:
+    """The cycle overrides of a project that apply to nothing, as no release is in their cycle."""
+    async with db.ensure_session(caller_data) as data:
+        all_overrides = await data.cycle_overrides(project_key=project_key).all()
+        if not all_overrides:
+            return []
+        releases = await data.release(project_key=project_key, _project=False, _committee=False).all()
+    in_use = {cycles.release_cycle(release) for release in releases}
+    return [overrides for overrides in all_overrides if overrides.cycle not in in_use]
+
+
 async def has_blocker_checks(
     release: sql.Release, revision_number: safe.RevisionNumber, caller_data: db.Session | None = None
 ) -> bool:
@@ -1045,6 +1058,11 @@ async def release_ready_to_start_vote(
     return release, committee
 
 
+async def release_settings(release: sql.Release, caller_data: db.Session | None = None) -> cycles.ReleaseSettings:
+    """The settings a release uses: its project's, with any overrides for the release's cycle in place."""
+    return await _cycle_settings(release.project_key, cycles.release_cycle(release), caller_data)
+
+
 async def releases_by_phase(project: sql.Project, phase: sql.ReleasePhase) -> list[sql.Release]:
     """Get the releases for the project by phase."""
 
@@ -1444,6 +1462,25 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
     return payload, asf_uid
 
 
+async def version_settings(
+    project_key: str, version: str, caller_data: db.Session | None = None
+) -> cycles.ReleaseSettings:
+    """The settings a release of this version uses, or would use if there is no release yet."""
+    async with db.ensure_session(caller_data) as data:
+        project = await data.project(key=str(project_key)).demand(InteractionError(f"Project {project_key} not found"))
+        # A release is in the cycle stored on it, so that this and release_settings give one answer
+        release = await data.release(
+            key=sql.release_key(str(project_key), version), _project=False, _committee=False
+        ).get()
+        if release is not None:
+            return await _cycle_settings(project.key, cycles.release_cycle(release), data)
+        try:
+            cycle = cycles.cycle_name_for_version(project, version)
+        except ValueError:
+            cycle = cycles.DEFAULT_CYCLE
+        return await _cycle_settings(project.key, cycle, data)
+
+
 def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:
     if latest_vote_task is None:
         return None
@@ -1590,6 +1627,16 @@ def _ci_builds_refusal(committee: sql.Committee) -> str:
         f"The {committee.key} PMC has no automated release signing key, so ATR does not accept uploads "
         f"from GitHub Actions for its projects. See {committee_url}"
     )
+
+
+async def _cycle_settings(project_key: str, cycle: str, caller_data: db.Session | None) -> cycles.ReleaseSettings:
+    async with db.ensure_session(caller_data) as data:
+        # The settings fall back on the committee and the policy, so both are loaded here whatever the caller has loaded
+        project = await data.project(key=str(project_key), _committee=True, _release_policy=True).demand(
+            InteractionError(f"Project {project_key} not found")
+        )
+        overrides = await data.cycle_overrides(project_key=str(project_key), cycle=cycle).get()
+    return cycles.ReleaseSettings(project, overrides)
 
 
 def _content_in_progress() -> sqlalchemy.Subquery:

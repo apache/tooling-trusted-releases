@@ -114,6 +114,55 @@ def test_export_includes_auto_archive_prior_release_only_when_set() -> None:
     assert "auto_archive_prior_release" not in disabled_policy
 
 
+def test_export_gives_each_cycle_the_settings_it_has_of_its_own() -> None:
+    project = _FakeProject(key="example", committee_key="tooling", name="Apache Example")
+    overrides = [
+        sql.CycleOverrides(project_key="example", cycle="9.0", settings={"auto_archive_prior_release": False}),
+        sql.CycleOverrides(
+            project_key="example",
+            cycle="10.1",
+            settings={
+                "min_hours": 120,
+                "source_excludes_rat": ["docs/**"],
+                "recipient_defaults": {"vote": {"to": "dev@tooling.apache.org", "cc": [], "bcc": []}},
+            },
+        ),
+    ]
+
+    cycles = strictyaml.load(projects._asf_yaml_export(project, overrides=overrides)).data["project"]["cycles"]
+
+    assert cycles == {
+        "10.1": {
+            "min_hours": "120",
+            "source_excludes_rat": ["docs/**"],
+            "vote_recipients": {"to": "dev@tooling.apache.org"},
+        },
+        "9.0": {"auto_archive_prior_release": "false"},
+    }
+
+
+def test_export_writes_a_blank_cycle_setting_so_that_it_reads_back_blank() -> None:
+    project = _FakeProject(key="example", committee_key="tooling", name="Apache Example", policy_default_min_hours=72)
+    overrides = [
+        sql.CycleOverrides(
+            project_key="example",
+            cycle="10.1",
+            settings={
+                "min_hours": None,
+                "source_excludes_rat": [],
+                "start_vote_template": "",
+                "recipient_defaults": {"vote": {"to": "", "cc": [], "bcc": []}},
+            },
+        ),
+    ]
+
+    exported = projects._asf_yaml_export(project, overrides=overrides)
+
+    # Read as the .asf.yaml processor reads it, with flow style allowed for the empty list and mapping
+    cycle = strictyaml.dirty_load(exported, allow_flow_style=True).data["project"]["cycles"]["10.1"]
+    assert cycle == {"min_hours": "72", "source_excludes_rat": [], "start_vote_template": "", "vote_recipients": {}}
+
+
 def test_export_includes_download_path_suffix_when_set() -> None:
     project = _FakeProject(
         key="example",

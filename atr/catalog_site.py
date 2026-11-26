@@ -48,6 +48,7 @@ import strictyaml
 import atr.classify as classify
 import atr.cle as cle
 import atr.constants as constants
+import atr.cycles as cycles
 import atr.db as db
 import atr.log as log
 import atr.metadata as metadata
@@ -56,6 +57,7 @@ import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.sbom.heatmap as heatmap
 import atr.shared.catalog as catalog
@@ -706,6 +708,18 @@ def _dev_list_maintainer(committee: sql.Committee, vote_address: str | None = No
     return {"mbox": mbox, "name": f"Apache {name} {role}"}
 
 
+def _download_page(project: sql.Project, releases: Sequence[_ReleaseSummary]) -> str | None:
+    """The project's download page for the feed. A page that differs by release is given for the newest release."""
+    page = validation.download_page_variables_unescaped(project.download_page or "")
+    if (not page) or ("{{" not in page):
+        return page or None
+    dated = [release for release in releases if release.date is not None]
+    if not dated:
+        return None
+    newest = max(dated, key=lambda release: release.date or datetime.datetime.min)
+    return cycles.download_page_for_version(project, newest.version)
+
+
 async def _guarded_write(description: str, work: Awaitable[None]) -> None:
     """Run one index write on its own, logging and swallowing a failure so the rest proceed."""
     try:
@@ -825,7 +839,7 @@ def _project_releases_entry(
     put("description", project.description)
     put("shortdesc", project.short_description)
     put("homepage", project.homepage)
-    put("download-page", project.download_page)
+    put("download-page", _download_page(project, releases))
     put("bug-database", project.bug_database)
     put("mailing-list", project.mailing_lists)
     put("programming-language", _comma_list(project.programming_languages))

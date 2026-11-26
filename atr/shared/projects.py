@@ -49,6 +49,9 @@ type SEED_EXPECTED_DISTRIBUTIONS = Literal["seed_expected_distributions"]
 type REMOVE_CATEGORY = Literal["remove_category"]
 type ADD_LANGUAGE = Literal["add_language"]
 type REMOVE_LANGUAGE = Literal["remove_language"]
+type CLEAR_CYCLE_OVERRIDE = Literal["clear_cycle_override"]
+type MOVE_CYCLE_OVERRIDES = Literal["move_cycle_overrides"]
+type REMOVE_CYCLE_OVERRIDES = Literal["remove_cycle_overrides"]
 
 
 def _strip_whitespace(value: object) -> object:
@@ -160,6 +163,8 @@ class AddProjectForm(form.Form):
 class ComposePolicyForm(form.Form):
     variant: COMPOSE = form.value(COMPOSE)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    # Empty for the settings of every cycle, or the cycle these settings are for
+    cycle: str = form.label("Cycle", widget=form.Widget.HIDDEN, default="")
     license_check_mode: form.Enum[sql.LicenseCheckMode] = form.label(
         "Source artifact license checker",
         "Only affects source artifacts. Lightweight checks ALWAYS RUN on binary artifacts.",
@@ -196,6 +201,8 @@ class ComposePolicyForm(form.Form):
 class VotePolicyForm(form.Form):
     variant: VOTE = form.value(VOTE)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    # Empty for the settings of every cycle, or the cycle these settings are for
+    cycle: str = form.label("Cycle", widget=form.Widget.HIDDEN, default="")
     email_to: str = form.label(
         "Default vote recipient",
         "The mailing list vote emails default to. Release managers can still override this when starting a vote.",
@@ -350,9 +357,10 @@ class EditMetadataForm(form.Form):
         "Lifecycle page",
         "URL of the page describing this project's release support and lifecycle plans.",
     )
-    download_page: form.OptionalURL = form.label(
+    download_page: str = form.label(
         "Download page",
-        "URL of the project's official download page.",
+        "URL of the project's official download page. It can include {{VERSION}}, {{MAJOR_VERSION}} and {{CYCLE}},"
+        " which take each release's own values.",
         required=True,
     )
     bug_database: form.OptionalURL = form.label(
@@ -371,8 +379,8 @@ class EditMetadataForm(form.Form):
         required=True,
     )
     standards: form.StandardURIList = form.label(
-        "Standards",
-        "URLs of standards this project implements, one per line.",
+        "Relevant standards",
+        "URLs of standards relevant to the project, one per line.",
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
@@ -391,12 +399,13 @@ class EditMetadataForm(form.Form):
 
     @pydantic.field_validator("download_page", mode="after")
     @classmethod
-    def validate_download_page(cls, value: pydantic.HttpUrl | None) -> pydantic.HttpUrl | None:
-        if value is None:
+    def validate_download_page(cls, value: str) -> str:
+        if not value.strip():
             raise ValueError("A valid URL is required.")
-        if error := util.download_page_url_error(str(value)):
+        template = validation.download_page_template(value)
+        if error := util.download_page_url_error(template):
             raise ValueError(error)
-        return value
+        return template
 
     @pydantic.field_validator("homepage", mode="after")
     @classmethod
@@ -421,7 +430,7 @@ def edit_metadata_defaults(project: sql.Project) -> dict[str, str]:
         "short_description": project.short_description or "",
         "homepage": project.homepage or "",
         "lifecycle_page": project.lifecycle_page or "",
-        "download_page": project.download_page or "",
+        "download_page": validation.download_page_variables_unescaped(project.download_page or ""),
         "bug_database": project.bug_database or "",
         "mailing_lists": project.mailing_lists or "",
         "repositories": "\n".join(project.repositories),
@@ -503,6 +512,8 @@ class EditVersionSchemeForm(form.Form):
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    # Empty for the settings of every cycle, or the cycle these settings are for
+    cycle: str = form.label("Cycle", widget=form.Widget.HIDDEN, default="")
     download_path_suffix: str = form.label(
         "Default publish location",
         "Where each release's files are published, beneath your committee's directory. May use"
@@ -514,7 +525,7 @@ class FinishPolicyForm(form.Form):
     archive_prior_release: form.Bool = form.label(
         "Allow auto-archive",
         "If enabled, allows a new release to auto archive the prior release in the cycle."
-        " If you support more than one line at a time, set up cycles on the Lifecycle tab first.",
+        " If you support more than one line at a time, set up cycles under Project, Version scheme first.",
         widget=form.Widget.CHECKBOX,
         default=False,
     )
@@ -620,6 +631,28 @@ class SeedExpectedDistributionsForm(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
+class ClearCycleOverrideForm(form.Form):
+    variant: CLEAR_CYCLE_OVERRIDE = form.value(CLEAR_CYCLE_OVERRIDE)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    cycle: str = form.label("Cycle", widget=form.Widget.HIDDEN)
+    # A release policy field, with the recipient action when the field is recipient_defaults
+    field: str = form.label("Setting", widget=form.Widget.HIDDEN)
+    action: str = form.label("Recipient action", widget=form.Widget.HIDDEN, default="")
+
+
+class MoveCycleOverridesForm(form.Form):
+    variant: MOVE_CYCLE_OVERRIDES = form.value(MOVE_CYCLE_OVERRIDES)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    cycle: str = form.label("Cycle", widget=form.Widget.HIDDEN)
+    target: str = form.label("Move to")
+
+
+class RemoveCycleOverridesForm(form.Form):
+    variant: REMOVE_CYCLE_OVERRIDES = form.value(REMOVE_CYCLE_OVERRIDES)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    cycle: str = form.label("Cycle", widget=form.Widget.HIDDEN)
+
+
 class CompleteApprovalRequest(form.Form):
     approval_request_id: form.Int = form.label("Approval request ID", widget=form.Widget.HIDDEN)
 
@@ -693,6 +726,9 @@ class UploadRestrictionsForm(form.Form):
         return _stripped_lines(self.workflow_paths)
 
 
+# The release settings forms, each of which can be saved for every cycle or for one
+type CyclePolicyForm = ComposePolicyForm | FinishPolicyForm | VotePolicyForm
+
 type ProjectViewForm = Annotated[
     ComposePolicyForm
     | EditCycleDatesForm
@@ -707,6 +743,9 @@ type ProjectViewForm = Annotated[
     | RemoveLanguageForm
     | AddExpectedDistributionsForm
     | RemoveExpectedDistributionForm
-    | SeedExpectedDistributionsForm,
+    | SeedExpectedDistributionsForm
+    | ClearCycleOverrideForm
+    | MoveCycleOverridesForm
+    | RemoveCycleOverridesForm,
     form.DISCRIMINATOR,
 ]

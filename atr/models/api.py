@@ -28,6 +28,11 @@ T = TypeVar("T")
 
 type TrustedWorkflowPhase = Literal["compose", "vote", "finish"]
 
+# The PolicyArgsBase keys that a cycle can set
+_CYCLE_FIELDS: Final[frozenset[str]] = (sql.CYCLE_OVERRIDE_FIELDS - {"recipient_defaults"}) | {
+    "announce_recipients",
+    "vote_recipients",
+}
 # The policy fields that no route writes, refused by name so the error can say why
 _TRUSTED_PUBLISHING_FIELDS: Final[frozenset[str]] = frozenset(
     {
@@ -613,7 +618,8 @@ class ProjectConfigProjectArgs(schema.Strict):
     short_description: str | None = None
     homepage: pydantic.HttpUrl | None = None
     lifecycle_page: pydantic.HttpUrl | None = None
-    download_page: pydantic.HttpUrl | None = None
+    # Can include the version variables in validation.DOWNLOAD_PAGE_VARIABLES
+    download_page: str | None = None
     bug_database: pydantic.HttpUrl | None = None
     mailing_lists: pydantic.HttpUrl | None = None
     security_contact: str | None = None
@@ -670,6 +676,13 @@ class ProjectConfigProjectArgs(schema.Strict):
         calver.validate(date_format)
         return self
 
+    @pydantic.field_validator("download_page", mode="after")
+    @classmethod
+    def _validate_download_page(cls, value: str | None) -> str | None:
+        if (value is None) or (not value.strip()):
+            return value
+        return validation.download_page_template(value)
+
     @pydantic.model_validator(mode="after")
     def _validate_version_scheme(self) -> Self:
         if ("version_method" in self.model_fields_set) and (self.version_method is None):
@@ -702,6 +715,20 @@ class ProjectConfigPolicyArgs(PolicyArgsBase):
         return data
 
 
+class ProjectConfigCycleArgs(PolicyArgsBase):
+    """The release settings that differ for one cycle. A null value is the project's value."""
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _refuse_project_wide_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        refused = sorted((set(data) & set(PolicyArgsBase.model_fields)) - _CYCLE_FIELDS)
+        if refused:
+            raise ValueError(f"These settings apply to every cycle, and cannot be set for one: {', '.join(refused)}")
+        return data
+
+
 class ProjectConfigDistributionArgs(schema.Strict):
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.MAVEN)
     owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "org.apache.example")
@@ -730,6 +757,10 @@ class ProjectConfigArgs(schema.Strict):
     committee_key: safe.CommitteeKey = schema.example("example")
     project: ProjectConfigProjectArgs | None = None
     policy: ProjectConfigPolicyArgs | None = None
+    # Release settings for single cycles, keyed by the text of the cycle. When given they replace
+    # every cycle's settings in both sync modes, so a cycle or a key that is left out uses the
+    # project's value. When not given they are left alone in merge mode, and removed in full mode
+    cycles: dict[str, ProjectConfigCycleArgs] | None = None
     # The project's expected distributions, replaced as a whole when given
     distributions: list[ProjectConfigDistributionArgs] | None = None
     sync_mode: Literal["merge", "full"] = "merge"
@@ -740,13 +771,14 @@ class ProjectConfigArgs(schema.Strict):
         # keep vote mail on the committee's own lists and announce mail on
         # apache.org. The UI route has its own constraints and doesn't come
         # through here.
-        if self.policy is None:
-            return self
         committee_key = str(self.committee_key)
-        if self.policy.vote_recipients is not None:
-            validation.validate_vote_recipients(committee_key, self.policy.vote_recipients.addresses())
-        if self.policy.announce_recipients is not None:
-            validation.validate_announce_recipients(self.policy.announce_recipients.addresses())
+        for settings in (self.policy, *(self.cycles or {}).values()):
+            if settings is None:
+                continue
+            if settings.vote_recipients is not None:
+                validation.validate_vote_recipients(committee_key, settings.vote_recipients.addresses())
+            if settings.announce_recipients is not None:
+                validation.validate_announce_recipients(settings.announce_recipients.addresses())
         return self
 
     @pydantic.model_validator(mode="after")

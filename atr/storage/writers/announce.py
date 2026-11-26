@@ -440,7 +440,7 @@ class ReleaseManager(CommitteeParticipant):
             return
         if not release_row.archive_prior_release:
             return
-        if not release_row.project.policy_auto_archive_prior_release:
+        if not (await interaction.release_settings(release_row, self.__data)).policy_auto_archive_prior_release:
             return
         archive_prior = await interaction.prior_release_for_archive(
             release_row.project,
@@ -639,7 +639,9 @@ class ReleaseManager(CommitteeParticipant):
         subject_template_hash: str | None,
     ) -> str:
         """Check the recipients and the subject template hash, and return the subject template."""
-        permitted = util.permitted_announce_recipients(self.__asf_uid, committee=committee, project=release.project)
+        permitted = util.permitted_announce_recipients(
+            self.__asf_uid, committee=committee, settings=await interaction.release_settings(release, self.__data)
+        )
         all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
         for addr in all_addrs:
             if addr not in permitted:
@@ -648,7 +650,7 @@ class ReleaseManager(CommitteeParticipant):
             util.validate_no_duplicate_recipients(all_addrs)
         except ValueError as e:
             raise storage.AccessError(str(e), status=400) from e
-        subject_template = await construct.announce_release_subject_default(project_key)
+        subject_template = await construct.announce_release_subject_default(project_key, release.safe_version_key)
         if subject_template_hash is not None:
             current_hash = construct.template_hash(subject_template)
             if current_hash != subject_template_hash:

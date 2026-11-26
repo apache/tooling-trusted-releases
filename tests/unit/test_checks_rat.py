@@ -94,7 +94,7 @@ async def test_check_raises_retryable_for_tooling_errors(tmp_path: pathlib.Path)
 
     with (
         mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
-        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(recorder, "settings", new=mock.AsyncMock(return_value=project)),
         mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
     ):
         with pytest.raises(task.CheckRetryableError, match="Apache RAT process failed"):
@@ -119,7 +119,7 @@ async def test_check_records_concern_for_structural_errors(tmp_path: pathlib.Pat
 
     with (
         mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
-        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(recorder, "settings", new=mock.AsyncMock(return_value=project)),
         mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
     ):
         await rat.check(args)
@@ -147,7 +147,7 @@ async def test_check_routes_member_failures_to_concern_and_rollup_to_note(tmp_pa
 
     with (
         mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
-        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(recorder, "settings", new=mock.AsyncMock(return_value=project)),
         mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
     ):
         await rat.check(args)
@@ -171,7 +171,7 @@ async def test_check_uses_revision_policy_snapshot(tmp_path: pathlib.Path) -> No
 
     with (
         mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
-        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(recorder, "settings", new=mock.AsyncMock(return_value=project)),
         mock.patch.object(rat.attestable, "load", new=mock.AsyncMock(return_value=snapshot)),
         mock.patch.object(rat, "_synchronous", new=synchronous),
     ):

@@ -120,7 +120,8 @@ async def vote_details(
         interpretations={interpretation.asf_eid: interpretation.choice for interpretation in interpretations},
     )
     summary = vote_summary(tabulated_votes)
-    passed, outcome = vote_outcome(release, start_unixtime, tabulated_votes)
+    min_hours = (await interaction.release_settings(release)).policy_min_hours
+    passed, outcome = vote_outcome(min_hours, start_unixtime, tabulated_votes)
     return models.tabulate.VoteDetails(
         start_unixtime=start_unixtime,
         votes=tabulated_votes,
@@ -131,14 +132,14 @@ async def vote_details(
 
 
 def vote_outcome(
-    release: sql.Release, start_unixtime: int | None, tabulated_votes: dict[str, models.tabulate.VoteEmail]
+    min_hours: int, start_unixtime: int | None, tabulated_votes: dict[str, models.tabulate.VoteEmail]
 ) -> tuple[bool, str]:
     now = int(time.time())
     duration_hours = 0
     if start_unixtime is not None:
         duration_hours = (now - start_unixtime) / 3600
 
-    min_duration_hours = release.project.policy_min_hours or None
+    min_duration_hours = min_hours or None
     duration_hours_remaining = None
     if min_duration_hours is not None:
         duration_hours_remaining = min_duration_hours - duration_hours

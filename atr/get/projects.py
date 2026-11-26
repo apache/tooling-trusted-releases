@@ -17,8 +17,11 @@
 
 from __future__ import annotations
 
+import dataclasses
+import inspect
+import urllib.parse
 from collections import Counter
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import htpy
 import quart
@@ -56,7 +59,72 @@ import atr.util as util
 import atr.web as web
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+
+# For each release settings form, the fields a cycle can override: the release policy field behind
+# each one and, where that is the recipients, the action they are for
+_COMPOSE_OVERRIDES: Final[dict[str, tuple[str, sql.RecipientAction | None]]] = {
+    "license_check_mode": ("license_check_mode", None),
+    "source_excludes_lightweight": ("source_excludes_lightweight", None),
+    "source_excludes_rat": ("source_excludes_rat", None),
+    "rat_excludes_url": ("rat_excludes_url", None),
+}
+_FINISH_OVERRIDES: Final[dict[str, tuple[str, sql.RecipientAction | None]]] = {
+    "download_path_suffix": ("download_path_suffix", None),
+    "archive_prior_release": ("auto_archive_prior_release", None),
+    "announce_release_subject": ("announce_release_subject", None),
+    "announce_release_template": ("announce_release_template", None),
+    "announce_release_template_url": ("announce_release_template_url", None),
+    "email_to": ("recipient_defaults", sql.RecipientAction.ANNOUNCE),
+}
+_VOTE_OVERRIDES: Final[dict[str, tuple[str, sql.RecipientAction | None]]] = {
+    "email_to": ("recipient_defaults", sql.RecipientAction.VOTE),
+    "min_hours": ("min_hours", None),
+    "release_checklist": ("release_checklist", None),
+    "vote_comment_template": ("vote_comment_template", None),
+    "vote_comment_template_url": ("vote_comment_template_url", None),
+    "start_vote_subject": ("start_vote_subject", None),
+    "start_vote_template": ("start_vote_template", None),
+    "start_vote_template_url": ("start_vote_template_url", None),
+    "finish_vote_template": ("finish_vote_template", None),
+    "finish_vote_template_url": ("finish_vote_template_url", None),
+}
+# The release settings tabs that a cycle can have its own values on
+_CYCLE_TABS: Final[frozenset[str]] = frozenset({"compose", "finish", "vote"})
+# A cycle can set a value to blank where its project has one. strictyaml has no way to write an
+# empty list, mapping or string, so the export writes a marker and puts the YAML for it in afterwards
+_YAML_BLANKS: Final[dict[str, str]] = {"[]": "ATR-BLANK-LIST", "{}": "ATR-BLANK-MAP", '""': "ATR-BLANK-TEXT"}
+
+
+@dataclasses.dataclass(frozen=True)
+class _SettingsScope:
+    """Which cycle the release settings tabs show, and what each of the project's cycles overrides."""
+
+    # Empty for the settings that every cycle uses
+    cycle: str
+    settings: sql.PolicySettings
+    overrides: dict[str, sql.CycleOverrides]
+    # The cycles the viewer can see a release in, newest first
+    in_use: list[str]
+    # Every cycle that some release is in
+    matched: frozenset[str]
+    selectable: bool
+    # The cycle typed to give it settings before its first release, and what is wrong with it if anything
+    entered: str = ""
+    problem: str = ""
+
+    @property
+    def current(self) -> sql.CycleOverrides | None:
+        return self.overrides.get(self.cycle) if self.cycle else None
+
+    @property
+    def overridable(self) -> list[str]:
+        # Versions with no cycle of their own are in the default cycle, and use the project's settings
+        return [cycle for cycle in self.in_use if cycle != cycles.DEFAULT_CYCLE]
+
+    @property
+    def unmatched(self) -> list[str]:
+        return sorted(cycle for cycle in self.overrides if cycle not in self.matched)
 
 
 @get.typed
@@ -197,14 +265,15 @@ async def project_yaml(
             _release_policy=True,
         ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
         expected = await data.expected_distribution(project_key=str(project_key)).all()
+        overrides = await data.cycle_overrides(project_key=str(project_key)).all()
 
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     if not (is_committee_member or session.is_admin):
         raise errors.ASFQuartException("You are not a member of this project's committee", errorcode=403)
 
     full = project.update_type == sql.UpdateType.ASFYAML_FULL
-    yaml_merge = _asf_yaml_export(project, expected, full=False)
-    yaml_full = _asf_yaml_export(project, expected, full=True)
+    yaml_merge = _asf_yaml_export(project, expected, overrides, full=False)
+    yaml_full = _asf_yaml_export(project, expected, overrides, full=True)
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(view, project_key=project.key))["← Back to project"]]
@@ -344,6 +413,9 @@ async def view(
             _releases=True,
         ).demand(errors.ASFQuartException(f"Project {project_key} not found", errorcode=404))
         project_cycles = list(await data.project_cycle(project_key=str(project_key)).all())
+        all_overrides = {
+            overrides.cycle: overrides for overrides in await data.cycle_overrides(project_key=str(project_key)).all()
+        }
         active_committee_projects = 0
         if project.committee is not None:
             active_committee_projects = len(
@@ -376,6 +448,7 @@ async def view(
     project_cycles = cycles.newest_first(
         c for c in project_cycles if (c.cycle_key not in released_cycle_keys) or (c.cycle_key in visible_cycle_keys)
     )
+    scope = _settings_scope(project, project_cycles, visible_cycle_keys, released_cycle_keys, all_overrides)
 
     page = htm.Block()
 
@@ -432,6 +505,7 @@ async def view(
         project,
         project_cycles,
         visible_releases,
+        scope,
     )
     if project.is_active and (not can_edit_policy):
         page.append(
@@ -454,6 +528,34 @@ async def view(
         content=content,
         javascripts=javascripts,
     )
+
+
+def _append_cycle_overrides(
+    body: htm.Block,
+    project: sql.Project,
+    scope: _SettingsScope,
+    tab: str,
+    fields: dict[str, tuple[str, sql.RecipientAction | None]],
+    readonly: bool,
+) -> None:
+    """Add the forms that clear what the cycle in scope overrides on this tab."""
+    current = scope.current
+    if (current is None) or readonly:
+        return
+    # A form can't contain another form, so each badge's button submits one of these by its id
+    for form_field, (policy_field, action) in fields.items():
+        if not current.overrides(policy_field, action):
+            continue
+        body.append(
+            htm.form(f"#clear-{form_field}.d-none", method="post", action=_view_action(project, tab, scope.cycle))[
+                form.csrf_input(),
+                htpy.input(type="hidden", name="project_key", value=str(project.key)),
+                htpy.input(type="hidden", name="variant", value="clear_cycle_override"),
+                htpy.input(type="hidden", name="cycle", value=scope.cycle),
+                htpy.input(type="hidden", name="field", value=policy_field),
+                htpy.input(type="hidden", name="action", value=action.value if action else ""),
+            ]
+        )
 
 
 def _approval_link(project: sql.Project, action: sql.ApprovalAction) -> htm.Element:
@@ -519,6 +621,31 @@ async def _approval_request_element(approval: sql.ApprovalRequest) -> htm.Elemen
     ]
 
 
+def _asf_yaml_cycles(project: sql.Project, overrides: Sequence[sql.CycleOverrides]) -> dict[str, object]:
+    """Each cycle's settings, keyed by cycle. strictyaml serialises only strings, so the rest go out as text."""
+    recipient_keys = {"vote": "vote_recipients", "announce": "announce_recipients"}
+    block: dict[str, object] = {}
+    for row in sorted(overrides, key=lambda row: row.cycle):
+        settings: dict[str, object] = {}
+        for field, value in sorted(row.settings.items()):
+            if field == "recipient_defaults":
+                for action, recipients in sorted(value.items()):
+                    given = {key: item for key, item in recipients.items() if item}
+                    settings[recipient_keys[action]] = given or _YAML_BLANKS["{}"]
+            elif field == "min_hours":
+                # No value is the default for the committee, which the file can only give as a number
+                settings[field] = str(project.policy_default_min_hours if (value is None) else value)
+            elif isinstance(value, bool):
+                settings[field] = "true" if value else "false"
+            elif isinstance(value, list):
+                settings[field] = list(value) or _YAML_BLANKS["[]"]
+            else:
+                settings[field] = str(value) or _YAML_BLANKS['""']
+        if settings:
+            block[row.cycle] = settings
+    return block
+
+
 def _asf_yaml_distributions(expected: Sequence[sql.ExpectedDistribution]) -> list[dict[str, object]]:
     # One entry for the packages that share a platform, namespace and version
     groups: dict[tuple[str, str, str], list[str]] = {}
@@ -537,12 +664,19 @@ def _asf_yaml_distributions(expected: Sequence[sql.ExpectedDistribution]) -> lis
 
 
 def _asf_yaml_export(
-    project: sql.Project, expected: Sequence[sql.ExpectedDistribution] = (), *, full: bool = False
+    project: sql.Project,
+    expected: Sequence[sql.ExpectedDistribution] = (),
+    overrides: Sequence[sql.CycleOverrides] = (),
+    *,
+    full: bool = False,
 ) -> str:
     block: dict[str, object] = {"metadata": _asf_yaml_metadata(project)}
     policy = _asf_yaml_policy(project)
     if policy:
         block["policy"] = policy
+    cycle_settings = _asf_yaml_cycles(project, overrides)
+    if cycle_settings:
+        block["cycles"] = cycle_settings
     distributions = _asf_yaml_distributions(expected)
     if distributions:
         block["distributions"] = distributions
@@ -551,7 +685,10 @@ def _asf_yaml_export(
     if full:
         features["atr_sync_mode"] = "full"
     block["features"] = features
-    return strictyaml.as_document({"project": block}).as_yaml()
+    text = strictyaml.as_document({"project": block}).as_yaml()
+    for blank, marker in _YAML_BLANKS.items():
+        text = text.replace(marker, blank)
+    return text
 
 
 def _asf_yaml_metadata(project: sql.Project) -> dict[str, object]:
@@ -692,6 +829,75 @@ def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
     return any(getattr(cycle, attr) is not None for attr in ("start", "begin", "latest", "eod", "eos", "eol"))
 
 
+def _cycle_notes(
+    scope: _SettingsScope, fields: dict[str, tuple[str, sql.RecipientAction | None]], *, readonly: bool
+) -> dict[str, htm.Element] | None:
+    """A note for each field of a cycle's form that the cycle overrides, with a control to clear it."""
+    current = scope.current
+    if current is None:
+        return None
+    notes: dict[str, htm.Element] = {}
+    for form_field, (policy_field, action) in fields.items():
+        if not current.overrides(policy_field, action):
+            continue
+        badge = htm.span(".badge.text-bg-primary")[f"Set for {scope.cycle}"]
+        if readonly:
+            notes[form_field] = htm.div(".mt-1")[badge]
+            continue
+        notes[form_field] = htm.div(".mt-1.d-inline-flex.gap-1")[
+            badge,
+            htpy.button(
+                ".badge.text-bg-danger.border-0.atr-cursor-pointer",
+                type="submit",
+                form=f"clear-{form_field}",
+                title="Use the default setting",
+            )[htpy.i(".bi.bi-x-lg.me-1"), "Clear"],
+        ]
+    return notes
+
+
+def _cycle_selector_notes(project: sql.Project, scope: _SettingsScope, *, is_new: bool) -> list[htm.Element]:
+    """The lines under the cycle selector, which say what the settings shown apply to."""
+    if not project.cycle_match:
+        return [
+            htm.p(".text-muted.small.mt-2.mb-0")[
+                "Every release of this project uses these settings. To give a cycle settings of its own, set a"
+                " cycle match under ",
+                htm.a(href=_settings_url(project, "lifecycle"))["Version scheme"],
+                ".",
+            ]
+        ]
+    if not scope.cycle:
+        return []
+    notes = [
+        htm.p(".text-muted.small.mt-2.mb-0")[
+            f"Releases in {scope.cycle} use these settings."
+            f" Anything not set for {scope.cycle} uses the default settings."
+        ]
+    ]
+    if is_new:
+        notes.append(
+            htm.p(".text-muted.small.mb-0")[
+                f"No release is in {scope.cycle} yet. Settings saved for it apply once a version is in that cycle."
+            ]
+        )
+    current = scope.current
+    if (current is not None) and current.updated:
+        notes.append(
+            htm.p(".text-muted.small.mb-0")[
+                f"Last updated {current.updated.strftime('%Y-%m-%d')} by {current.updated_by_display}"
+            ]
+        )
+    return notes
+
+
+def _cycle_settings_badge(overrides: sql.CycleOverrides | None) -> htm.Element | None:
+    if overrides is None:
+        return None
+    count = util.plural(overrides.override_count, "setting", include_count=True)
+    return htm.span(".badge.text-bg-primary")[count]
+
+
 async def _project_approval_element(project: sql.Project) -> htm.Element | None:
     async with db.session() as data:
         approval = await data.approval_request(
@@ -733,19 +939,22 @@ async def _generate_tabs(
     project: sql.Project,
     project_cycles: list[sql.ProjectCycle],
     releases: list[sql.Release],
+    scope: _SettingsScope,
 ) -> htpy.Element:
-    tab_items: list[htm.Tab] = [
-        htm.Tab(
-            key="releases",
-            label="Releases",
-            render=lambda: _render_releases_tab(
-                project,
-                project_cycles,
-                releases,
-                can_edit_policy=can_edit_policy,
-                can_start_release=can_start_release,
-            ),
+    readonly = not can_edit_policy
+    releases_tab = htm.Tab(
+        key="releases",
+        label="Releases",
+        render=lambda: _render_releases_tab(
+            project,
+            project_cycles,
+            releases,
+            scope,
+            can_edit_policy=can_edit_policy,
+            can_start_release=can_start_release,
         ),
+    )
+    project_tabs: list[htm.Tab] = [
         htm.Tab(
             key="metadata",
             label="Metadata",
@@ -761,31 +970,64 @@ async def _generate_tabs(
             render=lambda: _render_security_tab(project, can_edit_metadata=can_edit_metadata),
         ),
     ]
-
+    settings_tabs: list[htm.Tab] = []
     if project.is_active:
-        readonly = not can_edit_policy
-        tab_items.extend(
-            [
-                htm.Tab(
-                    "lifecycle",
-                    "Lifecycle",
-                    lambda: _render_version_scheme_form(project, readonly=readonly),
-                ),
-                htm.Tab("compose", "Compose", lambda: _render_compose_form(project, readonly=readonly)),
-                htm.Tab("vote", "Vote", lambda: _render_vote_form(project, readonly=readonly)),
-                htm.Tab("finish", "Finish", lambda: _render_finish_form(project, readonly=readonly)),
-                htm.Tab(
-                    "third-party-distribution",
-                    "Third-party distribution",
-                    lambda: _render_expected_distributions_tab(project, readonly=readonly),
-                ),
-            ]
+        project_tabs.append(
+            htm.Tab(
+                "lifecycle",
+                "Version scheme",
+                lambda: _render_version_scheme_form(project, readonly=readonly),
+            )
         )
+        settings_tabs = [
+            htm.Tab("compose", "Compose", lambda: _render_compose_form(project, scope, readonly=readonly)),
+            htm.Tab("vote", "Vote", lambda: _render_vote_form(project, scope, readonly=readonly)),
+            htm.Tab("finish", "Finish", lambda: _render_finish_form(project, scope, readonly=readonly)),
+            htm.Tab(
+                "third-party-distribution",
+                "Third-party distribution",
+                lambda: _render_expected_distributions_tab(project, readonly=readonly),
+            ),
+        ]
 
-    active_tab = quart.request.args.get("tab", tab_items[0].key)
-    base_url = util.as_url(view, project_key=str(project.key))
+    groups: list[tuple[str, list[htm.Tab]]] = [("Releases", [releases_tab]), ("Project", project_tabs)]
+    if settings_tabs:
+        groups.append(("Release settings", settings_tabs))
+    requested = quart.request.args.get("tab", releases_tab.key)
+    # An unknown tab falls back to the first one, as a tab strip does
+    active_group, active_tab = next(
+        ((tabs, tab) for _label, tabs in groups for tab in tabs if (tab.key == requested)),
+        (groups[0][1], releases_tab),
+    )
 
-    return await htm.tabs(tab_items, active_key=active_tab, base_url=base_url)
+    block = htm.Block(htm.div)
+    block.append(
+        _tab_nav(
+            [(tabs[0].key, label, tabs is active_group) for label, tabs in groups],
+            lambda key: _settings_url(project, key, scope.cycle if (key == "compose") else ""),
+            ".nav.nav-tabs.mb-3",
+        )
+    )
+    in_settings = active_group is settings_tabs
+    if in_settings:
+        block.append(_render_cycle_selector(project, scope, active_tab.key, readonly=readonly))
+        if scope.cycle in scope.unmatched:
+            block.append(_render_cycle_unmatched(project, scope, active_tab.key, readonly=readonly))
+    if len(active_group) > 1:
+        block.append(
+            _tab_nav(
+                [(tab.key, tab.label, tab is active_tab) for tab in active_group],
+                lambda key: _settings_url(project, key, scope.cycle if in_settings else ""),
+                ".nav.nav-pills.mb-3",
+            )
+        )
+    if in_settings and scope.cycle and (active_tab.key not in _CYCLE_TABS):
+        block.p(".text-muted")["These settings apply to every cycle."]
+    content = active_tab.render()
+    if inspect.isawaitable(content):
+        content = await content
+    block.append(content)
+    return block.collect()
 
 
 def _input_with_variables(
@@ -847,14 +1089,25 @@ def _optional_link(url: str | None) -> htm.Element | str:
     return htm.a(href=url)[url]
 
 
-async def _publish_location_notes(project: sql.Project, *, readonly: bool) -> dict[str, htm.Element]:
+def _planned_cycle(project: sql.Project, entered: str) -> tuple[str, str]:
+    """The cycle for the text that was typed, or else why it can't be one."""
+    if cycle := cycles.planned_cycle(project, entered):
+        return cycle, ""
+    return "", f"{entered} is not a cycle that the project's version scheme allows."
+
+
+async def _publish_location_notes(
+    project: sql.Project, settings: sql.PolicySettings, *, readonly: bool
+) -> dict[str, htm.Element]:
     committee = project.committee
     if readonly or (committee is None):
         return {}
     previous = await interaction.latest_catalogued_directory(project.key, "")
     version = previous[0] if previous else ""
-    suffix = project.policy_download_path_suffix
-    location = construct.publish_location_preview(project, committee, version, suffix, at_start=False, at_policy=True)
+    suffix = settings.policy_download_path_suffix
+    location = construct.publish_location_preview(
+        project, committee, version, suffix, settings, at_start=False, at_policy=True
+    )
     mismatch = await construct.publish_location_mismatch(project.key, version, location, include_version=True)
     note = render.publish_location_note(
         project.safe_key,
@@ -869,7 +1122,9 @@ async def _publish_location_notes(project: sql.Project, *, readonly: bool) -> di
     return {"download_path_suffix": note}
 
 
-def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction, *, readonly: bool) -> htm.Element:
+def _recipient_grid_widget(
+    project: sql.Project, settings: sql.PolicySettings, action: sql.RecipientAction, *, readonly: bool
+) -> htm.Element:
     committee = project.committee
     committee_key = committee.key if (committee is not None) else str(project.key)
     is_podling = bool(committee is not None and committee.is_podling)
@@ -879,7 +1134,7 @@ def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction, *,
         is_podling=is_podling,
         mail_addresses=committee.mail_addresses if (committee is not None) else [],
     )
-    stored_to, stored_cc, stored_bcc = project.policy_recipients(action)
+    stored_to, stored_cc, stored_bcc = settings.policy_recipients(action)
     # Include any already-stored recipients (eg set via .asf.yaml) so a saved
     # value remains a selectable option even when it's outside the committee
     # defaults.
@@ -1035,29 +1290,33 @@ def _render_categories_section(project: sql.Project, *, readonly: bool) -> htm.E
     return card.collect()
 
 
-async def _render_compose_form(project: sql.Project, *, readonly: bool) -> htm.Element:
+async def _render_compose_form(project: sql.Project, scope: _SettingsScope, *, readonly: bool) -> htm.Element:
+    settings = scope.settings
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
-        htm.h3(".mb-0")["Release policy - Compose options"]
+        htm.h3(".mb-0")[_settings_heading("Release policy - Compose options", scope)]
     ]
 
     with card.block(htm.div, classes=".card-body") as card_body:
+        _append_cycle_overrides(card_body, project, scope, "compose", _COMPOSE_OVERRIDES, readonly)
         await form.render_block(
             card_body,
             model_cls=shared.projects.ComposePolicyForm,
-            action=_view_action(project, "compose"),
+            action=_view_action(project, "compose", scope.cycle),
             submit_label="Save",
             defaults={
                 "project_key": str(project.key),
-                "license_check_mode": project.policy_license_check_mode,
-                "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
-                "source_excludes_rat": "\n".join(project.policy_source_excludes_rat),
-                "rat_excludes_url": project.policy_rat_excludes_url,
+                "cycle": scope.cycle,
+                "license_check_mode": settings.policy_license_check_mode,
+                "source_excludes_lightweight": "\n".join(settings.policy_source_excludes_lightweight),
+                "source_excludes_rat": "\n".join(settings.policy_source_excludes_rat),
+                "rat_excludes_url": settings.policy_rat_excludes_url,
             },
             form_classes=".atr-canary.py-4.px-5",
             border=True,
             # wider_widgets=True,
             textarea_rows=5,
+            notes=_cycle_notes(scope, _COMPOSE_OVERRIDES, readonly=readonly),
             readonly=readonly,
         )
     return card.collect()
@@ -1120,6 +1379,119 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
             },
         )
     return card.collect()
+
+
+def _render_cycle_heading(project: sql.Project, cycle: sql.ProjectCycle, scope: _SettingsScope) -> htm.Element:
+    """A cycle's heading on the Releases tab, with a link to its release settings where it can have them."""
+    settings: htm.Element | str = ""
+    if scope.selectable and project.is_active and (cycle.cycle in scope.overridable):
+        settings = htm.span(".fs-6.d-flex.align-items-center.gap-3")[
+            _cycle_settings_badge(scope.overrides.get(cycle.cycle)),
+            htm.a(href=_settings_url(project, "compose", cycle.cycle))["Release settings"],
+        ]
+    return htm.h2(".mt-4.mb-3.d-flex.flex-wrap.justify-content-between.align-items-center.gap-2")[
+        htm.span[cycles.display_name(cycle.cycle)], settings
+    ]
+
+
+def _render_cycle_selector(project: sql.Project, scope: _SettingsScope, tab: str, *, readonly: bool) -> htm.Element:
+    options: list[htm.Element] = [htpy.option(value="", selected=(not scope.cycle))["Default settings"]]
+    for cycle in [*scope.overridable, *scope.unmatched]:
+        label = cycle
+        overrides = scope.overrides.get(cycle)
+        if overrides is not None:
+            count = util.plural(overrides.override_count, "setting", include_count=True)
+            unmatched = ", no matching cycle" if (cycle not in scope.matched) else ""
+            label = f"{label} ({count}{unmatched})"
+        options.append(htpy.option(value=cycle, selected=(cycle == scope.cycle))[label])
+    is_new = bool(scope.cycle) and (scope.cycle not in scope.matched) and (scope.current is None)
+    if is_new:
+        options.append(htpy.option(value=scope.cycle, selected=True)[f"{scope.cycle} (no release yet)"])
+
+    forms: list[htm.Element] = [
+        htm.form(
+            ".d-flex.flex-wrap.align-items-center.gap-3.m-0",
+            method="get",
+            action=util.as_url(view, project_key=str(project.key)),
+        )[
+            htpy.input(type="hidden", name="tab", value=tab),
+            htpy.label(".fw-semibold.mb-0", for_="cycle-select")["Applies to"],
+            htpy.select("#cycle-select.form-select.w-auto", name="cycle")[*options],
+            htpy.button(".btn.btn-sm.btn-outline-primary", type="submit")["Show"],
+        ]
+    ]
+    can_create = bool(project.cycle_match) and (not readonly)
+    if can_create:
+        forms.append(_render_new_cycle_form(project, scope, tab))
+
+    # Collapsed to a link unless the project has overrides, or the viewer has chosen or typed a cycle
+    is_open = bool(scope.overrides or scope.cycle or scope.entered)
+    toggle = {
+        "data_bs_toggle": "collapse",
+        "data_bs_target": "#cycle-settings-link, #cycle-settings-card",
+        "aria_expanded": "true" if is_open else "false",
+    }
+    link = htm.div(f"#cycle-settings-link.collapse{'' if is_open else '.show'}")[
+        htm.a(".atr-text-small.d-inline-block.mb-3", href="#cycle-settings-card", role="button", **toggle)[
+            "Per-cycle settings", htpy.i(".bi.bi-arrow-down.ms-1")
+        ]
+    ]
+    card = htm.Block(htm.div, classes=f"#cycle-settings-card.card.mb-3.collapse{'.show' if is_open else ''}")
+    with card.block(htm.div, classes=".card-body") as body:
+        body.div(".d-flex.justify-content-between.align-items-start.gap-3")[
+            htm.div(".d-flex.flex-wrap.align-items-center.column-gap-5.row-gap-3")[*forms],
+            htpy.button(
+                ".btn.btn-sm.btn-outline-secondary", type="button", aria_label="Hide per-cycle settings", **toggle
+            )[htpy.i(".bi.bi-arrow-up")],
+        ]
+        if can_create and scope.problem:
+            body.div(".text-danger.small.mt-2")[scope.problem]
+        for note in _cycle_selector_notes(project, scope, is_new=is_new):
+            body.append(note)
+    return htm.div[link, card.collect()]
+
+
+def _render_cycle_unmatched(project: sql.Project, scope: _SettingsScope, tab: str, *, readonly: bool) -> htm.Element:
+    """Say that the overrides in scope apply to nothing, with controls to move or remove them."""
+    alert = htm.Block(htm.div, classes=".alert.alert-warning")
+    with alert.block(htm.p, classes=".mb-2") as text:
+        text.strong[f"No release is in a cycle called {scope.cycle}."]
+        text.text(" These settings apply to nothing until a version matches.")
+        if project.cycle_match:
+            text.text(" The cycle pattern is ")
+            text.code[project.cycle_match]
+            text.text(".")
+    if readonly:
+        return alert.collect()
+    action = _view_action(project, tab, scope.cycle)
+    hidden = [
+        form.csrf_input(),
+        htpy.input(type="hidden", name="project_key", value=str(project.key)),
+        htpy.input(type="hidden", name="cycle", value=scope.cycle),
+    ]
+    targets = [cycle for cycle in scope.overridable if cycle not in scope.overrides]
+    controls: list[htm.Element] = []
+    if targets:
+        controls.append(
+            htm.form(".d-flex.flex-wrap.align-items-center.gap-2.m-0", method="post", action=action)[
+                *hidden,
+                htpy.input(type="hidden", name="variant", value="move_cycle_overrides"),
+                htpy.label(".mb-0", for_="target")["Move these settings to"],
+                htpy.select("#target.form-select.form-select-sm.w-auto", name="target")[
+                    *[htpy.option(value=cycle)[cycle] for cycle in targets]
+                ],
+                htpy.button(".btn.btn-sm.btn-primary", type="submit")["Move"],
+            ]
+        )
+    controls.append(
+        htm.form(".m-0", method="post", action=action)[
+            *hidden,
+            htpy.input(type="hidden", name="variant", value="remove_cycle_overrides"),
+            htpy.button(".btn.btn-sm.btn-outline-danger", type="submit")["Remove settings"],
+        ]
+    )
+    alert.div(".d-flex.flex-wrap.align-items-center.gap-3")[*controls]
+    return alert.collect()
 
 
 async def _render_expected_distributions_add(
@@ -1233,10 +1605,11 @@ async def _render_expected_distributions_tab(project: sql.Project, *, readonly: 
     return tab.collect()
 
 
-async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.Element:
+async def _render_finish_form(project: sql.Project, scope: _SettingsScope, *, readonly: bool) -> htm.Element:
+    settings = scope.settings
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
-        htm.h3(".mb-0")["Release policy - Finish options"]
+        htm.h3(".mb-0")[_settings_heading("Release policy - Finish options", scope)]
     ]
 
     flash_error_data = {} if readonly else await sessions.form_error_pop(quart.request.path)
@@ -1245,7 +1618,7 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
     announce_release_subject_widget = _input_with_variables(
         field_name="announce_release_subject",
         value=_flash_or_stored(
-            flash_error_data, "announce_release_subject", project.policy_announce_release_subject or ""
+            flash_error_data, "announce_release_subject", settings.policy_announce_release_subject or ""
         ),
         template_variables=construct.announce_subject_template_variables(),
         documentation="Subject line template for announcement emails.",
@@ -1254,26 +1627,33 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
     announce_release_template_widget = _textarea_with_variables(
         field_name="announce_release_template",
         value=_flash_or_stored(
-            flash_error_data, "announce_release_template", project.policy_announce_release_template or ""
+            flash_error_data, "announce_release_template", settings.policy_announce_release_template or ""
         ),
         template_variables=construct.announce_template_variables(),
         rows=18,
         documentation="Email template for messages to announce a finished release.",
     )
 
+    # A cycle that sets its own publish location gets its badge above the location preview
+    notes = _cycle_notes(scope, _FINISH_OVERRIDES, readonly=readonly) or {}
+    for field, note in (await _publish_location_notes(project, settings, readonly=readonly)).items():
+        notes[field] = htm.div[notes[field], note] if (field in notes) else note
+
     with card.block(htm.div, classes=".card-body") as card_body:
+        _append_cycle_overrides(card_body, project, scope, "finish", _FINISH_OVERRIDES, readonly)
         await form.render_block(
             card_body,
             model_cls=shared.projects.FinishPolicyForm,
-            action=_view_action(project, "finish"),
+            action=_view_action(project, "finish", scope.cycle),
             submit_label="Save",
             defaults={
                 "project_key": project.key,
-                "announce_release_subject": project.policy_announce_release_subject or "",
-                "announce_release_template": project.policy_announce_release_template or "",
-                "announce_release_template_url": project.policy_announce_release_template_url,
-                "archive_prior_release": project.policy_auto_archive_prior_release,
-                "download_path_suffix": project.policy_download_path_suffix,
+                "cycle": scope.cycle,
+                "announce_release_subject": settings.policy_announce_release_subject or "",
+                "announce_release_template": settings.policy_announce_release_template or "",
+                "announce_release_template_url": settings.policy_announce_release_template_url,
+                "archive_prior_release": settings.policy_auto_archive_prior_release,
+                "download_path_suffix": settings.policy_download_path_suffix,
             },
             form_classes=".atr-canary.py-4.px-5",
             border=True,
@@ -1282,9 +1662,9 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
             custom={
                 "announce_release_subject": announce_release_subject_widget,
                 "announce_release_template": announce_release_template_widget,
-                "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE, readonly=readonly),
+                "email_to": _recipient_grid_widget(project, settings, sql.RecipientAction.ANNOUNCE, readonly=readonly),
             },
-            notes=await _publish_location_notes(project, readonly=readonly),
+            notes=notes,
             prefixes={"download_path_suffix": directory},
             skip=["email_cc", "email_bcc"],
             flash_error_data=flash_error_data,
@@ -1300,13 +1680,10 @@ async def _render_header_cards(
     is_sole_active_project: bool,
     is_privileged: bool,
 ) -> htm.Element:
-    block = htm.Block(htm.div, classes=".row.row-cols-1.row-cols-md-2.row-cols-lg-3.row-cols-xl-3.g-4")
-    block.div(".col")[_render_project_label_card(project)]
-    block.div(".col")[_render_pmc_card(project)]
+    block = htm.Block(htm.div, classes=".row.row-cols-1.row-cols-md-2.g-4")
+    block.div(".col")[_render_project_card(project)]
     if can_manage_project_actions:
-        block.div(".col.col-sm-12.col-md-12.col-lg-4")[
-            await _render_actions_card(project, session, is_sole_active_project, is_privileged)
-        ]
+        block.div(".col")[await _render_actions_card(project, session, is_sole_active_project, is_privileged)]
     return block.collect()
 
 
@@ -1355,7 +1732,8 @@ def _metadata_uri(url: str, allowed_schemes: frozenset[str]) -> htm.Element | st
     # Only link a URI whose scheme is on the field's allowlist; anything else renders as plain text,
     # so a stored javascript: or data: URI that reached us by another route (e.g. a DOAP import) can
     # never become a clickable href
-    if validation.uri_scheme_allowed(url, allowed_schemes):
+    # A download page with version variables is a different page for each release, so there is no one page to link
+    if validation.uri_scheme_allowed(url, allowed_schemes) and ("{{" not in url):
         return htm.a(href=url, target="_blank", rel="noopener")[url]
     return url
 
@@ -1381,7 +1759,7 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
     for label, url in [
         ("Homepage", project.homepage),
         ("Lifecycle page", project.lifecycle_page),
-        ("Download page", project.download_page),
+        ("Download page", validation.download_page_variables_unescaped(project.download_page or "")),
         ("Bug database", project.bug_database),
         ("Mailing lists", project.mailing_lists),
     ]:
@@ -1395,7 +1773,7 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
 
     for label, urls, schemes in [
         ("Repositories", project.repositories, validation.REPOSITORY_URI_SCHEMES),
-        ("Standards", project.standards, validation.STANDARD_URI_SCHEMES),
+        ("Relevant standards", project.standards, validation.STANDARD_URI_SCHEMES),
     ]:
         if urls:
             rows.append(
@@ -1403,7 +1781,6 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
                     htm.th(".border-0.w-25")[label],
                     htm.td(".text-break.border-0")[
                         htm.ul(".mb-0.ps-3")[*[htm.li[_metadata_uri(u, schemes)] for u in urls]],
-                        _upload_repositories_note(project) if (label == "Repositories") else None,
                     ],
                 ]
             )
@@ -1418,6 +1795,11 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
 async def _render_metadata_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-0")["Reference metadata"]]
+    notes: dict[str, htm.Element] = {}
+    if project.committee and project.committee.github_oidc_enabled:
+        notes["repositories"] = htm.div(".text-muted.mt-1.form-text")[
+            "GitHub Actions can upload from those under github.com/apache."
+        ]
     with card.block(htm.div, classes=".card-body") as body:
         await form.render_block(
             body,
@@ -1425,7 +1807,7 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
             action=_view_action(project, "metadata"),
             submit_label="Save",
             defaults=shared.projects.edit_metadata_defaults(project),
-            notes={"repositories": _upload_repositories_note(project)},
+            notes=notes,
         )
     return card.collect()
 
@@ -1446,30 +1828,39 @@ async def _render_metadata_tab(
     return block.collect()
 
 
-def _render_pmc_card(project: sql.Project) -> htm.Element:
+def _render_new_cycle_form(project: sql.Project, scope: _SettingsScope, tab: str) -> htm.Element:
+    """The form that opens a cycle by its text. A cycle with no release yet is reached this way."""
+    return htm.form(
+        ".d-flex.flex-wrap.align-items-center.gap-3.m-0",
+        method="get",
+        action=util.as_url(view, project_key=str(project.key)),
+    )[
+        htpy.input(type="hidden", name="tab", value=tab),
+        htpy.label(".fw-semibold.mb-0", for_="new-cycle")["Add settings for cycle"],
+        htpy.input(
+            "#new-cycle.form-control.w-auto",
+            type="text",
+            name="new_cycle",
+            value=scope.entered if scope.problem else "",
+            required=True,
+        ),
+        htpy.button(".btn.btn-sm.btn-outline-primary", type="submit")["Add"],
+    ]
+
+
+def _render_project_card(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header.bg-light")[htm.h3(".mb-2")["PMC"]]
+    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Project"]]
     if project.committee:
-        committee_link = htm.a(href=util.as_url(committees.view, name=project.committee.key))[
+        pmc: htm.Element | str = htm.a(href=util.as_url(committees.view, name=project.committee.key))[
             project.committee.display_name
         ]
-        # release_managers_link = htm.a(
-        #     ".text-muted",
-        #     href=util.as_url(committees.view, name=project.committee.key) + "#release-managers",
-        # )["Release managers"]
-        card.div(".card-body")[
-            htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")[committee_link],
-            # htm.div(".small.text-muted")[release_managers_link],
-        ]
     else:
-        card.div(".card-body")[htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")["No committee"]]
-    return card.collect()
-
-
-def _render_project_label_card(project: sql.Project) -> htm.Element:
-    card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Project key"]]
-    card.div(".card-body")[htm.code(".fs-6")[str(project.key)]]
+        pmc = "No committee"
+    card.div(".card-body")[
+        htm.div(".mb-1")[htm.span(".fw-semibold.me-2")["Key"], htm.code(".fs-6")[str(project.key)]],
+        htm.div[htm.span(".fw-semibold.me-2")["PMC"], pmc],
+    ]
     return card.collect()
 
 
@@ -1566,6 +1957,7 @@ async def _render_releases_tab(
     project: sql.Project,
     project_cycles: list[sql.ProjectCycle],
     releases: list[sql.Release],
+    scope: _SettingsScope,
     *,
     can_edit_policy: bool,
     can_start_release: bool,
@@ -1584,10 +1976,8 @@ async def _render_releases_tab(
         if not releases:
             body.p(".text-muted.mb-4")["No releases found."]
 
-        # Stay flat for projects with only the implicit "default" cycle and no
-        # cycle dates set. Once cycles get used or dates get filled in, headings
-        # surface automatically. The card / form surfaces whenever policy can be edited, so a
-        # PMC of a simple-default project can still set eod/eos/eol/lts.
+        # Stay flat for projects with only the implicit "default" cycle. Once cycles
+        # get used, headings surface automatically.
         show_cycle_heading = cycles.headings_needed(c.cycle for c in project_cycles)
 
         # Newest first, as the old per-phase queries returned them.
@@ -1610,7 +2000,6 @@ async def _render_releases_tab(
             ]
             cycle_full = [r for r in cycle_released if not r.is_archived]
 
-            cycle_has_dates = _cycle_has_dates(cycle)
             # A cycle with no releases is hidden, so this stays a list of releases and not of empty
             # versions. Archived releases still count, so a cycle whose releases have all been archived
             # keeps its place and its dates rather than vanishing
@@ -1619,21 +2008,26 @@ async def _render_releases_tab(
                 continue
 
             if show_cycle_heading:
-                body.h2(".mt-4.mb-3")[cycles.display_name(cycle.cycle)]
-
-            # Skip cycle dates UI for the default cycle - it's the catch-all for
-            # projects without cycle_match and shouldn't carry lifecycle dates.
-            if cycle.cycle != cycles.DEFAULT_CYCLE:
-                if can_edit_policy:
-                    body.append(await _render_cycle_dates_form(project, cycle))
-                elif cycle_has_dates:
-                    body.append(_render_cycle_dates_card(cycle))
+                body.append(_render_cycle_heading(project, cycle, scope))
+            # The default cycle is the catch-all for versions with no cycle of their own, and has no dates
+            if (cycle.cycle != cycles.DEFAULT_CYCLE) and can_edit_policy:
+                body.append(await _render_cycle_dates_form(project, cycle))
+            elif (cycle.cycle != cycles.DEFAULT_CYCLE) and _cycle_has_dates(cycle):
+                body.append(_render_cycle_dates_card(cycle))
 
             body.append(
                 await _render_releases_sections(
                     project, cycle_drafts, cycle_candidates, cycle_previews, cycle_full, nested=show_cycle_heading
                 )
             )
+
+        if can_edit_policy:
+            for cycle_text in scope.unmatched:
+                body.div(".alert.alert-warning.mt-3.mb-0")[
+                    f"{cycle_text} has release settings of its own, and no release is in that cycle. ",
+                    htm.a(".alert-link", href=_settings_url(project, "compose", cycle_text))["Review them"],
+                    ".",
+                ]
 
     return block.collect()
 
@@ -1718,30 +2112,32 @@ async def _render_version_scheme_form(project: sql.Project, *, readonly: bool) -
     return card.collect()
 
 
-async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Element:
+async def _render_vote_form(project: sql.Project, scope: _SettingsScope, *, readonly: bool) -> htm.Element:
+    settings = scope.settings
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
-        htm.h3(".mb-0")["Release policy - Vote options"]
+        htm.h3(".mb-0")[_settings_heading("Release policy - Vote options", scope)]
     ]
 
     flash_error_data = {} if readonly else await sessions.form_error_pop(quart.request.path)
 
     defaults_dict = {
         "project_key": str(project.key),
-        "min_hours": project.policy_min_hours,
-        "release_checklist": project.policy_release_checklist or "",
-        "vote_comment_template": project.policy_vote_comment_template or "",
-        "vote_comment_template_url": project.policy_vote_comment_template_url,
-        "start_vote_subject": project.policy_start_vote_subject or "",
-        "start_vote_template": project.policy_start_vote_template or "",
-        "start_vote_template_url": project.policy_start_vote_template_url,
-        "finish_vote_template": project.policy_finish_vote_template or "",
-        "finish_vote_template_url": project.policy_finish_vote_template_url,
+        "cycle": scope.cycle,
+        "min_hours": settings.policy_min_hours,
+        "release_checklist": settings.policy_release_checklist or "",
+        "vote_comment_template": settings.policy_vote_comment_template or "",
+        "vote_comment_template_url": settings.policy_vote_comment_template_url,
+        "start_vote_subject": settings.policy_start_vote_subject or "",
+        "start_vote_template": settings.policy_start_vote_template or "",
+        "start_vote_template_url": settings.policy_start_vote_template_url,
+        "finish_vote_template": settings.policy_finish_vote_template or "",
+        "finish_vote_template_url": settings.policy_finish_vote_template_url,
     }
 
     release_checklist_widget = _textarea_with_variables(
         field_name="release_checklist",
-        value=_flash_or_stored(flash_error_data, "release_checklist", project.policy_release_checklist or ""),
+        value=_flash_or_stored(flash_error_data, "release_checklist", settings.policy_release_checklist or ""),
         template_variables=construct.checklist_template_variables(),
         rows=3,
         documentation="Markdown text describing how to test release candidates.",
@@ -1749,21 +2145,21 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
 
     start_vote_subject_widget = _input_with_variables(
         field_name="start_vote_subject",
-        value=_flash_or_stored(flash_error_data, "start_vote_subject", project.policy_start_vote_subject or ""),
+        value=_flash_or_stored(flash_error_data, "start_vote_subject", settings.policy_start_vote_subject or ""),
         template_variables=construct.vote_subject_template_variables(),
         documentation="Subject line template for vote emails.",
     )
 
     start_vote_template_widget = _textarea_with_variables(
         field_name="start_vote_template",
-        value=_flash_or_stored(flash_error_data, "start_vote_template", project.policy_start_vote_template or ""),
+        value=_flash_or_stored(flash_error_data, "start_vote_template", settings.policy_start_vote_template or ""),
         template_variables=construct.vote_template_variables(),
         rows=18,
         documentation="Email template for messages to start a vote on a release.",
     )
     finish_vote_template_widget = _textarea_with_variables(
         field_name="finish_vote_template",
-        value=_flash_or_stored(flash_error_data, "finish_vote_template", project.policy_finish_vote_template or ""),
+        value=_flash_or_stored(flash_error_data, "finish_vote_template", settings.policy_finish_vote_template or ""),
         template_variables=construct.finish_vote_template_variables(),
         rows=18,
         documentation="Email template for vote resolution messages.",
@@ -1777,10 +2173,11 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
                 htm.a(href=util.as_url(committees.view, name=str(project.committee_key)) + "#voting")["committee page"],
                 ".",
             ]
+        _append_cycle_overrides(card_body, project, scope, "vote", _VOTE_OVERRIDES, readonly)
         await form.render_block(
             card_body,
             model_cls=shared.projects.VotePolicyForm,
-            action=_view_action(project, "vote"),
+            action=_view_action(project, "vote", scope.cycle),
             submit_label="Save",
             defaults=defaults_dict,
             form_classes=".atr-canary.py-4.px-5",
@@ -1788,13 +2185,14 @@ async def _render_vote_form(project: sql.Project, *, readonly: bool) -> htm.Elem
             # wider_widgets=True,
             textarea_rows=10,
             custom={
-                "email_to": _recipient_grid_widget(project, sql.RecipientAction.VOTE, readonly=readonly),
+                "email_to": _recipient_grid_widget(project, settings, sql.RecipientAction.VOTE, readonly=readonly),
                 "release_checklist": release_checklist_widget,
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,
                 "finish_vote_template": finish_vote_template_widget,
             },
             skip=["email_cc", "email_bcc"],
+            notes=_cycle_notes(scope, _VOTE_OVERRIDES, readonly=readonly),
             flash_error_data=flash_error_data,
             readonly=readonly,
         )
@@ -1873,6 +2271,60 @@ def _security_contact_radios(project: sql.Project) -> htm.Element:
     return htm.div("#security_contact")[*radios]
 
 
+def _settings_heading(title: str, scope: _SettingsScope) -> str:
+    return f"{title} for {scope.cycle}" if scope.cycle else title
+
+
+def _settings_scope(
+    project: sql.Project,
+    project_cycles: list[sql.ProjectCycle],
+    visible_cycle_keys: set[str],
+    released_cycle_keys: set[str],
+    all_overrides: dict[str, sql.CycleOverrides],
+) -> _SettingsScope:
+    in_use = [cycle.cycle for cycle in project_cycles if cycle.cycle_key in visible_cycle_keys]
+    matched = frozenset(key.removeprefix(f"{project.key}-") for key in released_cycle_keys)
+    # A project with one cycle has nothing to choose between, unless it has overrides
+    selectable = bool(project.cycle_match) or bool(all_overrides)
+    cycle = quart.request.args.get("cycle", "") if selectable else ""
+    known = (cycles.can_override(cycle) and (cycle in in_use)) or (cycle in all_overrides)
+    if not (known or (cycle and (cycles.planned_cycle(project, cycle) == cycle))):
+        cycle = ""
+    entered = quart.request.args.get("new_cycle", "").strip() if project.cycle_match else ""
+    problem = ""
+    if (cycles.can_override(entered) and (entered in in_use)) or (entered in all_overrides):
+        cycle = entered
+    elif entered:
+        cycle, problem = _planned_cycle(project, entered)
+    settings: sql.PolicySettings = project
+    if cycle:
+        settings = cycles.ReleaseSettings(project, all_overrides.get(cycle))
+    return _SettingsScope(
+        cycle=cycle,
+        settings=settings,
+        overrides=all_overrides,
+        in_use=in_use,
+        matched=matched,
+        selectable=selectable,
+        entered=entered,
+        problem=problem,
+    )
+
+
+def _settings_url(project: sql.Project, tab: str, cycle: str = "") -> str:
+    query = {"tab": tab, "cycle": cycle} if cycle else {"tab": tab}
+    return util.as_url(view, project_key=str(project.key)) + "?" + urllib.parse.urlencode(query)
+
+
+def _tab_nav(items: list[tuple[str, str, bool]], href: Callable[[str], str], classes: str) -> htm.Element:
+    """A strip of tab links, each a key, a label and whether it is the active one."""
+    links = []
+    for key, label, active in items:
+        link_classes = ".nav-link.active" if active else ".nav-link"
+        links.append(htm.li(".nav-item", role="presentation")[htm.a(link_classes, href=href(key), role="tab")[label]])
+    return htm.ul(classes, role="tablist")[*links]
+
+
 def _taxonomy_add_form(project: sql.Project, variant: str, field_name: str, placeholder: str) -> htm.Element:
     return htm.form(
         ".mb-3",
@@ -1942,19 +2394,6 @@ def _textarea_with_variables(
     return htm.div[elements]
 
 
-def _upload_repositories_note(project: sql.Project) -> htm.Element:
-    recognised = sorted(project.upload_repositories)
-    if recognised:
-        found: list[htm.Element | str] = ["ATR recognises ", *render.code_list(recognised), "."]
-    else:
-        found = ["ATR recognises none of these as a GitHub repository under apache/."]
-    return htm.div(".text-muted.mt-1.form-text")[
-        "GitHub Actions workflows in these repositories can upload to this project when its PMC allows"
-        " uploads from GitHub Actions. ",
-        *found,
-    ]
-
-
 def _upload_restriction_defaults(options: sql.ProjectSecurityOptions | None) -> dict[str, object]:
     if options is None:
         return {"ref_type": shared.projects.UploadRefType.ANY.value}
@@ -1966,5 +2405,7 @@ def _upload_restriction_defaults(options: sql.ProjectSecurityOptions | None) -> 
     }
 
 
-def _view_action(project: sql.Project, tab: str) -> str:
-    return util.as_url(post.projects.view, name=str(project.key)) + f"?tab={tab}"
+def _view_action(project: sql.Project, tab: str, cycle: str = "") -> str:
+    # The cycle goes in the address as well as the form, so that a rejected form comes back to the same cycle
+    query = {"tab": tab, "cycle": cycle} if cycle else {"tab": tab}
+    return util.as_url(post.projects.view, name=str(project.key)) + "?" + urllib.parse.urlencode(query)

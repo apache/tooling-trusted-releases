@@ -228,7 +228,7 @@ async def _check_download_suffix_duplication(
             _project_release_policy=True,
         ).demand(RuntimeError(f"Release {args.project_key} {args.version_key} not found"))
 
-    suffix = construct.effective_download_path_suffix(release)
+    suffix = await construct.effective_download_path_suffix(release)
     if suffix is None:
         return
 

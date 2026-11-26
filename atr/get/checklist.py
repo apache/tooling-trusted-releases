@@ -53,7 +53,7 @@ async def selected(
             quart.abort(404)
 
         project = release.project
-        checklist_markdown = project.policy_release_checklist
+        checklist_markdown = (await interaction.release_settings(release, data)).policy_release_checklist
 
         if not checklist_markdown:
             quart.abort(404)

@@ -459,9 +459,9 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
             " reversible."
         ]
     location, mismatch = await construct.publish_location_for_release(
-        release, construct.effective_download_path_suffix(release)
+        release, await construct.effective_download_path_suffix(release)
     )
-    entered = _svn_download_path_default(release)
+    entered = await _svn_download_path_default(release)
     await form.render_block(
         page,
         shared.finish.PublishToSvnForm,
@@ -490,8 +490,8 @@ def _render_svn_publish_completed(page: htm.Block, release: sql.Release, complet
     page.div(".alert.alert-success.mb-4")[text, " synced soon to ", htm.a(href=url)[url]]
 
 
-def _svn_download_path_default(release: sql.Release) -> str:
-    suffix = construct.effective_download_path_suffix(release)
+async def _svn_download_path_default(release: sql.Release) -> str:
+    suffix = await construct.effective_download_path_suffix(release)
     return str(suffix) if suffix is not None else ""
 
 

@@ -72,26 +72,24 @@ async def selected(
             session.uid,
             committee.key,
             is_podling=committee.is_podling,
-            project=release.project,
+            settings=await interaction.release_settings(release),
         )
         second_round_recipients = (
             util.permitted_podling_second_round_recipients(session.uid) if committee.is_podling else []
         )
 
-        min_hours = 72
-        release_policy = release.project.release_policy
-        if release_policy and (release_policy.min_hours is not None):
-            min_hours = release_policy.min_hours
+        settings = await interaction.release_settings(release, data)
+        min_hours = settings.policy_min_hours
         if (min_hours == 0) and config.is_production_mode():
             min_hours = 72
 
         vote_mode = release.effective_vote_mode
-        default_subject_template = await construct.start_vote_subject_default(project_key)
+        default_subject_template = await construct.start_vote_subject_default(project_key, version_key)
         template_warning = None
         if release.expedited:
             default_body_template = construct.START_VOTE_EXPEDITED_DEFAULT
         else:
-            resolved_template = await construct.resolve_template(release.project, "start_vote")
+            resolved_template = await construct.resolve_template(release, "start_vote")
             default_body_template = resolved_template.body
             template_warning = resolved_template.warning
         subject_template_hash = construct.template_hash(default_subject_template)
@@ -114,7 +112,7 @@ async def selected(
         submitted_concerns = util.submitted_concerns_from_flash(flash_data)
 
         publish_eligible = user.is_committee_member(committee, session.uid)
-        default_download_path_suffix = _default_download_path_suffix(release)
+        default_download_path_suffix = await _default_download_path_suffix(release)
         content = await _render_page(
             release=release,
             revision_number=str(release.safe_latest_revision_number),
@@ -168,8 +166,8 @@ def _add_automatic_publish_fields(
     ]
 
 
-def _default_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
-    return construct.effective_download_path_suffix(release)
+async def _default_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
+    return await construct.effective_download_path_suffix(release)
 
 
 def _podling_vote_round(release: sql.Release, committee: sql.Committee) -> int | None:
@@ -317,7 +315,8 @@ async def _render_page(  # noqa: C901
                 "you will not be able to use vote tabulation."
             )
         custom["body"] = _render_body_field(default_body, release.project.key)
-        policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.VOTE)
+        settings = await interaction.release_settings(release)
+        policy_to, policy_cc, policy_bcc = settings.policy_recipients(sql.RecipientAction.VOTE)
         permitted_set = set(permitted_recipients)
         fallback_to = permitted_recipients[0] if permitted_recipients else None
         default_to = policy_to if (policy_to in permitted_set) else fallback_to

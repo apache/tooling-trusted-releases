@@ -79,8 +79,8 @@ async def selected(
         )
 
     # Get the templates from the release policy
-    default_subject_template = await construct.announce_release_subject_default(project_key)
-    body_template = await construct.resolve_template(release.project, "announce_release")
+    default_subject_template = await construct.announce_release_subject_default(project_key, version_key)
+    body_template = await construct.resolve_template(release, "announce_release")
     subject_template_hash = construct.template_hash(default_subject_template)
 
     if (committee := release.project.committee) is None:
@@ -98,7 +98,9 @@ async def selected(
         default_subject_template, body_template.body, options
     )
 
-    permitted_recipients = util.permitted_announce_recipients(session.uid, committee=committee, project=release.project)
+    permitted_recipients = util.permitted_announce_recipients(
+        session.uid, committee=committee, settings=await interaction.release_settings(release)
+    )
 
     embargo_message = None
     if release.is_embargoed:
@@ -191,7 +193,8 @@ async def _render_announce_form(
 ) -> None:
     custom_subject_widget = _render_subject_field(default_subject, release.project.key)
     custom_body_widget = _render_body_field(default_body, release.project.key)
-    policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.ANNOUNCE)
+    settings = await interaction.release_settings(release)
+    policy_to, policy_cc, policy_bcc = settings.policy_recipients(sql.RecipientAction.ANNOUNCE)
     permitted_set = set(permitted_recipients)
     fallback_to = permitted_recipients[0] if permitted_recipients else None
     default_to = policy_to if (policy_to in permitted_set) else fallback_to
@@ -214,7 +217,7 @@ async def _render_announce_form(
     ]
 
     prior_release_version = ""
-    if release.archive_prior_release and release.project.policy_auto_archive_prior_release:
+    if release.archive_prior_release and settings.policy_auto_archive_prior_release:
         prior = await interaction.prior_release_for_archive(release.project, release.version)
         if prior is not None:
             prior_release_version = prior.version

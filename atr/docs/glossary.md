@@ -45,7 +45,7 @@ page that covers it in full.
 * **Artifact** - a file in a release, such as a source archive, a binary, or an SBOM. See
   [Artifact](projects#artifact).
 * **Cycle** - a line of releases maintained together, such as all `2.x` releases. See
-  [Lifecycle](project-configuration#lifecycle).
+  [Version scheme](project-configuration#version-scheme).
 * **Version scheme** - how a project numbers its releases and groups them into cycles.
 * **Lifecycle event** - a published record of a change in a release's status, such as end of
   distribution. See [Lifecycle events](archiving-and-lifecycle#lifecycle-events).

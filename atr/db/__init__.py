@@ -36,7 +36,6 @@ import sqlmodel.sql.expression as expression
 
 import atr.config as config
 import atr.log as log
-import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.util as util
@@ -468,6 +467,32 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             )
         elif _signing_certificates:
             query = query.options(select_in_load(sql.Committee.signing_certificates))
+
+        return Query(self, query)
+
+    def cycle_overrides(
+        self,
+        project_key: Opt[str] = NOT_SET,
+        cycle: Opt[str] = NOT_SET,
+        settings: Opt[dict[str, Any]] = NOT_SET,
+        updated: Opt[datetime.datetime | None] = NOT_SET,
+        updated_by: Opt[str | None] = NOT_SET,
+        update_type: Opt[sql.UpdateType] = NOT_SET,
+    ) -> Query[sql.CycleOverrides]:
+        query = sqlmodel.select(sql.CycleOverrides)
+
+        if is_defined(project_key):
+            query = query.where(sql.CycleOverrides.project_key == project_key)
+        if is_defined(cycle):
+            query = query.where(sql.CycleOverrides.cycle == cycle)
+        if is_defined(settings):
+            query = query.where(sql.CycleOverrides.settings == settings)
+        if is_defined(updated):
+            query = query.where(sql.CycleOverrides.updated == updated)
+        if is_defined(updated_by):
+            query = query.where(sql.CycleOverrides.updated_by == updated_by)
+        if is_defined(update_type):
+            query = query.where(sql.CycleOverrides.update_type == update_type)
 
         return Query(self, query)
 
@@ -1547,14 +1572,6 @@ def ensure_session(caller_data: Session | None) -> Session | contextlib.nullcont
     if caller_data is None:
         return session()
     return contextlib.nullcontext(caller_data)
-
-
-async def get_project_release_policy(data: Session, project_key: safe.ProjectKey) -> sql.ReleasePolicy | None:
-    """Fetch the ReleasePolicy for a project."""
-    project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
-        RuntimeError(f"Project {project_key} not found")
-    )
-    return project.release_policy
 
 
 def init_database(app: base.QuartApp) -> None:

@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from typing import Final, Literal, TypedDict, overload
 
 import atr.config as config
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.email_templates as email_templates
@@ -55,6 +56,7 @@ _VOTE_INSTRUCTIONS: Final[dict[sql.VoteMode, str]] = {
 
 
 class _AnnounceSubjectValues(TypedDict):
+    CYCLE: str
     MAJOR_VERSION: str
     PROJECT_NAME: str
     VERSION: str
@@ -63,6 +65,7 @@ class _AnnounceSubjectValues(TypedDict):
 class _AnnounceValues(TypedDict):
     BUG_DATABASE: str
     COMMITTEE: str
+    CYCLE: str
     DOWNLOAD_PAGE: str
     DOWNLOAD_URL: str
     HOMEPAGE: str
@@ -82,6 +85,7 @@ class _AnnounceValues(TypedDict):
 
 class _ChecklistValues(TypedDict):
     COMMITTEE: str
+    CYCLE: str
     HOMEPAGE: str
     MAJOR_VERSION: str
     PROJECT_NAME: str
@@ -96,6 +100,7 @@ class _ChecklistValues(TypedDict):
 class _FinishVoteValues(TypedDict):
     ATR_TALLY: str
     COMMITTEE: str
+    CYCLE: str
     MAJOR_VERSION: str
     OUTCOME: str
     PROJECT_NAME: str
@@ -106,6 +111,7 @@ class _FinishVoteValues(TypedDict):
 
 class _VoteSubjectValues(TypedDict):
     COMMITTEE: str
+    CYCLE: str
     MAJOR_VERSION: str
     PROJECT_NAME: str
     REVISION: str
@@ -120,6 +126,7 @@ class _VoteValues(TypedDict):
     COMMIT: str
     COMMIT_PARAGRAPH: str
     COMMITTEE: str
+    CYCLE: str
     DURATION: str
     FIRST_ROUND_THREAD: str
     HOMEPAGE: str
@@ -153,6 +160,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "COMMIT": "Source commit hash, if recorded",
     "COMMIT_PARAGRAPH": "Source commit paragraph, if recorded",
     "COMMITTEE": "Committee name",
+    "CYCLE": "Release cycle the version is in, empty for a project with one cycle",
     "DOWNLOAD_PAGE": "Download page URL",
     "DOWNLOAD_URL": "URL to download the release",
     "DURATION": "Vote duration in hours",
@@ -271,13 +279,15 @@ async def announce_release_subject_and_body(
 
     project = release.project
     project_display_name = project.short_display_name if project else str(options.project_key)
-    download_relpath = paths.committee_dist_relpath(committee, effective_download_path_suffix(release))
+    cycle = cycles.cycle_text(project, str(options.version_key))
+    download_relpath = paths.committee_dist_relpath(committee, await effective_download_path_suffix(release))
     download_url = f"{paths.downloads_url(download_relpath)}/"
 
     values: _AnnounceValues = {
         "BUG_DATABASE": project.bug_database or "",
         "COMMITTEE": committee.display_name,
-        "DOWNLOAD_PAGE": project.download_page or "",
+        "CYCLE": cycle,
+        "DOWNLOAD_PAGE": cycles.download_page_for_version(project, str(options.version_key)),
         "DOWNLOAD_URL": download_url,
         "HOMEPAGE": project.homepage or "",
         "LIFECYCLE_PAGE": project.lifecycle_page or "",
@@ -294,6 +304,7 @@ async def announce_release_subject_and_body(
         "YOUR_FULL_NAME": options.fullname,
     }
     subject_values: _AnnounceSubjectValues = {
+        "CYCLE": cycle,
         "MAJOR_VERSION": major_version(str(options.version_key)),
         "PROJECT_NAME": project_display_name,
         "VERSION": str(options.version_key),
@@ -303,13 +314,9 @@ async def announce_release_subject_and_body(
     return subject, body
 
 
-async def announce_release_subject_default(project_key: safe.ProjectKey) -> str:
-    async with db.session() as data:
-        project = await data.project(
-            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
-        ).demand(RuntimeError(f"Project {project_key} not found"))
-
-    return project.policy_announce_release_subject
+async def announce_release_subject_default(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> str:
+    settings = await interaction.version_settings(str(project_key), str(version_key))
+    return settings.policy_announce_release_subject
 
 
 def announce_subject_template_variables() -> list[tuple[str, str]]:
@@ -336,6 +343,7 @@ def checklist_body(
 
     values: _ChecklistValues = {
         "COMMITTEE": committee.display_name,
+        "CYCLE": cycles.cycle_text(project, str(version_key)),
         "HOMEPAGE": project.homepage or "",
         "MAJOR_VERSION": major_version(str(version_key)),
         "PROJECT_NAME": project.short_display_name,
@@ -388,7 +396,7 @@ def infrastructure_failure_notification(
 
 
 def major_version(version: str) -> str:
-    return version.partition(".")[0]
+    return cycles.major_version(version)
 
 
 def release_notification(
@@ -519,11 +527,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=options.vote_duration)
     vote_end_str = f"{vote_end.day} {vote_end.strftime('%b %H:%M')} UTC"
 
-    checklist_content = ""
-    async with db.session() as data:
-        release_policy = await db.get_project_release_policy(data, options.project_key)
-        if release_policy:
-            checklist_content = release_policy.release_checklist or ""
+    checklist_content = (await interaction.release_settings(release)).policy_release_checklist
 
     if checklist_content and project:
         checklist_content = checklist_body(
@@ -541,8 +545,10 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             f"  https://lists.apache.org/thread/{options.first_round_thread_id}\n"
         )
 
+    cycle = cycles.cycle_text(project, str(options.version_key))
     subject_values: _VoteSubjectValues = {
         "COMMITTEE": committee.display_name,
+        "CYCLE": cycle,
         "MAJOR_VERSION": major_version(str(options.version_key)),
         "PROJECT_NAME": project_display_name,
         "REVISION": revision_number,
@@ -558,6 +564,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             f"\nThe recorded source commit is:\n\n  {release.commit_hash}\n" if release.commit_hash else ""
         ),
         "COMMITTEE": committee.display_name,
+        "CYCLE": cycle,
         "DURATION": str(options.vote_duration or "an unlimited number of"),
         "FIRST_ROUND_THREAD": first_round_paragraph,
         "HOMEPAGE": project.homepage or "",
@@ -581,23 +588,22 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     return subject, body
 
 
-async def start_vote_subject_default(project_key: safe.ProjectKey) -> str:
-    async with db.session() as data:
-        project = await data.project(
-            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
-        ).demand(RuntimeError(f"Project {project_key} not found"))
-
-    return project.policy_start_vote_subject
+async def start_vote_subject_default(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> str:
+    settings = await interaction.version_settings(str(project_key), str(version_key))
+    return settings.policy_start_vote_subject
 
 
-def effective_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
+async def effective_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
     """The suffix a release publishes to: an explicit per-release override if set,
-    otherwise the project policy default. Both are templates, resolved for this release."""
+    otherwise the default for the release's cycle. Both are templates, resolved for this release."""
     override = release.download_path_suffix
     if override == "":
         # An empty override is a deliberate choice of the distribution root
         return None
-    template = override if (override is not None) else release.project.policy_download_path_suffix
+    if override is not None:
+        template = override
+    else:
+        template = (await interaction.release_settings(release)).policy_download_path_suffix
     return resolve_download_path_suffix(
         template=template,
         project_key=release.project.key,
@@ -626,19 +632,21 @@ def publish_location_preview(
     committee: sql.Committee,
     version: str,
     entered: str,
+    settings: sql.PolicySettings,
     *,
     at_start: bool,
     at_policy: bool = False,
 ) -> str | None:
     """Where a release would be published for a publish location as typed into a form,
-    or None when the version or the location isn't usable yet."""
+    or None when the version or the location isn't usable yet. The settings are the ones
+    a release of this version would use."""
     if util.version_key_error(version):
         return None
-    policy = project.policy_download_path_suffix
-    # The start form is pre-filled with the policy, and a value left as it was defers to
-    # the policy. Anywhere else, and for any other value, empty means the committee directory
-    if at_start and (entered == policy):
-        template = policy
+    # The start form is pre-filled with the project's policy, and a value left as it was defers to
+    # the policy for the version's cycle. Anywhere else, and for any other value, empty means the
+    # committee directory
+    if at_start and (entered == project.policy_download_path_suffix):
+        template = settings.policy_download_path_suffix
     elif (not entered.strip()) and (not at_policy):
         return util.publish_location(committee, None)
     else:
@@ -741,9 +749,10 @@ def resolve_download_path_suffix(
     return safe.RelPath(f"{project_key}-{version}")
 
 
-async def resolve_template(project: sql.Project, kind: TemplateKind) -> ResolvedTemplate:
-    """Get the template for an email form, from the project's template URL if it has one."""
-    url, inline = _template_url_and_inline(project, kind)
+async def resolve_template(release: sql.Release, kind: TemplateKind) -> ResolvedTemplate:
+    """Get the template for an email form, from the template URL for the release's cycle if it has one."""
+    settings = await interaction.release_settings(release)
+    url, inline = _template_url_and_inline(settings, kind)
     if not url:
         return ResolvedTemplate(inline)
 
@@ -751,9 +760,9 @@ async def resolve_template(project: sql.Project, kind: TemplateKind) -> Resolved
         return ResolvedTemplate(await email_templates.fetch(url))
     except email_templates.EmailTemplateError as e:
         label = _TEMPLATE_LABELS[kind]
-        log.warning(f"Could not fetch {label} for {project.key} from {url}: {e}")
+        log.warning(f"Could not fetch {label} for {release.project_key} from {url}: {e}")
         return ResolvedTemplate(
-            _template_default(project, kind),
+            _template_default(settings, kind),
             warning=(
                 f"Could not fetch the {label} from {url}: {e}. The default template is shown instead, which may"
                 " not be what your project normally uses. Check it carefully before sending."
@@ -897,28 +906,28 @@ def _podling_disclaimer(project: sql.Project, committee: sql.Committee) -> str:
     )
 
 
-def _template_default(project: sql.Project, kind: TemplateKind) -> str:
+def _template_default(settings: sql.PolicySettings, kind: TemplateKind) -> str:
     match kind:
         case "announce_release":
-            return project.policy_announce_release_default
+            return settings.policy_announce_release_default
         case "finish_vote":
-            return project.policy_finish_vote_default
+            return settings.policy_finish_vote_default
         case "start_vote":
-            return project.policy_start_vote_default
+            return settings.policy_start_vote_default
         case "vote_comment":
             return ""
 
 
-def _template_url_and_inline(project: sql.Project, kind: TemplateKind) -> tuple[str, str]:
+def _template_url_and_inline(settings: sql.PolicySettings, kind: TemplateKind) -> tuple[str, str]:
     match kind:
         case "announce_release":
-            return project.policy_announce_release_template_url.strip(), project.policy_announce_release_template
+            return settings.policy_announce_release_template_url.strip(), settings.policy_announce_release_template
         case "finish_vote":
-            return project.policy_finish_vote_template_url.strip(), project.policy_finish_vote_template
+            return settings.policy_finish_vote_template_url.strip(), settings.policy_finish_vote_template
         case "start_vote":
-            return project.policy_start_vote_template_url.strip(), project.policy_start_vote_template
+            return settings.policy_start_vote_template_url.strip(), settings.policy_start_vote_template
         case "vote_comment":
-            return project.policy_vote_comment_template_url.strip(), project.policy_vote_comment_template
+            return settings.policy_vote_comment_template_url.strip(), settings.policy_vote_comment_template
 
 
 @overload

@@ -511,7 +511,7 @@ class ReleaseManager(CommitteeParticipant):
                     self.__asf_uid,
                     committee.key,
                     is_podling=committee.is_podling,
-                    project=release.project,
+                    settings=await interaction.release_settings(release, self.__data),
                 )
             all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
             for addr in all_addrs:
@@ -606,7 +606,7 @@ class ReleaseManager(CommitteeParticipant):
         archive_url = await self.__resolved_vote_thread_url(latest_vote_task)
         if (latest_vote_task is None) or (archive_url is None):
             raise storage.AccessError("The first round vote thread is not archived yet, please try later", status=409)
-        body_template = (await construct.resolve_template(release.project, "start_vote")).body
+        body_template = (await construct.resolve_template(release, "start_vote")).body
         await self.__data.commit()
         await self.__data.begin_immediate()
         try:
@@ -685,7 +685,11 @@ class ReleaseManager(CommitteeParticipant):
         additions = (additional_cc or []) + (additional_bcc or [])
         if (release.committee is not None) and additions:
             permitted = set(
-                util.permitted_voting_recipients(self.__asf_uid, release.committee.key, project=release.project)
+                util.permitted_voting_recipients(
+                    self.__asf_uid,
+                    release.committee.key,
+                    settings=await interaction.release_settings(release, self.__data),
+                )
             )
             for address in additions:
                 if address not in permitted:
@@ -700,7 +704,7 @@ class ReleaseManager(CommitteeParticipant):
             and release.committee.is_podling
             and (release.podling_thread_id is None)
         ):
-            second_round_body_template = (await construct.resolve_template(release.project, "start_vote")).body
+            second_round_body_template = (await construct.resolve_template(release, "start_vote")).body
         podling_round_one_thread_id = None
         if release.effective_vote_mode == sql.VoteMode.TRUSTED:
             if (
@@ -1433,7 +1437,7 @@ class ReleaseManager(CommitteeParticipant):
                 safe.RelPath(download_path_suffix_raw) if isinstance(download_path_suffix_raw, str) else None
             )
             if security_override:
-                download_path_suffix = construct.effective_download_path_suffix(release)
+                download_path_suffix = await construct.effective_download_path_suffix(release)
             publisher_asf_uid = vote_task_with_publish_options.task_args.get("automatic_publish_asf_uid")
             if not isinstance(publisher_asf_uid, str):
                 publisher_asf_uid = vote_task_with_publish_options.task_args.get("initiator_id")
@@ -1521,7 +1525,9 @@ class ReleaseManager(CommitteeParticipant):
         if revision_number is None:
             raise storage.AccessError("Release has no revision number - Invalid state", status=500)
         vote_duration = latest_vote_task.task_args["vote_duration"]
-        subject_template = await construct.start_vote_subject_default(release.safe_project_key)
+        subject_template = await construct.start_vote_subject_default(
+            release.safe_project_key, release.safe_version_key
+        )
         body_template = second_round_body_template
         if body_template is None:
             raise storage.AccessError("Second round vote template was not resolved", status=500)

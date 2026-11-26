@@ -1238,175 +1238,16 @@ def see_also(arg: Any) -> None:
     pass
 
 
-# Project: Project Committee Release DistributionChannel ReleasePolicy
-class Project(sqlmodel.SQLModel, table=True):
-    key: str = sqlmodel.Field(primary_key=True, unique=True, **example("example"))
-    # TODO: Ideally full_name would be unique for str only, but that's complex
-    # We always include "Apache" in the full_name
-    name: str | None = sqlmodel.Field(default=None, **example("Apache Example"))
+class PolicySettings:
+    """Release settings as they are read: the values on a release policy, with a default for each one left unset.
 
-    status: ProjectStatus = sqlmodel.Field(default=ProjectStatus.ACTIVE, **example(ProjectStatus.ACTIVE))
+    A class with a release policy and a committee reads its settings through these. Project is one,
+    and so is the settings object for one cycle of a project.
+    """
 
-    # M-1: Project -> Project
-    # 1-M: (Project.child_project is missing, would be Project -> [Project])
-    super_project_key: str | None = sqlmodel.Field(default=None, foreign_key="project.key")
-    # NOTE: Neither "Project" | None nor "Project | None" works
-    super_project: Optional["Project"] = sqlmodel.Relationship()
-
-    description: str | None = sqlmodel.Field(default=None, **example("Example is a simple example project"))
-    categories: str | None = sqlmodel.Field(default=None, **example("data,storage"))
-    programming_languages: str | None = sqlmodel.Field(default=None, **example("c,python"))
-
-    short_description: str | None = sqlmodel.Field(default=None, **example("A simple example project"))
-    homepage: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/"))
-    lifecycle_page: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/lifecycle"))
-    download_page: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/download"))
-    bug_database: str | None = sqlmodel.Field(default=None, **example("https://issues.apache.org/jira/browse/EXAMPLE"))
-    mailing_lists: str | None = sqlmodel.Field(
-        default=None, **example("https://example.apache.org/community/mailing-lists")
-    )
-    repositories: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
-    )
-    standards: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
-    )
-
-    security_contact: str | None = sqlmodel.Field(default=None, **example("security@example.apache.org"))
-    threat_model_link: str | None = sqlmodel.Field(
-        default=None, **example("https://example.apache.org/security/threat-model")
-    )
-    threat_model_src_link: str | None = sqlmodel.Field(
-        default=None, **example("https://example.apache.org/security/threat-model.md")
-    )
-
-    # Version-scheme metadata (#912). For "simple" projects the pattern fields are null
-    # and the project keeps a single "default" cycle.
-    version_method: VersionMethod = sqlmodel.Field(default=VersionMethod.SIMPLE, **example(VersionMethod.SIMPLE))
-    version_pattern: str | None = sqlmodel.Field(default=None, **example(r"^\d+\.\d+\.\d+$"))
-    cycle_match: str | None = sqlmodel.Field(default=None, **example(r"^(\d+)\.\d+\.\d+$"))
-    calver_format: str | None = sqlmodel.Field(default=None, **example("(YY.MM).N"))
-    branch_template: str | None = sqlmodel.Field(default=None, **example("release-{cycle}"))
-
-    # Limits that an admin has set for this project, each null to take the default in atr.quota
-    quota_project_bytes: int | None = sqlmodel.Field(default=None, **example(53687091200))
-    quota_project_releases: int | None = sqlmodel.Field(default=None, **example(20))
-    quota_release_bytes: int | None = sqlmodel.Field(default=None, **example(53687091200))
-    quota_release_files: int | None = sqlmodel.Field(default=None, **example(10000))
-
-    # M-1: Project -> Committee
-    # 1-M: Committee -> [Project]
-    committee_key: str | None = sqlmodel.Field(default=None, foreign_key="committee.key", **example("example"))
-    committee: Committee | None = sqlmodel.Relationship(back_populates="projects")
-    see_also(Committee.projects)
-
-    # 1-M: Project -> [Release]
-    # M-1: Release -> Project
-    # see_also(Release.project)
-    releases_including_embargoed: list["Release"] = sqlmodel.Relationship(back_populates="project")
-
-    @property
-    def releases(self) -> list["Release"]:
-        return [release for release in self.releases_including_embargoed if (not release.is_embargoed)]
-
-    # 1-M: Project -C-> [ProjectCycle]
-    # M-1: ProjectCycle -> Project
-    cycles: list["ProjectCycle"] = sqlmodel.Relationship(
-        back_populates="project",
-        cascade_delete=True,
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
-    )
-
-    # # 1-M: Project -> [DistributionChannel]
-    # # M-1: DistributionChannel -> Project
-    # distribution_channels: list["DistributionChannel"] = sqlmodel.Relationship(back_populates="project")
-
-    # 1-1: Project -C-> ReleasePolicy
-    # 1-1: ReleasePolicy -> Project
-    release_policy_id: int | None = sqlmodel.Field(default=None, foreign_key="releasepolicy.id", ondelete="CASCADE")
-    release_policy: Optional["ReleasePolicy"] = sqlmodel.Relationship(
-        cascade_delete=True, sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True}
-    )
-
-    created: datetime.datetime = sqlmodel.Field(
-        default_factory=lambda: datetime.datetime.now(datetime.UTC),
-        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
-        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
-    )
-    created_by: str | None = sqlmodel.Field(default=None, **example("user"))
-
-    updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
-    updated_by: str | None = sqlmodel.Field(default=None)
-    update_type: UpdateType = sqlmodel.Field(default=UpdateType.MANUAL, **example(UpdateType.MANUAL))
-
-    @property
-    def display_name(self) -> str:
-        """Get the display name for the Project."""
-        base = self.name or str(self.key)
-        if self.committee and self.committee.is_podling:
-            return f"{base} (Incubating)"
-        return base
-
-    @property
-    def updated_by_display(self) -> str:
-        """Who or what last updated the project, for display."""
-        match self.update_type:
-            case UpdateType.BOOTSTRAP:
-                return "bootstrap"
-            case UpdateType.ASFYAML:
-                return ".asf.yaml"
-            case UpdateType.ASFYAML_FULL:
-                return ".asf.yaml (full)"
-            case UpdateType.MANUAL:
-                return self.updated_by or "unknown"
-
-    def mark_updated(self, *, by: str, update_type: UpdateType) -> None:
-        self.updated = datetime.datetime.now(datetime.UTC)
-        self.updated_by = by
-        self.update_type = update_type
-
-    @property
-    def is_synced_from_asf_yaml(self) -> bool:
-        """Whether the project's last update came from .asf.yaml, in either sync mode."""
-        return self.update_type in {UpdateType.ASFYAML, UpdateType.ASFYAML_FULL}
-
-    @property
-    def is_active(self) -> bool:
-        """Whether the project's status is active."""
-        return self.status == ProjectStatus.ACTIVE
-
-    @property
-    def is_archived(self) -> bool:
-        """Whether the project is archived, by its PMC (dormant) or with its PMC (retired)."""
-        return self.status in {ProjectStatus.DORMANT, ProjectStatus.RETIRED}
-
-    @property
-    def github_repositories(self) -> set[str]:
-        # Only the metadata says where the source lives - the policy's repository is where upload workflows run
-        return {
-            match[1].removesuffix(".git")
-            for url in self.repositories
-            if (match := re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?", url))
-        }
-
-    @property
-    def upload_repositories(self) -> set[str]:
-        # The GitHub repositories whose workflows can upload to this project, which have to be
-        # under apache/. Lower-cased, as GitHub doesn't tell apache/Foo from apache/foo
-        return {name.lower() for name in self.github_repositories if name.lower().startswith("apache/")}
-
-    @property
-    def safe_key(self) -> safe.ProjectKey:
-        """Get the typesafe validated name for the Project"""
-        return safe.ProjectKey(self.key)
-
-    @property
-    def short_display_name(self) -> str:
-        """Get the short display name for the Project."""
-        name = self.display_name
-        if name.startswith("Apache Software Foundation "):
-            return name.removeprefix("Apache Software Foundation ")
-        return name.removeprefix("Apache ")
+    if TYPE_CHECKING:
+        committee: "Committee | None"
+        release_policy: "ReleasePolicy | None"
 
     @property
     def policy_announce_release_default(self) -> str:
@@ -1671,6 +1512,177 @@ Sincerely,
         return policy.require_version_in_filenames
 
 
+# Project: Project Committee Release DistributionChannel ReleasePolicy
+class Project(sqlmodel.SQLModel, PolicySettings, table=True):
+    key: str = sqlmodel.Field(primary_key=True, unique=True, **example("example"))
+    # TODO: Ideally full_name would be unique for str only, but that's complex
+    # We always include "Apache" in the full_name
+    name: str | None = sqlmodel.Field(default=None, **example("Apache Example"))
+
+    status: ProjectStatus = sqlmodel.Field(default=ProjectStatus.ACTIVE, **example(ProjectStatus.ACTIVE))
+
+    # M-1: Project -> Project
+    # 1-M: (Project.child_project is missing, would be Project -> [Project])
+    super_project_key: str | None = sqlmodel.Field(default=None, foreign_key="project.key")
+    # NOTE: Neither "Project" | None nor "Project | None" works
+    super_project: Optional["Project"] = sqlmodel.Relationship()
+
+    description: str | None = sqlmodel.Field(default=None, **example("Example is a simple example project"))
+    categories: str | None = sqlmodel.Field(default=None, **example("data,storage"))
+    programming_languages: str | None = sqlmodel.Field(default=None, **example("c,python"))
+
+    short_description: str | None = sqlmodel.Field(default=None, **example("A simple example project"))
+    homepage: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/"))
+    lifecycle_page: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/lifecycle"))
+    download_page: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/download"))
+    bug_database: str | None = sqlmodel.Field(default=None, **example("https://issues.apache.org/jira/browse/EXAMPLE"))
+    mailing_lists: str | None = sqlmodel.Field(
+        default=None, **example("https://example.apache.org/community/mailing-lists")
+    )
+    repositories: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    standards: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+
+    security_contact: str | None = sqlmodel.Field(default=None, **example("security@example.apache.org"))
+    threat_model_link: str | None = sqlmodel.Field(
+        default=None, **example("https://example.apache.org/security/threat-model")
+    )
+    threat_model_src_link: str | None = sqlmodel.Field(
+        default=None, **example("https://example.apache.org/security/threat-model.md")
+    )
+
+    # Version-scheme metadata (#912). For "simple" projects the pattern fields are null
+    # and the project keeps a single "default" cycle.
+    version_method: VersionMethod = sqlmodel.Field(default=VersionMethod.SIMPLE, **example(VersionMethod.SIMPLE))
+    version_pattern: str | None = sqlmodel.Field(default=None, **example(r"^\d+\.\d+\.\d+$"))
+    cycle_match: str | None = sqlmodel.Field(default=None, **example(r"^(\d+)\.\d+\.\d+$"))
+    calver_format: str | None = sqlmodel.Field(default=None, **example("(YY.MM).N"))
+    branch_template: str | None = sqlmodel.Field(default=None, **example("release-{cycle}"))
+
+    # Limits that an admin has set for this project, each null to take the default in atr.quota
+    quota_project_bytes: int | None = sqlmodel.Field(default=None, **example(53687091200))
+    quota_project_releases: int | None = sqlmodel.Field(default=None, **example(20))
+    quota_release_bytes: int | None = sqlmodel.Field(default=None, **example(53687091200))
+    quota_release_files: int | None = sqlmodel.Field(default=None, **example(10000))
+
+    # M-1: Project -> Committee
+    # 1-M: Committee -> [Project]
+    committee_key: str | None = sqlmodel.Field(default=None, foreign_key="committee.key", **example("example"))
+    committee: Committee | None = sqlmodel.Relationship(back_populates="projects")
+    see_also(Committee.projects)
+
+    # 1-M: Project -> [Release]
+    # M-1: Release -> Project
+    # see_also(Release.project)
+    releases_including_embargoed: list["Release"] = sqlmodel.Relationship(back_populates="project")
+
+    @property
+    def releases(self) -> list["Release"]:
+        return [release for release in self.releases_including_embargoed if (not release.is_embargoed)]
+
+    # 1-M: Project -C-> [ProjectCycle]
+    # M-1: ProjectCycle -> Project
+    cycles: list["ProjectCycle"] = sqlmodel.Relationship(
+        back_populates="project",
+        cascade_delete=True,
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+    # # 1-M: Project -> [DistributionChannel]
+    # # M-1: DistributionChannel -> Project
+    # distribution_channels: list["DistributionChannel"] = sqlmodel.Relationship(back_populates="project")
+
+    # 1-1: Project -C-> ReleasePolicy
+    # 1-1: ReleasePolicy -> Project
+    release_policy_id: int | None = sqlmodel.Field(default=None, foreign_key="releasepolicy.id", ondelete="CASCADE")
+    release_policy: Optional["ReleasePolicy"] = sqlmodel.Relationship(
+        cascade_delete=True, sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True}
+    )
+
+    created: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+    created_by: str | None = sqlmodel.Field(default=None, **example("user"))
+
+    updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    updated_by: str | None = sqlmodel.Field(default=None)
+    update_type: UpdateType = sqlmodel.Field(default=UpdateType.MANUAL, **example(UpdateType.MANUAL))
+
+    @property
+    def display_name(self) -> str:
+        """Get the display name for the Project."""
+        base = self.name or str(self.key)
+        if self.committee and self.committee.is_podling:
+            return f"{base} (Incubating)"
+        return base
+
+    @property
+    def updated_by_display(self) -> str:
+        """Who or what last updated the project, for display."""
+        match self.update_type:
+            case UpdateType.BOOTSTRAP:
+                return "bootstrap"
+            case UpdateType.ASFYAML:
+                return ".asf.yaml"
+            case UpdateType.ASFYAML_FULL:
+                return ".asf.yaml (full)"
+            case UpdateType.MANUAL:
+                return self.updated_by or "unknown"
+
+    def mark_updated(self, *, by: str, update_type: UpdateType) -> None:
+        self.updated = datetime.datetime.now(datetime.UTC)
+        self.updated_by = by
+        self.update_type = update_type
+
+    @property
+    def is_synced_from_asf_yaml(self) -> bool:
+        """Whether the project's last update came from .asf.yaml, in either sync mode."""
+        return self.update_type in {UpdateType.ASFYAML, UpdateType.ASFYAML_FULL}
+
+    @property
+    def is_active(self) -> bool:
+        """Whether the project's status is active."""
+        return self.status == ProjectStatus.ACTIVE
+
+    @property
+    def is_archived(self) -> bool:
+        """Whether the project is archived, by its PMC (dormant) or with its PMC (retired)."""
+        return self.status in {ProjectStatus.DORMANT, ProjectStatus.RETIRED}
+
+    @property
+    def github_repositories(self) -> set[str]:
+        # Only the metadata says where the source lives - the policy's repository is where upload workflows run
+        return {
+            match[1].removesuffix(".git")
+            for url in self.repositories
+            if (match := re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?", url))
+        }
+
+    @property
+    def upload_repositories(self) -> set[str]:
+        # The GitHub repositories whose workflows can upload to this project, which have to be
+        # under apache/. Lower-cased, as GitHub doesn't tell apache/Foo from apache/foo
+        return {name.lower() for name in self.github_repositories if name.lower().startswith("apache/")}
+
+    @property
+    def safe_key(self) -> safe.ProjectKey:
+        """Get the typesafe validated name for the Project"""
+        return safe.ProjectKey(self.key)
+
+    @property
+    def short_display_name(self) -> str:
+        """Get the short display name for the Project."""
+        name = self.display_name
+        if name.startswith("Apache Software Foundation "):
+            return name.removeprefix("Apache Software Foundation ")
+        return name.removeprefix("Apache ")
+
+
 # ProjectCycle: Project Release
 class ProjectCycle(sqlmodel.SQLModel, table=True):
     """A release cycle within a project, e.g. "2.x", "default", or "2026".
@@ -1730,6 +1742,101 @@ class ProjectCycle(sqlmodel.SQLModel, table=True):
     releases: list["Release"] = sqlmodel.Relationship(back_populates="cycle")
 
     __table_args__ = (sqlmodel.UniqueConstraint("project_key", "cycle", name="unique_project_cycle"),)
+
+
+# The release policy fields that a cycle can have its own value for. The rest apply to every cycle
+CYCLE_OVERRIDE_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "announce_release_subject",
+        "announce_release_template",
+        "announce_release_template_url",
+        "auto_archive_prior_release",
+        "download_path_suffix",
+        "finish_vote_template",
+        "finish_vote_template_url",
+        "license_check_mode",
+        "min_hours",
+        "rat_excludes_url",
+        "recipient_defaults",
+        "release_checklist",
+        "source_excludes_lightweight",
+        "source_excludes_rat",
+        "start_vote_subject",
+        "start_vote_template",
+        "start_vote_template_url",
+        "vote_comment_template",
+        "vote_comment_template_url",
+    }
+)
+
+
+# CycleOverrides: Project
+class CycleOverrides(sqlmodel.SQLModel, table=True):
+    """The release settings that differ for one cycle of a project.
+
+    A row is keyed by the cycle's text, the first capture of the project's `cycle_match`, and not
+    by a ProjectCycle row. It stays with that text when the pattern changes, and applies to
+    nothing while no release is in a cycle of that text.
+    """
+
+    project_key: str = sqlmodel.Field(foreign_key="project.key", ondelete="CASCADE", primary_key=True, index=True)
+    cycle: str = sqlmodel.Field(primary_key=True, **example("10.1"))
+    # Only the settings that differ, keyed by ReleasePolicy column, each with the value that column
+    # would have. recipient_defaults has only the actions that differ
+    settings: dict[str, Any] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+
+    updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    updated_by: str | None = sqlmodel.Field(default=None)
+    update_type: UpdateType = sqlmodel.Field(default=UpdateType.MANUAL, **example(UpdateType.MANUAL))
+
+    @property
+    def override_count(self) -> int:
+        """How many settings the cycle overrides, counting each recipient action separately."""
+        others = [field for field in self.settings if field != "recipient_defaults"]
+        return len(others) + len(self.settings.get("recipient_defaults") or {})
+
+    @property
+    def updated_by_display(self) -> str:
+        """Who or what last updated the overrides, for display."""
+        match self.update_type:
+            case UpdateType.BOOTSTRAP:
+                return "bootstrap"
+            case UpdateType.ASFYAML:
+                return ".asf.yaml"
+            case UpdateType.ASFYAML_FULL:
+                return ".asf.yaml (full)"
+            case UpdateType.MANUAL:
+                return self.updated_by or "unknown"
+
+    def applied_to(self, policy: "ReleasePolicy | None") -> "ReleasePolicy":
+        """A copy of the project's policy with these overrides in place. The copy is never stored."""
+        effective = policy.duplicate() if (policy is not None) else ReleasePolicy()
+        # A revision stores the policy its checks ran with, and reads it back as a ReleasePolicy, which needs the id
+        if policy is not None:
+            effective.id = policy.id
+        for field, value in self.settings.items():
+            if field not in CYCLE_OVERRIDE_FIELDS:
+                continue
+            if field == "recipient_defaults":
+                effective.recipient_defaults = {**effective.recipient_defaults, **value}
+            elif field == "license_check_mode":
+                effective.license_check_mode = LicenseCheckMode(value)
+            else:
+                setattr(effective, field, value)
+        return effective
+
+    def mark_updated(self, *, by: str, update_type: UpdateType) -> None:
+        self.updated = datetime.datetime.now(datetime.UTC)
+        self.updated_by = by
+        self.update_type = update_type
+
+    def overrides(self, field: str, action: "RecipientAction | None" = None) -> bool:
+        """Whether the cycle sets this release policy field itself, or the recipients of this action."""
+        if action is not None:
+            return action.value in (self.settings.get("recipient_defaults") or {})
+        return field in self.settings
 
 
 # Release: Project ReleasePolicy Revision CheckResult

@@ -105,8 +105,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         log.info(f"Skipping RAT check for non-source artifact {artifact_abs_path} (rel: {args.primary_rel_path})")
         return None
 
-    project = await recorder.project()
-    if project.policy_license_check_mode == sql.LicenseCheckMode.LIGHTWEIGHT:
+    settings = await recorder.settings()
+    if settings.policy_license_check_mode == sql.LicenseCheckMode.LIGHTWEIGHT:
         log.info(f"Skipping RAT check for {artifact_abs_path} (mode is LIGHTWEIGHT)")
         return None
 

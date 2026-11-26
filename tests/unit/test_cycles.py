@@ -23,6 +23,7 @@ import pytest
 import atr.cycles as cycles
 import atr.models.calver as calver
 import atr.models.sql as sql
+import atr.models.validation as validation
 
 
 def test_cycle_name_extracts_capture_group_for_matching_version():
@@ -51,6 +52,57 @@ def test_cycle_name_raises_when_version_does_not_match():
 def test_cycle_name_returns_default_when_cycle_match_unset():
     project = SimpleNamespace(key="example", cycle_match=None)
     assert cycles.cycle_name_for_version(project, "1.0.0") == "default"
+
+
+def test_download_page_fills_in_the_version_variables():
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=r"^(\d+\.\d+)\..*$",
+        download_page="https://example.apache.org/download-{{MAJOR_VERSION}}.html?cycle={{CYCLE}}&v={{VERSION}}",
+    )
+
+    assert (
+        cycles.download_page_for_version(project, "10.1.5")
+        == "https://example.apache.org/download-10.html?cycle=10.1&v=10.1.5"
+    )
+
+
+def test_download_page_fills_in_a_variable_stored_percent_escaped():
+    project = SimpleNamespace(
+        key="example", cycle_match=None, download_page="https://example.apache.org/download-%7B%7BVERSION%7D%7D.html"
+    )
+
+    assert cycles.download_page_for_version(project, "10.1.5") == "https://example.apache.org/download-10.1.5.html"
+
+
+def test_download_page_without_variables_is_returned_as_stored():
+    project = SimpleNamespace(key="example", cycle_match=None, download_page="https://example.apache.org/download")
+
+    assert cycles.download_page_for_version(project, "10.1.5") == "https://example.apache.org/download"
+
+
+@pytest.mark.parametrize(
+    ("given", "stored"),
+    [
+        ("https://example.apache.org", "https://example.apache.org/"),
+        (
+            " https://example.apache.org/download-{{MAJOR_VERSION}}.html ",
+            "https://example.apache.org/download-{{MAJOR_VERSION}}.html",
+        ),
+        (
+            "https://example.apache.org/download-%7B%7BMAJOR_VERSION%7D%7D.html",
+            "https://example.apache.org/download-{{MAJOR_VERSION}}.html",
+        ),
+    ],
+)
+def test_download_page_template_is_stored_with_its_variables(given: str, stored: str):
+    assert validation.download_page_template(given) == stored
+
+
+@pytest.mark.parametrize("given", ["https://example.apache.org/{{PROJECT}}/", "not a url {{VERSION}}"])
+def test_download_page_template_refuses_what_is_not_a_url_or_a_known_variable(given: str):
+    with pytest.raises(ValueError):
+        validation.download_page_template(given)
 
 
 async def test_ensure_project_cycle_adds_missing_cycle_row():

@@ -29,7 +29,7 @@ def test_recipient_grid_readonly_shows_cc_bcc_counts_only() -> None:
             "vote": {"to": "dev@p.apache.org", "cc": ["carbon@example.org"], "bcc": ["blind@example.org"]},
         },
     )
-    html = str(get_projects._recipient_grid_widget(project, sql.RecipientAction.VOTE, readonly=True))
+    html = str(get_projects._recipient_grid_widget(project, project, sql.RecipientAction.VOTE, readonly=True))
     assert "dev@p.apache.org" in html
     assert "carbon@example.org" not in html
     assert "blind@example.org" not in html
