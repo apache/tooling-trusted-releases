@@ -93,12 +93,36 @@ async def location_preview(
 
     if project.committee is None:
         return quart.jsonify(location=None, previous_version=None, previous_location=None)
+    at_policy = query.mode == "policy"
     location = construct.publish_location_preview(
-        project, project.committee, query.version, query.suffix, at_start=(query.mode == "start")
+        project,
+        project.committee,
+        query.version,
+        query.suffix,
+        at_start=(query.mode == "start"),
+        at_policy=at_policy,
     )
-    mismatch = await construct.publish_location_mismatch(project.key, query.version, location)
+    mismatch = await construct.publish_location_mismatch(
+        project.key, query.version, location, include_version=at_policy
+    )
     previous_version, previous_location = mismatch or (None, None)
-    return quart.jsonify(location=location, previous_version=previous_version, previous_location=previous_location)
+    if at_policy:
+        location = construct.publish_location_pattern(project, project.committee, query.suffix)
+    error = construct.publish_location_error(query.suffix)
+    repeat = construct.publish_location_repeat(project.committee, query.suffix)
+    repeated, fixed = repeat or (None, None)
+    directory = construct.publish_location_directory(project.committee)
+    return quart.jsonify(
+        location=location,
+        previous_version=previous_version,
+        previous_location=previous_location,
+        error=error,
+        repeated=repeated,
+        fixed=fixed,
+        shown=construct.publish_location_shown(
+            directory, query.suffix, location, error=error, repeat=repeat, mismatch=mismatch
+        ),
+    )
 
 
 @get.typed
@@ -273,8 +297,12 @@ async def _render_page(
         skip.append("auto_archive_prior")
     if not can_create_expedited:
         skip.append("expedited")
+    directory = construct.publish_location_directory(project.committee)
     # Each note sits under the field it's worked out from
-    notes = {"download_path_suffix": render.publish_location_note(project.safe_key, None, at_start=True)}
+    note = render.publish_location_note(
+        project.safe_key, project.committee, project.policy_download_path_suffix, None, at_start=True
+    )
+    notes = {"download_path_suffix": note}
     if cycle_note := _cycle_preview(project):
         notes["version_key"] = cycle_note
     await form.render_block(
@@ -286,6 +314,7 @@ async def _render_page(
         cancel_url=util.as_url(root.index),
         defaults=defaults,
         notes=notes,
+        prefixes={"download_path_suffix": directory},
         skip=skip,
     )
     if releases:

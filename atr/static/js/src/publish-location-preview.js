@@ -55,6 +55,13 @@ function initPublishLocationPreview() {
 		const id = event.target.id;
 		if (id === "download_path_suffix" || id === "version_key") refresh();
 	});
+	document.addEventListener("click", (event) => {
+		if (!event.target.closest("#publish-location-fix")) return;
+		const fields = publishLocationFields();
+		if (!fields) return;
+		fields.suffixInput.value = elementText("publish-location-fixed");
+		refresh();
+	});
 	document.addEventListener("submit", (event) => {
 		const fields = publishLocationFields();
 		if (fields?.note.dataset.confirmMismatch !== "true") return;
@@ -117,7 +124,19 @@ async function updateLocation() {
 		return;
 	publishLocationStale = false;
 	showLocation(result.location);
+	showError(result.error);
+	showRepeat(result.repeated, result.fixed);
 	showMismatch(result.previous_version, result.previous_location);
+	note.classList.toggle("d-none", !result.shown);
+}
+
+function showError(error) {
+	const element = document.getElementById("publish-location-error");
+	const unknown = document.getElementById("publish-location-unknown");
+	if (!element || !unknown) return;
+	element.textContent = error ?? "";
+	element.classList.toggle("d-none", !error);
+	if (error) unknown.classList.add("d-none");
 }
 
 function showMismatch(previousVersion, previousLocation) {
@@ -135,11 +154,27 @@ function showMismatch(previousVersion, previousLocation) {
 function showLocation(location) {
 	const known = document.getElementById("publish-location-known");
 	const unknown = document.getElementById("publish-location-unknown");
-	const path = document.getElementById("publish-location-path");
-	if (!known || !unknown || !path) return;
-	if (location) path.textContent = location;
+	const prefix = document.getElementById("publish-location-prefix");
+	const tail = document.getElementById("publish-location-tail");
+	if (!known || !unknown || !prefix || !tail) return;
+	if (location) {
+		tail.textContent = location.slice(prefix.textContent.length);
+		tail.classList.toggle("d-none", !tail.textContent);
+	}
 	known.classList.toggle("d-none", !location);
 	unknown.classList.toggle("d-none", Boolean(location));
+}
+
+function showRepeat(repeated, fixed) {
+	const repeat = document.getElementById("publish-location-repeat");
+	const repeatedCode = document.getElementById("publish-location-repeated");
+	const fixedCode = document.getElementById("publish-location-fixed");
+	if (!repeat || !repeatedCode || !fixedCode) return;
+	if (repeated) {
+		repeatedCode.textContent = repeated;
+		fixedCode.textContent = fixed;
+	}
+	repeat.classList.toggle("d-none", !repeated);
 }
 
 document.addEventListener("DOMContentLoaded", initPublishLocationPreview);

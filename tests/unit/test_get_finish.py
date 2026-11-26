@@ -210,7 +210,8 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
     assert 'action="/finish/example/1.0"' in html
     assert 'name="download_path_suffix"' in html
     assert "finish-svn-publishing" not in html
-    assert "dist/release/example/example/1.0/" in html
+    assert '<span class="input-group-text">dist/release/example/</span>' in html
+    assert '<span id="publish-location-tail" class="fw-bold bg-success-subtle px-1 rounded">example/1.0/</span>' in html
     url.assert_any_call(finish.post.finish.selected, project_key="example", version_key="1.0")
 
 

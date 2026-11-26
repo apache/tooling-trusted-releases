@@ -447,6 +447,7 @@ async def view(
     javascripts = ["copy-variable", "distribution-namespace-toggle", "template-url-toggle", "version-scheme-toggle"]
     if can_edit_policy and (quart.request.args.get("tab") in {"vote", "finish"}):
         javascripts.append("cc-bcc-exclusive")
+        javascripts.append("publish-location-preview")
     return await template.blank(
         title=f"{project.display_name}",
         description=f"Information regarding {project.display_name}.",
@@ -846,6 +847,28 @@ def _optional_link(url: str | None) -> htm.Element | str:
     return htm.a(href=url)[url]
 
 
+async def _publish_location_notes(project: sql.Project, *, readonly: bool) -> dict[str, htm.Element]:
+    committee = project.committee
+    if readonly or (committee is None):
+        return {}
+    previous = await interaction.latest_catalogued_directory(project.key, "")
+    version = previous[0] if previous else ""
+    suffix = project.policy_download_path_suffix
+    location = construct.publish_location_preview(project, committee, version, suffix, at_start=False, at_policy=True)
+    mismatch = await construct.publish_location_mismatch(project.key, version, location, include_version=True)
+    note = render.publish_location_note(
+        project.safe_key,
+        committee,
+        suffix,
+        construct.publish_location_pattern(project, committee, suffix),
+        at_start=False,
+        at_policy=True,
+        version=version,
+        mismatch=mismatch,
+    )
+    return {"download_path_suffix": note}
+
+
 def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction, *, readonly: bool) -> htm.Element:
     committee = project.committee
     committee_key = committee.key if (committee is not None) else str(project.key)
@@ -1217,6 +1240,7 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
     ]
 
     flash_error_data = {} if readonly else await sessions.form_error_pop(quart.request.path)
+    directory = construct.publish_location_directory(project.committee)
 
     announce_release_subject_widget = _input_with_variables(
         field_name="announce_release_subject",
@@ -1260,6 +1284,8 @@ async def _render_finish_form(project: sql.Project, *, readonly: bool) -> htm.El
                 "announce_release_template": announce_release_template_widget,
                 "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE, readonly=readonly),
             },
+            notes=await _publish_location_notes(project, readonly=readonly),
+            prefixes={"download_path_suffix": directory},
             skip=["email_cc", "email_bcc"],
             flash_error_data=flash_error_data,
             readonly=readonly,

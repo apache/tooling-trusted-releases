@@ -401,9 +401,10 @@ async def _render_page(  # noqa: C901
         custom=custom,
         notes={
             "download_path_suffix": render.publish_location_note_for_release(
-                release, publish_location, publish_mismatch
+                release, download_suffix_default, publish_location, publish_mismatch
             )
         },
+        prefixes={"download_path_suffix": construct.publish_location_directory(release.committee)},
         skip=skip,
         flash_error_data=flash_data,
     )

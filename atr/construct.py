@@ -607,8 +607,28 @@ def effective_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
     )
 
 
+def publish_location_directory(committee: sql.Committee | None) -> str:
+    if committee is None:
+        return ""
+    return util.publish_location(committee, None)
+
+
+def publish_location_error(entered: str) -> str | None:
+    try:
+        validation.validate_download_path_suffix(entered)
+    except ValueError as e:
+        return str(e)
+    return None
+
+
 def publish_location_preview(
-    project: sql.Project, committee: sql.Committee, version: str, entered: str, *, at_start: bool
+    project: sql.Project,
+    committee: sql.Committee,
+    version: str,
+    entered: str,
+    *,
+    at_start: bool,
+    at_policy: bool = False,
 ) -> str | None:
     """Where a release would be published for a publish location as typed into a form,
     or None when the version or the location isn't usable yet."""
@@ -619,7 +639,7 @@ def publish_location_preview(
     # the policy. Anywhere else, and for any other value, empty means the committee directory
     if at_start and (entered == policy):
         template = policy
-    elif not entered.strip():
+    elif (not entered.strip()) and (not at_policy):
         return util.publish_location(committee, None)
     else:
         template = entered
@@ -647,12 +667,14 @@ async def publish_location_for_release(
     return location, await publish_location_mismatch(release.project.key, release.version, location)
 
 
-async def publish_location_mismatch(project_key: str, version: str, location: str | None) -> tuple[str, str] | None:
+async def publish_location_mismatch(
+    project_key: str, version: str, location: str | None, *, include_version: bool = False
+) -> tuple[str, str] | None:
     """The project's last catalogued release and where it is, when the location a new release
     would publish to doesn't follow the same layout."""
     if location is None:
         return None
-    previous = await interaction.latest_catalogued_directory(project_key, version)
+    previous = await interaction.latest_catalogued_directory(project_key, "" if include_version else version)
     if previous is None:
         return None
     previous_version, directory = previous
@@ -666,6 +688,44 @@ async def publish_location_mismatch(project_key: str, version: str, location: st
     if expected.startswith(location) and (version not in expected.removeprefix(location)):
         return None
     return previous_version, previous_location
+
+
+def publish_location_pattern(project: sql.Project, committee: sql.Committee, entered: str) -> str | None:
+    if publish_location_error(entered):
+        return None
+    template = entered.strip()
+    if (not template) and (project.key != project.committee_key):
+        template = "{{PROJECT_KEY}}-{{VERSION}}"
+    pattern = template.replace("{{PROJECT_KEY}}", project.key).strip("/")
+    directory = util.publish_location(committee, None)
+    return f"{directory}{pattern}/" if pattern else directory
+
+
+def publish_location_repeat(committee: sql.Committee, entered: str) -> tuple[str, str] | None:
+    location = entered.strip()
+    directory = util.publish_location(committee, None)
+    relpath = f"{paths.committee_dist_relpath(committee)}/"
+    for repeated in (directory, directory.removeprefix("dist/"), relpath, f"{committee.key}/"):
+        fixed = location.removeprefix(repeated)
+        if fixed and (fixed != location):
+            return repeated, fixed
+    return None
+
+
+def publish_location_shown(
+    directory: str,
+    entered: str,
+    location: str | None,
+    *,
+    error: str | None,
+    repeat: tuple[str, str] | None,
+    mismatch: tuple[str, str] | None,
+) -> bool:
+    if error or repeat or mismatch:
+        return True
+    if location is None:
+        return ("{{" in entered) or (not entered.strip())
+    return location.rstrip("/") != f"{directory}{entered.strip()}".rstrip("/")
 
 
 def resolve_download_path_suffix(

@@ -23,6 +23,7 @@ from typing import Any, Final, Literal
 
 import htpy
 
+import atr.construct as construct
 import atr.get as get
 import atr.htm as htm
 import atr.models.github as github
@@ -377,9 +378,12 @@ def first_release_banner(kind: Literal["project", "user"] | None, project: sql.P
 
 def publish_location_note(
     project_key: safe.ProjectKey,
+    committee: sql.Committee | None,
+    entered: str,
     location: str | None,
     *,
     at_start: bool,
+    at_policy: bool = False,
     version: str | None = None,
     mismatch: tuple[str, str] | None = None,
     confirm_mismatch: bool = False,
@@ -389,41 +393,52 @@ def publish_location_note(
     # version until one is typed, so there the script reads it from the version field instead
     attrs: dict[str, str] = {
         "data_preview_url": util.as_url(get.start.location_preview, project_key=str(project_key)),
-        "data_mode": "start" if at_start else "publish",
+        "data_mode": "policy" if at_policy else ("start" if at_start else "publish"),
     }
     if version is not None:
         attrs["data_version"] = version
     # Where submitting the form is what publishes, the script asks first if the layout differs
     if confirm_mismatch:
         attrs["data_confirm_mismatch"] = "true"
+    directory = construct.publish_location_directory(committee)
+    error = construct.publish_location_error(entered)
+    repeat = construct.publish_location_repeat(committee, entered) if committee else None
+    shown = construct.publish_location_shown(
+        directory, entered, location, error=error, repeat=repeat, mismatch=mismatch
+    )
+    shown_classes = "" if shown else ".d-none"
     known_classes = "" if location else ".d-none"
-    unknown_classes = ".d-none" if location else ""
-    mismatch_classes = "" if mismatch else ".d-none"
-    previous_version, previous_location = mismatch or ("", "")
-    return htm.div("#publish-location-preview.form-text.mt-1", **attrs)[
-        htm.span(f"#publish-location-known{known_classes}")[
-            "Files will be published to ",
-            htm.code("#publish-location-path")[location or ""],
-            ".",
+    unknown_classes = ".d-none" if (location or error) else ""
+    tail = (location or "").removeprefix(directory)
+    tail_classes = "" if tail else ".d-none"
+    heading = "Each release will be published to" if at_policy else "Files will be published to"
+    return htm.div(f"#publish-location-preview.border.rounded.bg-body-tertiary.px-3.py-2.mt-2{shown_classes}", **attrs)[
+        htm.div(f"#publish-location-known{known_classes}")[
+            htm.div(".small.text-muted")[heading],
+            htm.div("#publish-location-path.font-monospace.text-break")[
+                htm.span("#publish-location-prefix.text-muted")[directory],
+                htm.span(f"#publish-location-tail.fw-bold.bg-success-subtle.px-1.rounded{tail_classes}")[tail],
+            ],
         ],
-        htm.span(f"#publish-location-unknown{unknown_classes}")[
+        htm.div(f"#publish-location-unknown.small.text-muted{unknown_classes}")[
             "Enter a valid version and publish location to see where the files will be published."
         ],
-        htm.div(f"#publish-location-mismatch.alert.alert-warning.mt-2.mb-0.py-2{mismatch_classes}", role="alert")[
-            "This is a different layout from your last release: ",
-            htm.span("#publish-location-previous-version")[previous_version],
-            " is in ",
-            htm.code("#publish-location-previous-path")[previous_location],
-            ".",
-        ],
+        *_publish_location_alerts(directory, error, repeat, mismatch, at_policy=at_policy),
     ]
 
 
 def publish_location_note_for_release(
-    release: sql.Release, location: str | None, mismatch: tuple[str, str] | None, *, confirm_mismatch: bool = False
+    release: sql.Release,
+    entered: str,
+    location: str | None,
+    mismatch: tuple[str, str] | None,
+    *,
+    confirm_mismatch: bool = False,
 ) -> htm.Element:
     return publish_location_note(
         release.safe_project_key,
+        release.committee,
+        entered,
         location,
         at_start=False,
         version=release.version,
@@ -499,6 +514,45 @@ def _page_link(label: str, url: str | None) -> htm.Element:
     if url is None:
         return htpy.li(".page-item.disabled")[htpy.span(".page-link")[label]]
     return htpy.li(".page-item")[htpy.a(".page-link", href=url)[label]]
+
+
+def _publish_location_alerts(
+    directory: str,
+    error: str | None,
+    repeat: tuple[str, str] | None,
+    mismatch: tuple[str, str] | None,
+    *,
+    at_policy: bool,
+) -> list[htm.Element]:
+    error_classes = "" if error else ".d-none"
+    repeat_classes = "" if repeat else ".d-none"
+    mismatch_classes = "" if mismatch else ".d-none"
+    repeated, fixed = repeat or ("", "")
+    previous_version, previous_location = mismatch or ("", "")
+    lead = "Your last release, " if at_policy else "This is a different layout from your last release: "
+    middle = ", is in " if at_policy else " is in "
+    end = ", which this default doesn't match." if at_policy else "."
+    return [
+        htm.div(f"#publish-location-error.small.text-danger{error_classes}")[error or ""],
+        htm.div(f"#publish-location-repeat.alert.alert-warning.mt-2.mb-0.py-2{repeat_classes}", role="alert")[
+            "This repeats ",
+            htm.code("#publish-location-repeated")[repeated],
+            ": ATR already publishes into ",
+            htm.code[directory],
+            ". ",
+            htm.button("#publish-location-fix.btn.btn-sm.btn-outline-secondary.ms-1", type="button")[
+                "Change it to ",
+                htm.code("#publish-location-fixed")[fixed],
+            ],
+        ],
+        htm.div(f"#publish-location-mismatch.alert.alert-warning.mt-2.mb-0.py-2{mismatch_classes}", role="alert")[
+            lead,
+            htm.span("#publish-location-previous-version")[previous_version],
+            middle,
+            htm.code("#publish-location-previous-path")[previous_location],
+            end,
+        ],
+    ]
 
 
 def _render_checker_entry(

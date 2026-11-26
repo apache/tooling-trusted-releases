@@ -297,6 +297,7 @@ async def render(  # noqa: C901
     use_error_data: bool = True,
     custom: dict[str, htm.Element | htm.VoidElement] | None = None,
     notes: dict[str, htm.Element] | None = None,
+    prefixes: dict[str, str] | None = None,
     empty: bool = False,
     border: bool = False,
     wider_widgets: bool = False,
@@ -349,6 +350,7 @@ async def render(  # noqa: C901
             wider_widgets,
             enum_filter_include=enum_filter_include,
             note=(notes.get(field_name) if notes else None),
+            prefix=(prefixes.get(field_name) if prefixes else None),
             id_prefix=id_prefix,
         )
         if hidden_field:
@@ -948,6 +950,7 @@ def _render_row(  # noqa: C901
     wider_widgets: bool,
     enum_filter_include: dict[str, list[Any]] | None = None,
     note: htm.Element | None = None,
+    prefix: str | None = None,
     id_prefix: str = "",
 ) -> tuple[htm.VoidElement | None, htm.Element | None]:
     widget_type = _get_widget_type(field_info)
@@ -1007,6 +1010,7 @@ def _render_row(  # noqa: C901
         custom=custom,
         defaults=defaults,
         enum_filter_include=enum_filter_include,
+        prefix=prefix,
         id_prefix=id_prefix,
     )
 
@@ -1046,6 +1050,7 @@ def _render_widget(  # noqa: C901
     custom: dict[str, htm.Element | htm.VoidElement] | None,
     defaults: dict[str, Any] | None,
     enum_filter_include: dict[str, list[Any]] | None = None,
+    prefix: str | None = None,
     id_prefix: str = "",
 ) -> htm.Element | htm.VoidElement:
     element_id = f"{id_prefix}{field_name}"
@@ -1212,6 +1217,7 @@ def _render_widget(  # noqa: C901
             text_input = htpy.input(**attrs)
             json_schema_extra = field_info.json_schema_extra or {}
             field_prefix = json_schema_extra.get("prefix") if isinstance(json_schema_extra, dict) else None
+            field_prefix = prefix or field_prefix
             if field_prefix:
                 widget = htm.div(".input-group")[
                     htm.span(".input-group-text")[str(field_prefix)],

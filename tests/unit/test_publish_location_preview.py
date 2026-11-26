@@ -61,10 +61,14 @@ def _project(*, key: str, committee_key: str, policy: str, podling: bool = False
     )
 
 
-def _location(project: sql.Project, version: str, entered: str, *, at_start: bool) -> str | None:
+def _location(
+    project: sql.Project, version: str, entered: str, *, at_start: bool, at_policy: bool = False
+) -> str | None:
     if project.committee is None:
         raise ValueError("The test project has no committee")
-    return construct.publish_location_preview(project, project.committee, version, entered, at_start=at_start)
+    return construct.publish_location_preview(
+        project, project.committee, version, entered, at_start=at_start, at_policy=at_policy
+    )
 
 
 @pytest.mark.parametrize(
@@ -101,6 +105,20 @@ def test_location_podling_is_under_incubator() -> None:
     assert _location(project, "0.8.0", "{{VERSION}}", at_start=True) == "dist/release/incubator/amoro/0.8.0/"
 
 
+@pytest.mark.parametrize(
+    ("key", "entered", "expected"),
+    [
+        ("maven", "", "dist/release/maven/"),
+        ("maven-surefire", "", "dist/release/maven/maven-surefire-3.9.10/"),
+        ("maven-surefire", "surefire/{{VERSION}}", "dist/release/maven/surefire/3.9.10/"),
+    ],
+)
+def test_location_policy(key, entered, expected) -> None:
+    project = _project(key=key, committee_key="maven", policy="surefire/{{VERSION}}")
+
+    assert _location(project, "3.9.10", entered, at_start=False, at_policy=True) == expected
+
+
 @pytest.mark.parametrize(("version", "entered"), [("", "x"), ("1.2.", "x"), ("1.0", "../x"), ("1.0", "/x")])
 def test_location_unusable_input(version, entered) -> None:
     project = _project(key="maven", committee_key="maven", policy="")
@@ -133,6 +151,54 @@ async def test_mismatch(monkeypatch, location, previous, expected) -> None:
     assert await construct.publish_location_mismatch("maven", "3.9.10", location) == expected
 
 
+async def test_mismatch_including_version(monkeypatch) -> None:
+    lookup = mock.AsyncMock(return_value=("3.9.10", "maven/3.9.10"))
+    monkeypatch.setattr(construct.interaction, "latest_catalogued_directory", lookup)
+
+    location = "dist/release/maven/maven-3/3.9.10/"
+    mismatch = await construct.publish_location_mismatch("maven", "3.9.10", location, include_version=True)
+
+    assert mismatch == ("3.9.10", "dist/release/maven/3.9.10/")
+    lookup.assert_awaited_once_with("maven", "")
+
+
+@pytest.mark.parametrize(
+    ("key", "entered", "expected"),
+    [
+        ("maven", "", "dist/release/maven/"),
+        ("maven-surefire", "", "dist/release/maven/maven-surefire-{{VERSION}}/"),
+        ("maven-surefire", "surefire/{{VERSION}}/", "dist/release/maven/surefire/{{VERSION}}/"),
+        ("maven", "{{PROJECT_KEY}}-{{MAJOR_VERSION}}", "dist/release/maven/maven-{{MAJOR_VERSION}}/"),
+        ("maven", "/x", None),
+    ],
+)
+def test_pattern(key, entered, expected) -> None:
+    project = _project(key=key, committee_key="maven", policy=entered)
+    if project.committee is None:
+        raise ValueError("The test project has no committee")
+
+    assert construct.publish_location_pattern(project, project.committee, entered) == expected
+
+
+@pytest.mark.parametrize(
+    ("committee_key", "podling", "entered", "expected"),
+    [
+        ("maven", False, "maven/maven-3/{{VERSION}}", ("maven/", "maven-3/{{VERSION}}")),
+        ("maven", False, " dist/release/maven/maven-3/3.9.10", ("dist/release/maven/", "maven-3/3.9.10")),
+        ("maven", False, "release/maven/3.9.10", ("release/maven/", "3.9.10")),
+        ("amoro", True, "incubator/amoro/{{VERSION}}", ("incubator/amoro/", "{{VERSION}}")),
+        ("amoro", True, "amoro/{{VERSION}}", ("amoro/", "{{VERSION}}")),
+        ("maven", False, "maven-3/{{VERSION}}", None),
+        ("maven", False, "maven/", None),
+        ("maven", False, "", None),
+    ],
+)
+def test_repeat(committee_key, podling, entered, expected) -> None:
+    committee = sql.Committee(key=committee_key, is_podling=podling)
+
+    assert construct.publish_location_repeat(committee, entered) == expected
+
+
 async def test_route_missing_project(preview) -> None:
     client, data, _session = preview
     data.project.return_value.demand.side_effect = errors.ASFQuartException("Missing project", errorcode=404)
@@ -140,6 +206,36 @@ async def test_route_missing_project(preview) -> None:
     response = await client.get("/start/example/location-preview?version=1.0")
 
     assert response.status_code == 404
+
+
+async def test_route_policy_mode_shows_the_pattern(preview) -> None:
+    client, data, _session = preview
+    data.project.return_value.demand.return_value = _project(key="maven-surefire", committee_key="maven", policy="")
+
+    response = await client.get(
+        "/start/maven-surefire/location-preview", query_string={"version": "1.0", "mode": "policy"}
+    )
+
+    assert (await response.get_json())["location"] == "dist/release/maven/maven-surefire-{{VERSION}}/"
+    start.construct.publish_location_mismatch.assert_awaited_once_with(
+        "maven-surefire", "1.0", "dist/release/maven/maven-surefire-1.0/", include_version=True
+    )
+
+
+async def test_route_reports_problems(preview) -> None:
+    client, data, _session = preview
+    data.project.return_value.demand.return_value = _project(key="maven", committee_key="maven", policy="")
+
+    repeated = await client.get(
+        "/start/maven/location-preview", query_string={"version": "3.9.10", "suffix": "maven/maven-3/{{VERSION}}"}
+    )
+    invalid = await client.get("/start/maven/location-preview", query_string={"version": "3.9.10", "suffix": "/x"})
+
+    repeated_json = await repeated.get_json()
+    invalid_json = await invalid.get_json()
+    assert (repeated_json["repeated"], repeated_json["fixed"]) == ("maven/", "maven-3/{{VERSION}}")
+    assert invalid_json["location"] is None
+    assert invalid_json["error"] == "Publish location is not a valid path: Absolute paths are not allowed"
 
 
 async def test_route_resolves(preview) -> None:
@@ -155,6 +251,10 @@ async def test_route_resolves(preview) -> None:
         "location": "dist/release/maven/maven-3/3.9.10/",
         "previous_version": None,
         "previous_location": None,
+        "error": None,
+        "repeated": None,
+        "fixed": None,
+        "shown": True,
     }
 
 
@@ -179,3 +279,27 @@ async def test_route_unauthorized(preview) -> None:
 
     assert response.status_code == 403
     data.project.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("entered", "location", "mismatched", "expected"),
+    [
+        ("maven-3/{{VERSION}}", "dist/release/maven/maven-3/3.9.10/", False, True),
+        ("maven-3/3.9.10", "dist/release/maven/maven-3/3.9.10/", False, False),
+        (" maven-3/3.9.10/", "dist/release/maven/maven-3/3.9.10/", False, False),
+        ("", "dist/release/maven/", False, False),
+        ("", "dist/release/maven/maven-surefire-3.9.10/", False, True),
+        ("maven-3/3.9.10", "dist/release/maven/maven-3/3.9.10/", True, True),
+        ("maven-3/3.9.10", None, False, False),
+        ("maven-3/{{VERSION}}", None, False, True),
+        ("", None, False, True),
+    ],
+)
+def test_shown(entered, location, mismatched, expected) -> None:
+    mismatch = ("3.9.9", "dist/release/maven/3.9.9/") if mismatched else None
+
+    shown = construct.publish_location_shown(
+        "dist/release/maven/", entered, location, error=None, repeat=None, mismatch=mismatch
+    )
+
+    assert shown is expected
