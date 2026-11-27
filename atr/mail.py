@@ -41,7 +41,7 @@ _PREFLIGHT_TIMEOUT: Final[int] = 10
 _SMTP_BATCH_SIZE: Final[int] = 100
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
-INFRASTRUCTURE_ALERT_ADDRESS: Final[str] = f"sbp@{_APACHE_DOMAIN}"
+INFRASTRUCTURE_ALERT_ADDRESS: Final[str] = f"private-alerts@tooling.{_APACHE_DOMAIN}"
 NOREPLY_EMAIL_ADDRESS: Final[str] = f"donotreply@{_APACHE_DOMAIN}"
 
 MailFooterCategory = models_mail.MailFooterCategory
