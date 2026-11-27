@@ -99,8 +99,10 @@ jobs:
             exit 0
           fi
 
-          failed=$(grep -oE 'FAILED e2e/[^ ]+' "${RUNNER_TEMP}/e2e.log" 2>/dev/null \
-            | sed -e 's/^FAILED //' \
+          # pytest reports a broken fixture as ERROR rather than FAILED, so
+          # both count here.
+          failed=$(grep -oE '(FAILED|ERROR) e2e/[^ ]+' "${RUNNER_TEMP}/e2e.log" 2>/dev/null \
+            | sed -E -e 's/^(FAILED|ERROR) //' \
             | LC_ALL=C sort -u || true)
           # Each report carries a fingerprint of its failing tests, so a later
           # run can tell whether it has anything new to say.
