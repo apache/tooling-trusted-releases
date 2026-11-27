@@ -366,9 +366,10 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
     if not is_podling_round_two:
         permitted_recipients = util.permitted_podling_first_round_recipients(
             task_args.initiator_id,
-            release.committee.key,
+            release.committee.list_domain,
             is_podling=release.committee.is_podling,
             settings=await interaction.release_settings(release),
+            dev_lists=await interaction.committee_dev_lists(release.committee),
         )
         for addr in all_addrs:
             if addr not in permitted_recipients:

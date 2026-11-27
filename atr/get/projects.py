@@ -1123,16 +1123,22 @@ async def _publish_location_notes(
 
 
 def _recipient_grid_widget(
-    project: sql.Project, settings: sql.PolicySettings, action: sql.RecipientAction, *, readonly: bool
+    project: sql.Project,
+    settings: sql.PolicySettings,
+    action: sql.RecipientAction,
+    *,
+    readonly: bool,
+    dev_lists: Sequence[str] = (),
 ) -> htm.Element:
     committee = project.committee
-    committee_key = committee.key if (committee is not None) else str(project.key)
+    list_domain = committee.list_domain if (committee is not None) else f"{project.key}.apache.org"
     is_podling = bool(committee is not None and committee.is_podling)
     options = util.configurable_recipients(
         action,
-        committee_key,
+        list_domain,
         is_podling=is_podling,
         mail_addresses=committee.mail_addresses if (committee is not None) else [],
+        dev_lists=dev_lists,
     )
     stored_to, stored_cc, stored_bcc = settings.policy_recipients(action)
     # Include any already-stored recipients (eg set via .asf.yaml) so a saved
@@ -2120,6 +2126,7 @@ async def _render_vote_form(project: sql.Project, scope: _SettingsScope, *, read
     ]
 
     flash_error_data = {} if readonly else await sessions.form_error_pop(quart.request.path)
+    dev_lists = (await interaction.committee_dev_lists(project.committee)) if project.committee else []
 
     defaults_dict = {
         "project_key": str(project.key),
@@ -2185,7 +2192,9 @@ async def _render_vote_form(project: sql.Project, scope: _SettingsScope, *, read
             # wider_widgets=True,
             textarea_rows=10,
             custom={
-                "email_to": _recipient_grid_widget(project, settings, sql.RecipientAction.VOTE, readonly=readonly),
+                "email_to": _recipient_grid_widget(
+                    project, settings, sql.RecipientAction.VOTE, readonly=readonly, dev_lists=dev_lists
+                ),
                 "release_checklist": release_checklist_widget,
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,

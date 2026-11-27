@@ -773,7 +773,12 @@ def concern_groups(info: datatypes.PathInfo | None) -> list[ConcernGroup]:
 
 
 def configurable_recipients(
-    action: sql.RecipientAction, committee_key: str, *, is_podling: bool, mail_addresses: Sequence[str] = ()
+    action: sql.RecipientAction,
+    list_domain: str,
+    *,
+    is_podling: bool,
+    mail_addresses: Sequence[str] = (),
+    dev_lists: Sequence[str] = (),
 ) -> list[str]:
     # Stable, committee-derived recipients a project can persist as defaults.
     # These don't depend on the sender or on ALPHA test addresses, so a stored
@@ -782,11 +787,12 @@ def configurable_recipients(
         return [
             "announce@apache.org",
             *mail_addresses,
-            f"private@{committee_key}.apache.org",
+            f"private@{list_domain}",
         ]
+    vote_lists = _vote_lists(list_domain, dev_lists)
     if is_podling:
-        return [f"dev@{committee_key}.apache.org"]
-    return [f"dev@{committee_key}.apache.org", f"private@{committee_key}.apache.org"]
+        return vote_lists
+    return [*vote_lists, f"private@{list_domain}"]
 
 
 def conjunction(items: Sequence[str], empty: str | None = None) -> str:
@@ -1214,12 +1220,13 @@ def intersect_algs(policy: dict[str, Any], policy_key: str, supported: set[bytes
     return [a for a in algs if isinstance(a, str) and (a.encode("ascii") in supported)]
 
 
-def is_automated_release_signing_uid(uid: str | None, committee_key: str) -> bool:
+def is_automated_release_signing_uid(uid: str | None, committee_key: str, list_domain: str) -> bool:
     if not uid:
         return False
     if not any(label.lower() in uid.lower() for label in AUTOMATED_RELEASE_SIGNING_LABELS):
         return False
-    return email_from_uid(uid) == f"private@{committee_key}.apache.org"
+    # Some committees have their lists on a domain other than <key>.apache.org, so either is accepted
+    return email_from_uid(uid) in {f"private@{list_domain}", f"private@{committee_key}.apache.org"}
 
 
 async def is_dir_resolve(path: os.PathLike) -> pathlib.Path | None:
@@ -1487,7 +1494,7 @@ def permitted_announce_recipients(
         return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
     recipients = ["announce@apache.org"]
     if committee is not None:
-        recipients.extend([*committee.mail_addresses, f"private@{committee.key}.apache.org"])
+        recipients.extend([*committee.mail_addresses, f"private@{committee.list_domain}"])
     _add_policy_recipients(recipients, settings, sql.RecipientAction.ANNOUNCE)
     return recipients
 
@@ -1502,12 +1509,17 @@ def permitted_archive_roots(basename_from_filename: str) -> list[str]:
 
 
 def permitted_podling_first_round_recipients(
-    asf_uid: str, committee_key: str, *, is_podling: bool, settings: sql.PolicySettings | None = None
+    asf_uid: str,
+    list_domain: str,
+    *,
+    is_podling: bool,
+    settings: sql.PolicySettings | None = None,
+    dev_lists: Sequence[str] = (),
 ) -> list[str]:
-    recipients = permitted_voting_recipients(asf_uid, committee_key, settings=settings)
+    recipients = permitted_voting_recipients(asf_uid, list_domain, settings=settings, dev_lists=dev_lists)
     if not is_podling:
         return recipients
-    return [recipient for recipient in recipients if (recipient != f"private@{committee_key}.apache.org")]
+    return [recipient for recipient in recipients if (recipient != f"private@{list_domain}")]
 
 
 def permitted_podling_second_round_recipients(asf_uid: str) -> list[str]:
@@ -1519,12 +1531,13 @@ def permitted_podling_second_round_recipients(asf_uid: str) -> list[str]:
 
 
 def permitted_voting_recipients(
-    asf_uid: str, committee_key: str, *, settings: sql.PolicySettings | None = None
+    asf_uid: str,
+    list_domain: str,
+    *,
+    settings: sql.PolicySettings | None = None,
+    dev_lists: Sequence[str] = (),
 ) -> list[str]:
-    recipients = [
-        f"dev@{committee_key}.apache.org",
-        f"private@{committee_key}.apache.org",
-    ]
+    recipients = [*_vote_lists(list_domain, dev_lists), f"private@{list_domain}"]
     if config.get().ATR_STATUS == "ALPHA":
         recipients.append(USER_TESTS_ADDRESS)
         recipients.append(f"{asf_uid}@apache.org")
@@ -2355,3 +2368,8 @@ def _tree_files_identical(base_file: pathlib.Path, other_file: pathlib.Path) -> 
                 return False
             if not base_chunk:
                 return True
+
+
+def _vote_lists(list_domain: str, dev_lists: Sequence[str]) -> list[str]:
+    # A committee with several products can have a dev list for each and none called dev alone
+    return list(dev_lists) or [f"dev@{list_domain}"]

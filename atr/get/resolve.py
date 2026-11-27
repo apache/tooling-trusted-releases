@@ -330,7 +330,10 @@ async def selected(  # noqa: C901
     else:
         permitted_recipients = (
             util.permitted_voting_recipients(
-                session.uid, release.committee.key, settings=await interaction.release_settings(release)
+                session.uid,
+                release.committee.list_domain,
+                settings=await interaction.release_settings(release),
+                dev_lists=await interaction.committee_dev_lists(release.committee),
             )
             if (release.committee is not None)
             else []

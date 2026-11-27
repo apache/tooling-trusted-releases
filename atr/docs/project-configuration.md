@@ -143,7 +143,8 @@ The Vote tab sets the defaults for the project's votes. The release manager can 
 them when starting a vote.
 
 * **Default vote recipient**, with optional CC and BCC recipients. The mailing list that vote emails
-  go to.
+  go to. Each has to be on the committee's own domain, such as `dev@example.apache.org`, and
+  either listed at [lists.apache.org](https://lists.apache.org/) or the committee's private list.
 * **Streamlined voting.** How votes are cast and counted. The Vote tab says when streamlined voting
   is on, but it is set for all of a committee's projects at once, in the Streamlined voting section
   of the committee page:
@@ -201,7 +202,8 @@ The Finish tab sets the defaults for publishing and announcing a release:
 * **Announce release subject** and **Announce release template.** The subject and body of the
   announcement email, which can use variables in the same way as the vote templates.
 * **Default announce recipient**, with optional CC and BCC recipients. The mailing list that
-  announcements go to.
+  announcements go to. Each has to be an `apache.org` list that
+  [lists.apache.org](https://lists.apache.org/) shows, or the committee's private list.
 
 ## Third-party distribution
 

@@ -389,6 +389,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         mail_addresses: Opt[list[str]] = NOT_SET,
         catalog_reviewed: Opt[bool] = NOT_SET,
         github_oidc_enabled: Opt[bool] = NOT_SET,
+        mail_domain: Opt[str | None] = NOT_SET,
         parent_committee_key: Opt[str] = NOT_SET,
         updated: Opt[datetime.datetime | None] = NOT_SET,
         updated_by: Opt[str | None] = NOT_SET,
@@ -430,6 +431,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.catalog_reviewed == catalog_reviewed)
         if is_defined(github_oidc_enabled):
             query = query.where(sql.Committee.github_oidc_enabled == github_oidc_enabled)
+        if is_defined(mail_domain):
+            query = query.where(sql.Committee.mail_domain == mail_domain)
         if is_defined(parent_committee_key):
             query = query.where(sql.Committee.parent_committee_key == parent_committee_key)
         if is_defined(updated):
@@ -761,6 +764,20 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.KeyAttestable.actor == actor)
         if is_defined(role):
             query = query.where(sql.KeyAttestable.role == role)
+
+        return Query(self, query)
+
+    def mailing_list(
+        self,
+        domain: Opt[str] = NOT_SET,
+        label: Opt[str] = NOT_SET,
+    ) -> Query[sql.MailingList]:
+        query = sqlmodel.select(sql.MailingList)
+
+        if is_defined(domain):
+            query = query.where(sql.MailingList.domain == domain)
+        if is_defined(label):
+            query = query.where(sql.MailingList.label == label)
 
         return Query(self, query)
 

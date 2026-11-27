@@ -766,22 +766,6 @@ class ProjectConfigArgs(schema.Strict):
     sync_mode: Literal["merge", "full"] = "merge"
 
     @pydantic.model_validator(mode="after")
-    def _validate_recipient_domains(self) -> Self:
-        # This is the .asf.yaml route, where recipients arrive verbatim, so we
-        # keep vote mail on the committee's own lists and announce mail on
-        # apache.org. The UI route has its own constraints and doesn't come
-        # through here.
-        committee_key = str(self.committee_key)
-        for settings in (self.policy, *(self.cycles or {}).values()):
-            if settings is None:
-                continue
-            if settings.vote_recipients is not None:
-                validation.validate_vote_recipients(committee_key, settings.vote_recipients.addresses())
-            if settings.announce_recipients is not None:
-                validation.validate_announce_recipients(settings.announce_recipients.addresses())
-        return self
-
-    @pydantic.model_validator(mode="after")
     def _validate_security_contact(self) -> Self:
         if self.project is None:
             return self

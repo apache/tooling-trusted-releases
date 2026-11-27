@@ -471,7 +471,7 @@ class ReleaseManager(CommitteeParticipant):
             if committee is None:
                 raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)
             if release.expedited:
-                email_to = f"private@{committee.key}.apache.org"
+                email_to = f"private@{committee.list_domain}"
                 email_cc = []
                 email_bcc = []
                 second_round_email_to = None
@@ -509,9 +509,10 @@ class ReleaseManager(CommitteeParticipant):
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,
-                    committee.key,
+                    committee.list_domain,
                     is_podling=committee.is_podling,
                     settings=await interaction.release_settings(release, self.__data),
+                    dev_lists=await interaction.committee_dev_lists(committee, self.__data),
                 )
             all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
             for addr in all_addrs:
@@ -687,8 +688,9 @@ class ReleaseManager(CommitteeParticipant):
             permitted = set(
                 util.permitted_voting_recipients(
                     self.__asf_uid,
-                    release.committee.key,
+                    release.committee.list_domain,
                     settings=await interaction.release_settings(release, self.__data),
+                    dev_lists=await interaction.committee_dev_lists(release.committee, self.__data),
                 )
             )
             for address in additions:

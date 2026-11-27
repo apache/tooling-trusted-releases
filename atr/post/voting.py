@@ -135,9 +135,10 @@ async def selected(  # noqa: C901
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
             session.uid,
-            committee.key,
+            committee.list_domain,
             is_podling=committee.is_podling,
             settings=await interaction.release_settings(release),
+            dev_lists=await interaction.committee_dev_lists(committee),
         )
         all_addrs = [start_voting_form.email_to, *start_voting_form.email_cc, *start_voting_form.email_bcc]
         for addr in all_addrs:
@@ -310,7 +311,7 @@ async def _start_expedited(
             version_key=str(version_key),
         )
 
-    private_address = f"private@{committee.key}.apache.org"
+    private_address = f"private@{committee.list_domain}"
     return await session.redirect(
         get.vote.selected,
         success=f"The expedited vote announcement will soon be sent to {private_address}.",

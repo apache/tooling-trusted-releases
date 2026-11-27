@@ -39,6 +39,7 @@ import atr.models.github as github
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.principal as principal
 import atr.upload_restrictions as upload_restrictions
 import atr.user as user
@@ -239,7 +240,14 @@ async def automated_release_signing_keys(caller_data: db.Session | None = None) 
                 sql.SigningCertificate.primary_declared_uid,
                 sql.SigningKey.created,
             )
-            .options(orm.load_only(via(sql.Committee.key), via(sql.Committee.name), via(sql.Committee.is_podling)))
+            .options(
+                orm.load_only(
+                    via(sql.Committee.key),
+                    via(sql.Committee.name),
+                    via(sql.Committee.is_podling),
+                    via(sql.Committee.mail_domain),
+                )
+            )
             .select_from(sql.SigningCertificate)
             .join(sql.KeyLink, via(sql.KeyLink.key_fingerprint) == via(sql.SigningCertificate.fingerprint))
             .join(sql.Committee, via(sql.Committee.key) == via(sql.KeyLink.committee_key))
@@ -267,7 +275,7 @@ async def automated_release_signing_keys(caller_data: db.Session | None = None) 
         return [
             AutomatedReleaseSigningKey(committee, fingerprint, created)
             for committee, fingerprint, uid, created in result.all()
-            if util.is_automated_release_signing_uid(uid, committee.key)
+            if util.is_automated_release_signing_uid(uid, committee.key, committee.list_domain)
         ]
 
 
@@ -434,6 +442,16 @@ async def ci_builds_enabled(committee_key: str | None, caller_data: db.Session |
         return False
     # The setting has no effect without a key, so a committee that loses its key stops uploading
     return await automated_release_signing_key_held(committee_key, caller_data)
+
+
+async def committee_dev_lists(committee: sql.Committee, caller_data: db.Session | None = None) -> list[str]:
+    """The committee's dev lists, which votes can go to."""
+    async with db.ensure_session(caller_data) as data:
+        rows = await data.mailing_list(domain=committee.list_domain).all()
+    labels = sorted(row.label for row in rows if (row.label == "dev") or row.label.endswith("-dev"))
+    # Plain dev goes first, as most committees have one
+    labels.sort(key=lambda label: label != "dev")
+    return [f"{label}@{committee.list_domain}" for label in labels]
 
 
 async def compose_project_for_payload(
@@ -835,6 +853,40 @@ async def project_release_counts(data: db.Session) -> dict[str, tuple[int, int]]
     ).group_by(via(sql.Release.project_key))
     result = await data.execute(query)
     return {key: (total, active) for key, total, active in result.all()}
+
+
+async def recipients_problem(
+    list_domain: str,
+    action: sql.RecipientAction,
+    addresses: Sequence[str],
+    caller_data: db.Session | None = None,
+) -> str | None:
+    """Why these can't be a project's or cycle's recipients for an action, if so."""
+    addresses = [address.strip().lower() for address in addresses if address and address.strip()]
+    try:
+        if action == sql.RecipientAction.VOTE:
+            validation.validate_vote_recipients(list_domain, addresses)
+        else:
+            validation.validate_announce_recipients(addresses)
+    except ValueError as e:
+        return str(e)
+    async with db.ensure_session(caller_data) as data:
+        # Before the first metadata update there are no lists to check against
+        if not await data.mailing_list().limit(1).all():
+            return None
+        # With no lists known for the committee's domain, there's nothing to check its addresses against
+        own_unknown = not await data.mailing_list(domain=list_domain).limit(1).all()
+        for address in addresses:
+            label, _, domain = address.rpartition("@")
+            # lists.apache.org doesn't report private lists
+            if (domain == list_domain) and (own_unknown or (label == "private")):
+                continue
+            if await data.mailing_list(domain=domain, label=label).get() is None:
+                return (
+                    f"{address} is not a mailing list at lists.apache.org."
+                    " ATR can only detect a list which has received mail."
+                )
+    return None
 
 
 async def release_completed_svn_publish_task(

@@ -42,21 +42,6 @@ def test_project_config_accepts_vote_recipients_on_committee_domain() -> None:
     assert args.policy.vote_recipients.to == "private@tooling.apache.org"
 
 
-def test_project_config_rejects_announce_recipient_off_foundation() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("must be an apache.org address")):
-        _project_config(announce_recipients={"to": "someone@example.org"})
-
-
-def test_project_config_rejects_vote_recipient_off_foundation() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("must be on 'tooling.apache.org'")):
-        _project_config(vote_recipients={"to": "private@tooling.apache.org", "cc": ["someone@example.org"]})
-
-
-def test_project_config_rejects_vote_recipient_on_another_committee() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("must be on 'tooling.apache.org'")):
-        _project_config(vote_recipients={"to": "dev@other.apache.org"})
-
-
 def test_project_config_accepts_foundation_security_contact() -> None:
     args = _project_config_project(security_contact="security@apache.org")
 

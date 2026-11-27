@@ -898,7 +898,7 @@ async def _upload_repositories_change_no_commit(
     data.add(
         sql.Task(
             task_type=sql.TaskType.MESSAGE_SEND,
-            task_args=_upload_repositories_notice(project, asf_uid, before, after).as_task_args(),
+            task_args=_upload_repositories_notice(project, committee, asf_uid, before, after).as_task_args(),
             asf_uid=constants.SYSTEM_SERVICE_UID,
         )
     )
@@ -908,13 +908,15 @@ async def _upload_repositories_change_no_commit(
     }
 
 
-def _upload_repositories_notice(project: sql.Project, asf_uid: str, before: set[str], after: set[str]) -> args.Send:
+def _upload_repositories_notice(
+    project: sql.Project, committee: sql.Committee, asf_uid: str, before: set[str], after: set[str]
+) -> args.Send:
     project_url = util.absolute_url(f"/projects/{project.key}")
     now_listed = "\n".join(f"  {name}" for name in sorted(after)) or "  none"
     were_listed = "\n".join(f"  {name}" for name in sorted(before)) or "  none"
     return args.Send(
         email_sender=mail.NOREPLY_EMAIL_ADDRESS,
-        email_to=f"private@{project.committee_key}.apache.org",
+        email_to=f"private@{committee.list_domain}",
         subject=f"[ATR] Repositories that can upload to {project.key} changed",
         body=(
             f"{asf_uid} changed the repositories listed for {project.key}.\n\n"

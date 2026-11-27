@@ -518,7 +518,9 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     data.begin_immediate = mock.AsyncMock()
     data.commit = mock.AsyncMock()
     data.rollback = mock.AsyncMock()
-    committee = SimpleNamespace(key="project", is_podling=False, committee_members=["chair"])
+    committee = SimpleNamespace(
+        key="project", list_domain="project.apache.org", is_podling=False, committee_members=["chair"]
+    )
     data.project = mock.MagicMock(
         return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
     )
@@ -574,7 +576,7 @@ def _initiate_release_namespace(
         safe_project_key=SimpleNamespace(__str__=lambda self: "project"),
         safe_version_key=SimpleNamespace(__str__=lambda self: "1.0.0"),
         safe_latest_revision_number=SimpleNamespace(__str__=lambda self: "00001"),
-        committee=SimpleNamespace(is_podling=False, key=committee_key),
+        committee=SimpleNamespace(is_podling=False, key=committee_key, list_domain=f"{committee_key}.apache.org"),
         podling_thread_id=None,
         effective_vote_mode=vote_mode,
     )
@@ -595,7 +597,7 @@ def _patch_initiate_dependencies(monkeypatch, release: SimpleNamespace) -> None:
     monkeypatch.setattr(
         task_vote.util,
         "permitted_podling_first_round_recipients",
-        lambda uid, committee_key, *, is_podling, settings=None: ["dev@project.apache.org"],
+        lambda uid, list_domain, *, is_podling, settings=None, dev_lists=(): ["dev@project.apache.org"],
     )
 
     mock_send = mock.AsyncMock(return_value=("vote-mid@apache.org", []))

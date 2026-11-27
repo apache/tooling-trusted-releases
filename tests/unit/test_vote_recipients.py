@@ -156,7 +156,9 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
             demand=mock.AsyncMock(return_value=release),
         )
     )
-    committee = SimpleNamespace(key="project", is_podling=False, committee_members=["chair"])
+    committee = SimpleNamespace(
+        key="project", list_domain="project.apache.org", is_podling=False, committee_members=["chair"]
+    )
     data.project = mock.MagicMock(
         return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
     )
@@ -269,7 +271,7 @@ async def test_worker_uses_first_round_validation_for_non_podling(
     monkeypatch.setattr("atr.config.get", lambda: SimpleNamespace(ATR_STATUS="ALPHA"))
     monkeypatch.setattr(
         "atr.util.permitted_voting_recipients",
-        lambda uid, committee_key, *, settings=None: ["dev@project.apache.org"],
+        lambda uid, list_domain, *, settings=None, dev_lists=(): ["dev@project.apache.org"],
     )
 
     task_args = _make_initiate_args(email_to="dev@project.apache.org")
@@ -327,6 +329,7 @@ def _make_release(
         committee=SimpleNamespace(
             is_podling=is_podling,
             key="testproject",
+            list_domain="testproject.apache.org",
         ),
         project=SimpleNamespace(policy_recipients=lambda action: ("", [], [])),
         podling_thread_id=podling_thread_id,

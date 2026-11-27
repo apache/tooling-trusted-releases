@@ -114,6 +114,7 @@ _BROWSABLE_MODELS: Final[tuple[type[sqlmodel.SQLModel], ...]] = (
     sql.KeyAttestable,
     sql.KeyLink,
     sql.LifecycleEvent,
+    sql.MailingList,
     sql.Notification,
     sql.PersonalAccessToken,
     sql.Project,
