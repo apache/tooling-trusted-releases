@@ -1718,6 +1718,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
         committee=SimpleNamespace(
             key="project",
             display_name="Project",
+            list_domain="project.apache.org",
             is_podling=False,
         ),
         project=SimpleNamespace(
@@ -1735,6 +1736,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
             committee=SimpleNamespace(
                 key="project",
                 display_name="Project",
+                list_domain="project.apache.org",
                 is_podling=False,
             ),
         ),

@@ -62,6 +62,15 @@ def _snapshot(path: pathlib.Path) -> EmailUidCacheSnapshot:
     return EmailUidCacheSnapshot(True, stat.st_size, stat.st_mode & 0o777, stat.st_mtime_ns)
 
 
+@pytest.fixture(autouse=True)
+def committee_dev_lists_without_mailing_lists(monkeypatch: pytest.MonkeyPatch):
+    # Most tests have no database, so a committee has no dev lists. Tests of the lists restore the real function
+    async def committee_dev_lists(committee: sql.Committee, caller_data: object = None) -> list[str]:
+        return []
+
+    monkeypatch.setattr(interaction, "committee_dev_lists", committee_dev_lists)
+
+
 @pytest.fixture
 def github_payload() -> github.TrustedPublisherPayload:
     return github.TrustedPublisherPayload(

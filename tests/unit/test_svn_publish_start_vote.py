@@ -135,7 +135,9 @@ async def test_start_rejects_automatic_publish_for_expedited(monkeypatch) -> Non
     data.begin_immediate = mock.AsyncMock()
     data.commit = mock.AsyncMock()
     data.rollback = mock.AsyncMock()
-    committee = SimpleNamespace(key="example", is_podling=False, committee_members=["alice"])
+    committee = SimpleNamespace(
+        key="example", list_domain="example.apache.org", is_podling=False, committee_members=["alice"]
+    )
     release = SimpleNamespace(
         key="example-1.0",
         project_key="example",
@@ -181,7 +183,9 @@ async def test_start_forces_automation_in_trusted_mode(monkeypatch) -> None:
     data = mock.MagicMock()
     data.begin_immediate = mock.AsyncMock()
     data.commit = mock.AsyncMock()
-    committee = SimpleNamespace(key="example", is_podling=False, committee_members=["alice"])
+    committee = SimpleNamespace(
+        key="example", list_domain="example.apache.org", is_podling=False, committee_members=["alice"]
+    )
     release = SimpleNamespace(
         key="example-1.0",
         project_key="example",

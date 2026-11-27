@@ -859,7 +859,7 @@ def unmanaged_release_warning(
         email_to = _SECURITY_LIST_ADDRESS
         email_cc: list[str] = []
     else:
-        email_to = f"private@{committee.key}.apache.org"
+        email_to = f"private@{committee.list_domain}"
         email_cc = [_SECURITY_LIST_ADDRESS]
     return args.Send(
         email_sender=mail.NOREPLY_EMAIL_ADDRESS,

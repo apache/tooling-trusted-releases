@@ -701,10 +701,10 @@ def _dev_list_maintainer(committee: sql.Committee, vote_address: str | None = No
     role = "PPMC" if committee.is_podling else "PMC"
     name = committee.name or committee.key.title()
     local, _, host = (vote_address or "").partition("@")
-    if (host == f"{committee.key}.apache.org") and ("dev" in local.lower()):
+    if (host == committee.list_domain) and ("dev" in local.lower()):
         mbox = f"mailto:{vote_address}"
     else:
-        mbox = f"mailto:dev@{committee.key}.apache.org"
+        mbox = f"mailto:dev@{committee.list_domain}"
     return {"mbox": mbox, "name": f"Apache {name} {role}"}
 
 

@@ -822,6 +822,14 @@ class KeyLink(sqlmodel.SQLModel, table=True):
     )
 
 
+# MailingList:
+class MailingList(sqlmodel.SQLModel, table=True):
+    # A public mailing list, as lists.apache.org reports it, such as dev at tomcat.apache.org.
+    # Private lists aren't reported
+    domain: str = sqlmodel.Field(primary_key=True, **example("tomcat.apache.org"))
+    label: str = sqlmodel.Field(primary_key=True, **example("dev"))
+
+
 # Notification:
 class Notification(sqlmodel.SQLModel, table=True):
     id: int | None = sqlmodel.Field(default=None, primary_key=True)
@@ -1162,6 +1170,9 @@ class Committee(sqlmodel.SQLModel, table=True):
     # True once the PMC has been through the projects and releases we seeded for them.
     # Until then the catalogue says as much, because nobody who would know has checked it
     catalog_reviewed: bool = sqlmodel.Field(default=False)
+    # The domain the committee's mailing lists are on, as Whimsy gives it. Most are on
+    # <key>.apache.org, but some aren't, such as httpcomponents on hc.apache.org
+    mail_domain: str | None = sqlmodel.Field(default=None, **example("hc.apache.org"))
     # True when the PMC allows GitHub Actions workflows in its projects' repositories to upload
     # to drafts. Uploads also need an automated release signing key, so this alone isn't enough.
     # Kept out of serialised output, as the API returns whole committee rows
@@ -1212,6 +1223,11 @@ class Committee(sqlmodel.SQLModel, table=True):
     updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     updated_by: str | None = sqlmodel.Field(default=None)
     update_type: UpdateType = sqlmodel.Field(default=UpdateType.MANUAL, **example(UpdateType.MANUAL))
+
+    @property
+    def list_domain(self) -> str:
+        """The domain the committee's mailing lists are on."""
+        return self.mail_domain or f"{self.key}.apache.org"
 
     @property
     def display_name(self) -> str:

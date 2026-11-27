@@ -70,9 +70,10 @@ async def selected(
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
             session.uid,
-            committee.key,
+            committee.list_domain,
             is_podling=committee.is_podling,
             settings=await interaction.release_settings(release),
+            dev_lists=await interaction.committee_dev_lists(committee),
         )
         second_round_recipients = (
             util.permitted_podling_second_round_recipients(session.uid) if committee.is_podling else []
@@ -254,7 +255,7 @@ async def _render_page(  # noqa: C901
         ]
 
     if expedited:
-        private_address = f"private@{release.committee.key}.apache.org"
+        private_address = f"private@{release.committee.list_domain}"
         page.div(".p-3.mb-4.bg-info-subtle.border.border-info.rounded")[
             htm.strong["Expedited release. "],
             "People vote on the ATR website, and ballots and the announcement are sent only to ",
@@ -272,7 +273,7 @@ async def _render_page(  # noqa: C901
     custom: dict[str, htm.Element | htm.VoidElement] = {"subject": custom_subject_widget}
 
     if expedited:
-        private_address = f"private@{release.committee.key}.apache.org"
+        private_address = f"private@{release.committee.list_domain}"
         custom["email_to"] = htm.div[
             htpy.input(type="hidden", name="email_to", value=private_address),
             htm.div(".form-control.bg-light.font-monospace")[private_address],

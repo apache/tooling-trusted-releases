@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy
@@ -28,6 +29,7 @@ import atr.catalog_site as catalog_site
 import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.models as models
 import atr.storage as storage
 
@@ -168,7 +170,12 @@ class ReleaseManager(CommitteeParticipant):
 
         # The form is applied to a copy of what the cycle uses, and what then differs from the project is kept
         effective = overrides.applied_to(release_policy)
+        before = dict(effective.recipient_defaults)
         fields, action = self.__apply_form(form, project, effective)
+        if (action is not None) and (form.variant != "compose"):
+            await _check_recipients(
+                self.__data, project, action, [form.email_to, *form.email_cc, *form.email_bcc], before
+            )
         settings = dict(overrides.settings)
         for field in fields:
             value = getattr(effective, field)
@@ -301,13 +308,23 @@ class ReleaseManager(CommitteeParticipant):
         project_key: models.safe.ProjectKey,
         update: models.api.PolicyUpdateArgs,
     ) -> None:
-        _, release_policy = await _get_or_create_policy(self.__data, project_key)
+        project, release_policy = await _get_or_create_policy(self.__data, project_key)
+        before = dict(release_policy.recipient_defaults)
         _apply_policy_update(release_policy, update)
+        await _check_update_recipients(self.__data, project, update, before)
 
     async def edit_finish(self, form: shared.projects.FinishPolicyForm) -> None:
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
+        before = dict(release_policy.recipient_defaults)
         self.__apply_finish(form, project, release_policy)
+        await _check_recipients(
+            self.__data,
+            project,
+            models.sql.RecipientAction.ANNOUNCE,
+            [form.email_to, *form.email_cc, *form.email_bcc],
+            before,
+        )
         await self.__commit_and_log(str(project_key))
 
     async def edit_version_scheme(self, form: shared.projects.EditVersionSchemeForm) -> None:
@@ -359,7 +376,15 @@ class ReleaseManager(CommitteeParticipant):
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
+        before = dict(release_policy.recipient_defaults)
         self.__apply_vote(form, project, release_policy)
+        await _check_recipients(
+            self.__data,
+            project,
+            models.sql.RecipientAction.VOTE,
+            [form.email_to, *form.email_cc, *form.email_bcc],
+            before,
+        )
         await self.__commit_and_log(str(str(project_key)))
 
     def __apply_compose(
@@ -591,6 +616,8 @@ class FoundationAdmin(FoundationCommitter):
                 if not (await _cycle_in_use(self.__data, project_key, cycle) or _cycle_allowed(project, cycle)):
                     raise ValueError(f"Cycle {cycle} cannot have settings of its own")
                 overrides = models.sql.CycleOverrides(project_key=str(project_key), cycle=cycle)
+            before = dict(overrides.applied_to(release_policy).recipient_defaults)
+            await _check_update_recipients(self.__data, project, args, before)
             # A cycle has only what it is given here, whatever it had before
             settings = _cycle_settings_from_args(project_key, release_policy, args)
             if settings == overrides.settings:
@@ -612,8 +639,10 @@ class FoundationAdmin(FoundationCommitter):
         project_key: models.safe.ProjectKey,
         update: models.api.PolicyUpdateArgs,
     ) -> None:
-        _, release_policy = await _get_or_create_policy(self.__data, project_key)
+        project, release_policy = await _get_or_create_policy(self.__data, project_key)
+        before = dict(release_policy.recipient_defaults)
         _apply_policy_update(release_policy, update)
+        await _check_update_recipients(self.__data, project, update, before)
 
 
 def _apply_policy_update(release_policy: models.sql.ReleasePolicy, update: models.api.PolicyUpdateArgs) -> None:
@@ -664,6 +693,35 @@ def _calver_cycle_match(calver_format: str | None) -> str | None:
     except ValueError as exc:
         raise ValueError(f"Invalid calver format: {exc}") from exc
     return models.calver.cycle_regex(calver_format)
+
+
+async def _check_recipients(
+    data: db.Session,
+    project: models.sql.Project,
+    action: models.sql.RecipientAction,
+    addresses: Sequence[str],
+    before: dict[str, Any],
+) -> None:
+    # Stored addresses aren't checked again
+    stored = _stored_recipients(before, action)
+    added = [address for address in addresses if address and (address.strip().lower() not in stored)]
+    if project.committee is not None:
+        list_domain = project.committee.list_domain
+    else:
+        list_domain = f"{project.committee_key or project.key}.apache.org"
+    problem = await interaction.recipients_problem(list_domain, action, added, data)
+    if problem is not None:
+        raise storage.AccessError(problem, status=400)
+
+
+async def _check_update_recipients(
+    data: db.Session, project: models.sql.Project, update: models.api.PolicyArgsBase, before: dict[str, Any]
+) -> None:
+    for field, action in _RECIPIENT_API_FIELDS.items():
+        recipients = getattr(update, field)
+        if recipients is None:
+            continue
+        await _check_recipients(data, project, action, recipients.addresses(), before)
 
 
 def _collapse_to_default(submitted: str, default_text: str) -> str:
@@ -771,6 +829,12 @@ def _set_recipient_defaults(
 def _split_lines_verbatim(text: str) -> list[str]:
     # This still excludes empty lines
     return [line for line in text.split("\n") if line]
+
+
+def _stored_recipients(recipient_defaults: dict[str, Any], action: models.sql.RecipientAction) -> set[str]:
+    entry = recipient_defaults.get(action.value) or {}
+    addresses = [entry.get("to") or "", *(entry.get("cc") or []), *(entry.get("bcc") or [])]
+    return {str(address).strip().lower() for address in addresses if address}
 
 
 def _validate_file_tag_mappings(mappings: dict[str, list[str]]) -> None:

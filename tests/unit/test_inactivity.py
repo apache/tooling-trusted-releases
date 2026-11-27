@@ -33,6 +33,7 @@ class FakeProject:
     key: str = "example"
     status: sql.ProjectStatus = sql.ProjectStatus.ACTIVE
     committee_key: str = "example"
+    committee: sql.Committee | None = None
 
 
 @dataclasses.dataclass
@@ -224,7 +225,14 @@ def test_preview_escalation_body_uses_threshold_not_synthetic_date() -> None:
 
 
 def test_private_committee_list_format() -> None:
-    assert inactivity.private_committee_list("example") == "private@example.apache.org"
+    release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE, activity_age_days=1)
+    assert inactivity.private_committee_list(release) == "private@example.apache.org"
+
+
+def test_private_committee_list_uses_mail_domain() -> None:
+    release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE, activity_age_days=1)
+    release.project.committee = sql.Committee(key="httpcomponents", mail_domain="hc.apache.org")
+    assert inactivity.private_committee_list(release) == "private@hc.apache.org"
 
 
 @pytest.mark.asyncio

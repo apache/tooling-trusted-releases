@@ -316,6 +316,8 @@ async def update_metadata() -> tuple[int, int]:
             added_count += added
             updated_count += updated
 
+            await _update_mailing_lists(data, mailing_lists)
+
             current_keys = {p.name for p in ldap_projects.projects if p.pmc is True}
             current_keys.update(name for name, _ in podlings_data)
             current_keys.add("tooling")
@@ -390,6 +392,11 @@ async def _update_committees(
             stem = whimsy_info.mail_list
             if re.fullmatch(r"[a-z0-9-]+", stem):
                 _update_mail_addresses(committee, f"{stem}.apache.org", mailing_lists)
+            else:
+                committee.mail_domain = None
+        else:
+            # With no domain from Whimsy, lists are on <key>.apache.org
+            committee.mail_domain = None
         committee_info = committees.get(name)
         if committee_info:
             committee.charter = committee_info.charter
@@ -401,6 +408,7 @@ async def _update_committees(
 
 
 def _update_mail_addresses(committee: sql.Committee, domain: str, mailing_lists: MailingListsData | None) -> None:
+    committee.mail_domain = domain
     if mailing_lists is None:
         return
     committee.mail_addresses = sorted(
@@ -408,6 +416,18 @@ def _update_mail_addresses(committee: sql.Committee, domain: str, mailing_lists:
         for name in mailing_lists.lists.get(domain, {})
         if name in {"announce", "dev", "user", "users"}
     )
+
+
+async def _update_mailing_lists(data: db.Session, mailing_lists: MailingListsData | None) -> None:
+    # A failed fetch leaves the stored lists alone
+    if mailing_lists is None:
+        return
+    wanted = {(domain.lower(), label.lower()) for domain, labels in mailing_lists.lists.items() for label in labels}
+    stored = {(row.domain, row.label): row for row in await data.mailing_list().all()}
+    for key in stored.keys() - wanted:
+        await data.delete(stored[key])
+    for domain, label in sorted(wanted - stored.keys()):
+        data.add(sql.MailingList(domain=domain, label=label))
 
 
 async def _update_people(data: db.Session, people: LDAPPeopleData) -> None:

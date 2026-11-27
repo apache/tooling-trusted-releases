@@ -107,6 +107,8 @@ async def _check_core_logic(
         )
         result = await session.execute(statement)
         db_public_keys = result.scalars().all()
+        committee = await session.committee(key=committee_key).get()
+    list_domain = committee.list_domain if (committee is not None) else f"{committee_key}.apache.org"
     log.info(f"Found {len(db_public_keys)} public keys for committee_key: '{committee_key}'")
     apache_uid_map = {}
     uploader_fingerprints = set()
@@ -114,7 +116,7 @@ async def _check_core_logic(
         if not key.fingerprint:
             continue
         fingerprint = key.fingerprint.lower()
-        automated = util.is_automated_release_signing_uid(key.primary_declared_uid, committee_key)
+        automated = util.is_automated_release_signing_uid(key.primary_declared_uid, committee_key, list_domain)
         apache_uid_map[fingerprint] = bool(key.apache_uid) or automated
         if automated or (key.apache_uid in uploader_uids):
             uploader_fingerprints.add(fingerprint)

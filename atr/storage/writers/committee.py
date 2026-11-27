@@ -143,9 +143,7 @@ class CommitteeMember(ReleaseManager):
             self.__data.add(
                 sql.Task(
                     task_type=sql.TaskType.MESSAGE_SEND,
-                    task_args=_github_uploads_notice(
-                        committee.key, self.__asf_uid, enabled, repositories
-                    ).as_task_args(),
+                    task_args=_github_uploads_notice(committee, self.__asf_uid, enabled, repositories).as_task_args(),
                     asf_uid=constants.SYSTEM_SERVICE_UID,
                 )
             )
@@ -475,8 +473,9 @@ class FoundationAdmin(CommitteeMember):
 
 
 def _github_uploads_notice(
-    committee_key: str, asf_uid: str, enabled: bool, repositories: dict[str, list[str]]
+    committee: sql.Committee, asf_uid: str, enabled: bool, repositories: dict[str, list[str]]
 ) -> args.Send:
+    committee_key = committee.key
     committee_url = util.absolute_url(f"/committees/{committee_key}")
     if enabled:
         subject = f"[ATR] Uploads from GitHub Actions allowed for {committee_key}"
@@ -498,7 +497,7 @@ def _github_uploads_notice(
         )
     return args.Send(
         email_sender=mail.NOREPLY_EMAIL_ADDRESS,
-        email_to=f"private@{committee_key}.apache.org",
+        email_to=f"private@{committee.list_domain}",
         subject=subject,
         body=body,
         in_reply_to=None,

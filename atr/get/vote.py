@@ -1139,7 +1139,7 @@ def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> 
         raise ValueError(errors.RELEASE_NO_COMMITTEE)
     if _is_podling_round_two(release):
         return util.INCUBATOR_GENERAL_ADDRESS
-    return f"dev@{release.committee.key}.apache.org"
+    return f"dev@{release.committee.list_domain}"
 
 
 def _voting_committee_membership(binding_committee: str, vote_round: int | None) -> str:

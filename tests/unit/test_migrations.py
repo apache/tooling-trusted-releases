@@ -139,6 +139,7 @@ _ROWS = {
     "0153": (
         "INSERT INTO cycleoverrides (project_key, cycle, settings, update_type) VALUES ('p', '1', '{}', 'MANUAL')",
     ),
+    "0154": ("INSERT INTO mailinglist (domain, label) VALUES ('p.apache.org', 'dev')",),
 }
 
 _INSERT_COMMITTEE = (

@@ -104,8 +104,8 @@ def deletion_enabled() -> bool:
     return _DELETION_ENABLED
 
 
-def private_committee_list(committee_key: str) -> str:
-    return f"private@{committee_key}.apache.org"
+def private_committee_list(release: sql.Release) -> str:
+    return f"private@{_list_domain_for(release)}"
 
 
 async def run_scan() -> Sequence[Plan]:
@@ -163,14 +163,7 @@ async def warning_recipients_for(release: sql.Release, data: db.Session) -> list
     uids: list[str] = sorted({row for row in result.scalars().all() if row})
     if uids:
         return [f"{uid}@apache.org" for uid in uids]
-    return [private_committee_list(_committee_key_for(release))]
-
-
-def _committee_key_for(release: sql.Release) -> str:
-    project = release.project
-    if project.committee is not None:
-        return project.committee.key
-    return project.committee_key or release.project_key
+    return [private_committee_list(release)]
 
 
 async def _delete_or_dry_run(plan: Plan) -> None:
@@ -192,6 +185,13 @@ async def _delete_or_dry_run(plan: Plan) -> None:
             f" phase={plan.phase.value}"
             f" activity_at={plan.activity_at.isoformat()}"
         )
+
+
+def _list_domain_for(release: sql.Release) -> str:
+    project = release.project
+    if project.committee is not None:
+        return project.committee.list_domain
+    return f"{project.committee_key or release.project_key}.apache.org"
 
 
 async def _load_release(data: db.Session, release_key: str) -> sql.Release | None:
@@ -320,7 +320,7 @@ async def _send_preview_escalation(plan: Plan) -> None:
                 f"Inactivity preview escalation already sent for {plan.release_key!r} at {plan.activity_at.isoformat()}"
             )
             return
-        recipient = private_committee_list(_committee_key_for(release))
+        recipient = private_committee_list(release)
 
     body = _preview_escalation_body(plan)
     sent = await _send_email(

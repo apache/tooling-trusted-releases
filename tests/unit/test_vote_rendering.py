@@ -857,7 +857,7 @@ async def _patch_render_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
 def _release(vote_mode: sql.VoteMode, current_vote_seq: int | None = 1) -> SimpleNamespace:
     return SimpleNamespace(
         key="project-1.0.0",
-        committee=SimpleNamespace(key="project", is_podling=False),
+        committee=SimpleNamespace(key="project", list_domain="project.apache.org", is_podling=False),
         current_vote_seq=current_vote_seq,
         effective_vote_mode=vote_mode,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,

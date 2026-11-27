@@ -2337,8 +2337,9 @@ async def vote_start(
             committee = release.committee
             if committee is None:
                 raise storage.AccessError("No committee found for project - Invalid state", status=500)
-            committee_key = committee.key
+            list_domain = committee.list_domain
             is_podling = committee.is_podling
+            dev_lists = await interaction.committee_dev_lists(committee, db_data)
             scanned_revision = release.safe_latest_revision_number
             if (data.revision is not None) and (data.revision != scanned_revision):
                 raise exceptions.Conflict("A newer revision appeared, please refresh and try again.")
@@ -2347,9 +2348,10 @@ async def vote_start(
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
             asf_uid,
-            committee_key,
+            list_domain,
             is_podling=is_podling,
             settings=await interaction.release_settings(release),
+            dev_lists=dev_lists,
         )
         if data.email_to not in permitted_recipients:
             raise exceptions.Forbidden("Invalid mailing list choice")

@@ -76,7 +76,7 @@ async def lookup(repository: str) -> tuple[int, str]:
 
 
 def notify_addresses(committee: sql.Committee) -> list[str]:
-    return [f"private@{committee.key}.apache.org", *committee.mail_addresses]
+    return [f"private@{committee.list_domain}", *committee.mail_addresses]
 
 
 def pattern_supported(pattern: str) -> bool:

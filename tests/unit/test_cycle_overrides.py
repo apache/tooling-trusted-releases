@@ -199,16 +199,40 @@ async def test_overridden_policy_reads_back_as_a_release_policy(data: db.Session
     assert sql.ReleasePolicy.model_validate(policy.model_dump()).min_hours == 120
 
 
+async def test_a_recipient_that_is_not_a_list_is_refused_for_a_cycle(data: db.Session) -> None:
+    data.add(sql.MailingList(domain="alpha.apache.org", label="dev"))
+    await data.commit()
+
+    with pytest.raises(storage.AccessError, match="is not a mailing list"):
+        await _writer(data).cycle_overrides_edit(_vote_form("10.1", email_to="userz@alpha.apache.org"))
+    with pytest.raises(storage.AccessError, match="is not a mailing list"):
+        await _sync(data, {"10.1": {"vote_recipients": {"to": "userz@alpha.apache.org"}}})
+
+
+async def test_a_stored_recipient_that_is_not_a_list_does_not_stop_a_save(data: db.Session) -> None:
+    writer = _writer(data)
+    # With no lists known yet, any address on the committee's domain is accepted
+    await writer.cycle_overrides_edit(_vote_form("10.1", email_to="userz@alpha.apache.org"))
+    data.add(sql.MailingList(domain="alpha.apache.org", label="dev"))
+    await data.commit()
+
+    await writer.cycle_overrides_edit(_vote_form("10.1", email_to="userz@alpha.apache.org", min_hours=120))
+
+    assert (await _stored(data, "10.1"))["min_hours"] == 120
+    with pytest.raises(storage.AccessError, match="is not a mailing list"):
+        await writer.cycle_overrides_edit(_vote_form("10.1", email_to="usery@alpha.apache.org"))
+
+
 async def test_a_recipient_set_for_a_cycle_is_permitted_for_its_releases_only(data: db.Session) -> None:
     await _writer(data).cycle_overrides_edit(_vote_form("10.1", email_to="users@alpha.apache.org"))
     in_cycle = await data.release(key="example-10.1.5", _project=True).demand(AssertionError("Missing"))
     elsewhere = await data.release(key="example-9.0.1", _project=True).demand(AssertionError("Missing"))
 
     for_cycle = util.permitted_voting_recipients(
-        "alice", "alpha", settings=await interaction.release_settings(in_cycle, data)
+        "alice", "alpha.apache.org", settings=await interaction.release_settings(in_cycle, data)
     )
     for_other_cycle = util.permitted_voting_recipients(
-        "alice", "alpha", settings=await interaction.release_settings(elsewhere, data)
+        "alice", "alpha.apache.org", settings=await interaction.release_settings(elsewhere, data)
     )
 
     assert "users@alpha.apache.org" in for_cycle

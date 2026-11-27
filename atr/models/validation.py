@@ -209,8 +209,8 @@ def validate_uri_list(uris: list[str], allowed_schemes: frozenset[str]) -> None:
         )
 
 
-def validate_vote_recipients(committee_key: str, recipients: list[str]) -> None:
-    expected = f"{committee_key}.apache.org"
+def validate_vote_recipients(list_domain: str, recipients: list[str]) -> None:
+    expected = list_domain
     for recipient in recipients:
         if _email_domain(recipient) != expected:
             raise ValueError(f"Vote recipient '{recipient}' must be on '{expected}'.")
