@@ -95,7 +95,7 @@ async def test_distributions_automate_blocks_retired() -> None:
             safe.VersionKey("1.0.0"),
             "release",
             None,
-            safe.Alphanumeric("pkg"),
+            safe.PackageName("pkg"),
             safe.VersionKey("1.0.0"),
             False,
         )
@@ -117,7 +117,7 @@ async def test_distributions_record_blocks_retired_via_release_lookup() -> None:
             safe.ReleaseKey("project-1.0.0"),
             platform,
             None,
-            safe.Alphanumeric("pkg"),
+            safe.PackageName("pkg"),
             safe.VersionKey("1.0.0"),
             False,
             False,

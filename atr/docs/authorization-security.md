@@ -197,6 +197,8 @@ distributions:
 * **Edit the expected distributions** of a project, which ATR looks for on each release.
 
 **Allowed for**: Release managers and PMC members, obtained with `as_project_release_manager`.
+Administrators can also add expected distributions to any active project, from the Distribution
+import tab of the System page.
 
 **Constraints**:
 

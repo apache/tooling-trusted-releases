@@ -99,7 +99,7 @@ async def test_embargoed_staging_or_unpublished_is_not_queued(
         VERSION,
         "compose",
         None,
-        safe.Alphanumeric("example"),
+        safe.PackageName("example"),
         VERSION,
         staging,
     )

@@ -22,6 +22,10 @@ function applyPublicationStatus(data, button, message, whenReady) {
 	if (publishing && data.svn_html) {
 		document.getElementById("finish-svn-publish").innerHTML = data.svn_html;
 	}
+	const steps = document.getElementById("finish-announce-steps");
+	if (steps && data.steps_html) {
+		steps.innerHTML = data.steps_html;
+	}
 	message.textContent = data.message;
 	message.hidden = !data.message;
 	// A button offering to queue the announcement stays usable while waiting

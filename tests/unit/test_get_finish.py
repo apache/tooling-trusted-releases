@@ -85,10 +85,15 @@ async def test_announce_gate_reads_publication_status(
         project=sql.Project(key="example"),
         committee=None,
         distributions=[_not_found()] if missing else [],
+        expedited=False,
     )
     session = mock.Mock(prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release))
     publication = mock.AsyncMock(return_value=types.SimpleNamespace(id=42) if published else None)
     monkeypatch.setattr(finish.interaction, "release_completed_svn_publish_task_for_revision", publication)
+    monkeypatch.setattr(finish.interaction, "release_distribution_checks_held", mock.AsyncMock(return_value=False))
+    monkeypatch.setattr(finish.interaction, "release_in_flight_svn_publish_task", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(util, "as_url", lambda *_args, **_kwargs: "/distribution/list")
+    monkeypatch.setattr(finish.interaction, "release_queued_announcement", mock.AsyncMock(return_value=None))
     monitor = types.SimpleNamespace(status=status, result=results.DownloadsCheck(available=available))
     data = mock.MagicMock()
     data.__aenter__.return_value = data
@@ -101,12 +106,16 @@ async def test_announce_gate_reads_publication_status(
         response = await inspect.getclosurevars(inspect.unwrap(finish.downloads)).nonlocals["func"](
             session, "finish", "downloads", project, version, revision
         )
-        assert await response.get_json() == {
+        body = await response.get_json()
+        steps_html = body.pop("steps_html")
+        assert body == {
             "message": message,
             "ready": not message,
             "svn_html": None,
             "download_page_ready": published,
         }
+        # The last step says the release is ready exactly when the gate is open
+        assert ("Ready. Use Announce above." in steps_html) == (not message)
     session.release.assert_awaited_once_with(
         project,
         version,
@@ -179,7 +188,12 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
     session = mock.Mock(
         uid=uid, prevent_confusing_ui_display=mock.AsyncMock(), release=mock.AsyncMock(return_value=release)
     )
-    monkeypatch.setattr(finish.shared.announce, "blocked_message", mock.AsyncMock(return_value="Waiting"))
+    waiting = finish.shared.announce.AnnounceStep(
+        "svn", "Published", finish.shared.announce.StepState.TO_DO, "", "Waiting"
+    )
+    monkeypatch.setattr(finish.shared.announce, "steps", mock.AsyncMock(return_value=[waiting]))
+    monkeypatch.setattr(finish, "_render_announce_steps", mock.AsyncMock(return_value=""))
+    monkeypatch.setattr(finish.interaction, "release_queued_announcement", mock.AsyncMock(return_value=None))
     monkeypatch.setattr(finish, "_download_page_checkable", mock.AsyncMock(return_value=False))
     monkeypatch.setattr(
         finish.interaction, "release_completed_svn_publish_task_for_revision", mock.AsyncMock(return_value=None)
@@ -215,23 +229,56 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
     url.assert_any_call(finish.post.finish.selected, project_key="example", version_key="1.0")
 
 
-def test_render_publish_step_omits_promotion_for_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
+def _svn_step(state: str) -> finish.shared.announce.AnnounceStep:
+    return finish.shared.announce.AnnounceStep(
+        "svn", "Published", finish.shared.announce.StepState(state), "", "Waiting"
+    )
+
+
+def test_render_svn_step_omits_promotion_for_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
-    html = "".join(str(item) for item in finish._render_publish_step(False))
+    label, detail = finish._render_svn_step(_svn_step("done"), can_publish=True)
+    html = str(label) + "".join(str(item) for item in detail)
     assert "dist/release" in html
     assert "dist/atr" not in html
     assert "<a " not in html
 
 
-@pytest.mark.parametrize("target", [util.SvnPublishTarget.RELEASE, util.SvnPublishTarget.ATR])
-def test_render_publish_step_does_not_ask_again_when_published(
-    monkeypatch: pytest.MonkeyPatch, target: util.SvnPublishTarget
-) -> None:
-    monkeypatch.setattr(util, "svn_publish_target", lambda: target)
+def test_render_svn_step_links_to_the_publish_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
+    label, detail = finish._render_svn_step(_svn_step("to_do"), can_publish=True)
+    assert 'href="#finish-svn-publish"' in str(label)
+    assert detail == ["Not started. Use the publish form below."]
+    # Someone who cannot see the form is not sent to it
+    label, _detail = finish._render_svn_step(_svn_step("to_do"), can_publish=False)
+    assert "<a " not in str(label)
+
+
+def test_render_svn_step_keeps_the_promotion_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.ATR)
     monkeypatch.setattr(util, "as_url", lambda *_args, **_kwargs: "/docs")
-    html = "".join(str(item) for item in finish._render_publish_step(True))
-    assert "already requested" in html
-    assert "if you did not already" not in html
+    label, detail = finish._render_svn_step(_svn_step("in_progress"), can_publish=True)
+    html = str(label) + "".join(str(item) for item in detail)
+    assert "dist/atr" in html
+    assert "svn mv" in html
+    assert "#finish-svn-publish" not in html
+
+
+@pytest.mark.parametrize(
+    ("blocked", "queued", "state", "text"),
+    [
+        ("", False, "to_do", "Ready."),
+        ("Waiting", True, "in_progress", "Queued."),
+        ("Waiting", False, "to_do", "Announce when ready"),
+    ],
+)
+def test_render_announce_step(blocked: str, queued: bool, state: str, text: str) -> None:
+    release = types.SimpleNamespace(expedited=False)
+    html = str(finish._render_announce_step(release, blocked, queued=queued))
+    marker = {"to_do": "Not yet: ", "in_progress": "In progress: "}[state]
+    assert marker in html
+    assert text in html
+    assert "<a " not in html
 
 
 def test_svn_publish_label_names_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -250,3 +297,43 @@ def _not_found() -> sql.Distribution:
         version="1.0",
         status=sql.DistributionStatus.CHECKING,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("completed", "in_flight", "available", "svn", "downloads"),
+    [
+        (False, False, False, "to_do", "to_do"),
+        (False, True, False, "in_progress", "to_do"),
+        (True, False, False, "done", "in_progress"),
+        (True, False, True, "done", "done"),
+    ],
+)
+async def test_announce_steps_show_work_in_progress(
+    monkeypatch, completed, in_flight, available, svn, downloads
+) -> None:
+    monkeypatch.setattr(config, "svn_publish_kind", lambda: config.SvnPublishKind.ASF_DISTRIBUTION)
+    publication = types.SimpleNamespace(id=42) if completed else None
+    monkeypatch.setattr(
+        finish.interaction, "release_completed_svn_publish_task_for_revision", mock.AsyncMock(return_value=publication)
+    )
+    monkeypatch.setattr(
+        finish.interaction,
+        "release_in_flight_svn_publish_task",
+        mock.AsyncMock(return_value=object() if in_flight else None),
+    )
+    monitor = types.SimpleNamespace(status=sql.TaskStatus.COMPLETED, result=results.DownloadsCheck(available=available))
+    data = mock.MagicMock()
+    data.__aenter__.return_value = data
+    data.task.return_value.get = mock.AsyncMock(return_value=monitor)
+    monkeypatch.setattr(db, "session", lambda: data)
+    release = types.SimpleNamespace(
+        safe_project_key=safe.ProjectKey("example"),
+        safe_version_key=safe.VersionKey("1.0"),
+        safe_latest_revision_number=safe.RevisionNumber("00001"),
+        distributions=[_not_found()],
+    )
+
+    steps = await finish.shared.announce.steps(release)
+
+    assert [step.state.value for step in steps] == [svn, downloads, "in_progress"]

@@ -25,11 +25,14 @@ import pytest
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
+import atr.config as config
 import atr.datasources.apache as apache
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.get.projects as projects
 import atr.models.sql as sql
+import atr.storage as storage
+import atr.storage.writers.policy as policy_writer
 import atr.util as util
 
 _COMMITTEE_DEV_LISTS = interaction.committee_dev_lists
@@ -291,3 +294,21 @@ def _mock_feed(monkeypatch, payload):
     session.get.return_value = response
     session.__aenter__.return_value = session
     monkeypatch.setattr(apache.util, "create_secure_session", mock.MagicMock(return_value=session))
+
+
+@pytest.mark.parametrize("action", [sql.RecipientAction.VOTE, sql.RecipientAction.ANNOUNCE])
+async def test_alpha_test_recipients_can_be_saved(data, monkeypatch, action):
+    data.add(sql.MailingList(domain="db.apache.org", label="dev"))
+    await data.commit()
+    project = sql.Project(key="db", name="DB", committee=sql.Committee(key="db", name="DB"))
+    addresses = [util.USER_TESTS_ADDRESS, "arm@apache.org"]
+
+    monkeypatch.setattr(config.get(), "ATR_STATUS", "ALPHA")
+    await policy_writer._check_recipients(data, project, action, addresses, {}, "arm")
+    # Only the caller's own address is offered, so someone else's is still checked
+    with pytest.raises(storage.AccessError):
+        await policy_writer._check_recipients(data, project, action, addresses, {}, "wave")
+
+    monkeypatch.setattr(config.get(), "ATR_STATUS", "PRODUCTION")
+    with pytest.raises(storage.AccessError):
+        await policy_writer._check_recipients(data, project, action, addresses, {}, "arm")

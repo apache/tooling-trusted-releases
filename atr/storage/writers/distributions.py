@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import TYPE_CHECKING, Final
 
 import sqlmodel
@@ -64,6 +65,48 @@ async def _ensure_not_held(release: models.sql.Release, data: db.Session) -> Non
         raise storage.AccessError(distribution.CHECKS_HELD_MESSAGE, status=409)
 
 
+async def _expected_add_no_commit(
+    data: db.Session,
+    project: models.sql.Project,
+    packages: Sequence[models.distribution.ExpectedPackage],
+    asf_uid: str,
+) -> int:
+    # Every package is checked before any is added, so one bad line adds nothing
+    wanted: dict[tuple[models.sql.DistributionPlatform, str, str, str], None] = {}
+    for entry in packages:
+        namespace = str(entry.owner_namespace or "") or (entry.platform.value.default_owner_namespace or "")
+        try:
+            util.validate_distribution_owner_namespace(entry.platform, namespace)
+        except ValueError as e:
+            raise storage.AccessError(str(e.args[0]), status=400) from e
+        pattern = entry.version_pattern.strip() or "{{VERSION}}"
+        _validate_version_pattern(entry.platform, pattern)
+        wanted[(entry.platform, namespace, _package_name(entry.platform, str(entry.package)), pattern)] = None
+    rows = await data.expected_distribution(project_key=project.key).all()
+    existing = {
+        (row.platform, row.owner_namespace, _package_name(row.platform, row.package), row.version_pattern)
+        for row in rows
+    }
+    added = 0
+    for platform, namespace, package, pattern in wanted:
+        if (platform, namespace, package, pattern) in existing:
+            continue
+        data.add(
+            models.sql.ExpectedDistribution(
+                project_key=project.key,
+                platform=platform,
+                owner_namespace=namespace,
+                package=package,
+                version_pattern=pattern,
+                created_by=asf_uid,
+            )
+        )
+        added += 1
+    if added:
+        project.mark_updated(by=asf_uid, update_type=models.sql.UpdateType.MANUAL)
+    return added
+
+
 async def _look_up(dd: models.distribution.Data, staging: bool) -> models.distribution.Metadata | None:
     # None if the platform doesn't have the package
     api_url = distribution.get_api_url(dd, staging)
@@ -86,6 +129,13 @@ async def _look_up(dd: models.distribution.Data, staging: bool) -> models.distri
         upload_date=upload_date,
         web_url=distribution.distribution_web_url(dd.platform, result, dd.version),
     )
+
+
+def _package_name(platform: models.sql.DistributionPlatform, package: str) -> str:
+    # PyPI treats runs of -, _ and . as the same, and ignores case
+    if platform is models.sql.DistributionPlatform.PYPI:
+        return re.sub(r"[-_.]+", "-", package).lower()
+    return package
 
 
 def _validate_version_pattern(platform: models.sql.DistributionPlatform, pattern: str) -> None:
@@ -177,7 +227,7 @@ class ReleaseManager(CommitteeParticipant):
         version_key: models.safe.VersionKey,
         phase: str,
         revision_number: str | None,
-        package: models.safe.Alphanumeric,
+        package: models.safe.PackageName,
         version: models.safe.VersionKey,
         staging: bool,
     ) -> models.sql.Task:
@@ -330,7 +380,7 @@ class ReleaseManager(CommitteeParticipant):
         release_key: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: models.safe.OwnerNamespace | None,
-        package: models.safe.Alphanumeric,
+        package: models.safe.PackageName,
         version: models.safe.VersionKey,
         staging: bool,
         pending: bool,
@@ -340,15 +390,14 @@ class ReleaseManager(CommitteeParticipant):
     ) -> tuple[models.sql.Distribution, bool]:
         await self.__validate_release_in_committee(release_key)
         namespace = str(owner_namespace) if owner_namespace else (platform.value.default_owner_namespace or "")
+        name = _package_name(platform, str(package))
         checked = datetime.datetime.now(datetime.UTC)
-        existing = await self.__data.distribution(
-            str(release_key), platform, namespace, str(package), str(version)
-        ).get()
+        existing = await self.__data.distribution(str(release_key), platform, namespace, name, str(version)).get()
         dist = models.sql.Distribution(
             platform=platform,
             release_key=str(release_key),
             owner_namespace=namespace,
-            package=str(package),
+            package=name,
             version=str(version),
             staging=staging,
             status=models.sql.DistributionStatus.CHECKING if pending else models.sql.DistributionStatus.FOUND,
@@ -377,7 +426,7 @@ class ReleaseManager(CommitteeParticipant):
                 release_key,
                 platform,
                 namespace,
-                str(package),
+                name,
                 str(version),
                 pending,
                 upload_date,
@@ -607,45 +656,16 @@ class ReleaseManager(CommitteeParticipant):
     async def expected_add(
         self,
         project_key: models.safe.ProjectKey,
-        platform: models.sql.DistributionPlatform,
-        owner_namespace: models.safe.OwnerNamespace | None,
-        packages: Sequence[models.safe.Alphanumeric],
-        version_pattern: str,
+        packages: Sequence[models.distribution.ExpectedPackage],
     ) -> int:
         project = await self.__validate_project_in_committee(project_key)
-        namespace = str(owner_namespace) if owner_namespace else (platform.value.default_owner_namespace or "")
-        try:
-            util.validate_distribution_owner_namespace(platform, namespace)
-        except ValueError as e:
-            raise storage.AccessError(str(e.args[0]), status=400) from e
-        pattern = version_pattern.strip() or "{{VERSION}}"
-        _validate_version_pattern(platform, pattern)
-        added = 0
-        for package in dict.fromkeys(str(package) for package in packages):
-            existing = await self.__data.expected_distribution(
-                str(project_key), platform, namespace, package, pattern
-            ).get()
-            if existing is not None:
-                continue
-            self.__data.add(
-                models.sql.ExpectedDistribution(
-                    project_key=str(project_key),
-                    platform=platform,
-                    owner_namespace=namespace,
-                    package=package,
-                    version_pattern=pattern,
-                    created_by=self.__asf_uid,
-                )
-            )
-            added += 1
-        if added:
-            project.mark_updated(by=self.__asf_uid, update_type=models.sql.UpdateType.MANUAL)
+        added = await _expected_add_no_commit(self.__data, project, packages, self.__asf_uid)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             operation="distribution_expected_add",
             project_key=str(project_key),
-            platform=platform.name,
+            platforms=", ".join(sorted({package.platform.name for package in packages})),
             added=added,
         )
         return added
@@ -737,7 +757,9 @@ class CommitteeMember(ReleaseManager):
 class FoundationAdmin(FoundationCommitter):
     def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
         super().__init__(write, write_as, data)
+        self.__write_as = write_as
         self.__data = data
+        self.__asf_uid = write.authorisation.asf_uid
 
     async def check(
         self,
@@ -792,6 +814,29 @@ class FoundationAdmin(FoundationCommitter):
         await self.__data.execute(update)
         await self.__data.commit()
 
+    async def expected_add(
+        self,
+        project_key: models.safe.ProjectKey,
+        packages: Sequence[models.distribution.ExpectedPackage],
+    ) -> int:
+        """Add expected distributions to any active project."""
+        if self.__asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        project = await self.__data.project(key=str(project_key)).demand(
+            storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        )
+        storage.ensure_project_active(project)
+        added = await _expected_add_no_commit(self.__data, project, packages, self.__asf_uid)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            operation="distribution_expected_add",
+            project_key=str(project_key),
+            platforms=", ".join(sorted({package.platform.name for package in packages})),
+            added=added,
+        )
+        return added
+
     async def expected_replace_no_commit(
         self,
         project_key: models.safe.ProjectKey,
@@ -809,11 +854,11 @@ class FoundationAdmin(FoundationCommitter):
             pattern = entry.version.strip() or "{{VERSION}}"
             _validate_version_pattern(entry.platform, pattern)
             for package in entry.packages:
-                wanted[(entry.platform, namespace, str(package), pattern)] = None
+                wanted[(entry.platform, namespace, _package_name(entry.platform, str(package)), pattern)] = None
         existing = await self.__data.expected_distribution(project_key=str(project_key)).all()
         kept = set()
         for row in existing:
-            key = (row.platform, row.owner_namespace, row.package, row.version_pattern)
+            key = (row.platform, row.owner_namespace, _package_name(row.platform, row.package), row.version_pattern)
             if key in wanted:
                 kept.add(key)
             else:

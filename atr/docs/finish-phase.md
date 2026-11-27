@@ -44,7 +44,8 @@ The finish phase is again mostly the work of the Release Manager:
 * Announce the release through ATR. ATR checks that the artifacts have reached the download servers
   first. While the release cannot be announced yet, ***Announce when ready*** on the finish page lets
   you write the announcement in advance, and ATR sends it once the artifacts have been published and
-  have propagated and every expected distribution has been found or ignored. A queued announcement
+  have propagated and every expected distribution has been found or ignored. The list at the top of
+  the finish page shows whether each of these steps is done, in progress, or not started. A queued announcement
   can be cancelled from the same page. If ATR cannot send it, for example because
   the release changed after it was queued, ATR drops it and notifies you. The announcement of an expedited security release cannot be queued.
 

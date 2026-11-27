@@ -342,6 +342,92 @@ async def test_expect_for_release_carries_staged_rows(sqlite_sessionmaker) -> No
 
 
 @pytest.mark.asyncio
+async def test_expected_add_across_platforms(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        packages = [
+            *_packages(_MAVEN, _NAMESPACE, "core"),
+            *_packages(sql.DistributionPlatform.PYPI, None, "example"),
+            *_packages(sql.DistributionPlatform.DOCKER_HUB, None, "example"),
+        ]
+
+        added = await _release_manager(data).expected_add(_PROJECT, packages)
+
+        assert added == 3
+        rows = await data.expected_distribution(project_key=str(_PROJECT)).all()
+        assert {(row.platform, row.owner_namespace, row.package) for row in rows} == {
+            (_MAVEN, _NAMESPACE, "core"),
+            (sql.DistributionPlatform.PYPI, "", "example"),
+            (sql.DistributionPlatform.DOCKER_HUB, "library", "example"),
+        }
+
+
+@pytest.mark.asyncio
+async def test_expected_add_takes_each_package_pattern(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        packages = [
+            *_packages(_MAVEN, _NAMESPACE, "core"),
+            *_packages(_MAVEN, _NAMESPACE, "core", pattern="{{VERSION}}-jdk17"),
+        ]
+
+        added = await _release_manager(data).expected_add(_PROJECT, packages)
+
+        assert added == 2
+        rows = await data.expected_distribution(project_key=str(_PROJECT)).all()
+        assert {row.version_pattern for row in rows} == {"{{VERSION}}", "{{VERSION}}-jdk17"}
+
+
+@pytest.mark.asyncio
+async def test_expected_add_matches_pypi_names_in_any_case(sqlite_sessionmaker) -> None:
+    pypi = sql.DistributionPlatform.PYPI
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        data.add(
+            sql.ExpectedDistribution(
+                project_key=str(_PROJECT), platform=pypi, owner_namespace="", package="Apache-Example"
+            )
+        )
+        await data.commit()
+
+        added = await _release_manager(data).expected_add(
+            _PROJECT, _packages(pypi, None, "apache-example", "apache_example", "Apache.Example", "Other")
+        )
+
+        assert added == 1
+        rows = await data.expected_distribution(project_key=str(_PROJECT)).all()
+        assert {row.package for row in rows} == {"Apache-Example", "other"}
+
+
+@pytest.mark.asyncio
+async def test_expected_add_as_admin(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        writer = _admin(data)
+        writer._FoundationAdmin__asf_uid = "admin"
+        writer._FoundationAdmin__write_as = mock.MagicMock()
+
+        added = await writer.expected_add(_PROJECT, _packages(_MAVEN, _NAMESPACE, "core", "api"))
+
+        assert added == 2
+        rows = await data.expected_distribution(project_key=str(_PROJECT)).all()
+        assert {(row.package, row.created_by) for row in rows} == {("core", "admin"), ("api", "admin")}
+
+
+@pytest.mark.asyncio
+async def test_expected_add_checks_every_package_first(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        # The Maven package has no namespace, so the PyPI one before it must not be added either
+        packages = [*_packages(sql.DistributionPlatform.PYPI, None, "example"), *_packages(_MAVEN, None, "core")]
+
+        with pytest.raises(storage.AccessError):
+            await _release_manager(data).expected_add(_PROJECT, packages)
+
+        assert await data.expected_distribution(project_key=str(_PROJECT)).all() == []
+
+
+@pytest.mark.asyncio
 async def test_expected_add_docker_hub_requires_release_version(sqlite_sessionmaker) -> None:
     docker_hub = sql.DistributionPlatform.DOCKER_HUB
     async with sqlite_sessionmaker() as data:
@@ -349,8 +435,8 @@ async def test_expected_add_docker_hub_requires_release_version(sqlite_sessionma
         writer = _release_manager(data)
 
         with pytest.raises(storage.AccessError):
-            await writer.expected_add(_PROJECT, docker_hub, None, [safe.Alphanumeric("core")], "{{MAJOR_VERSION}}")
-        added = await writer.expected_add(_PROJECT, docker_hub, None, [safe.Alphanumeric("core")], "{{VERSION}}-jdk17")
+            await writer.expected_add(_PROJECT, _packages(docker_hub, None, "core", pattern="{{MAJOR_VERSION}}"))
+        added = await writer.expected_add(_PROJECT, _packages(docker_hub, None, "core", pattern="{{VERSION}}-jdk17"))
 
         assert added == 1
 
@@ -386,7 +472,7 @@ async def test_expected_add_requires_namespace(sqlite_sessionmaker) -> None:
         await _seed_release(data)
 
         with pytest.raises(storage.AccessError):
-            await _release_manager(data).expected_add(_PROJECT, _MAVEN, None, [safe.Alphanumeric("core")], "")
+            await _release_manager(data).expected_add(_PROJECT, _packages(_MAVEN, None, "core"))
 
 
 @pytest.mark.asyncio
@@ -395,11 +481,9 @@ async def test_expected_add_skips_existing(sqlite_sessionmaker) -> None:
         await _seed_release(data)
         data.add(_expected("core"))
         await data.commit()
-        packages = [safe.Alphanumeric("core"), safe.Alphanumeric("api"), safe.Alphanumeric("api")]
+        packages = _packages(_MAVEN, _NAMESPACE, "core", "api", "api")
 
-        added = await _release_manager(data).expected_add(
-            _PROJECT, _MAVEN, safe.OwnerNamespace(_NAMESPACE), packages, ""
-        )
+        added = await _release_manager(data).expected_add(_PROJECT, packages)
 
         assert added == 1
         rows = await data.expected_distribution(project_key=str(_PROJECT)).all()
@@ -441,6 +525,53 @@ async def test_expected_replace(sqlite_sessionmaker) -> None:
             ("MAVEN", "api", "{{VERSION}}", None),
             ("PYPI", "project", "{{VERSION}}.post1", None),
         }
+
+
+@pytest.mark.asyncio
+async def test_expected_replace_keeps_a_pypi_name_spelled_differently(sqlite_sessionmaker) -> None:
+    pypi = sql.DistributionPlatform.PYPI
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        data.add(
+            sql.ExpectedDistribution(
+                project_key=str(_PROJECT),
+                platform=pypi,
+                owner_namespace="",
+                package="zope-interface",
+                created_by="alice",
+            )
+        )
+        await data.commit()
+        given = [api.ProjectConfigDistributionArgs(platform="PYPI", packages=["zope.interface"])]
+
+        await _admin(data).expected_replace_no_commit(_PROJECT, given)
+        await data.commit()
+
+        rows = await data.expected_distribution(project_key=str(_PROJECT)).all()
+        assert {(row.package, row.created_by) for row in rows} == {("zope-interface", "alice")}
+
+
+@pytest.mark.asyncio
+async def test_record_matches_a_pypi_name_spelled_differently(sqlite_sessionmaker) -> None:
+    pypi = sql.DistributionPlatform.PYPI
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data)
+        data.add(_distribution("zope-interface", sql.DistributionStatus.CHECKING, platform=pypi, owner_namespace=""))
+        await data.commit()
+
+        row, added = await _release_manager(data).record(
+            _RELEASE,
+            pypi,
+            None,
+            safe.PackageName("Zope.Interface"),
+            safe.VersionKey("1.0.0"),
+            False,
+            False,
+            _UPLOADED,
+        )
+
+        assert not added
+        assert (row.package, row.status) == ("zope-interface", sql.DistributionStatus.FOUND)
 
 
 @pytest.mark.asyncio
@@ -491,7 +622,7 @@ async def test_record_fills_in_default_namespace(sqlite_sessionmaker) -> None:
             _RELEASE,
             sql.DistributionPlatform.DOCKER_HUB,
             None,
-            safe.Alphanumeric("project"),
+            safe.PackageName("project"),
             safe.VersionKey("1.0.0"),
             False,
             False,
@@ -526,7 +657,7 @@ async def test_record_from_data_refuses_staging_outside_compose(sqlite_sessionma
         dd = models_distribution.Data(
             platform=_MAVEN,
             owner_namespace=safe.OwnerNamespace(_NAMESPACE),
-            package=safe.Alphanumeric("core"),
+            package=safe.PackageName("core"),
             version=safe.VersionKey("1.0.0"),
             details=False,
         )
@@ -685,12 +816,19 @@ def _expected(package: str, **fields) -> sql.ExpectedDistribution:
     )
 
 
+def _packages(
+    platform: sql.DistributionPlatform, owner_namespace: str | None, *names: str, pattern: str = ""
+) -> list[models_distribution.ExpectedPackage]:
+    namespace = safe.OwnerNamespace(owner_namespace) if owner_namespace else None
+    return [models_distribution.ExpectedPackage(platform, namespace, safe.PackageName(name), pattern) for name in names]
+
+
 async def _record(data: db.Session, *, staging: bool) -> tuple[sql.Distribution, bool]:
     return await _release_manager(data).record(
         _RELEASE,
         _MAVEN,
         safe.OwnerNamespace(_NAMESPACE),
-        safe.Alphanumeric("core"),
+        safe.PackageName("core"),
         safe.VersionKey("1.0.0"),
         staging,
         False,

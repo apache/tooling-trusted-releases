@@ -1491,7 +1491,7 @@ def permitted_announce_recipients(
     asf_uid: str, committee: sql.Committee | None = None, *, settings: sql.PolicySettings | None = None
 ) -> list[str]:
     if config.get().ATR_STATUS == "ALPHA":
-        return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
+        return test_recipients(asf_uid)
     recipients = ["announce@apache.org"]
     if committee is not None:
         recipients.extend([*committee.mail_addresses, f"private@{committee.list_domain}"])
@@ -1523,11 +1523,7 @@ def permitted_podling_first_round_recipients(
 
 
 def permitted_podling_second_round_recipients(asf_uid: str) -> list[str]:
-    recipients = [INCUBATOR_GENERAL_ADDRESS]
-    if config.get().ATR_STATUS == "ALPHA":
-        recipients.append(USER_TESTS_ADDRESS)
-        recipients.append(f"{asf_uid}@apache.org")
-    return recipients
+    return [INCUBATOR_GENERAL_ADDRESS, *test_recipients(asf_uid)]
 
 
 def permitted_voting_recipients(
@@ -1537,10 +1533,7 @@ def permitted_voting_recipients(
     settings: sql.PolicySettings | None = None,
     dev_lists: Sequence[str] = (),
 ) -> list[str]:
-    recipients = [*_vote_lists(list_domain, dev_lists), f"private@{list_domain}"]
-    if config.get().ATR_STATUS == "ALPHA":
-        recipients.append(USER_TESTS_ADDRESS)
-        recipients.append(f"{asf_uid}@apache.org")
+    recipients = [*_vote_lists(list_domain, dev_lists), f"private@{list_domain}", *test_recipients(asf_uid)]
     _add_policy_recipients(recipients, settings, sql.RecipientAction.VOTE)
     return recipients
 
@@ -1718,6 +1711,13 @@ async def task_archive_url_strict(task_mid: str, recipient: str | None = None) -
     if not isinstance(mid, str):
         return None
     return "https://lists.apache.org/thread/" + urllib.parse.quote(mid)
+
+
+def test_recipients(asf_uid: str) -> list[str]:
+    """Test addresses that an alpha server offers as recipients. Empty on any other server."""
+    if config.get().ATR_STATUS != "ALPHA":
+        return []
+    return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
 
 
 async def thread_messages(  # noqa: C901

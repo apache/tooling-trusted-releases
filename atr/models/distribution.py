@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+from typing import NamedTuple
 
 import pydantic
 
@@ -46,6 +47,14 @@ class ArtifactHubResponse(schema.Subset):
 
 class DockerResponse(schema.Subset):
     tag_last_pushed: str | None = None
+
+
+class ExpectedPackage(NamedTuple):
+    # An empty owner_namespace takes the platform's default, and an empty version_pattern means {{VERSION}}
+    platform: sql.DistributionPlatform
+    owner_namespace: safe.OwnerNamespace | None
+    package: safe.PackageName
+    version_pattern: str
 
 
 class GitHubResponse(schema.Subset):
@@ -87,6 +96,20 @@ class PyPIResponse(schema.Subset):
     info: PyPIInfo = pydantic.Field(default_factory=PyPIInfo)
 
 
+class RepositorySearchArtifact(schema.Subset):
+    group_id: str = pydantic.Field(alias="groupId")
+    artifact_id: str = pydantic.Field(alias="artifactId")
+    version: str
+
+
+class RepositorySearchResponse(schema.Subset):
+    # Without a count, Nexus returns up to 200 artifacts and sets tooManyResults past that. Its
+    # totalCount counts files, not artifacts, so it can't be compared with len(data)
+    too_many_results: bool = pydantic.Field(default=False, alias="tooManyResults")
+    collapsed: bool = False
+    data: list[RepositorySearchArtifact] = pydantic.Field(default_factory=list)
+
+
 # Lax to ignore csrf_token and submit
 # Our previous forms implementation typed platform as Any, which was insufficient
 # And this way we also get nice JSON from the Pydantic model dump
@@ -94,7 +117,7 @@ class PyPIResponse(schema.Subset):
 class Data(schema.Subset):
     platform: sql.DistributionPlatform
     owner_namespace: safe.OwnerNamespace | None = None
-    package: safe.Alphanumeric
+    package: safe.PackageName
     version: safe.VersionKey
     details: bool
 

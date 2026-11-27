@@ -73,6 +73,7 @@ import atr.util as util
 #         return outcome.Error(e)
 
 
+_REPOSITORY_SEARCH_URL: Final = "https://repository.apache.org/service/local/lucene/search"
 _SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
 _TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
 CHECKS_HELD_MESSAGE: Final = (
@@ -172,7 +173,7 @@ class DistributionAutomateForm(form.Form):
         "Owner or namespace",
         OWNER_NAMESPACE_HELP,
     )
-    package: safe.Alphanumeric = form.label("Package", required=True)
+    package: safe.PackageName = form.label("Package", required=True)
     version: safe.VersionKey = form.label("Version", required=True)
     details: form.Bool = form.label(
         "Include details",
@@ -198,7 +199,7 @@ class DistributionRecordForm(form.Form):
         "Owner or namespace",
         OWNER_NAMESPACE_HELP,
     )
-    package: safe.Alphanumeric = form.label("Package", required=True)
+    package: safe.PackageName = form.label("Package", required=True)
     version: safe.VersionKey = form.label("Version", required=True)
     details: form.Bool = form.label(
         "Include details",
@@ -480,6 +481,35 @@ async def json_from_maven_xml(api_url: str, version_key: safe.VersionKey) -> out
         return outcome.Error(e)
     except ElementTree.ParseError as e:
         return outcome.Error(RuntimeError(f"Failed to parse Maven XML: {e}"))
+
+
+async def maven_packages_from_repository(group_id: str, version: str) -> list[tuple[str, str]]:
+    """The (groupId, artifactId) pairs that repository.apache.org holds at a version.
+
+    A groupId ending in * also matches its subgroups.
+    """
+    query = urllib.parse.urlencode({"g": group_id, "v": version})
+    try:
+        async with util.create_secure_session(timeout=_TIMEOUT) as session:
+            async with session.get(
+                f"{_REPOSITORY_SEARCH_URL}?{query}", headers={"Accept": "application/json"}
+            ) as response:
+                response.raise_for_status()
+                body = await response.json()
+    except (aiohttp.ClientError, TimeoutError) as e:
+        raise DistributionError(f"Could not search repository.apache.org: {e}") from e
+    except ValueError as e:
+        raise DistributionError(f"repository.apache.org did not return JSON: {e}") from e
+    try:
+        found = distribution.RepositorySearchResponse.model_validate(body)
+    except pydantic.ValidationError as e:
+        raise DistributionError(f"Unexpected response from repository.apache.org: {e}") from e
+    # A collapsed search lists only the latest version of each artifact
+    if found.too_many_results or found.collapsed:
+        raise DistributionError("repository.apache.org found too many artifacts. Try a narrower groupId.")
+    # The search is not documented to match versions exactly, so they are filtered again here
+    pairs = {(artifact.group_id, artifact.artifact_id) for artifact in found.data if artifact.version == version}
+    return sorted(pairs)
 
 
 def outstanding_message(distributions: Sequence[sql.Distribution]) -> str:

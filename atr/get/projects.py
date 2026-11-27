@@ -1509,6 +1509,7 @@ async def _render_expected_distributions_add(
     ]
     action = _view_action(project, "third-party-distribution")
     with card.block(htm.div, classes=".card-body") as card_body:
+        card_body.p[f"Record distributions that a version of {project.display_name} expects to make."]
         card_body.append(shared.distribution.html_platforms_without_namespace())
         await form.render_block(
             card_body,
@@ -1519,6 +1520,21 @@ async def _render_expected_distributions_add(
             form_classes=".atr-canary.py-4.px-5",
             border=True,
             textarea_rows=5,
+        )
+        card_body.p(".mt-4.mb-2")[
+            "Alternatively, enter a list of Package URLs. Each specifies a platform, so one list can cover"
+            " several platforms."
+        ]
+        await form.render_block(
+            card_body,
+            model_cls=shared.projects.AddExpectedPurlsForm,
+            action=action,
+            submit_label="Add",
+            defaults={"project_key": str(project.key)},
+            form_classes=".atr-canary.py-4.px-5",
+            border=True,
+            textarea_rows=5,
+            id_prefix="purl-",
         )
         if (latest is not None) and missing:
             packages = util.plural(len(missing), "package", include_count=True)
@@ -1561,14 +1577,21 @@ def _render_expected_distributions_group(
         )
         version = "Same as the release" if (row.version_pattern == "{{VERSION}}") else htm.code[row.version_pattern]
         package = purl.expected(row) or row.package
-        table_rows.append(htm.tr[htm.td[htm.code[package]], htm.td[version], htm.td(".text-end")[remove_form]])
+        table_rows.append(
+            htm.tr[
+                htm.td(".text-break")[htm.code[package]],
+                htm.td(".text-break")[version],
+                htm.td(".text-end")[remove_form],
+            ]
+        )
     summary = htm.summary[
         htm.span(".badge.bg-secondary.me-2.font-monospace")[str(len(rows))],
         first.platform.value.name,
         (" ", htm.code[first.owner_namespace]) if first.owner_namespace else "",
     ]
-    table = htm.table(".table.table-sm.table-bordered.table-striped.mt-2")[
-        htm.thead[htm.tr[htm.th["Package"], htm.th["Version"], htm.th[""]]],
+    # Fixed widths, so that the columns of every group's table line up
+    table = htm.table(".table.table-sm.table-bordered.table-striped.mt-2.atr-table-fixed")[
+        htm.thead[htm.tr[htm.th(".w-50")["Package"], htm.th(".w-25")["Version"], htm.th(".w-25")[""]]],
         htm.tbody[*table_rows],
     ]
     if is_open:

@@ -232,7 +232,7 @@ class DistributionRecordArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "example")
-    distribution_package: safe.Alphanumeric = schema.example("example")
+    distribution_package: safe.PackageName = schema.example("example")
     distribution_version: safe.VersionKey = schema.example("0.0.1")
     staging: bool = schema.example(False)
     details: bool = schema.example(False)
@@ -260,7 +260,7 @@ class DistributionRecordFromWorkflowArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "example")
-    distribution_package: safe.Alphanumeric = schema.example("example")
+    distribution_package: safe.PackageName = schema.example("example")
     distribution_version: safe.VersionKey = schema.example("0.0.1")
     phase: TrustedWorkflowPhase = schema.Field(default="compose", json_schema_extra={"examples": ["compose", "finish"]})
     staging: bool = schema.example(False)
@@ -297,7 +297,7 @@ class DistributionStageArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "example")
-    distribution_package: safe.Alphanumeric = schema.example("example")
+    distribution_package: safe.PackageName = schema.example("example")
     distribution_version: safe.VersionKey = schema.example("0.0.1")
     details: bool = schema.example(False)
 
@@ -732,7 +732,7 @@ class ProjectConfigCycleArgs(PolicyArgsBase):
 class ProjectConfigDistributionArgs(schema.Strict):
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.MAVEN)
     owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "org.apache.example")
-    packages: list[safe.Alphanumeric] = schema.Field(
+    packages: list[safe.PackageName] = schema.Field(
         min_length=1, json_schema_extra={"example": ["example-core", "example-api"]}
     )
     version: str = schema.default_example("{{VERSION}}", "{{VERSION}}")
@@ -803,7 +803,7 @@ class PublisherDistributionRecordArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: safe.OwnerNamespace | None = schema.default_example(None, "example")
-    distribution_package: safe.Alphanumeric = schema.example("example")
+    distribution_package: safe.PackageName = schema.example("example")
     distribution_version: safe.VersionKey = schema.example("0.0.1")
     staging: bool = schema.example(False)
     details: bool = schema.example(False)

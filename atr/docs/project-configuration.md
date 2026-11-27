@@ -217,12 +217,22 @@ To add packages, choose the platform and fill in:
 * **Owner or namespace.** The groupId for Maven Central, the scope for a scoped npm package, the
   namespace on Docker Hub, or the repository on Artifact Hub. The field is hidden for a platform
   without one.
-* **Packages.** The package names, one per line.
+* **Packages.** The package names, one per line. A name may contain letters, digits, hyphens, full
+  stops, and underscores.
 * **Version.** Leave this empty when the package has the same version as the release. Otherwise
   write the package's version using the tokens `{{PROJECT_KEY}}`, `{{VERSION}}`, and
   `{{MAJOR_VERSION}}`, so that `{{VERSION}}-jdk17` expects `10.1.62-jdk17` for release `10.1.62`.
   A Docker Hub version must include `{{VERSION}}`, as a tag shared between releases, such as
   `latest`, can be moved to another image.
+
+You can instead give the packages as Package URLs, one per line, such as
+`pkg:maven/org.apache.tomcat/tomcat-catalina@{{VERSION}}` or `pkg:docker/apache/name@{{VERSION}}-jdk17`.
+Each one specifies a platform, so one list can cover several platforms. Every Package URL needs a
+version, written with the same tokens as the **Version** field above. Artifact Hub has no Package
+URL type, so its packages have to be added with the platform form.
+
+An ATR administrator can also add a project's Maven packages in bulk, from the artifacts that
+repository.apache.org holds for a groupId at one version.
 
 Packages are listed by [Package URL](https://github.com/package-url/purl-spec) where the platform
 has one. If the latest release with distributions found on a platform has any that are not in the

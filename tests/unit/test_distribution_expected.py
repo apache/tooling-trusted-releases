@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Any
+
 import pytest
 
 import atr.models.sql as sql
@@ -23,6 +25,92 @@ import atr.storage as storage
 import atr.storage.writers.distributions as distributions
 
 _MAVEN = sql.DistributionPlatform.MAVEN
+
+
+class _FakeResponse:
+    def __init__(self, body: Any, error: Exception | None = None) -> None:
+        self.__body = body
+        self.__error = error
+
+    async def __aenter__(self) -> _FakeResponse:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def json(self) -> Any:
+        if self.__error is not None:
+            raise self.__error
+        return self.__body
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class _FakeSession:
+    def __init__(self, body: Any) -> None:
+        self.body = body
+        self.error: Exception | None = None
+        self.requests: list[tuple[str, dict[str, str] | None]] = []
+
+    async def __aenter__(self) -> _FakeSession:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    def get(self, url: str, headers: dict[str, str] | None = None) -> _FakeResponse:
+        self.requests.append((url, headers))
+        return _FakeResponse(self.body, self.error)
+
+
+@pytest.mark.asyncio
+async def test_maven_packages_from_repository_keeps_the_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _FakeSession(
+        {
+            "totalCount": 4,
+            "tooManyResults": False,
+            "data": [
+                {"groupId": "org.apache.example", "artifactId": "example-core", "version": "1.0.0"},
+                {"groupId": "org.apache.example", "artifactId": "example-api", "version": "1.0.0"},
+                {"groupId": "org.apache.example", "artifactId": "example-api", "version": "1.0.0"},
+                {"groupId": "org.apache.example", "artifactId": "example-old", "version": "1.0.0-M1"},
+            ],
+        }
+    )
+    monkeypatch.setattr(distribution.util, "create_secure_session", lambda **_kwargs: session)
+
+    pairs = await distribution.maven_packages_from_repository("org.apache.example*", "1.0.0")
+
+    assert pairs == [("org.apache.example", "example-api"), ("org.apache.example", "example-core")]
+    [(url, headers)] = session.requests
+    assert url.endswith("/service/local/lucene/search?g=org.apache.example%2A&v=1.0.0")
+    assert headers == {"Accept": "application/json"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [{"tooManyResults": True, "data": []}, {"collapsed": True, "data": []}])
+async def test_maven_packages_from_repository_refuses_an_incomplete_search(
+    monkeypatch: pytest.MonkeyPatch, body: dict[str, Any]
+) -> None:
+    session = _FakeSession(body)
+    monkeypatch.setattr(distribution.util, "create_secure_session", lambda **_kwargs: session)
+
+    with pytest.raises(distribution.DistributionError):
+        await distribution.maven_packages_from_repository("org.apache*", "1.0.0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [TimeoutError(), ValueError("Expecting value")])
+async def test_maven_packages_from_repository_reports_a_failed_search(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    session = _FakeSession(None)
+    session.error = error
+    monkeypatch.setattr(distribution.util, "create_secure_session", lambda **_kwargs: session)
+
+    with pytest.raises(distribution.DistributionError):
+        await distribution.maven_packages_from_repository("org.apache.example", "1.0.0")
 
 
 def test_outstanding_message_counts_rows_being_looked_for() -> None:

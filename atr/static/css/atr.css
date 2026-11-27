@@ -946,6 +946,10 @@ td.atr-checkbox-col {
     line-height: 2.25;
 }
 
+.atr-table-fixed {
+    table-layout: fixed;
+}
+
 .atr-text-small {
     font-size: 0.875rem;
 }

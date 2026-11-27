@@ -44,6 +44,7 @@ type SECURITY = Literal["security"]
 type VOTE = Literal["vote"]
 type ADD_CATEGORY = Literal["add_category"]
 type ADD_EXPECTED_DISTRIBUTIONS = Literal["add_expected_distributions"]
+type ADD_EXPECTED_PURLS = Literal["add_expected_purls"]
 type REMOVE_EXPECTED_DISTRIBUTION = Literal["remove_expected_distribution"]
 type SEED_EXPECTED_DISTRIBUTIONS = Literal["seed_expected_distributions"]
 type REMOVE_CATEGORY = Literal["remove_category"]
@@ -52,6 +53,11 @@ type REMOVE_LANGUAGE = Literal["remove_language"]
 type CLEAR_CYCLE_OVERRIDE = Literal["clear_cycle_override"]
 type MOVE_CYCLE_OVERRIDES = Literal["move_cycle_overrides"]
 type REMOVE_CYCLE_OVERRIDES = Literal["remove_cycle_overrides"]
+
+_EXPECTED_VERSION_HELP: Final = (
+    "Leave empty when the package version is the release version. May use {{MAJOR_VERSION}},"
+    " {{PROJECT_KEY}}, and {{VERSION}}, for example {{VERSION}}-jdk17."
+)
 
 
 def _strip_whitespace(value: object) -> object:
@@ -609,11 +615,18 @@ class AddExpectedDistributionsForm(form.Form):
         distribution.OWNER_NAMESPACE_HELP,
     )
     packages: str = form.label("Packages", "One per line.", widget=form.Widget.TEXTAREA, required=True)
-    version_pattern: str = form.label(
-        "Version",
-        "Leave empty when the package version is the release version. May use {{MAJOR_VERSION}},"
-        " {{PROJECT_KEY}}, and {{VERSION}}, for example {{VERSION}}-jdk17.",
-        default="",
+    version_pattern: str = form.label("Version", _EXPECTED_VERSION_HELP, default="")
+
+
+class AddExpectedPurlsForm(form.Form):
+    variant: ADD_EXPECTED_PURLS = form.value(ADD_EXPECTED_PURLS)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    purls: str = form.label(
+        "Package URLs",
+        "One per line, each with a version. The version may use {{MAJOR_VERSION}}, {{PROJECT_KEY}},"
+        " and {{VERSION}}, for example pkg:maven/org.apache.example/example-core@{{VERSION}}.",
+        widget=form.Widget.TEXTAREA,
+        required=True,
     )
 
 
@@ -742,6 +755,7 @@ type ProjectViewForm = Annotated[
     | AddLanguageForm
     | RemoveLanguageForm
     | AddExpectedDistributionsForm
+    | AddExpectedPurlsForm
     | RemoveExpectedDistributionForm
     | SeedExpectedDistributionsForm
     | ClearCycleOverrideForm

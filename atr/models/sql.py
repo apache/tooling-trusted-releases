@@ -2343,7 +2343,7 @@ class Distribution(sqlmodel.SQLModel, table=True):
         return distribution.Data(
             platform=self.platform,
             owner_namespace=safe.OwnerNamespace(self.owner_namespace) if self.owner_namespace else None,
-            package=safe.Alphanumeric(self.package),
+            package=safe.PackageName(self.package),
             version=safe.VersionKey(self.version),
             details=details,
         )

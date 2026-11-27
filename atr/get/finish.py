@@ -73,17 +73,21 @@ async def downloads(
         with_release_policy=True,
         with_project_release_policy=True,
     )
-    message = await shared.announce.blocked_message(release)
+    announce_steps = await shared.announce.steps(release)
+    message = shared.announce.first_blocked(announce_steps)
+    queued = await interaction.release_queued_announcement(release.safe_project_key, release.safe_version_key)
     svn_html = None
-    if user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
-        release.committee, session.uid
-    ):
+    can_publish = _can_publish(session, release)
+    if can_publish:
         svn = htm.Block()
         await _render_svn_publish(svn, release)
         svn_html = str(svn.collect())
     return quart.jsonify(
         message=message,
         ready=not message,
+        steps_html=str(
+            await _render_announce_steps(release, announce_steps, can_publish=can_publish, queued=queued is not None)
+        ),
         svn_html=svn_html,
         download_page_ready=await _download_page_checkable(release),
     )
@@ -116,13 +120,21 @@ async def selected(
         await quart.flash("Preview revision directory not found.", "error")
         return await session.redirect(root.index)
 
+    announce_steps = await shared.announce.steps(release)
     return await _render_page(
         session=session,
         release=release,
         distribution_tasks=tasks,
-        announce_disable_message=await shared.announce.blocked_message(release),
+        announce_steps=announce_steps,
+        announce_disable_message=shared.announce.first_blocked(announce_steps),
         download_page_checkable=await _download_page_checkable(release),
         download_page_check=quart.session.pop(f"{shared.finish.DOWNLOAD_PAGE_CHECK_SESSION_KEY}:{release.key}", None),
+    )
+
+
+def _can_publish(session: web.Committer, release: sql.Release) -> bool:
+    return user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
+        release.committee, session.uid
     )
 
 
@@ -180,10 +192,60 @@ async def _get_page_data(
     return release, tasks
 
 
+def _render_announce_step(release: sql.Release, blocked: str, *, queued: bool) -> htm.Element:
+    # Announcing ends the finish phase, so this step is never shown as done
+    label = "Release announced"
+    if not blocked:
+        return _render_step_item(shared.announce.StepState.TO_DO, label, ["Ready. Use Announce above."])
+    if queued:
+        return _render_step_item(
+            shared.announce.StepState.IN_PROGRESS,
+            label,
+            ["Queued. ATR sends the announcement once the steps above are done."],
+        )
+    detail = "Use the Announce button above once everything else is complete."
+    if not release.expedited:
+        detail += " 'Announce when ready' lets you have ATR send the mail if all other steps are in progress."
+    return _render_step_item(shared.announce.StepState.TO_DO, label, [detail])
+
+
+async def _render_announce_steps(
+    release: sql.Release,
+    announce_steps: Sequence[shared.announce.AnnounceStep],
+    *,
+    can_publish: bool,
+    queued: bool,
+) -> htm.Element:
+    # Replaced in place by finish-downloads.js as the steps complete
+    checks_held = await interaction.release_distribution_checks_held(release)
+    items = []
+    for step in announce_steps:
+        state = step.state
+        label: htm.Element | str = step.label
+        detail: list[htm.Element | str] = [step.detail] if step.detail else []
+        match step.key:
+            case "svn":
+                label, detail = _render_svn_step(step, can_publish=can_publish)
+            case "distributions" if checks_held:
+                state = shared.announce.StepState.TO_DO
+                detail = [_checks_held_summary(release)]
+            case "distributions":
+                list_url = util.as_url(
+                    distribution.list_get,
+                    project_key=str(release.safe_project_key),
+                    version_key=str(release.safe_version_key),
+                )
+                label = htm.a(href=list_url)[step.label]
+        items.append(_render_step_item(state, label, detail))
+    items.append(_render_announce_step(release, shared.announce.first_blocked(announce_steps), queued=queued))
+    return htm.ul(".list-group")[*items]
+
+
 async def _render_page(
     session: web.Committer,
     release: sql.Release,
     distribution_tasks: Sequence[sql.Task],
+    announce_steps: Sequence[shared.announce.AnnounceStep],
     announce_disable_message: str,
     download_page_checkable: bool,
     download_page_check: str | None,
@@ -223,24 +285,13 @@ async def _render_page(
     )
     _render_queued_announcement(page, release, queued)
 
-    proj = release.safe_project_key
-    ver = release.safe_version_key
-    rev = release.safe_latest_revision_number
-    published = (await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)) is not None
-    if not published:
-        published = (await interaction.release_in_flight_svn_publish_task(proj, ver, rev)) is not None
-
-    page.p[
-        "On this page you should do three things: ",
-        *_render_publish_step(published),
-        "; 2. optionally record third party distributions that you made; and then, when ready, 3. use ",
-        htm.strong["Announce"],
-        " above to complete the process.",
+    page.p["To finish this release:"]
+    can_publish = _can_publish(session, release)
+    page.div("#finish-announce-steps.mb-4")[
+        await _render_announce_steps(release, announce_steps, can_publish=can_publish, queued=queued is not None)
     ]
 
-    if user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
-        release.committee, session.uid
-    ):
+    if can_publish:
         with page.block(htm.div("#finish-svn-publish")) as svn:
             await _render_svn_publish(svn, release)
 
@@ -296,26 +347,6 @@ async def _render_page(
         content=content,
         javascripts=["finish-downloads", "publish-location-preview"],
     )
-
-
-def _render_publish_step(published: bool) -> list[htm.Element | str]:
-    # Resolving a vote can publish automatically, so don't ask for it again
-    done = " (already requested, see below)" if published else " if you did not already"
-    if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
-        return ["1. publish to SVN dist ", htm.code["dist/release"], done]
-    return [
-        "1. publish to SVN dist ",
-        htm.code["dist/atr"],
-        done,
-        ", and then ",
-        htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
-            "manually ",
-            htm.code["svn mv"],
-            " the results",
-        ],
-        " to ",
-        htm.code["dist/release"],
-    ]
 
 
 def _render_queued_announcement(page: htm.Block, release: sql.Release, queued: sql.Task | None) -> None:
@@ -427,6 +458,27 @@ def _render_release_card(
     return card
 
 
+def _render_step_item(
+    state: shared.announce.StepState, label: htm.Element | str, detail: list[htm.Element | str]
+) -> htm.Element:
+    return htm.li(".list-group-item")[
+        *_render_step_marker(state),
+        label,
+        htm.div(".small.text-muted.ms-4")[*detail] if detail else "",
+    ]
+
+
+def _render_step_marker(state: shared.announce.StepState) -> list[htm.Element]:
+    match state:
+        case shared.announce.StepState.DONE:
+            icon, text = htm.i(".bi.bi-check-circle-fill.text-success.me-2"), "Done: "
+        case shared.announce.StepState.IN_PROGRESS:
+            icon, text = htm.i(".bi.bi-hourglass-split.text-warning.me-2"), "In progress: "
+        case shared.announce.StepState.TO_DO:
+            icon, text = htm.i(".bi.bi-circle.text-secondary.me-2"), "Not yet: "
+    return [icon, htm.span(".visually-hidden")[text]]
+
+
 async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
     proj = release.safe_project_key
     ver = release.safe_version_key
@@ -488,6 +540,33 @@ def _render_svn_publish_completed(page: htm.Block, release: sql.Release, complet
         page.div(".alert.alert-success.mb-4")[text]
         return
     page.div(".alert.alert-success.mb-4")[text, " synced soon to ", htm.a(href=url)[url]]
+
+
+def _render_svn_step(
+    step: shared.announce.AnnounceStep, *, can_publish: bool
+) -> tuple[htm.Element | str, list[htm.Element | str]]:
+    if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
+        target: list[htm.Element | str] = ["Release files published to SVN ", htm.code["dist/release"]]
+        promotion: list[htm.Element | str] = []
+    else:
+        target = ["Release files published to SVN ", htm.code["dist/atr"]]
+        promotion = [
+            "Once published, ",
+            htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
+                "manually ", htm.code["svn mv"], " the results"
+            ],
+            " to ",
+            htm.code["dist/release"],
+            ".",
+        ]
+    detail: list[htm.Element | str] = [step.detail] if step.detail else []
+    label: htm.Element | str = htm.span[*target]
+    if (step.state is shared.announce.StepState.TO_DO) and can_publish:
+        label = htm.a(href="#finish-svn-publish")[*target]
+        detail = ["Not started. Use the publish form below."]
+    if promotion:
+        detail = [*detail, " " if detail else "", *promotion]
+    return label, detail
 
 
 async def _svn_download_path_default(release: sql.Release) -> str:

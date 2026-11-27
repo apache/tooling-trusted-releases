@@ -31,6 +31,7 @@ _ASF_UID_CHARS: Final = frozenset(string.ascii_lowercase + string.digits + "-_")
 _NUMERIC: Final = frozenset(string.digits)
 _PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()")
 _OWNER_NAMESPACE_CHARS: Final = _ALPHANUM | frozenset(".")
+_PACKAGE_NAME_CHARS: Final = _ALPHANUM | frozenset("._")
 _VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
 
 MAX_VERSION_LENGTH: Final[int] = 128
@@ -191,6 +192,18 @@ class OwnerNamespace(SafeType):
     @classmethod
     def _valid_chars(cls) -> frozenset[str]:
         return _OWNER_NAMESPACE_CHARS
+
+
+class PackageName(SafeType):
+    """A package name on a third-party distribution platform, such as log4j-1.2-api or kafka_2.13."""
+
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _PACKAGE_NAME_CHARS
+
+    def _additional_validations(self, value: str) -> None:
+        if value in {".", ".."}:
+            raise ValueError("A package name cannot be . or ..")
 
 
 class AsfUid(SafeType):

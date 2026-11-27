@@ -106,3 +106,14 @@ def test_optional_commit_hash_blank_is_none(value: str):
 def test_optional_commit_hash_rejects_invalid(bad: str):
     with pytest.raises(ValueError):
         pydantic.TypeAdapter(safe.OptionalCommitHash).validate_python(bad)
+
+
+@pytest.mark.parametrize("name", ["log4j-1.2-api", "kafka_2.13", "zope.interface", "a", "a..b"])
+def test_package_name_accepts_full_stops_and_underscores(name: str) -> None:
+    assert str(safe.PackageName(name)) == name
+
+
+@pytest.mark.parametrize("name", [".", "..", "a/b", "a b", "@scope", ""])
+def test_package_name_refuses(name: str) -> None:
+    with pytest.raises(ValueError):
+        safe.PackageName(name)

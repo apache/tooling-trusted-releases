@@ -203,8 +203,8 @@ package details:
 | Docker Hub | The namespace, which defaults to `library` | The repository name |
 | Artifact Hub | The repository name | The chart name |
 
-Package names may contain only letters, digits and hyphens, so use the normalised form of a PyPI
-name, i.e. `apache-example` rather than `apache_example`. During the compose phase, the same button
+Package names may contain letters, digits, hyphens, full stops, and underscores, such as
+`log4j-1.2-api`. During the compose phase, the same button
 on the draft's page records a staged distribution instead, such as a Maven staging repository.
 
 Scripts can record a distribution through the API with a [JWT](#exchanging-a-pat-for-a-jwt). Use the

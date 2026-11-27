@@ -32,6 +32,7 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.models as models
 import atr.storage as storage
+import atr.util as util
 
 if TYPE_CHECKING:
     import atr.shared as shared
@@ -174,7 +175,7 @@ class ReleaseManager(CommitteeParticipant):
         fields, action = self.__apply_form(form, project, effective)
         if (action is not None) and (form.variant != "compose"):
             await _check_recipients(
-                self.__data, project, action, [form.email_to, *form.email_cc, *form.email_bcc], before
+                self.__data, project, action, [form.email_to, *form.email_cc, *form.email_bcc], before, self.__asf_uid
             )
         settings = dict(overrides.settings)
         for field in fields:
@@ -311,7 +312,7 @@ class ReleaseManager(CommitteeParticipant):
         project, release_policy = await _get_or_create_policy(self.__data, project_key)
         before = dict(release_policy.recipient_defaults)
         _apply_policy_update(release_policy, update)
-        await _check_update_recipients(self.__data, project, update, before)
+        await _check_update_recipients(self.__data, project, update, before, self.__asf_uid)
 
     async def edit_finish(self, form: shared.projects.FinishPolicyForm) -> None:
         project_key = form.project_key
@@ -324,6 +325,7 @@ class ReleaseManager(CommitteeParticipant):
             models.sql.RecipientAction.ANNOUNCE,
             [form.email_to, *form.email_cc, *form.email_bcc],
             before,
+            self.__asf_uid,
         )
         await self.__commit_and_log(str(project_key))
 
@@ -384,6 +386,7 @@ class ReleaseManager(CommitteeParticipant):
             models.sql.RecipientAction.VOTE,
             [form.email_to, *form.email_cc, *form.email_bcc],
             before,
+            self.__asf_uid,
         )
         await self.__commit_and_log(str(str(project_key)))
 
@@ -617,7 +620,7 @@ class FoundationAdmin(FoundationCommitter):
                     raise ValueError(f"Cycle {cycle} cannot have settings of its own")
                 overrides = models.sql.CycleOverrides(project_key=str(project_key), cycle=cycle)
             before = dict(overrides.applied_to(release_policy).recipient_defaults)
-            await _check_update_recipients(self.__data, project, args, before)
+            await _check_update_recipients(self.__data, project, args, before, None)
             # A cycle has only what it is given here, whatever it had before
             settings = _cycle_settings_from_args(project_key, release_policy, args)
             if settings == overrides.settings:
@@ -642,7 +645,7 @@ class FoundationAdmin(FoundationCommitter):
         project, release_policy = await _get_or_create_policy(self.__data, project_key)
         before = dict(release_policy.recipient_defaults)
         _apply_policy_update(release_policy, update)
-        await _check_update_recipients(self.__data, project, update, before)
+        await _check_update_recipients(self.__data, project, update, before, None)
 
 
 def _apply_policy_update(release_policy: models.sql.ReleasePolicy, update: models.api.PolicyUpdateArgs) -> None:
@@ -701,10 +704,11 @@ async def _check_recipients(
     action: models.sql.RecipientAction,
     addresses: Sequence[str],
     before: dict[str, Any],
+    asf_uid: str | None,
 ) -> None:
-    # Stored addresses aren't checked again
-    stored = _stored_recipients(before, action)
-    added = [address for address in addresses if address and (address.strip().lower() not in stored)]
+    # .asf.yaml passes no asf_uid, as alpha servers don't read it
+    skipped = _stored_recipients(before, action) | set(util.test_recipients(asf_uid) if asf_uid else [])
+    added = [address for address in addresses if address and (address.strip().lower() not in skipped)]
     if project.committee is not None:
         list_domain = project.committee.list_domain
     else:
@@ -715,13 +719,17 @@ async def _check_recipients(
 
 
 async def _check_update_recipients(
-    data: db.Session, project: models.sql.Project, update: models.api.PolicyArgsBase, before: dict[str, Any]
+    data: db.Session,
+    project: models.sql.Project,
+    update: models.api.PolicyArgsBase,
+    before: dict[str, Any],
+    asf_uid: str | None,
 ) -> None:
     for field, action in _RECIPIENT_API_FIELDS.items():
         recipients = getattr(update, field)
         if recipients is None:
             continue
-        await _check_recipients(data, project, action, recipients.addresses(), before)
+        await _check_recipients(data, project, action, recipients.addresses(), before, asf_uid)
 
 
 def _collapse_to_default(submitted: str, default_text: str) -> str:

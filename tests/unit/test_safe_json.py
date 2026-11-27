@@ -32,6 +32,7 @@ _DIALECT = sqlite.dialect()
 _SAFE_TYPE_EXAMPLES: dict[type[safe.SafeType], str] = {
     safe.Alphanumeric: "abc-123",
     safe.OwnerNamespace: "com.example",
+    safe.PackageName: "log4j-1.2-api",
     safe.AsfUid: "user1",
     safe.CommitHash: "1a2b3c4d" * 5,
     safe.CommitteeKey: "tooling",

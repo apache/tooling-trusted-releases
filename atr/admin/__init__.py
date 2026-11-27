@@ -70,6 +70,7 @@ import atr.models.validation as validation
 import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
+import atr.purl as purl
 import atr.quota as quota
 import atr.render as render
 import atr.shared as shared
@@ -232,6 +233,22 @@ class DeleteReleaseConfirmForm(form.Form):
 
 class DistRuleActionForm(form.Form):
     rule_id: form.Int = form.label("Rule ID", widget=form.Widget.HIDDEN)
+
+
+class DistributionImportForm(form.Form):
+    project_key: safe.ProjectKey = form.label("Project", widget=form.Widget.CUSTOM)
+    group_id: str = form.label(
+        "groupId",
+        "End with * to include subgroups, for example org.apache.tomcat*.",
+    )
+    version: safe.VersionKey = form.label(
+        "Version", "A version already on repository.apache.org, usually the latest release."
+    )
+
+
+class DistributionImportApplyForm(form.Form):
+    project_key: safe.ProjectKey = form.label("Project", widget=form.Widget.HIDDEN)
+    purls: form.StrList = form.label("Packages", required=True)
 
 
 class EditBannerForm(form.Form):
@@ -2515,6 +2532,95 @@ async def dist_rules_add_post(
 
 
 @admin.typed
+async def distributions_import_apply_post(
+    session: web.Committer,
+    _distributions: Literal["distributions"],
+    _import: Literal["import"],
+    _apply: Literal["apply"],
+    apply_form: DistributionImportApplyForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /distributions/import/apply
+    """
+    try:
+        packages = [purl.expected_package(item) for item in apply_form.purls]
+    except ValueError as e:
+        return await session.redirect(system_get, tab="distribution-import", error=f"Invalid Package URL: {e}")
+    async with storage.write(session) as write:
+        try:
+            added = await write.as_foundation_admin().distributions.expected_add(apply_form.project_key, packages)
+        except storage.AccessError as e:
+            return await session.redirect(system_get, tab="distribution-import", error=f"Error adding packages: {e}")
+    return await session.redirect(
+        get.projects.view,
+        project_key=str(apply_form.project_key),
+        tab="third-party-distribution",
+        success=f"{util.plural(added, 'package', include_count=True)} added.",
+    )
+
+
+@admin.typed
+async def distributions_import_post(
+    session: web.Committer,
+    _distributions: Literal["distributions"],
+    _import: Literal["import"],
+    import_form: DistributionImportForm,
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /distributions/import
+
+    Search repository.apache.org for a groupId and version, and preview the packages to add.
+    """
+    group_id = import_form.group_id.strip()
+    try:
+        safe.OwnerNamespace(group_id.removesuffix("*"))
+    except ValueError as e:
+        return await session.redirect(system_get, tab="distribution-import", error=f"Invalid groupId: {e}")
+    async with db.session() as data:
+        project = await data.project(key=str(import_form.project_key)).demand(
+            exceptions.NotFound(f"Project '{import_form.project_key}' not found.")
+        )
+        expected = await data.expected_distribution(project_key=project.key).all()
+    try:
+        pairs = await shared.distribution.maven_packages_from_repository(group_id, str(import_form.version))
+    except shared.distribution.DistributionError as e:
+        return await session.redirect(system_get, tab="distribution-import", error=str(e))
+
+    page = htm.Block()
+    page.h1["Import expected distributions"]
+    page.p[
+        f"repository.apache.org has {util.plural(len(pairs), 'artifact', include_count=True)} under ",
+        htm.code[group_id],
+        f" at version {import_form.version}. Ticked packages are added to the expected distributions of ",
+        htm.a(href=util.as_url(get.projects.view, project_key=project.key, tab="third-party-distribution"))[
+            project.display_name
+        ],
+        ".",
+    ]
+    new_purls, already, unrecordable = _distribution_import_split(project.key, pairs, expected)
+    if new_purls:
+        page.append(
+            await form.render(
+                model_cls=DistributionImportApplyForm,
+                action=util.as_url(distributions_import_apply_post),
+                submit_label="Add packages",
+                cancel_url=util.as_url(system_get, tab="distribution-import"),
+                defaults={"project_key": project.key, "purls": new_purls},
+            )
+        )
+    else:
+        page.p["There is nothing new to add."]
+    if already:
+        page.h2["Already expected"]
+        page.ul[*[htm.li[htm.code[item]] for item in already]]
+    if unrecordable:
+        page.h2["Cannot be added"]
+        page.p["These names contain characters that ATR does not accept in a package name."]
+        page.ul[*[htm.li[htm.code[item]] for item in unrecordable]]
+    return await template.render("admin-blank.html", title="Import expected distributions", content=page.collect())
+
+
+@admin.typed
 async def logs(_session: web.Committer, _logs: Literal["logs"]) -> web.QuartResponse:
     """
     URL: GET /logs
@@ -3764,6 +3870,32 @@ def _dist_rules_table(action_rows: list[tuple[sql.DistRule, htm.Element, htm.Ele
     return htpy.div[sections]
 
 
+def _distribution_import_split(
+    project_key: str, pairs: list[tuple[str, str]], expected: Sequence[sql.ExpectedDistribution]
+) -> tuple[list[str], list[str], list[str]]:
+    maven = sql.DistributionPlatform.MAVEN
+    already_keys = {(row.owner_namespace, row.package) for row in expected if row.platform == maven}
+    new_purls: list[str] = []
+    already: list[str] = []
+    unrecordable: list[str] = []
+    for group_id, artifact_id in pairs:
+        row = sql.ExpectedDistribution(
+            project_key=project_key, platform=maven, owner_namespace=group_id, package=artifact_id
+        )
+        text = f"{purl.expected(row) or f'{group_id}:{artifact_id}'}@{{{{VERSION}}}}"
+        if (group_id, artifact_id) in already_keys:
+            already.append(text)
+            continue
+        try:
+            safe.OwnerNamespace(group_id)
+            safe.PackageName(artifact_id)
+        except ValueError:
+            unrecordable.append(text)
+            continue
+        new_purls.append(text)
+    return new_purls, already, unrecordable
+
+
 def _embargo_denial_records(path: pathlib.Path, cutoff: str) -> Iterator[dict[str, Any]]:
     with path.open("rb") as handle:
         for line in handle:
@@ -3952,6 +4084,41 @@ async def _system_configuration_tab() -> htm.Element:
     return block.collect()
 
 
+async def _system_distribution_import_tab() -> htm.Element:
+    async with db.session() as data:
+        projects = await data.project(status=sql.ProjectStatus.ACTIVE, _committee=True).all()
+    by_committee: dict[str, list[sql.Project]] = {}
+    for project in projects:
+        name = project.committee.display_name if project.committee else (project.committee_key or "No PMC")
+        by_committee.setdefault(name, []).append(project)
+    project_select = htpy.select(".form-select", name="project_key", id="project_key", required=True)[
+        htpy.option(value="", disabled=True, selected=True)["Choose a project"],
+        [
+            htpy.optgroup(label=name)[
+                [
+                    htpy.option(value=project.key)[project.display_name]
+                    for project in sorted(members, key=lambda project: project.display_name.casefold())
+                ]
+            ]
+            for name, members in sorted(by_committee.items(), key=lambda item: item[0].casefold())
+        ],
+    ]
+    block = htm.Block()
+    block.p[
+        "Search repository.apache.org for the Maven artifacts in a groupId at a given version, then choose"
+        " which ones a project's releases are expected to have."
+    ]
+    block.append(
+        await form.render(
+            model_cls=DistributionImportForm,
+            action=util.as_url(distributions_import_post),
+            submit_label="Search",
+            custom={"project_key": project_select},
+        )
+    )
+    return block.collect()
+
+
 async def _system_page(session: web.Committer, query_args: SystemQuery) -> str:
     tab_items = [
         htm.Tab("banner", "Site banner", lambda: _system_banner_tab(session)),
@@ -3959,6 +4126,7 @@ async def _system_page(session: web.Committer, query_args: SystemQuery) -> str:
         htm.Tab("test-message", "Test message", lambda: _system_test_message_tab(session)),
         htm.Tab("performance", "Performance", _system_performance_tab),
         htm.Tab("quotas", "Quotas", _system_quotas_tab),
+        htm.Tab("distribution-import", "Distribution import", _system_distribution_import_tab),
         htm.Tab("tasks", "Recent tasks", lambda: _system_tasks_tab(query_args.minutes)),
     ]
     page = htm.Block()

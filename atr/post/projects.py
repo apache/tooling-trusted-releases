@@ -30,10 +30,12 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.get as get
 import atr.log as log
+import atr.models.distribution as distribution
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.notify as notify
+import atr.purl as purl
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
@@ -225,6 +227,27 @@ async def view(
     return response
 
 
+async def _add_expected_packages(
+    session: web.Committer,
+    project_key: safe.ProjectKey,
+    packages: list[distribution.ExpectedPackage],
+) -> web.WerkzeugResponse:
+    if not packages:
+        return await _expected_distributions_redirect(session, project_key, error="At least one package is required.")
+
+    async with storage.write(session) as write:
+        try:
+            warm = await _write_as_release_manager(write, session, project_key)
+            added = await warm.distributions.expected_add(project_key, packages)
+        except storage.AccessError as e:
+            return await _expected_distributions_redirect(session, project_key, error=f"Error adding packages: {e}")
+
+    if added == 0:
+        return await _expected_distributions_redirect(session, project_key, error="Those are already expected.")
+    noun = util.plural(added, "package", include_count=True)
+    return await _expected_distributions_redirect(session, project_key, success=f"{noun} added.")
+
+
 async def _asf_yaml_update_type(project_key: safe.ProjectKey) -> sql.UpdateType | None:
     async with db.session() as data:
         project = await data.project(key=str(project_key)).get()
@@ -335,30 +358,29 @@ async def _process_add_expected_distributions(
     session: web.Committer, add_form: shared.projects.AddExpectedDistributionsForm
 ) -> web.WerkzeugResponse:
     project_key = add_form.project_key
+    platform = _sql_platform(add_form.platform)
     try:
-        packages = [safe.Alphanumeric(line.strip()) for line in add_form.packages.splitlines() if line.strip()]
+        packages = [
+            distribution.ExpectedPackage(
+                platform, add_form.owner_namespace, safe.PackageName(line.strip()), add_form.version_pattern
+            )
+            for line in add_form.packages.splitlines()
+            if line.strip()
+        ]
     except ValueError as e:
         return await _expected_distributions_redirect(session, project_key, error=f"Invalid package name: {e}")
-    if not packages:
-        return await _expected_distributions_redirect(session, project_key, error="At least one package is required.")
+    return await _add_expected_packages(session, project_key, packages)
 
-    async with storage.write(session) as write:
-        try:
-            warm = await _write_as_release_manager(write, session, project_key)
-            added = await warm.distributions.expected_add(
-                project_key,
-                _sql_platform(add_form.platform),
-                add_form.owner_namespace,
-                packages,
-                add_form.version_pattern,
-            )
-        except storage.AccessError as e:
-            return await _expected_distributions_redirect(session, project_key, error=f"Error adding packages: {e}")
 
-    if added == 0:
-        return await _expected_distributions_redirect(session, project_key, error="Those are already expected.")
-    noun = util.plural(added, "package", include_count=True)
-    return await _expected_distributions_redirect(session, project_key, success=f"{noun} added.")
+async def _process_add_expected_purls(
+    session: web.Committer, purls_form: shared.projects.AddExpectedPurlsForm
+) -> web.WerkzeugResponse:
+    project_key = purls_form.project_key
+    try:
+        packages = [purl.expected_package(line) for line in purls_form.purls.splitlines() if line.strip()]
+    except ValueError as e:
+        return await _expected_distributions_redirect(session, project_key, error=f"Invalid Package URL: {e}")
+    return await _add_expected_packages(session, project_key, packages)
 
 
 async def _process_add_language(
@@ -812,6 +834,7 @@ async def _write_as_release_manager(
 _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.WerkzeugResponse]]]] = {
     shared.projects.AddCategoryForm: _process_add_category,
     shared.projects.AddExpectedDistributionsForm: _process_add_expected_distributions,
+    shared.projects.AddExpectedPurlsForm: _process_add_expected_purls,
     shared.projects.AddLanguageForm: _process_add_language,
     shared.projects.ClearCycleOverrideForm: _process_clear_cycle_override,
     shared.projects.ComposePolicyForm: _process_compose_form,

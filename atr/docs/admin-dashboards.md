@@ -96,6 +96,8 @@ By contrast, [`revoke_all_users_tokens`](/ref/atr/storage/writers/tokens.py:revo
 | Configuration | `configuration` | Shows the server configuration. |
 | Test message | `test-message` | Send a test message. |
 | Performance | `performance` | Per-route timing statistics from the performance log (count, mean, median, min, max, standard deviation). |
+| Quotas | `quotas` | Server storage use, the projects using the most of each quota, and a link to edit one project's quotas. |
+| Distribution import | `distribution-import` | Search repository.apache.org for the Maven artifacts of a groupId at one version, and add the chosen ones to a project's expected distributions. |
 | Recent tasks | `tasks` | Tasks from the last N minutes, with links to change the window. |
 
 The System POST handler also handles a presentations vote bypass form.

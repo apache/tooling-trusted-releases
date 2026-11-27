@@ -15,7 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Literal
+import enum
+from collections.abc import Sequence
+from typing import Literal, NamedTuple
 
 import pydantic
 
@@ -80,27 +82,98 @@ class AnnounceForm(form.Form):
         return self
 
 
+class AnnounceStep(NamedTuple):
+    # blocked is the gate message while the step is not done, and detail is shown on the finish page
+    key: Literal["svn", "downloads", "distributions"]
+    label: str
+    state: StepState
+    detail: str
+    blocked: str
+
+    @property
+    def done(self) -> bool:
+        return self.state is StepState.DONE
+
+
+class StepState(enum.Enum):
+    DONE = "done"
+    IN_PROGRESS = "in_progress"
+    TO_DO = "to_do"
+
+
 async def blocked_message(release: sql.Release) -> str:
     """Why the release cannot be announced yet, or an empty string."""
+    return first_blocked(await steps(release))
+
+
+def first_blocked(announce_steps: Sequence[AnnounceStep]) -> str:
+    """The message of the first step not yet done, or an empty string."""
+    for step in announce_steps:
+        if not step.done:
+            return step.blocked
+    return ""
+
+
+async def steps(release: sql.Release) -> list[AnnounceStep]:
+    """The conditions for announcing the release, in order."""
     local = config.svn_publish_kind() is config.SvnPublishKind.LOCAL_REPOSITORY
     publication = await interaction.release_completed_svn_publish_task_for_revision(
         release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
     )
-    if publication is None:
-        if local:
-            return "Cannot announce until SVN publication is complete."
-        return "Cannot announce until SVN and download area publications are complete."
+    svn_blocked = (
+        "Cannot announce until SVN publication is complete."
+        if local
+        else "Cannot announce until SVN and download area publications are complete."
+    )
+    if publication is not None:
+        svn_state, svn_detail = StepState.DONE, ""
+    elif await interaction.release_in_flight_svn_publish_task(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    ):
+        svn_state, svn_detail = StepState.IN_PROGRESS, "ATR is publishing the files now."
+    else:
+        svn_state, svn_detail = StepState.TO_DO, ""
+    result = [AnnounceStep("svn", "Release files published to SVN dist", svn_state, svn_detail, svn_blocked)]
     if not local:
-        async with db.session() as data:
-            monitor = await data.task(
-                task_type=sql.TaskType.DOWNLOADS_CHECK,
-                task_args=args.DownloadsCheck(publish_task_id=publication.id).model_dump(),
-            ).get()
-        if (
-            (monitor is None)
-            or (monitor.status is not sql.TaskStatus.COMPLETED)
-            or (not isinstance(monitor.result, results.DownloadsCheck))
-            or (not monitor.result.available)
-        ):
-            return "Published to SVN dist. Cannot announce until the files appear in the download area."
-    return distribution.outstanding_message(release.distributions)
+        result.append(await _downloads_step(publication))
+    outstanding = distribution.outstanding_message(release.distributions)
+    result.append(
+        AnnounceStep(
+            "distributions",
+            "Third-party distributions found or ignored",
+            StepState.IN_PROGRESS if outstanding else StepState.DONE,
+            distribution.summary(release.distributions),
+            outstanding,
+        )
+    )
+    return result
+
+
+async def _downloads_available(publish_task_id: int) -> bool:
+    async with db.session() as data:
+        monitor = await data.task(
+            task_type=sql.TaskType.DOWNLOADS_CHECK,
+            task_args=args.DownloadsCheck(publish_task_id=publish_task_id).model_dump(),
+        ).get()
+    return (
+        (monitor is not None)
+        and (monitor.status is sql.TaskStatus.COMPLETED)
+        and isinstance(monitor.result, results.DownloadsCheck)
+        and monitor.result.available
+    )
+
+
+async def _downloads_step(publication: sql.Task | None) -> AnnounceStep:
+    if publication is None:
+        state, detail = StepState.TO_DO, ""
+    elif await _downloads_available(publication.id):
+        state, detail = StepState.DONE, ""
+    else:
+        state, detail = StepState.IN_PROGRESS, "ATR is waiting for the files to reach the download servers."
+    return AnnounceStep(
+        "downloads",
+        "Release files available in the download area",
+        state,
+        detail,
+        "Published to SVN dist. Cannot announce until the files appear in the download area.",
+    )
