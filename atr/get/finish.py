@@ -31,7 +31,6 @@ import atr.errors as errors
 import atr.form as form
 import atr.get.announce as announce
 import atr.get.distribution as distribution
-import atr.get.docs as docs
 import atr.get.download as download
 import atr.get.file as file
 import atr.get.root as root
@@ -301,21 +300,7 @@ async def _render_page(
 def _render_publish_step(published: bool) -> list[htm.Element | str]:
     # Resolving a vote can publish automatically, so don't ask for it again
     done = " (already requested, see below)" if published else " if you did not already"
-    if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
-        return ["1. publish to SVN dist ", htm.code["dist/release"], done]
-    return [
-        "1. publish to SVN dist ",
-        htm.code["dist/atr"],
-        done,
-        ", and then ",
-        htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
-            "manually ",
-            htm.code["svn mv"],
-            " the results",
-        ],
-        " to ",
-        htm.code["dist/release"],
-    ]
+    return ["1. publish to SVN ", htm.code[f"dist/{util.svn_publish_target().value}"], done]
 
 
 def _render_queued_announcement(page: htm.Block, release: sql.Release, queued: sql.Task | None) -> None:
@@ -496,9 +481,7 @@ async def _svn_download_path_default(release: sql.Release) -> str:
 
 
 def _svn_publish_label() -> str:
-    if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
-        return "Publish to SVN dist/release"
-    return "Publish to SVN"
+    return f"Publish to SVN dist/{util.svn_publish_target().value}"
 
 
 def _svn_publish_revision(completed: sql.Task) -> int | None:

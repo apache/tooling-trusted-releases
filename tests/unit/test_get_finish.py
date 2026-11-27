@@ -215,11 +215,14 @@ async def test_downloads_svn_fragment_preserves_role_gate_and_form_action(monkey
     url.assert_any_call(finish.post.finish.selected, project_key="example", version_key="1.0")
 
 
-def test_render_publish_step_omits_promotion_for_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
+@pytest.mark.parametrize("target", [util.SvnPublishTarget.RELEASE, util.SvnPublishTarget.ATR])
+def test_render_publish_step_names_target_without_promotion(
+    monkeypatch: pytest.MonkeyPatch, target: util.SvnPublishTarget
+) -> None:
+    monkeypatch.setattr(util, "svn_publish_target", lambda: target)
     html = "".join(str(item) for item in finish._render_publish_step(False))
-    assert "dist/release" in html
-    assert "dist/atr" not in html
+    assert f"publish to SVN <code>dist/{target.value}</code>" in html
+    assert "svn mv" not in html
     assert "<a " not in html
 
 
@@ -228,17 +231,16 @@ def test_render_publish_step_does_not_ask_again_when_published(
     monkeypatch: pytest.MonkeyPatch, target: util.SvnPublishTarget
 ) -> None:
     monkeypatch.setattr(util, "svn_publish_target", lambda: target)
-    monkeypatch.setattr(util, "as_url", lambda *_args, **_kwargs: "/docs")
     html = "".join(str(item) for item in finish._render_publish_step(True))
     assert "already requested" in html
     assert "if you did not already" not in html
 
 
-def test_svn_publish_label_names_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_svn_publish_label_names_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
     assert finish._svn_publish_label() == "Publish to SVN dist/release"
     monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.ATR)
-    assert finish._svn_publish_label() == "Publish to SVN"
+    assert finish._svn_publish_label() == "Publish to SVN dist/atr"
 
 
 def _not_found() -> sql.Distribution:
